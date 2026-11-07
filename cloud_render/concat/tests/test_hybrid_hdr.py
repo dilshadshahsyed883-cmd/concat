@@ -1,3 +1,4 @@
+from fractions import Fraction
 import importlib.util
 import json
 import os
@@ -84,14 +85,18 @@ class HdrMuxTests(unittest.TestCase):
             self.skipTest("libx265 needed to generate the independent bitstream fixture")
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
-            rate = FrameRate(30000, 1001)
-            for pixel_format, profile in (("yuv420p10le", "main10"), ("yuv420p", "main")):
-                source = directory / (profile + ".hevc")
-                output = directory / (profile + ".mp4")
+            for rate, frame_count, pixel_format, profile in (
+                    (FrameRate(30000, 1001), 3, "yuv420p10le", "main10"),
+                    (FrameRate(29), 30, "yuv420p10le", "main10"),
+                    (FrameRate(30), 3, "yuv420p", "main")):
+                source = directory / f"{profile}-{rate.numerator}.hevc"
+                output = source.with_suffix(".mp4")
+                fps = f"{rate.numerator}/{rate.denominator}"
                 # The CPU encoder creates only a test fixture for the stream-copy boundary.
                 subprocess.run([
                     "ffmpeg", "-nostdin", "-v", "error", "-f", "lavfi", "-i",
-                    "color=white:s=64x64:r=30000/1001", "-frames:v", "3", "-pix_fmt", pixel_format,
+                    f"color=white:s=64x64:r={fps}", "-frames:v", str(frame_count),
+                    "-pix_fmt", pixel_format,
                     "-c:v", "libx265", "-profile:v", profile, "-x265-params",
                     "log-level=error:pools=none:frame-threads=1:keyint=30:bframes=0",
                     "-f", "hevc", str(source),
@@ -99,15 +104,18 @@ class HdrMuxTests(unittest.TestCase):
                 source.write_bytes(tag_hdr10_access_unit(source.read_bytes(), mastering()))
                 if profile == "main":
                     with self.assertRaisesRegex(RuntimeError, "Main 10"):
-                        _mux_hdr10(source, output, rate, width=64, height=64, frame_count=3)
+                        _mux_hdr10(source, output, rate, width=64, height=64, frame_count=frame_count)
                     self.assertFalse(output.exists())
                 else:
-                    _mux_hdr10(source, output, rate, width=64, height=64, frame_count=3)
+                    _mux_hdr10(source, output, rate, width=64, height=64, frame_count=frame_count)
                     report = frame_report(output)
-                    self.assertEqual(report["streams"][0]["r_frame_rate"], "30000/1001")
+                    stream = report["streams"][0]
+                    self.assertEqual(stream["r_frame_rate"], fps)
+                    self.assertEqual(Fraction(stream["time_base"]) * stream["duration_ts"],
+                                     rate.seconds(frame_count))
                     require_hdr_metadata(self, report["frames"][0])
                     with self.assertRaisesRegex(ValueError, "new .mp4"):
-                        _mux_hdr10(source, output, rate, width=64, height=64, frame_count=3)
+                        _mux_hdr10(source, output, rate, width=64, height=64, frame_count=frame_count)
 
 
 class CudaHdrTests(unittest.TestCase):

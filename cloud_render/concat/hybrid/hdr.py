@@ -212,12 +212,18 @@ def _mux_hdr10(hevc, output, rate: FrameRate, *, width, height, frame_count,
     output = Path(output)
     if output.suffix.lower() != ".mp4" or output.exists() or output.is_symlink():
         raise ValueError("HDR output needs a new .mp4 destination")
-    fps = f"{rate.numerator}/{rate.denominator}"
+    frequency = Fraction(rate.numerator, rate.denominator)
+    ticks = frequency.denominator
+    # Raw Annex B has no packet timestamps. NVENC emits a low-delay stream in
+    # presentation order, so assign exact CFR timestamps before muxing.
+    timestamps = (f"setts=pts=N*{ticks}:dts=N*{ticks}:duration={ticks}:"
+                  f"time_base=1/{frequency.numerator}")
     with tempfile.TemporaryDirectory(dir=output.parent, prefix=".concat-hdr10-") as directory:
         temporary = Path(directory) / "render.mp4"
-        _run([ffmpeg, "-nostdin", "-v", "error", "-f", "hevc", "-framerate", fps,
+        _run([ffmpeg, "-nostdin", "-v", "error", "-f", "hevc", "-framerate", str(frequency),
               "-i", str(hevc), "-map", "0:v:0", "-c:v", "copy",
-              "-bsf:v", _HDR10_VUI, "-color_range", "tv", "-color_primaries", "bt2020",
+              "-bsf:v", f"{_HDR10_VUI},{timestamps}",
+              "-video_track_timescale", str(frequency.numerator), "-color_range", "tv", "-color_primaries", "bt2020",
               "-color_trc", "smpte2084", "-colorspace", "bt2020nc", "-chroma_sample_location",
               "center", "-movflags", "+faststart", str(temporary)])
         report = json.loads(_run([ffprobe, "-v", "error", "-select_streams", "v:0",
@@ -235,7 +241,7 @@ def _mux_hdr10(hevc, output, rate: FrameRate, *, width, height, frame_count,
         stream = streams[0]
         time_base = Fraction(stream["time_base"])
         actual = int(stream["duration_ts"]) * time_base
-        if abs(actual - rate.seconds(frame_count)) > time_base * 2:
+        if actual != rate.seconds(frame_count):
             raise RuntimeError("HDR MP4 duration differs from the requested frame rate")
         os.link(temporary, output)
     return output
