@@ -23,6 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from cloud_render.concat.hybrid.contract import BUNDLE_VERSION, RENDER_MODE, WORKER_API_VERSION
 from cloud_render.concat.project_bundle import restore
 from cloud_render.concat.gpu.resumable import ResumableUpload, UploadError
 
@@ -32,6 +33,13 @@ CHUNK = 8 * 1024 * 1024
 MAX_BUNDLE = 4 * 1024 * 1024 * 1024
 MAX_QUEUE = 20
 MP4_SIGNATURE = b"ftyp"
+
+
+class DirectReceiver(urllib.request.HTTPRedirectHandler):
+    """VPS ingest must respond at the configured authenticated origin."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise RuntimeError("VPS ingest redirected instead of verifying the upload")
 
 
 class WorkerError(Exception):
@@ -351,6 +359,7 @@ class RenderWorker:
         length = output.stat().st_size
         checksum = digest_file(output)
         base = self.receiver + "/api/cloud-render/ingest/" + job + "/chunk"
+        opener = urllib.request.build_opener(DirectReceiver())
         with output.open("rb") as stream:
             for index in range((length + CHUNK - 1) // CHUNK):
                 chunk = stream.read(CHUNK)
@@ -359,7 +368,7 @@ class RenderWorker:
                 request = urllib.request.Request(url, data=chunk, method="POST",
                     headers={"X-Cloud-Render-Token": self.receiver_token,
                              "Content-Type": "application/octet-stream"})
-                with urllib.request.urlopen(request, timeout=120) as response:
+                with opener.open(request, timeout=120) as response:
                     payload = json.load(response)
                 if not payload.get("ok"):
                     raise RuntimeError("VPS chunk receiver rejected upload")
@@ -434,6 +443,10 @@ class Handler(BaseHTTPRequestHandler):
             ok = self.worker.ready()
             return self._json(200 if ok else 503, {"ok": ok, "engine": "cuda-nvenc-stage1", "cuda_stage1": True, "native_vulkan": False})
         self._authorize()
+        if action == "GET" and path == "/api/capabilities":
+            return self._json(200, {"api_version": WORKER_API_VERSION,
+                                    "bundle_versions": [BUNDLE_VERSION],
+                                    "render_modes": [RENDER_MODE]})
         if action == "GET" and path == "/api/diagnostics/gpu":
             return self._json(200, {"engine": "cuda-nvenc-stage1",
                                     "cuda_stage1": True, "native_vulkan": False,

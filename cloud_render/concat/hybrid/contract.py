@@ -6,6 +6,7 @@ from fractions import Fraction
 from functools import cache
 
 BUNDLE_VERSION = 1
+WORKER_API_VERSION = 1
 RENDER_MODE = "cuda-stage1"
 HYBRID_EFFECTS_VERSION = 1
 

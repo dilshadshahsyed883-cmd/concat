@@ -78,7 +78,7 @@ function Submit-Zip([string]$zip,[string]$job,[string]$domain,$headers) {
     $sha=SHA-File $zip
     $root="$domain/api/uploads/$job"
     $existing=$null
-    try {$existing=Invoke-RestMethod -Uri "$domain/api/jobs/$job" -Headers $headers -TimeoutSec 30}
+    try {$existing=Invoke-RestMethod -MaximumRedirection 0 -Uri "$domain/api/jobs/$job" -Headers $headers -TimeoutSec 30}
     catch {
         $response=$_.Exception.Response
         if (-not $response -or [int]$response.StatusCode -ne 404) {throw}
@@ -88,7 +88,7 @@ function Submit-Zip([string]$zip,[string]$job,[string]$domain,$headers) {
         return
     }
     $manifest=@{size=[long]$size;sha256=$sha;render_mode="cuda-stage1"} | ConvertTo-Json -Compress
-    $session=Invoke-RestMethod -Method Post -Uri $root -Headers $headers -ContentType "application/json" -Body $manifest -TimeoutSec 30
+    $session=Invoke-RestMethod -MaximumRedirection 0 -Method Post -Uri $root -Headers $headers -ContentType "application/json" -Body $manifest -TimeoutSec 30
     if ($session.render_mode -ne "cuda-stage1") {throw "GPU image is outdated: CUDA Stage 1 upload not supported"}
     $chunkSize=[long]$session.chunk_size
     $count=[int]$session.total_chunks
@@ -117,12 +117,12 @@ function Submit-Zip([string]$zip,[string]$job,[string]$domain,$headers) {
             $ok=$false
             for($attempt=1;$attempt -le 3;$attempt++) {
                 try {
-                    Invoke-RestMethod -Method Put -Uri "$root/chunks/$i" -Headers $h -ContentType "application/octet-stream" -Body $bytes -TimeoutSec 95 | Out-Null
+                    Invoke-RestMethod -MaximumRedirection 0 -Method Put -Uri "$root/chunks/$i" -Headers $h -ContentType "application/octet-stream" -Body $bytes -TimeoutSec 95 | Out-Null
                     $ok=$true
                     break
                 } catch {
                     try {
-                        $check=Invoke-RestMethod -Uri $root -Headers $headers -TimeoutSec 30
+                        $check=Invoke-RestMethod -MaximumRedirection 0 -Uri $root -Headers $headers -TimeoutSec 30
                         if (@($check.uploaded) -contains $i) {$ok=$true;break}
                     } catch {}
                     if ($attempt -eq 3) {throw}
@@ -133,7 +133,7 @@ function Submit-Zip([string]$zip,[string]$job,[string]$domain,$headers) {
             Write-Host "Uploaded $($i+1) of $count chunks"
         }
     } finally {$input.Dispose()}
-    $done=Invoke-RestMethod -Method Post -Uri "$root/complete" -Headers $headers -TimeoutSec 95
+    $done=Invoke-RestMethod -MaximumRedirection 0 -Method Post -Uri "$root/complete" -Headers $headers -TimeoutSec 95
     Write-Host "ZIP checksum verified by Salad: $($done.state)"
 }
 $root=(Resolve-Path -LiteralPath $ProjectDir).ProviderPath
@@ -179,10 +179,23 @@ try {
     $rendererKey=[Runtime.InteropServices.Marshal]::PtrToStringBSTR($rPtr)
     if (-not $saladKey -or $rendererKey.Length -lt 32) {throw "Missing Salad authentication"}
     $headers=@{"Salad-Api-Key"=$saladKey;"Authorization"="Bearer $rendererKey"}
-    $health=Invoke-RestMethod -Uri "$domain/health/ready" -Headers $headers -TimeoutSec 30
+    $health=Invoke-RestMethod -MaximumRedirection 0 -Uri "$domain/health/ready" -Headers $headers -TimeoutSec 30
     if (-not $health.ok) {throw "Existing Salad worker is not ready"}
     if ($health.cuda_stage1 -ne $true) {
         throw "Existing Salad image lacks native Concat CUDA Stage 1. Upgrade matching GPU image before uploading media."
+    }
+    # A 404 allows the previous Stage 1 worker, which shares the same bundle.
+    $capabilities=$null
+    try {
+        $capabilities=Invoke-RestMethod -MaximumRedirection 0 -Uri "$domain/api/capabilities" -Headers $headers -TimeoutSec 30
+    } catch {
+        $response=$_.Exception.Response
+        if (-not $response -or [int]$response.StatusCode -ne 404) {throw}
+    }
+    if ($null -ne $capabilities -and ($capabilities.api_version -ne 1 -or
+        @($capabilities.bundle_versions) -notcontains 1 -or
+        @($capabilities.render_modes) -notcontains "cuda-stage1")) {
+        throw "Salad worker does not support Concat API 1 / bundle 1 / CUDA Stage 1."
     }
     $fp=SHA-File $projectManifest
     $state=$null
@@ -205,7 +218,7 @@ try {
     Write-Host "CUDA render running. Checking existing VPS delivery..."
     $deadline=[DateTime]::UtcNow.AddHours(2)
     while([DateTime]::UtcNow -lt $deadline) {
-        $status=Invoke-RestMethod -Uri "$domain/api/jobs/$job" -Headers $headers -TimeoutSec 30
+        $status=Invoke-RestMethod -MaximumRedirection 0 -Uri "$domain/api/jobs/$job" -Headers $headers -TimeoutSec 30
         Write-Host "GPU job $job : $($status.state)"
         if ($status.state -eq "delivered") {
             Write-Host "SUCCESS: MP4 verified on existing VPS Cloud Render as $job.mp4"

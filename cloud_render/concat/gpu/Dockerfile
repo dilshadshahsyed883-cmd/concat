@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && mkdir -p /worker/jobs /worker/outputs /worker/state /worker/.config /worker/.local/share \
     && chown -R 10001:10001 /worker
 
+COPY cloud_render/concat/hybrid/contract.py /opt/app/cloud_render/concat/hybrid/contract.py
 COPY cloud_render/concat/project_bundle.py /opt/app/cloud_render/concat/project_bundle.py
 COPY cloud_render/concat/gpu/worker.py /opt/app/cloud_render/concat/gpu/worker.py
 COPY cloud_render/concat/gpu/resumable.py /opt/app/cloud_render/concat/gpu/resumable.py
