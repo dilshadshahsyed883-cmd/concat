@@ -1387,7 +1387,7 @@ export component VideoPanel inherits VerticalLayout {
     // The camera's shake taken out: the media's movement is measured once
     // in the background, and the correction is worked out from it live, so
     // the sliders answer at once. Footage only.
-    if root.selected.kind == ClipKind.video: Section {
+    if false && root.selected.kind == ClipKind.video: Section {
         stabilize := SectionHeader {
             title: I18n.t("clipInspector.stabilize");
             collapsible: true;
@@ -1460,7 +1460,7 @@ export component VideoPanel inherits VerticalLayout {
     // monitor over it - and chroma key drops a colour. A key is the chroma
     // package on the chain, which is why its knobs read from the chain's
     // own rows. One at a time: ticking a block unticks the others.
-    if !root.figure: Section {
+    if false && !root.figure: Section {
         cutout := SectionHeader {
             title: I18n.t("clipInspector.removeBackground");
             collapsible: true;
@@ -1674,7 +1674,7 @@ export component VideoPanel inherits VerticalLayout {
     // the numbers below place, size, turn and soften it, each keyable.
     // Drawn on the picture as it is seen, so it moves with the clip; the
     // monitor shows its outline with grips to drag while this is open.
-    if root.mask-section
+    if false && root.mask-section
         && (root.selected.kind == ClipKind.video || root.selected.kind == ClipKind.image): Section {
         mask-header := SectionHeader {
             title: I18n.t("mask.title");
@@ -1848,7 +1848,7 @@ export component VideoPanel inherits VerticalLayout {
 
     // What is cut off the source before it is fitted. Fractions of the
     // source's own edges, so a crop survives a change of output size.
-    if !root.figure: Section {
+    if false && !root.figure: Section {
         crop := SectionHeader {
             title: I18n.t("clipInspector.crop");
             collapsible: true;
@@ -1962,6 +1962,7 @@ component PreviewHalf inherits VerticalLayout {
 /// the waxen, "plastic" faces a full-strength enhancer is known for: it
 /// blends the model's answer back towards the original.
 export component EnhancePanel inherits VerticalLayout {
+    visible: false; // Preserve original tool source but hide unsupported GPU enhancement.
     in property <SelectedClipData> selected;
 
     /// The tick: the section on or off, and the copy shown or not.
@@ -2327,7 +2328,7 @@ export component AudioPanel inherits VerticalLayout {
     // Whether the voice keeps its pitch when the rate is not 1. Here and
     // not on the Speed tab: the rate is the clip's, but what it does to the
     // sound is the sound's business, beside the level it is mixed at.
-    if !root.selected.batch-volume: Section {
+    if false && !root.selected.batch-volume: Section {
         SectionHeader {
             title: I18n.t("clipInspector.pitch");
         }
@@ -2403,6 +2404,7 @@ export component SpeedPanel inherits VerticalLayout {
 /// package's defaults, which are the picture as shot. The rows come from the
 /// manifest, so a knob added there appears here without a line of UI.
 export component AdjustPanel inherits VerticalLayout {
+    visible: false; // Native CPU grading has no CUDA project adapter.
     in property <[AppliedParamData]> params;
     in property <[WheelData]> wheels;
     in property <[CurveData]> curves;
@@ -2581,6 +2583,7 @@ export component FilterPanel inherits VerticalLayout {
     }
 
     Section {
+        visible: false; // Unsupported GPU speed curve; keep saved project data.
         ramps := SectionHeader {
             title: I18n.t("clipInspector.ramps");
             collapsible: true;

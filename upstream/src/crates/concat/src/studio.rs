@@ -10678,7 +10678,7 @@ impl Studio {
                 starred,
                 &self.look_art,
                 &self.card_paths,
-                |package| !is_lut(package),
+                |_| false, // Legacy filter shelf is not supported by CUDA hybrid.
             );
             sync(&models.filter_groups, groups);
             sync(&models.catalogue_filters, entries);
@@ -10694,7 +10694,7 @@ impl Studio {
                 starred,
                 &self.look_art,
                 &self.card_paths,
-                is_lut,
+                |_| false, // LUT files have no native project adapter yet.
             );
             sync(&models.catalogue_luts, entries);
             app.global::<Editor>().set_adjustment_art(
@@ -10709,7 +10709,10 @@ impl Studio {
                 starred,
                 &self.look_art,
                 &self.card_paths,
-                |_| true,
+                |package| matches!(
+                    package.manifest.effect.id.as_str(),
+                    "concat.contrast" | "concat.saturation" | "concat.sharpen" | "concat.box-blur"
+                ),
             );
             sync(&models.effect_groups, groups);
             sync(&models.catalogue_effects, entries);
@@ -10719,7 +10722,7 @@ impl Studio {
                 starred,
                 &self.look_art,
                 &self.card_paths,
-                |_| true,
+                |_| false, // CUDA audio has basic volume/fades, not plugin effects.
             );
             sync(&models.audio_groups, groups);
             sync(&models.catalogue_audio, entries);
@@ -10729,7 +10732,10 @@ impl Studio {
                 starred,
                 &self.look_art,
                 &self.card_paths,
-                |_| true,
+                |package| matches!(
+                    package.manifest.effect.id.as_str(),
+                    "cross-fade" | "fade-black" | "push" | "zoom" | "wipe-left" | "wipe-right"
+                ),
             );
             sync(&models.transition_groups, groups);
             sync(&models.catalogue_transitions, entries);
