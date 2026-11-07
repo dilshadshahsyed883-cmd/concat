@@ -43,6 +43,15 @@ class MuxVerificationTests(unittest.TestCase):
             self.assertEqual(video["avg_frame_rate"], "30/1")
             self.assertEqual(video["nb_frames"], "30")
 
+    def test_mux_uses_input_rate_not_ineffective_framerate_option(self):
+        with patch("cloud_render.concat.hybrid.render.invoke", return_value="") as ffmpeg:
+            mux(Path("source.h264"), Path("output.mp4"), [], 30)
+        command = ffmpeg.call_args.args[0]
+        self.assertIn("-r", command)
+        self.assertNotIn("-framerate", command)
+        self.assertEqual(command[command.index("-r") + 1], "30")
+        self.assertLess(command.index("-r"), command.index("-i"))
+
     def test_bad_mp4_reports_expected_and_observed_fields(self):
         streams = {"streams": [{"codec_type": "video", "codec_name": "h264",
                                 "width": 1920, "height": 1080,
@@ -52,7 +61,7 @@ class MuxVerificationTests(unittest.TestCase):
                    return_value=json.dumps(streams)):
             with self.assertRaisesRegex(RuntimeError, "2700000/89999") as error:
                 verify(Path("not-actually-opened.mp4"), 1080, False)
-            self.assertIn("30/1", str(error.exception))
+            self.assertIn('"fps": "30"', str(error.exception))
 
 
 if __name__ == "__main__":
