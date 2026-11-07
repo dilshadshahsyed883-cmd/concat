@@ -1,0 +1,196 @@
+name: Concat native development build
+
+on:
+  push:
+    branches: ['gpu/**']
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: concat-native-windows-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      revision: ${{ steps.source.outputs.revision }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Import and patch pinned source once
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_BRANCH: ${{ github.ref_name }}
+          SOURCE_EVENT: ${{ github.event_name }}
+          UPSTREAM_SHA: 79116bd0f9a103c633d888603ad27890e929dbdc
+        run: |
+          set -euo pipefail
+          if [ ! -f upstream/src/Cargo.lock ]; then
+            test "$SOURCE_EVENT" = push && test "$SOURCE_BRANCH" = gpu/baseline
+            git init "$RUNNER_TEMP/concat-upstream"
+            git -C "$RUNNER_TEMP/concat-upstream" fetch --depth=1 https://github.com/jub0t/Concat.git "$UPSTREAM_SHA"
+            test "$(git -C "$RUNNER_TEMP/concat-upstream" rev-parse FETCH_HEAD)" = "$UPSTREAM_SHA"
+            mkdir upstream
+            git -C "$RUNNER_TEMP/concat-upstream" archive FETCH_HEAD | tar -x -C upstream
+            python3 concat_gpu/patch_editor.py upstream
+            git -c core.autocrlf=false add --force upstream
+            git -c user.name=github-actions -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
+              commit -m "Import editable Concat v0.2.8 and native GPU handoff"
+            git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push origin HEAD:refs/heads/gpu/baseline
+          fi
+          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  native-editor-windows:
+    needs: source
+    runs-on: windows-2022
+    timeout-minutes: 190
+    env:
+      ORT_VERSION: 1.28.0
+      GGML_NATIVE: "OFF"
+      GGML_BACKEND_DL: "ON"
+      GGML_CPU_ALL_VARIANTS: "ON"
+      GGML_AVX2: "OFF"
+      GGML_FMA: "OFF"
+      GGML_F16C: "OFF"
+      GGML_BMI2: "OFF"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.source.outputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify embedded GPU bundle contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $client = "upstream/src/crates/concat/src/concat_gpu_client.ps1"
+          $errors = $null
+          $tokens = $null
+          $ast = [Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path $client).Path, [ref]$tokens, [ref]$errors
+          )
+          if ($errors.Count) { $errors | Format-List; throw "PowerShell GPU client syntax invalid" }
+          New-Item -ItemType Directory -Force fixture | Out-Null
+          [IO.File]::WriteAllBytes("fixture\photo.jpg", [byte[]](1..120))
+          '{"media":[{"id":"m1","path":"photo.jpg","kind":"image"}]}' |
+            Set-Content -LiteralPath "fixture\concat.json" -Encoding UTF8
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File $client -ProjectDir fixture -BundleOnly -BundlePath "$pwd\fixture\bundle.zip"
+          if ($LASTEXITCODE -ne 0) { throw "Native Concat offline ZIP packaging failed" }
+          python -c "import json,zipfile,hashlib; z=zipfile.ZipFile('fixture/bundle.zip'); x=json.loads(z.read('bundle.json')); r=x['references'][0]; assert x['version']==1 and x['project_file']=='concat.json'; assert hashlib.sha256(z.read(r['member'])).hexdigest()==r['sha256']; assert z.read('project/concat.json')"
+          if ($LASTEXITCODE -ne 0) { throw "Generated Concat ZIP contract rejected" }
+          Write-Host "Native Concat ZIP integrity PASS"
+      - name: Exact Rust 1.93 toolchain
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
+        with:
+          toolchain: "1.93.0"
+          targets: x86_64-pc-windows-msvc
+      - name: Windows pinned LLVM + FFmpeg development runtime
+        working-directory: upstream
+        shell: pwsh
+        timeout-minutes: 20
+        run: |
+          $ErrorActionPreference = "Stop"
+          $bash = "$env:ProgramFiles\Git\bin\bash.exe"
+          & $bash scripts/ci/fetch.sh llvm-win64 llvm.exe
+          if ($LASTEXITCODE -ne 0) { throw "Pinned LLVM fetch failed" }
+          Start-Process -Wait -FilePath .\llvm.exe -ArgumentList "/S", "/D=C:\llvm"
+          if (-not (Test-Path "C:\llvm\bin\libclang.dll")) { throw "LLVM install missing libclang" }
+          "C:\llvm\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+          "LIBCLANG_PATH=C:\llvm\bin" | Out-File -FilePath $env:GITHUB_ENV -Append
+          & $bash scripts/ci/fetch.sh ffmpeg-win64 ffmpeg-win.zip
+          if ($LASTEXITCODE -ne 0) { throw "Pinned FFmpeg fetch failed" }
+          Expand-Archive ffmpeg-win.zip -DestinationPath ffdl
+          $dir=(Get-ChildItem ffdl -Directory | Select-Object -First 1).FullName
+          if (-not (Test-Path "$dir\bin")) { throw "FFmpeg dev binary path missing" }
+          "FFMPEG_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "$dir\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Windows pinned ONNX shared runtime
+        working-directory: upstream
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & "$env:ProgramFiles\Git\bin\bash.exe" scripts/ci/fetch.sh onnxruntime-win-x64 onnxruntime.zip
+          if ($LASTEXITCODE -ne 0) { throw "ONNX download failed" }
+          Expand-Archive onnxruntime.zip -DestinationPath .
+          $dir="$PWD\onnxruntime-win-x64-$env:ORT_VERSION"
+          if (-not (Test-Path "$dir\lib\onnxruntime.lib")) { throw "Missing ONNX import library" }
+          "ORT_LIB_LOCATION=$dir\lib" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "ORT_PREFER_DYNAMIC_LINK=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "ORT_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "$dir\lib" | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Windows pinned sherpa-onnx shared libraries
+        working-directory: upstream
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version=(Select-String -Path src\Cargo.lock -Pattern 'name = "sherpa-onnx-sys"' -Context 0,1).Context.PostContext[0] -replace '.*"(.*)".*', '$1'
+          $name="sherpa-onnx-win-x64-shared-MT-Release-lib"
+          $stem="sherpa-onnx-v$version-win-x64-shared-MT-Release-lib"
+          $bash="$env:ProgramFiles\Git\bin\bash.exe"
+          & $bash scripts/ci/fetch.sh $name sherpa.tar.bz2
+          if ($LASTEXITCODE -ne 0) { throw "sherpa download failed" }
+          python -c "import tarfile; t=tarfile.open('sherpa.tar.bz2'); t.extractall(**({'filter':'data'} if hasattr(tarfile,'data_filter') else {}))"
+          if (-not (Test-Path "$stem\lib")) { throw "sherpa shared libs missing" }
+          New-Item -ItemType Directory -Force sherpa-libs, sherpa-dlls | Out-Null
+          Copy-Item "$stem\lib\sherpa-onnx-*.lib" sherpa-libs\
+          Copy-Item "$stem\lib\sherpa-onnx-*.dll" sherpa-dlls\
+          "SHERPA_ONNX_LIB_DIR=$PWD\sherpa-libs" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "SHERPA_DLL_DIR=$PWD\sherpa-dlls" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          workspaces: upstream/src
+          key: windows-concat-native-gpu-v028
+          env-vars: CARGO CC CFLAGS CXX CMAKE RUST GGML ORT
+      - name: Compile modified original Concat GUI from source
+        working-directory: upstream/src
+        timeout-minutes: 95
+        shell: pwsh
+        run: |
+          cargo build --locked --profile app -p concat --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "Native Concat GUI build failed" }
+      - name: Package portable edited Concat EXE and required DLLs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $out="dist\Concat-0.2.8-GPU-Windows-x64"
+          New-Item -ItemType Directory -Force $out | Out-Null
+          Copy-Item "upstream\src\target\x86_64-pc-windows-msvc\app\concat.exe" "$out\concat.exe"
+          Copy-Item "$env:FFMPEG_DIR\bin\*.dll" $out
+          Copy-Item "$env:SHERPA_DLL_DIR\*.dll" $out
+          Copy-Item "$env:ORT_DIR\lib\*.dll" $out
+          $built=Get-ChildItem "upstream\src\target\x86_64-pc-windows-msvc\app\build\whisper-rs-sys-*\out\bin\ggml-cpu-x64.dll" |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $built) { throw "Whisper multi-CPU DLLs not built" }
+          Copy-Item "$($built.DirectoryName)\whisper.dll", "$($built.DirectoryName)\ggml*.dll" $out
+          Copy-Item "upstream\LICENSE", "upstream\THIRD_PARTY_NOTICES.md" $out
+          Copy-Item "README.md" $out
+          $exe="$out\concat.exe"
+          $version=& $exe --version
+          if ($LASTEXITCODE -ne 0 -or $version -notmatch "0.2.8") { throw "Modified Concat EXE version smoke failed" }
+          $env:CONCAT_GPU = "software"
+          $smoke = Start-Process -FilePath (Resolve-Path $exe) -WorkingDirectory (Resolve-Path $out) -ArgumentList '--smoke' -PassThru
+          try {
+            if (!$smoke.WaitForExit(120000)) { throw "Native editor startup timed out" }
+            if ($smoke.ExitCode -ne 0) { throw "Native editor startup failed: $($smoke.ExitCode)" }
+          } finally {
+            if (!$smoke.HasExited) { Stop-Process -Id $smoke.Id -Force }
+          }
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  concat.exe" | Set-Content -LiteralPath "$out/SHA256SUMS" -Encoding ascii
+          Get-ChildItem $out -File | Select-Object Name,Length | Format-Table
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Concat-Windows-x64-dev
+          path: dist/Concat-0.2.8-GPU-Windows-x64/
+          if-no-files-found: error
+          retention-days: 30
