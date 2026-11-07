@@ -171,8 +171,10 @@ def tempo(speed):
 
 def mux(bitstream, output, sounds, frames):
     seconds = frames / FPS
+    # Raw H.264 has no packet timestamps; FFmpeg input -r generates exact CFR
+    # PTS. The -framerate option can yield 2700000/89999 instead of 30/1.
     command = ["ffmpeg", "-hide_banner", "-nostdin", "-v", "error", "-f", "h264",
-               "-framerate", str(FPS), "-i", str(bitstream)]
+               "-r", str(FPS), "-i", str(bitstream)]
     chains = []
     for index, sound in enumerate(sounds, 1):
         command += ["-ss", f"{sound.source_start:.9f}", "-i", str(sound.path)]
