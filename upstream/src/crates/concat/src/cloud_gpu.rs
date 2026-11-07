@@ -89,6 +89,7 @@ fn run(app: &App, task: Task) {
     .to_string();
     gpu.set_busy(true);
     gpu.set_connection_error(false);
+    gpu.set_metrics_note("".into());
     gpu.set_connection_note(
         if is_save {
             "Saving credentials…"
@@ -108,6 +109,9 @@ fn run(app: &App, task: Task) {
                 let location = event["location"].as_str().unwrap_or_default();
                 gpu.set_connection_note(message.into());
                 gpu.set_connection_error(failed);
+                if let Some(metrics) = event["metrics"].as_str().filter(|s| !s.is_empty()) {
+                    gpu.set_metrics_note(metrics.into());
+                }
                 if is_save && !failed && !location.is_empty() {
                     gpu.set_configured(true);
                     gpu.set_domain(location.into());

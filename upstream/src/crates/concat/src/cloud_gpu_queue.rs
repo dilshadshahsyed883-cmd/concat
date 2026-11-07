@@ -185,6 +185,7 @@ impl Controller {
             attempted: false,
             progress: 0,
             detail: "Preparing a local snapshot.".into(),
+            metrics: String::new(),
             output: String::new(),
         });
         self.save();
@@ -413,6 +414,9 @@ impl Controller {
                     job.progress = progress as i32;
                 }
                 job.detail = detail.clone();
+                if let Some(metrics) = value["metrics"].as_str().filter(|s| !s.is_empty()) {
+                    job.metrics = metrics.into();
+                }
                 if let Some(output) = value["location"].as_str().filter(|value| !value.is_empty()) {
                     job.output = output.into();
                 }
@@ -505,6 +509,7 @@ impl Controller {
                 title: job.label.as_str().into(),
                 state: job.phase.label().into(),
                 detail: job.detail.as_str().into(),
+                metrics: job.metrics.as_str().into(),
                 output: job.output.as_str().into(),
                 progress: job.progress,
                 retry: job.phase.can_retry(),

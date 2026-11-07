@@ -9,6 +9,7 @@ export struct GpuQueueRow {
     title: string,
     state: string,
     detail: string,
+    metrics: string,
     output: string,
     progress: int,
     retry: bool,
@@ -26,6 +27,7 @@ export global CloudGpu {
     in-out property <string> salad-key;
     in-out property <string> renderer-token;
     in property <string> connection-note;
+    in property <string> metrics-note;
     in property <bool> connection-error;
     in property <bool> queue-available;
     in property <bool> queue-started;
@@ -105,12 +107,14 @@ export component CloudGpuPanel inherits VerticalLayout {
                 clicked => { CloudGpu.queue-action("stop", ""); }
             }
         }
+        if CloudGpu.metrics-note != "": Text { text: CloudGpu.metrics-note; color: Theme.fg; wrap: word-wrap; }
         Text { text: CloudGpu.queue-note; color: Theme.fg; wrap: word-wrap; }
 
         for job in CloudGpu.jobs: VerticalLayout {
             spacing: 4px;
             Text { text: job.title + " — " + job.state; color: Theme.fg; wrap: word-wrap; }
             Text { text: job.detail; color: Theme.fg-dim; wrap: word-wrap; }
+            if job.metrics != "": Text { text: job.metrics; color: Theme.fg; wrap: word-wrap; }
             if job.progress > 0 && job.progress < 100: Progress {
                 value: job.progress / 100.0;
             }

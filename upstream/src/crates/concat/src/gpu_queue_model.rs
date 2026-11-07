@@ -56,6 +56,8 @@ pub(crate) struct Job {
     pub attempted: bool,
     pub progress: i32,
     pub detail: String,
+    #[serde(default)]
+    pub metrics: String,
     pub output: String,
 }
 
@@ -119,6 +121,7 @@ mod tests {
             attempted: false,
             progress: 0,
             detail: String::new(),
+            metrics: String::new(),
             output: String::new(),
         }
     }

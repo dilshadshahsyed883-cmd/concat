@@ -148,14 +148,30 @@ function Submit-Zip([string]$zip,[string]$job,[string]$domain,$headers) {
     $done=Invoke-RestMethod -MaximumRedirection 0 -Method Post -Uri "$root/complete" -Headers $headers -TimeoutSec 95
     Report "Salad verified the upload ($($done.state))." 100
 }
-function Report([string]$message,[int]$progress=-1,[string]$location="",[bool]$failed=$false,[string]$phase="") {
+function Report([string]$message,[int]$progress=-1,[string]$location="",[bool]$failed=$false,[string]$phase="",[string]$metrics="") {
     if ($headers) {
         foreach ($secret in @($headers["Salad-Api-Key"],$headers.Authorization.Substring(7))) {
             if ($secret) {$message=$message.Replace($secret,"[redacted]")}
         }
     }
-    [Console]::WriteLine((@{message=$message;progress=$progress;location=$location;failed=$failed;phase=$phase} |
+    [Console]::WriteLine((@{message=$message;progress=$progress;location=$location;failed=$failed;phase=$phase;metrics=$metrics} |
         ConvertTo-Json -Compress))
+}
+
+function Format-RenderMetrics($status) {
+    # Older workers omit the fields; they must remain compatible.
+    if ($null -eq $status.render_time_seconds -or $null -eq $status.average_fps -or
+        $null -eq $status.speed_multiplier) {return ""}
+    try {
+        $seconds=[double]$status.render_time_seconds
+        $fps=[double]$status.average_fps
+        $speed=[double]$status.speed_multiplier
+        if ($seconds -le 0 -or $fps -le 0 -or $speed -le 0 -or
+            [double]::IsNaN($seconds) -or [double]::IsInfinity($seconds) -or
+            [double]::IsNaN($fps) -or [double]::IsInfinity($fps) -or
+            [double]::IsNaN($speed) -or [double]::IsInfinity($speed)) {return ""}
+        return ("Render Time: {0:0.00} s | Average FPS: {1:0.00} | Speed: {2:0.00}x" -f $seconds,$fps,$speed)
+    } catch {return ""}
 }
 
 function Read-Connection([string]$configFile) {
@@ -335,26 +351,27 @@ function Send-Project([string]$root,[string]$gpuDataDir,[string]$domain,$headers
 
 function Queue-Status([string]$job,[string]$domain,$headers,[string]$gpuDataDir) {
     $status=Invoke-RestMethod -MaximumRedirection 0 -Uri "$domain/api/jobs/$job" -Headers $headers -TimeoutSec 20
+    $metrics=Format-RenderMetrics $status
     switch ($status.state) {
-        "queued" {Report "Uploaded. Waiting in the worker queue." 100 "" $false "queued"}
-        "running" {Report "GPU rendering." 100 "" $false "rendering"}
-        "delivering" {Report "Delivering the rendered MP4." 100 "" $false "rendering"}
-        "delivered" {Report "Render delivered and verified." 100 "VPS Cloud Render - $job.mp4" $false "completed"}
+        "queued" {Report "Uploaded. Waiting in the worker queue." 100 "" $false "queued" $metrics}
+        "running" {Report "GPU rendering." 100 "" $false "rendering" $metrics}
+        "delivering" {Report "Delivering the rendered MP4." 100 "" $false "rendering" $metrics}
+        "delivered" {Report "Render delivered and verified." 100 "VPS Cloud Render - $job.mp4" $false "completed" $metrics}
         {$_ -in "rendered","delivery_failed"} {
             Report "Downloading and verifying the MP4." 100
             try {$output=Get-Output $domain $job $status $headers (Join-Path $gpuDataDir "Outputs")}
             catch {
                 if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 404) {
-                    Report "Waiting for the worker to finish delivery." 100 "" $false "rendering"
+                    Report "Waiting for the worker to finish delivery." 100 "" $false "rendering" $metrics
                     return
                 }
                 throw
             }
             if ($status.state -eq "delivery_failed") {
-                Report ("MP4 downloaded. Worker delivery failed: "+[string]$status.error) 100 $output $false "completed"
-            } else {Report "MP4 downloaded and verified." 100 $output $false "completed"}
+                Report ("MP4 downloaded. Worker delivery failed: "+[string]$status.error) 100 $output $false "completed" $metrics
+            } else {Report "MP4 downloaded and verified." 100 $output $false "completed" $metrics}
         }
-        "failed" {Report ("GPU render failed: "+[string]$status.error) 100 "" $true "render_failed"}
+        "failed" {Report ("GPU render failed: "+[string]$status.error) 100 "" $true "render_failed" $metrics}
         default {throw "The worker returned an unknown render state."}
     }
 }
