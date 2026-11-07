@@ -201,21 +201,60 @@ def mux(bitstream, output, sounds, frames):
 
 
 def verify(output, frames, has_audio):
-    streams = json.loads(invoke(["ffprobe", "-v", "error", "-show_streams",
-                                 "-of", "json", str(output)], timeout=60))["streams"]
-    video = next((stream for stream in streams if stream["codec_type"] == "video"), {})
-    if (video.get("codec_name"), video.get("width"), video.get("height"),
-            video.get("avg_frame_rate"), int(video.get("nb_frames", 0))) != (
-                "h264", WIDTH, HEIGHT, "30/1", frames):
-        raise RuntimeError("Rendered MP4 failed codec, resolution, frame-rate or frame-count verification")
+    # Count demuxed packets without CPU video decoding. MP4 metadata can omit
+    # nb_frames or express an exact 30 fps rate as an equivalent fraction.
+    streams = json.loads(invoke(["ffprobe", "-v", "error", "-count_packets",
+                                 "-show_streams", "-of", "json", str(output)],
+                                timeout=60))["streams"]
+    video = next((stream for stream in streams if stream.get("codec_type") == "video"), {})
+
+    def frame_count(field):
+        value = video.get(field)
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            return None
+
+    counts = {name: frame_count(name) for name in ("nb_frames", "nb_read_packets")
+              if frame_count(name) is not None}
+    try:
+        actual_rate = Fraction(str(video.get("avg_frame_rate", "0/0")))
+    except (ValueError, ZeroDivisionError):
+        actual_rate = None
+
+    expected = {"codec_name": "h264", "width": WIDTH, "height": HEIGHT,
+                "fps": str(FPS), "frames": frames}
+    actual = {"codec_name": video.get("codec_name"),
+              "width": video.get("width"), "height": video.get("height"),
+              "avg_frame_rate": video.get("avg_frame_rate"),
+              "r_frame_rate": video.get("r_frame_rate"),
+              "nb_frames": video.get("nb_frames"),
+              "nb_read_packets": video.get("nb_read_packets"),
+              "duration": video.get("duration")}
+    correct = (video.get("codec_name") == "h264"
+               and video.get("width") == WIDTH
+               and video.get("height") == HEIGHT
+               and actual_rate == FPS
+               and bool(counts)
+               and all(value == frames for value in counts.values()))
+    if not correct:
+        raise RuntimeError("Rendered MP4 video verification failed: expected "
+                           + json.dumps(expected, sort_keys=True)
+                           + "; actual " + json.dumps(actual, sort_keys=True))
     if abs(float(video["duration"]) - frames/FPS) > 1/FPS:
-        raise RuntimeError("Rendered MP4 has an incorrect video duration")
+        raise RuntimeError("Rendered MP4 duration verification failed: expected "
+                           + str(frames/FPS) + " seconds; actual "
+                           + str(video.get("duration")))
     if has_audio:
-        audio = next((stream for stream in streams if stream["codec_type"] == "audio"), {})
+        audio = next((stream for stream in streams if stream.get("codec_type") == "audio"), {})
         if (audio.get("codec_name") != "aac"
                 or abs(float(audio["duration"]) - frames/FPS) > 1/FPS
                 or abs(float(audio["start_time"]) - float(video["start_time"])) > 1/FPS):
-            raise RuntimeError("Rendered MP4 failed audio duration or start-time verification")
+            raise RuntimeError("Rendered MP4 audio verification failed: "
+                               + json.dumps({"codec_name": audio.get("codec_name"),
+                                             "start_time": audio.get("start_time"),
+                                             "duration": audio.get("duration")},
+                                            sort_keys=True))
 
 
 def render_project(project, output, log=lambda message: print(message, file=sys.stderr, flush=True)):
