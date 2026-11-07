@@ -21,8 +21,6 @@ jobs:
     env:
       ORT_VERSION: 1.28.0
       GGML_NATIVE: "OFF"
-      GGML_BACKEND_DL: "ON"
-      GGML_CPU_ALL_VARIANTS: "ON"
       GGML_AVX2: "OFF"
       GGML_FMA: "OFF"
       GGML_F16C: "OFF"
@@ -116,10 +114,13 @@ jobs:
           workspaces: upstream/src
           key: windows-concat-quick-v028
           cache-on-failure: true
-          env-vars: CARGO CC CFLAGS CXX CMAKE RUST GGML ORT
+          env-vars: CARGO CC CFLAGS CXX CMAKE RUST ORT
       - name: Compile modified original Concat GUI from source
         env:
           CARGO_INCREMENTAL: '1'
+          # The unoptimized GUI retains Whisper symbols only present in its static CPU library.
+          GGML_BACKEND_DL: "OFF"
+          GGML_CPU_ALL_VARIANTS: "OFF"
         working-directory: upstream/src
         timeout-minutes: 95
         shell: pwsh
@@ -136,10 +137,6 @@ jobs:
           Copy-Item "$env:FFMPEG_DIR\bin\*.dll" $out
           Copy-Item "$env:SHERPA_DLL_DIR\*.dll" $out
           Copy-Item "$env:ORT_DIR\lib\*.dll" $out
-          $built=Get-ChildItem "upstream\src\target\x86_64-pc-windows-msvc\quick\build\whisper-rs-sys-*\out\bin\ggml-cpu-x64.dll" |
-            Sort-Object LastWriteTime -Descending | Select-Object -First 1
-          if (-not $built) { throw "Whisper multi-CPU DLLs not built" }
-          Copy-Item "$($built.DirectoryName)\whisper.dll", "$($built.DirectoryName)\ggml*.dll" $out
           Copy-Item "upstream\LICENSE", "upstream\THIRD_PARTY_NOTICES.md" $out
           Copy-Item "README.md" $out
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
