@@ -171,8 +171,11 @@ def tempo(speed):
 
 def mux(bitstream, output, sounds, frames):
     seconds = frames / FPS
+    # Raw H.264 carries no packet PTS. Use the input -r option so FFmpeg
+    # generates exactly FPS timestamps; -framerate leaves MP4 avg_frame_rate
+    # as a slightly off rational (e.g. 2700000/89999 instead of 30/1).
     command = ["ffmpeg", "-hide_banner", "-nostdin", "-v", "error", "-f", "h264",
-               "-framerate", str(FPS), "-i", str(bitstream)]
+               "-r", str(FPS), "-i", str(bitstream)]
     chains = []
     for index, sound in enumerate(sounds, 1):
         command += ["-ss", f"{sound.source_start:.9f}", "-i", str(sound.path)]
@@ -204,10 +207,15 @@ def verify(output, frames, has_audio):
     streams = json.loads(invoke(["ffprobe", "-v", "error", "-show_streams",
                                  "-of", "json", str(output)], timeout=60))["streams"]
     video = next((stream for stream in streams if stream["codec_type"] == "video"), {})
-    if (video.get("codec_name"), video.get("width"), video.get("height"),
-            video.get("avg_frame_rate"), int(video.get("nb_frames", 0))) != (
-                "h264", WIDTH, HEIGHT, "30/1", frames):
-        raise RuntimeError("Rendered MP4 failed codec, resolution, frame-rate or frame-count verification")
+    observed = (video.get("codec_name"), video.get("width"), video.get("height"),
+                video.get("avg_frame_rate"), video.get("nb_frames"))
+    expected = ("h264", WIDTH, HEIGHT, "30/1", str(frames))
+    if observed != expected:
+        raise RuntimeError(
+            "Rendered MP4 failed codec, resolution, frame-rate or frame-count verification: "
+            f"expected {expected!r}, observed {observed!r}; "
+            f"r_frame_rate={video.get('r_frame_rate')!r}, duration={video.get('duration')!r}"
+        )
     if abs(float(video["duration"]) - frames/FPS) > 1/FPS:
         raise RuntimeError("Rendered MP4 has an incorrect video duration")
     if has_audio:
