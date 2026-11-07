@@ -2,8 +2,11 @@
 # Embedded in the actual Concat Windows EXE. No additional desktop editor.
 # Use only the existing SaladCloud Gateway and existing VPS receiver.
 param(
-    [ValidateSet("Submit","Save","Test")][string]$Operation="Submit",
+    [ValidateSet("Submit","Save","Test","Prepare","Upload","Status")][string]$Operation="Submit",
     [string]$ProjectDir,
+    [string]$Job,
+    [string]$SnapshotID,
+    [string]$JobDomain,
     [switch]$BundleOnly,
     [string]$BundlePath,
     [switch]$DefineOnly
@@ -33,9 +36,10 @@ function Gateway([string]$raw) {
     }
     return $value
 }
-function Concat-Bundle([string]$dir,[string]$zip) {
+function Concat-Bundle([string]$dir,[string]$zip,[string]$snapshot="") {
     $manifest=Join-Path $dir "concat.json"
     if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { $manifest=Join-Path $dir "wolfcut.json" }
+    if ($snapshot) {$manifest=$snapshot}
     if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { throw "No saved Concat project (concat.json)" }
     $project=Get-Content -LiteralPath $manifest -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($null -eq $project.media) { throw "Concat document has no media table" }
@@ -144,13 +148,13 @@ function Submit-Zip([string]$zip,[string]$job,[string]$domain,$headers) {
     $done=Invoke-RestMethod -MaximumRedirection 0 -Method Post -Uri "$root/complete" -Headers $headers -TimeoutSec 95
     Report "Salad verified the upload ($($done.state))." 100
 }
-function Report([string]$message,[int]$progress=-1,[string]$location="",[bool]$failed=$false) {
+function Report([string]$message,[int]$progress=-1,[string]$location="",[bool]$failed=$false,[string]$phase="") {
     if ($headers) {
         foreach ($secret in @($headers["Salad-Api-Key"],$headers.Authorization.Substring(7))) {
             if ($secret) {$message=$message.Replace($secret,"[redacted]")}
         }
     }
-    [Console]::WriteLine((@{message=$message;progress=$progress;location=$location;failed=$failed} |
+    [Console]::WriteLine((@{message=$message;progress=$progress;location=$location;failed=$failed;phase=$phase} |
         ConvertTo-Json -Compress))
 }
 
@@ -329,6 +333,32 @@ function Send-Project([string]$root,[string]$gpuDataDir,[string]$domain,$headers
     throw "GPU job timed out. Send the same saved project to resume status checking."
 }
 
+function Queue-Status([string]$job,[string]$domain,$headers,[string]$gpuDataDir) {
+    $status=Invoke-RestMethod -MaximumRedirection 0 -Uri "$domain/api/jobs/$job" -Headers $headers -TimeoutSec 20
+    switch ($status.state) {
+        "queued" {Report "Uploaded. Waiting in the worker queue." 100 "" $false "queued"}
+        "running" {Report "GPU rendering." 100 "" $false "rendering"}
+        "delivering" {Report "Delivering the rendered MP4." 100 "" $false "rendering"}
+        "delivered" {Report "Render delivered and verified." 100 "VPS Cloud Render - $job.mp4" $false "completed"}
+        {$_ -in "rendered","delivery_failed"} {
+            Report "Downloading and verifying the MP4." 100
+            try {$output=Get-Output $domain $job $status $headers (Join-Path $gpuDataDir "Outputs")}
+            catch {
+                if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 404) {
+                    Report "Waiting for the worker to finish delivery." 100 "" $false "rendering"
+                    return
+                }
+                throw
+            }
+            if ($status.state -eq "delivery_failed") {
+                Report ("MP4 downloaded. Worker delivery failed: "+[string]$status.error) 100 $output $false "completed"
+            } else {Report "MP4 downloaded and verified." 100 $output $false "completed"}
+        }
+        "failed" {Report ("GPU render failed: "+[string]$status.error) 100 "" $true "render_failed"}
+        default {throw "The worker returned an unknown render state."}
+    }
+}
+
 if ($DefineOnly) {return}
 if ($BundleOnly) {
     if (!$BundlePath) {throw "Offline bundle test requires -BundlePath"}
@@ -340,15 +370,46 @@ $headers=$null
 try {
     if (!$env:LOCALAPPDATA) {throw "Windows did not provide a local application data directory."}
     $gpuDataDir=Join-Path $env:LOCALAPPDATA "Concat\GPU"
+    if ($Operation -in "Prepare","Upload","Status") {
+        if ($Job -cnotmatch '^concat-cuda-[a-f0-9]{16}$' -or
+            $SnapshotID -cnotmatch '^concat-cuda-[a-f0-9]{16}$') {throw "Invalid queue job identifier."}
+        $queueDir=Join-Path $gpuDataDir "Queue"
+        $zip=Join-Path $queueDir ($SnapshotID+".zip")
+        if ($Operation -eq "Prepare") {
+            if (!(Test-Path -LiteralPath $zip)) {
+                $stage=$zip+"."+[Guid]::NewGuid().ToString("N")+".part"
+                $manifest=Join-Path (Join-Path $queueDir $SnapshotID) "concat.json"
+                try {
+                    Concat-Bundle (Resolve-Path -LiteralPath $ProjectDir).ProviderPath $stage $manifest
+                    [IO.File]::Move($stage,$zip)
+                } finally {Remove-Item -LiteralPath $stage -ErrorAction SilentlyContinue}
+            }
+            Report "Project snapshot ready." 0 "" $false "prepared"
+            return
+        }
+    }
     $configFile=Join-Path $gpuDataDir "connection.json"
     $saved=Read-Connection $configFile
     $draft=$null
-    if ($Operation -ne "Submit") {
+    if ($Operation -in "Save","Test") {
         $draft=[Console]::In.ReadToEnd() | ConvertFrom-Json
         if (!$draft) {throw "GPU settings were not provided."}
     }
     $config=Resolve-Connection $saved $draft
     $headers=New-ConnectionHeaders $config
+    if ($Operation -in "Upload","Status") {
+        if ($config.domain -ne $JobDomain) {throw "Restore the saved worker address for this job before resuming."}
+        if ($Operation -eq "Upload") {
+            Report "Checking the worker before uploading." 0
+            Test-Worker $config.domain $headers
+            Report "Uploading the saved snapshot." 0 "" $false "attempted"
+            Submit-Zip $zip $Job $config.domain $headers
+            Report "Upload verified. Waiting for GPU rendering." 100 "" $false "uploaded"
+        } else {
+            Queue-Status $Job $config.domain $headers $gpuDataDir
+        }
+        return
+    }
     if ($Operation -eq "Save") {
         New-Item -ItemType Directory -Force -Path $gpuDataDir | Out-Null
         Save-Connection $config $configFile
@@ -361,6 +422,11 @@ try {
     }
 } catch {
     $message=$_.Exception.Message
+    $phase=""
+    if ($Operation -in "Upload","Status" -and $_.Exception -is [Net.WebException] -and
+        (!$_.Exception.Response -or [int]$_.Exception.Response.StatusCode -in 502,503,504)) {
+        $phase="offline"
+    }
     if ($_.Exception.Response) {
         $code=[int]$_.Exception.Response.StatusCode
         $message=switch ($code) {
@@ -371,6 +437,6 @@ try {
             default {"The Salad request failed (HTTP $code). Check the worker logs."}
         }
     }
-    Report $message -1 "" $true
+    Report $message -1 "" $true $phase
     exit 1
 }

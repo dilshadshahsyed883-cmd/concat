@@ -89,6 +89,7 @@ pub(super) fn apply(
             let start = start.max(0.0);
             let total: f64 = items.iter().map(clip_length).sum();
             let timeline = project.active_mut();
+            let free_range = track_id.is_none();
             let track_id = match track_id {
                 Some(id) if timeline.track(&id).is_none() => return Err(CommandError::TrackGone),
                 Some(id) => id,
@@ -100,6 +101,8 @@ pub(super) fn apply(
             for media in &items {
                 let place = if ripple {
                     ripple_room_for(timeline, &track_id, at, media)
+                } else if free_range {
+                    at
                 } else {
                     timeline.nearest_free_start(&track_id, at, clip_length(media), &[])
                 };

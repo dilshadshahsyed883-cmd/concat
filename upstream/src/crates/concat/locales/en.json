@@ -909,5 +909,11 @@
   "cloudGpu.save": "Save Settings",
   "cloudGpu.test": "Test Connection",
   "cloudGpu.job": "GPU Job Status",
-  "cloudGpu.jobHint": "Use File → Send to GPU (CUDA) to submit the saved project."
+  "cloudGpu.jobHint": "Use File → Send to GPU (CUDA) to submit the saved project.",
+  "mediaBin.insertAtPlayhead": "Insert at Playhead",
+  "cloudGpu.queue": "GPU Render Queue",
+  "cloudGpu.queueHint": "File → Send to GPU (CUDA) adds a job. Start Queue begins uploading. Cancel applies to jobs that have not been submitted.",
+  "cloudGpu.queueStart": "Start Queue",
+  "cloudGpu.queueStop": "Stop Queue",
+  "cloudGpu.queueRetry": "Retry"
 }

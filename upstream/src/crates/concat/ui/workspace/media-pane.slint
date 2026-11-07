@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
 
+import { Button } from "../primitives/modal.slint";
 import { I18n } from "../i18n.slint";
 import { Theme, Fmt, Glyph, Icon, Payload, Tip } from "../primitives/primitives.slint";
 import { Pane, PaneScroll } from "pane.slint";
@@ -441,7 +442,7 @@ export component MediaCard inherits Rectangle {
     opacity: drag.dragging ? 0.45 : 1.0;
 
     /// modifier-held click: add to or remove from the selection
-    callback clicked(additive: bool);
+    callback clicked(additive: bool, range: bool);
     /// double click: put it on the timeline at the playhead
     callback activated();
     callback removed();
@@ -460,6 +461,7 @@ export component MediaCard inherits Rectangle {
 
     /// modifier state at the moment of the press — `clicked` does not carry it
     property <bool> additive;
+    property <bool> range;
 
     // The whole card is the drag handle: dragging one onto the timeline is
     // how material gets into an edit. The DragArea only intercepts once the
@@ -501,12 +503,12 @@ export component MediaCard inherits Rectangle {
                     return;
                 }
                 if (event.kind == PointerEventKind.down) {
-                    root.additive = event.modifiers.shift || event.modifiers.control
-                        || event.modifiers.meta;
+                    root.range = event.modifiers.shift;
+                    root.additive = event.modifiers.control || event.modifiers.meta;
                 }
             }
             clicked => {
-                root.clicked(root.additive);
+                root.clicked(root.additive, root.range);
             }
             double-clicked => {
                 root.activated();
@@ -675,7 +677,7 @@ export component MediaCard inherits Rectangle {
 // `grid-cols-[repeat(auto-fill,minmax(88px,1fr))]`, arithmetic instead of a
 // layout: Slint has no auto-fill grid, and a GridLayout wants its cells named
 // at compile time, which a model cannot do.
-component MediaGrid inherits Rectangle {
+component MediaGrid inherits FocusScope {
     in property <[MediaItemData]> items;
     /// A floor under the grid's own height, so the empty page below the last
     /// row still belongs to it.
@@ -687,7 +689,17 @@ component MediaGrid inherits Rectangle {
     /// most of one is empty. This is the bin's version of that empty lane.
     in property <length> page-floor;
 
-    callback clicked(id: int, additive: bool);
+    callback clicked(id: int, additive: bool, range: bool);
+    callback select-all();
+    focus-on-tab-navigation: false;
+    key-pressed(event) => {
+        if ((event.modifiers.control || event.modifiers.meta) && !event.modifiers.alt
+            && (event.text == "a" || event.text == "A")) {
+            root.select-all();
+            return accept;
+        }
+        return reject;
+    }
     callback activated(id: int);
     callback removed(id: int);
     /// Right-click on a card. Rust fills the menu and bumps `menu-token`;
@@ -788,6 +800,7 @@ component MediaGrid inherits Rectangle {
         pointer-event(event) => {
             if (event.kind == PointerEventKind.down) {
                 root.pressed();
+                root.focus();
                 self.additive = event.modifiers.shift;
                 self.from-x = self.mouse-x;
                 self.from-y = self.mouse-y;
@@ -822,8 +835,9 @@ component MediaGrid inherits Rectangle {
         height: root.card-h;
         item: entry;
 
-        clicked(additive) => {
-            root.clicked(entry.id, additive);
+        clicked(additive, range) => {
+            root.clicked(entry.id, additive, range);
+            root.focus();
         }
         activated => {
             root.activated(entry.id);
@@ -1721,7 +1735,9 @@ export component MediaPane inherits Rectangle {
     callback sort-changed(index: int);
     /// A press on the bin's floor; see Editor.blur.
     callback floor-pressed();
-    callback select(id: int, additive: bool);
+    callback select(id: int, additive: bool, range: bool);
+    callback select-all();
+    callback add-selected(at-playhead: bool);
     /// A marquee closed over the card grid — see MediaGrid.band-selected.
     callback band-selected(columns: int, from-col: int, to-col: int,
         from-row: int, to-row: int, additive: bool);
@@ -2420,6 +2436,21 @@ export component MediaPane inherits Rectangle {
 
                 // Only worth a row when a multiple selection exists — one
                 // selected card is deleted from the card itself.
+                if root.tab == 0 && root.selected-count > 0: HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    padding-bottom: 8px;
+                    spacing: 4px;
+                    Button {
+                        label: I18n.t("studio.addSelectedToTimeline");
+                        clicked => { root.add-selected(false); }
+                    }
+                    Button {
+                        label: I18n.t("mediaBin.insertAtPlayhead");
+                        clicked => { root.add-selected(true); }
+                    }
+                }
+
                 if root.tab == 0 && root.selected-count > 1: HorizontalLayout {
                     padding-left: 8px;
                     padding-right: 8px;
@@ -2504,7 +2535,8 @@ export component MediaPane inherits Rectangle {
                         menu-token: root.menu-token;
 
                         pressed => { root.floor-pressed(); }
-                        clicked(id, additive) => { root.select(id, additive); }
+                        clicked(id, additive, range) => { root.select(id, additive, range); }
+                        select-all => { root.select-all(); }
                         activated(id) => { root.activate(id); }
                         removed(id) => { root.remove(id); }
                         context(id) => { root.context(id); }

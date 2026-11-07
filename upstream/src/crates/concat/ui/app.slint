@@ -22,7 +22,7 @@ import { EffectData } from "demo/effects-panel.slint";
 import { MediaFilter, MediaItemData, MediaKind, SourcePreview, TextPresetData } from "workspace/media-pane.slint";
 import { SoundCardData, Sounds, VoiceCardData } from "workspace/audio-page.slint";
 import { ContextMenu, MenuItemData, MenuRow } from "primitives/context-menu.slint";
-import { CloudGpu } from "dialogs/cloud-gpu.slint";
+import { CloudGpu, GpuQueueRow } from "dialogs/cloud-gpu.slint";
 import { ExportData, ExportDialog, ExportPhase } from "dialogs/export.slint";
 import { ModelData, SettingsData, SettingsDialog, SystemFactData } from "dialogs/settings.slint";
 import { ProjectDialog, ProjectSheetData } from "dialogs/project.slint";
@@ -57,7 +57,7 @@ import {
 import { KeyEditor, KeyMarkData, KeyRowData } from "workspace/keyframes-pane.slint";
 
 export {
-    Curves, Fmt, Focus, Payload, Theme, Bezier, Editor, I18n, CloudGpu,
+    Curves, Fmt, Focus, Payload, Theme, Bezier, Editor, I18n, CloudGpu, GpuQueueRow,
     AppliedEntryData, AppliedParamData, CatalogueEntryData, Library, LibraryViewData, ParamFormat,
     DockDivider, DockSide, PaneKind, SeatBox,
     EffectData, FontSearch, Meters, MediaFilter, MediaItemData, MediaKind, SourcePreview, TextPresetData,

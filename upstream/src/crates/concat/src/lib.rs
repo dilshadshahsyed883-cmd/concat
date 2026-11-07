@@ -795,8 +795,14 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     editor.on_media_sort_changed(on_window!(|state, index: i32| {
         state.handle(Msg::Media(MediaMsg::SortChanged(index)));
     }));
-    editor.on_media_select(on_window!(|state, row: i32, additive: bool| {
-        state.handle(Msg::Media(MediaMsg::Select { row, additive }));
+    editor.on_media_select(on_window!(|state, row: i32, additive: bool, range: bool| {
+        state.handle(Msg::Media(MediaMsg::Select { row, additive, range }));
+    }));
+    editor.on_media_select_all(on_window!(|state| {
+        state.handle(Msg::Media(MediaMsg::SelectAllVisible));
+    }));
+    editor.on_media_add_selected(on_window!(|state, at_playhead: bool| {
+        state.handle(Msg::Media(MediaMsg::AddSelected { at_playhead }));
     }));
     editor.on_media_band_selected(on_window!(
         |state,
@@ -1722,7 +1728,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     }));
 
     #[cfg(windows)]
-    cloud_gpu::wire(&app);
+    let _gpu_queue_timer = cloud_gpu::wire(&app);
 
     // ── the dialogs ──
     app.on_export_clicked(on_window!(|state| {
@@ -2106,7 +2112,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                     let mut state = shell.studio.borrow_mut();
                     state.open_menu = -1;
                     match action.as_str() {
-                        "add-selected" => state.handle(Msg::Media(MediaMsg::AddSelectedAtPlayhead)),
+                        "add-selected" => state.handle(Msg::Media(MediaMsg::AddSelected { at_playhead: false })),
                         // The launch screen's own verb, from the menu bar:
                         // the picker, the check and the notice are all one
                         // implementation in panes/start.rs, so the two

@@ -35,6 +35,7 @@ pub enum MediaMsg {
     Select {
         row: i32,
         additive: bool,
+        range: bool,
     },
     /// A marquee closed over the grid: the block of cells it caught.
     Band {
@@ -52,7 +53,10 @@ pub enum MediaMsg {
     /// The import's worker is done probing.
     Imported(Vec<Result<MediaSummary, String>>),
     /// Everything selected goes on the timeline at the playhead.
-    AddSelectedAtPlayhead,
+    SelectAllVisible,
+    AddSelected {
+        at_playhead: bool,
+    },
 }
 
 /// The bin's state.
@@ -63,6 +67,7 @@ pub struct MediaBin {
     rows: HashMap<String, i32>,
     next_row: i32,
     pub selected: HashSet<String>,
+    anchor: Option<String>,
     pub filter: MediaFilter,
     /// 0 = Added, 1 = Name, 2 = Kind
     pub sort: usize,
@@ -81,6 +86,7 @@ impl Default for MediaBin {
             rows: HashMap::new(),
             next_row: 1,
             selected: HashSet::new(),
+            anchor: None,
             filter: MediaFilter::All,
             sort: 0,
             thumbs: HashMap::new(),
@@ -96,17 +102,42 @@ impl MediaBin {
         match msg {
             MediaMsg::FilterChanged(filter) => self.filter = filter,
             MediaMsg::SortChanged(index) => self.sort = (index.max(0) as usize).min(2),
-            MediaMsg::Select { row, additive } => {
+            MediaMsg::Select {
+                row,
+                additive,
+                range,
+            } => {
                 let Some(id) = self
                     .by_row(studio.project(), row)
                     .map(|item| item.id.clone())
                 else {
                     return;
                 };
-                self.select(id.clone(), additive);
+                if range {
+                    let visible = self.visible(studio.project());
+                    let to = visible.iter().position(|item| item.id == id);
+                    let from = self
+                        .anchor
+                        .as_ref()
+                        .and_then(|anchor| visible.iter().position(|item| &item.id == anchor));
+                    if let (Some(from), Some(to)) = (from, to) {
+                        if !additive {
+                            self.selected.clear();
+                        }
+                        self.selected.extend(
+                            visible[from.min(to)..=from.max(to)]
+                                .iter()
+                                .map(|item| item.id.clone()),
+                        );
+                    } else {
+                        self.select(id.clone(), additive);
+                    }
+                } else {
+                    self.select(id.clone(), additive);
+                }
                 // A plain click shows a picture on the monitor, or plays a
                 // sound, without putting it on the timeline.
-                if !additive {
+                if !additive && !range {
                     studio.preview_media(&id, row);
                 }
             }
@@ -189,19 +220,33 @@ impl MediaBin {
                     );
                 }
             }
-            MediaMsg::AddSelectedAtPlayhead => {
-                // Onto the timeline: the monitor goes back to it.
-                studio.close_source();
-                let ids: Vec<String> = studio
-                    .project()
-                    .media
-                    .iter()
+            MediaMsg::SelectAllVisible => {
+                let visible = self.visible(studio.project());
+                self.anchor = visible.first().map(|item| item.id.clone());
+                self.selected = visible.iter().map(|item| item.id.clone()).collect();
+            }
+            MediaMsg::AddSelected { at_playhead } => {
+                let mut selected: Vec<_> = self
+                    .visible(studio.project())
+                    .into_iter()
                     .filter(|item| self.selected.contains(&item.id))
-                    .map(|item| item.id.clone())
                     .collect();
-                // One after another on one lane, as one step - not each at
-                // the playhead on a lane of its own, which stacked them.
-                let start = f64::from(studio.playhead.max(0.0));
+                selected.sort_by(|a, b| natural_name(&a.name, &b.name));
+                let ids: Vec<_> = selected.into_iter().map(|item| item.id.clone()).collect();
+                if ids.is_empty() {
+                    return;
+                }
+                let start = if at_playhead {
+                    f64::from(studio.playhead.max(0.0))
+                } else {
+                    studio
+                        .timeline()
+                        .clips
+                        .iter()
+                        .map(|clip| clip.start + clip.duration)
+                        .fold(0.0_f64, f64::max)
+                };
+                studio.close_source();
                 studio.apply(Command::AddClipsInSequence {
                     media_ids: ids,
                     track_id: None,
@@ -252,6 +297,7 @@ impl MediaBin {
 
     /// A click: the one card, or toggled into what is held.
     fn select(&mut self, id: String, additive: bool) {
+        self.anchor = Some(id.clone());
         if additive {
             if !self.selected.remove(&id) {
                 self.selected.insert(id);
@@ -279,10 +325,7 @@ impl MediaBin {
         } else {
             HashSet::new()
         };
-        for item in &project.media {
-            if !Self::shows(self.filter, item) {
-                continue;
-            }
+        for item in self.visible(project) {
             let (row, col) = (cell / columns.max(1), cell % columns.max(1));
             if row >= from_row && row <= to_row && col >= from_col && col <= to_col {
                 next.insert(item.id.clone());
@@ -302,7 +345,7 @@ impl MediaBin {
         match self.sort {
             // Added: the import order, as the document keeps it.
             0 => {}
-            1 => visible.sort_by_key(|item| item.name.to_lowercase()),
+            1 => visible.sort_by(|a, b| natural_name(&a.name, &b.name)),
             // Video, then audio, then stills; each by name.
             2 => visible.sort_by(|a, b| {
                 let rank = |kind: model::MediaKind| match kind {
@@ -312,7 +355,7 @@ impl MediaBin {
                 };
                 rank(a.kind)
                     .cmp(&rank(b.kind))
-                    .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+                    .then_with(|| natural_name(&a.name, &b.name))
             }),
             _ => {}
         }
@@ -366,6 +409,40 @@ impl MediaBin {
             })
             .collect()
     }
+}
+
+/// Compare digit runs by value without parsing them into a bounded integer.
+fn natural_name(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let mut left = a.as_bytes();
+    let mut right = b.as_bytes();
+    while let (Some(&x), Some(&y)) = (left.first(), right.first()) {
+        if x.is_ascii_digit() && y.is_ascii_digit() {
+            let xl = left.iter().take_while(|c| c.is_ascii_digit()).count();
+            let yl = right.iter().take_while(|c| c.is_ascii_digit()).count();
+            let x_value = &left[..xl];
+            let y_value = &right[..yl];
+            let x_value = &x_value[x_value.iter().take_while(|c| **c == b'0').count()..];
+            let y_value = &y_value[y_value.iter().take_while(|c| **c == b'0').count()..];
+            let order = x_value
+                .len()
+                .cmp(&y_value.len())
+                .then_with(|| x_value.cmp(y_value));
+            if order != Ordering::Equal {
+                return order;
+            }
+            left = &left[xl..];
+            right = &right[yl..];
+        } else {
+            let order = x.to_ascii_lowercase().cmp(&y.to_ascii_lowercase());
+            if order != Ordering::Equal {
+                return order;
+            }
+            left = &left[1..];
+            right = &right[1..];
+        }
+    }
+    left.len().cmp(&right.len()).then_with(|| a.cmp(b))
 }
 
 /// The document's kind as the card's.

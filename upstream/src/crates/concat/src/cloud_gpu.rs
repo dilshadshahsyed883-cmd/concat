@@ -12,13 +12,19 @@ use slint::ComponentHandle;
 
 use crate::ui::{App, CloudGpu};
 
+#[path = "cloud_gpu_queue.rs"]
+mod queue;
+
 pub(crate) const SETTINGS_PAGE: i32 = 8;
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 enum Task {
     Save,
     Test,
-    Submit(String),
+    Queue {
+        operation: &'static str,
+        job: queue::Job,
+    },
 }
 
 impl Task {
@@ -26,12 +32,12 @@ impl Task {
         match self {
             Self::Save => "Save",
             Self::Test => "Test",
-            Self::Submit(_) => "Submit",
+            Self::Queue { operation, .. } => operation,
         }
     }
 }
 
-pub(crate) fn wire(app: &App) {
+pub(crate) fn wire(app: &App) -> slint::Timer {
     let gpu = app.global::<CloudGpu>();
     gpu.set_available(true);
     let saved = std::env::var_os("LOCALAPPDATA")
@@ -58,23 +64,15 @@ pub(crate) fn wire(app: &App) {
             run(&app, Task::Test);
         }
     });
+    queue::wire(app)
 }
 
 pub(crate) fn can_submit(app: &App) -> bool {
-    let gpu = app.global::<CloudGpu>();
-    if gpu.get_busy() {
-        return false;
-    }
-    if !gpu.get_configured() {
-        gpu.set_connection_error(true);
-        gpu.set_connection_note("Save your Salad connection in GPU Config first.".into());
-        return false;
-    }
-    true
+    app.global::<CloudGpu>().get_queue_available()
 }
 
 pub(crate) fn submit(app: &App, path: String) {
-    run(app, Task::Submit(path));
+    app.global::<CloudGpu>().invoke_queue_add(path.into());
 }
 
 fn run(app: &App, task: Task) {
@@ -82,75 +80,47 @@ fn run(app: &App, task: Task) {
     if gpu.get_busy() {
         return;
     }
-    let is_job = matches!(task, Task::Submit(_));
     let is_save = matches!(task, Task::Save);
-    let mut draft = (!is_job).then(|| {
-        json!({
-            "domain": gpu.get_domain().as_str(),
-            "salad": gpu.get_salad_key().as_str(),
-            "renderer": gpu.get_renderer_token().as_str(),
-        })
-        .to_string()
-    });
+    let draft = json!({
+        "domain": gpu.get_domain().as_str(),
+        "salad": gpu.get_salad_key().as_str(),
+        "renderer": gpu.get_renderer_token().as_str(),
+    })
+    .to_string();
     gpu.set_busy(true);
-    if is_job {
-        gpu.set_job_note("Preparing the saved project.".into());
-        gpu.set_job_error(false);
-        gpu.set_output_location("".into());
-        gpu.set_progress(-1);
-    } else {
-        gpu.set_connection_error(false);
-        gpu.set_connection_note(
-            if is_save {
-                "Saving credentials…"
-            } else {
-                "Testing connection…"
-            }
-            .into(),
-        );
-    }
+    gpu.set_connection_error(false);
+    gpu.set_connection_note(
+        if is_save {
+            "Saving credentials…"
+        } else {
+            "Testing connection…"
+        }
+        .into(),
+    );
 
     let weak = app.as_weak();
     std::thread::spawn(move || {
-        let result = run_script(&task, draft.take(), |event| {
+        let result = run_script(&task, Some(draft), |event| {
             let _ = weak.upgrade_in_event_loop(move |app| {
                 let gpu = app.global::<CloudGpu>();
                 let message = event["message"].as_str().unwrap_or_default();
                 let failed = event["failed"].as_bool().unwrap_or(false);
                 let location = event["location"].as_str().unwrap_or_default();
-                if is_job {
-                    gpu.set_job_note(message.into());
-                    gpu.set_job_error(failed);
-                    if let Some(progress) =
-                        event["progress"].as_i64().filter(|p| (0..=100).contains(p))
-                    {
-                        gpu.set_progress(progress as i32);
-                    }
-                    if !location.is_empty() {
-                        gpu.set_output_location(location.into());
-                    }
-                } else {
-                    gpu.set_connection_note(message.into());
-                    gpu.set_connection_error(failed);
-                    if is_save && !failed && !location.is_empty() {
-                        gpu.set_configured(true);
-                        gpu.set_domain(location.into());
-                        gpu.set_salad_key("".into());
-                        gpu.set_renderer_token("".into());
-                    }
+                gpu.set_connection_note(message.into());
+                gpu.set_connection_error(failed);
+                if is_save && !failed && !location.is_empty() {
+                    gpu.set_configured(true);
+                    gpu.set_domain(location.into());
+                    gpu.set_salad_key("".into());
+                    gpu.set_renderer_token("".into());
                 }
             });
         });
         let _ = weak.upgrade_in_event_loop(move |app| {
             let gpu = app.global::<CloudGpu>();
             if let Err(error) = result {
-                if is_job {
-                    gpu.set_job_note(error.into());
-                    gpu.set_job_error(true);
-                } else {
-                    gpu.set_connection_note(error.into());
-                    gpu.set_connection_error(true);
-                }
+                gpu.set_connection_note(error.into());
+                gpu.set_connection_error(true);
             }
             gpu.set_busy(false);
         });
@@ -201,8 +171,13 @@ fn run_script(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
-    if let Task::Submit(project) = task {
-        command.arg("-ProjectDir").arg(project);
+    if let Task::Queue { operation, job } = task {
+        command.args(["-Job", &job.remote, "-SnapshotID", &job.id]);
+        if *operation == "Prepare" {
+            command.args(["-ProjectDir", &job.project]);
+        } else {
+            command.args(["-JobDomain", &job.domain]);
+        }
     }
     let mut child = command
         .spawn()

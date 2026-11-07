@@ -2,7 +2,7 @@ name: Concat native development build
 
 on:
   push:
-    branches: ['gpu/baseline', 'gpu/desktop-editor', 'gpu/integration', 'gpu/integrated', 'gpu/final-integration']
+    branches: ['gpu/baseline', 'gpu/desktop-editor', 'gpu/integration', 'gpu/integrated', 'gpu/final-integration', 'desktop/queue-bulk']
     paths: ['upstream/**', '.github/workflows/concat-windows.yml']
   pull_request:
     paths: ['upstream/**', '.github/workflows/concat-windows.yml']
