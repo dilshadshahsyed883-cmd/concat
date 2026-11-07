@@ -252,9 +252,28 @@ function Test-Worker([string]$domain,$headers) {
         throw
     }
     if ($capabilities.api_version -ne 1 -or @($capabilities.bundle_versions) -notcontains 1 -or
-        @($capabilities.render_modes) -notcontains "cuda-hybrid-v1") {
+        @($capabilities.render_modes) -notcontains "cuda-hybrid-v1" -or
+        $capabilities.validation_version -ne 1) {
         throw "The Salad worker image does not match this Concat GPU build."
     }
+}
+
+
+function Validate-WorkerProject([string]$manifest,[string]$domain,$headers) {
+    if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) {
+        throw "GPU project manifest missing; save the project again."
+    }
+    $payload=[IO.File]::ReadAllBytes($manifest)
+    if (!$payload.Length -or $payload.Length -gt 2MB) {
+        throw "GPU project manifest is empty or exceeds the 2 MiB compatibility limit."
+    }
+    $result=Invoke-RestMethod -MaximumRedirection 0 -Method Post -Uri "$domain/api/validate" -Headers $headers -ContentType "application/json" -Body $payload -TimeoutSec 45
+    if ($result.ok -ne $true) {
+        $reason=@($result.errors) -join "; "
+        if (!$reason) {$reason="Unknown unsupported project feature"}
+        throw "GPU project compatibility failed: $reason"
+    }
+    Report "GPU compatibility verified before media upload." 0
 }
 
 function Get-Output([string]$domain,[string]$job,$status,$headers,[string]$outputs) {
@@ -282,6 +301,7 @@ function Send-Project([string]$root,[string]$gpuDataDir,[string]$domain,$headers
     $projectManifest=Join-Path $root "concat.json"
     if (!(Test-Path -LiteralPath $projectManifest -PathType Leaf)) {$projectManifest=Join-Path $root "wolfcut.json"}
     if (!(Test-Path -LiteralPath $projectManifest -PathType Leaf)) {throw "Save a Concat project before sending it."}
+    Validate-WorkerProject $projectManifest $domain $headers
     $jobs=Join-Path $gpuDataDir "Jobs"
     New-Item -ItemType Directory -Force -Path $jobs | Out-Null
     $stateFile=Join-Path $gpuDataDir ("upload-"+(SHA-Bytes ([Text.Encoding]::UTF8.GetBytes($root))).Substring(0,24)+".json")
@@ -419,6 +439,7 @@ try {
         if ($Operation -eq "Upload") {
             Report "Checking the worker before uploading." 0
             Test-Worker $config.domain $headers
+            Validate-WorkerProject (Join-Path (Join-Path $queueDir $SnapshotID) "concat.json") $config.domain $headers
             Report "Uploading the saved snapshot." 0 "" $false "attempted"
             Submit-Zip $zip $Job $config.domain $headers
             Report "Upload verified. Waiting for GPU rendering." 100 "" $false "uploaded"

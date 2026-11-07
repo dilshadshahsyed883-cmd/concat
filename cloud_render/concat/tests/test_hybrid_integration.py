@@ -33,6 +33,7 @@ class CompatibilityTests(unittest.TestCase):
                     self.assertEqual(json.loads(response.read()), {
                         "api_version": 1, "bundle_versions": [1],
                         "render_modes": ["cuda-stage1", "cuda-hybrid-v1"],
+                        "validation_version": 1,
                     })
                 finally:
                     client.close()

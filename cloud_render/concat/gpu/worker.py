@@ -513,7 +513,29 @@ class Handler(BaseHTTPRequestHandler):
         if action == "GET" and path == "/api/capabilities":
             return self._json(200, {"api_version": WORKER_API_VERSION,
                                     "bundle_versions": [BUNDLE_VERSION],
-                                    "render_modes": list(RENDER_MODES)})
+                                    "render_modes": list(RENDER_MODES),
+                                    "validation_version": 1})
+        if action == "POST" and path == "/api/validate":
+            # Read only the manifest, never accept media before validation.
+            if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
+                raise WorkerError(415, "GPU validation requires JSON")
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                raise WorkerError(400, "Invalid GPU validation Content-Length") from None
+            if not 0 < length <= 2 * 1024 * 1024:
+                raise WorkerError(413, "GPU project manifest exceeds validation limit")
+            try:
+                manifest = json.loads(self.rfile.read(length))
+            except (ValueError, UnicodeDecodeError):
+                raise WorkerError(400, "Invalid Concat project JSON") from None
+            from cloud_render.concat.hybrid.project import validate_gpu_manifest
+            try:
+                validate_gpu_manifest(manifest)
+            except (ValueError, KeyError, TypeError) as exc:
+                return self._json(200, {"ok": False, "errors": [str(exc)]})
+            return self._json(200, {"ok": True, "profile": "cuda-hybrid-v1"})
+
         if action == "GET" and path == "/api/diagnostics/gpu":
             return self._json(200, {"engine": "cuda-nvenc-stage1",
                                     "cuda_stage1": True, "native_vulkan": False,
