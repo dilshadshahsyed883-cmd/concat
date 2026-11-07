@@ -144,14 +144,30 @@ function Submit-Zip([string]$zip,[string]$job,[string]$domain,$headers) {
     $done=Invoke-RestMethod -MaximumRedirection 0 -Method Post -Uri "$root/complete" -Headers $headers -TimeoutSec 95
     Report "Salad verified the upload ($($done.state))." 100
 }
-function Report([string]$message,[int]$progress=-1,[string]$location="",[bool]$failed=$false) {
+function Report([string]$message,[int]$progress=-1,[string]$location="",[bool]$failed=$false,[string]$metrics="") {
     if ($headers) {
         foreach ($secret in @($headers["Salad-Api-Key"],$headers.Authorization.Substring(7))) {
             if ($secret) {$message=$message.Replace($secret,"[redacted]")}
         }
     }
-    [Console]::WriteLine((@{message=$message;progress=$progress;location=$location;failed=$failed} |
+    [Console]::WriteLine((@{message=$message;progress=$progress;location=$location;failed=$failed;metrics=$metrics} |
         ConvertTo-Json -Compress))
+}
+
+function Format-RenderMetrics($status) {
+    # Older workers omit the fields; they must remain compatible.
+    if ($null -eq $status.render_time_seconds -or $null -eq $status.average_fps -or
+        $null -eq $status.speed_multiplier) {return ""}
+    try {
+        $seconds=[double]$status.render_time_seconds
+        $fps=[double]$status.average_fps
+        $speed=[double]$status.speed_multiplier
+        if ($seconds -le 0 -or $fps -le 0 -or $speed -le 0 -or
+            [double]::IsNaN($seconds) -or [double]::IsInfinity($seconds) -or
+            [double]::IsNaN($fps) -or [double]::IsInfinity($fps) -or
+            [double]::IsNaN($speed) -or [double]::IsInfinity($speed)) {return ""}
+        return ("Render Time: {0:0.00} s | Average FPS: {1:0.00} | Speed: {2:0.00}x" -f $seconds,$fps,$speed)
+    } catch {return ""}
 }
 
 function Read-Connection([string]$configFile) {
@@ -290,17 +306,18 @@ function Send-Project([string]$root,[string]$gpuDataDir,[string]$domain,$headers
     $lastState=""
     :poll while ([DateTime]::UtcNow -lt $deadline) {
         $status=Invoke-RestMethod -MaximumRedirection 0 -Uri "$domain/api/jobs/$job" -Headers $headers -TimeoutSec 30
+        $metrics=Format-RenderMetrics $status
         if ($status.state -ne $lastState) {
-            Report "Job $job · $($status.state)" 100
+            Report "Job $job · $($status.state)" 100 "" $false $metrics
             $lastState=$status.state
         }
         switch ($status.state) {
             "delivered" {
-                Report "Render delivered and verified." 100 "VPS Cloud Render · $job.mp4"
+                Report "Render delivered and verified." 100 "VPS Cloud Render · $job.mp4" $false $metrics
                 break
             }
             {$_ -in "rendered","delivery_failed"} {
-                Report "Downloading and verifying the MP4." 100
+                Report "Downloading and verifying the MP4." 100 "" $false $metrics
                 try {$output=Get-Output $domain $job $status $headers (Join-Path $gpuDataDir "Outputs")}
                 catch {
                     # The worker can move from rendered to delivering before this GET.
@@ -311,8 +328,8 @@ function Send-Project([string]$root,[string]$gpuDataDir,[string]$domain,$headers
                     throw
                 }
                 if ($status.state -eq "delivery_failed") {
-                    Report ("MP4 downloaded and verified. VPS delivery failed: "+[string]$status.error) 100 $output $true
-                } else {Report "Render complete. MP4 downloaded and verified." 100 $output}
+                    Report ("MP4 downloaded and verified. VPS delivery failed: "+[string]$status.error) 100 $output $true $metrics
+                } else {Report "Render complete. MP4 downloaded and verified." 100 $output $false $metrics}
                 break
             }
             "failed" {
