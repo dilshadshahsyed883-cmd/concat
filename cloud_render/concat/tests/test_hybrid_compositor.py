@@ -1,3 +1,4 @@
+import os
 import unittest
 
 from cloud_render.concat.hybrid.compositor import Layer, _clip_axis, composite
@@ -32,6 +33,8 @@ class CudaCompositorTests(unittest.TestCase):
         try:
             cls.cp = cuda()
         except RuntimeError as error:
+            if os.getenv("CONCAT_REQUIRE_CUDA") == "1":
+                raise
             raise unittest.SkipTest(str(error)) from error
 
     def test_ordered_straight_alpha(self):
