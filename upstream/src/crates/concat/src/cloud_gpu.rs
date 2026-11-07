@@ -97,6 +97,7 @@ fn run(app: &App, task: Task) {
         gpu.set_job_note("Preparing the saved project.".into());
         gpu.set_job_error(false);
         gpu.set_output_location("".into());
+        gpu.set_metrics_note("".into());
         gpu.set_progress(-1);
     } else {
         gpu.set_connection_error(false);
@@ -128,6 +129,9 @@ fn run(app: &App, task: Task) {
                     }
                     if !location.is_empty() {
                         gpu.set_output_location(location.into());
+                    }
+                    if let Some(metrics) = event["metrics"].as_str().filter(|s| !s.is_empty()) {
+                        gpu.set_metrics_note(metrics.into());
                     }
                 } else {
                     gpu.set_connection_note(message.into());
