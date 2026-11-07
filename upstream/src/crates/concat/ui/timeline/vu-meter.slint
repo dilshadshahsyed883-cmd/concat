@@ -1,0 +1,319 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
+
+// The VU meters: how loud the timeline plays, left and right, while it
+// plays. A slim column at the timeline's right edge, the height of the
+// lanes, where CapCut and Premiere keep theirs: beside the sound it
+// measures, and not a panel of its own to find a seat for. The tray's
+// meter button shows and hides it.
+//
+// Each bar is the peak level on a decibel scale - 0 dB at the top, -60 at
+// the foot - lit green, then yellow past -18, then red past -6, with the
+// loudest of the last moment held as a line. A cap over each bar is the
+// clip light: red once the mix has clipped, until it is clicked. The held
+// peak reads as a number in the band beside the lanes' ruler, over the
+// bars it speaks for, and "L" and "R" sit under their own bars.
+//
+// The scale down the left numbers only as many decibels as the column has
+// room for: 0, -6, -12 and then every twelve when it is tall, every twelve
+// when it is middling, 0, -30 and -60 when it is short, so two numbers
+// never touch. Each number is centred on its own tick, and the ticks are
+// the bars' own scale: the bars start half a number below the top, so 0
+// has room to sit level with the bars' head rather than be pushed down.
+
+import { I18n } from "../i18n.slint";
+import { Theme } from "../theme/theme.slint";
+import { Fmt } from "../util.slint";
+import { Tip } from "../primitives/tooltip.slint";
+
+/// The levels, published by Rust (concat's meters.rs) thirty times a second
+/// while anything plays and the column is shown. Each is `0..1` on the
+/// meter's decibel scale.
+export global Meters {
+    in property <float> left;
+    in property <float> right;
+    /// The loudest of the last moment, held; negative hides it.
+    in property <float> hold-left: -1;
+    in property <float> hold-right: -1;
+    /// A sample reached full scale since the light was last cleared.
+    in property <bool> clipped;
+    callback clip-cleared();
+}
+
+/// One channel's bar. Drawn here rather than with the shared LevelMeter,
+/// whose ramp is tuned for the inspector's short bars: a programme meter's
+/// colours belong at -18 and -6 dB, and on a -60 dB scale that is 70% and
+/// 90% of the way up.
+///
+/// The ramp is painted at full length and revealed by a clipping window, so
+/// a colour always means the same level however far the bar has filled. A
+/// faint copy of it lies under the window, so the unlit track still shows
+/// where yellow and red begin. Nothing animates: the level arrives at the
+/// feed rate, and an animation re-armed on every sample would keep the
+/// window repainting at the monitor's rate instead.
+component VuBar inherits Rectangle {
+    in property <float> value;
+    /// The held peak, 0..1; negative hides it.
+    in property <float> peak: -1;
+
+    property <float> level: Fmt.clamp(root.value, 0, 1);
+    property <float> hold: Fmt.clamp(root.peak, 0, 1);
+
+    background: Theme.well;
+    border-radius: 2px;
+    clip: true;
+
+    // The ramp's zones, unlit: a hint on the light theme's pale well, where
+    // any more reads as a bar already full.
+    Rectangle {
+        background: @linear-gradient(0deg,
+            Theme.meter-low 0%, Theme.meter-low 64%,
+            Theme.meter-mid 72%, Theme.meter-mid 86%,
+            Theme.meter-high 92%, Theme.meter-high 100%);
+        opacity: Theme.dark ? 0.13 : 0.06;
+    }
+
+    // The reveal window, and the ramp in it, offset back so its stops stay
+    // anchored to the track.
+    window := Rectangle {
+        y: root.height * (1 - root.level);
+        height: root.height * root.level;
+        clip: true;
+        Rectangle {
+            y: -window.y;
+            height: root.height;
+            background: @linear-gradient(0deg,
+                Theme.meter-low 0%, Theme.meter-low 64%,
+                Theme.meter-mid 72%, Theme.meter-mid 86%,
+                Theme.meter-high 92%, Theme.meter-high 100%);
+        }
+    }
+
+    // The held peak: a line across the bar, kept whole at either end.
+    if root.peak >= 0: Rectangle {
+        y: Fmt.clamp(Math.round((root.height * (1 - root.hold)) / 1px) - 1,
+            0, root.height / 1px - 2) * 1px;
+        height: 2px;
+        background: Theme.fg;
+        opacity: 0.9;
+    }
+}
+
+export component VuMeter inherits Rectangle {
+    /// The lanes' ruler band: the held peak reads in a band this tall, so
+    /// the bars start where the lanes do.
+    in property <length> ruler-height: 28px;
+
+    /// The scale's floor, in dB: the meters' 0 is this, their 1 is 0 dB.
+    property <float> floor-db: -60;
+
+    // The instrument, left to right: the numbers, a gap, the ticks, a gap,
+    // and the two bars with a hair between them.
+    property <length> label-w: 18px;
+    property <length> label-gap: 3px;
+    property <length> tick-w: 4px;
+    property <length> minor-w: 2px;
+    property <length> tick-gap: 2px;
+    property <length> bar-w: 7px;
+    property <length> bar-gap: 2px;
+    property <length> pair-w: 2 * root.bar-w + root.bar-gap;
+    property <length> inst-w: root.label-w + root.label-gap + root.tick-w + root.tick-gap + root.pair-w;
+    /// A number's box: centred on its tick, so the bars stand half of one
+    /// in from either end of the scale.
+    property <length> label-h: 12px;
+    /// The clip lights over the bars, and the air between them and the bars.
+    property <length> cap-h: 3px;
+    property <length> cap-gap: 3px;
+    property <length> caption-h: 12px;
+
+    /// Where the instrument starts: centred in the column right of the
+    /// hairline, on a whole pixel so the ticks stay crisp.
+    property <length> ix: Math.round(Math.max(1px, 1px + (root.width - 1px - root.inst-w) / 2) / 1px) * 1px;
+    property <length> ticks-x: root.ix + root.label-w + root.label-gap;
+    property <length> bars-x: root.ticks-x + root.tick-w + root.tick-gap;
+    property <length> cap-y: root.ruler-height + 7px;
+    property <length> bar-top: root.cap-y + root.cap-h + root.cap-gap;
+    property <length> bar-bottom: root.height - 6px - root.caption-h - 4px;
+    property <length> bar-h: Math.max(0px, root.bar-bottom - root.bar-top);
+
+    /// How many numbers fit: six decibels must leave a number's height and
+    /// a hair of air for every six to be read, twelve for every twelve.
+    property <int> tier: root.bar-h >= 140px ? 0 : root.bar-h >= 70px ? 1 : root.bar-h >= 28px ? 2 : 3;
+    property <[int]> labelled: root.tier == 0 ? [0, -6, -12, -24, -36, -48, -60]
+        : root.tier == 1 ? [0, -12, -24, -36, -48, -60]
+        : root.tier == 2 ? [0, -30, -60]
+        : [0];
+    /// A tick every six decibels while they stand six pixels apart; only
+    /// the numbered ones below that.
+    property <[int]> ticks: root.bar-h >= 60px ? [0, -6, -12, -18, -24, -30, -36, -42, -48, -54, -60] : root.labelled;
+
+    /// Whether `db` carries a number at this height.
+    pure function numbered(db: int) -> bool {
+        if (root.tier == 0) {
+            return db >= -12 || Math.mod(db, 12) == 0;
+        }
+        if (root.tier == 1) {
+            return Math.mod(db, 12) == 0;
+        }
+        if (root.tier == 2) {
+            return Math.mod(db, 30) == 0;
+        }
+        return db == 0;
+    }
+    /// The decibels a meter value stands for.
+    pure function db-of(value: float) -> float {
+        return root.floor-db + value * (0 - root.floor-db);
+    }
+    /// Where `db` sits down the bars, on a whole pixel, from their head.
+    pure function y-of(db: float) -> length {
+        return Math.round((1 - (db - root.floor-db) / (0 - root.floor-db)) * root.bar-h / 1px) * 1px;
+    }
+    /// The held peak of the two sides, as a whole number of decibels, or a
+    /// dash when neither side holds one.
+    pure function peak-text() -> string {
+        if (Meters.hold-left < 0 && Meters.hold-right < 0) {
+            return "–";
+        }
+        return "\{Math.round(root.db-of(Math.max(Meters.hold-left, Meters.hold-right)))}";
+    }
+
+    background: Theme.panel;
+    clip: true;
+
+    // The hairline against the lanes, the way the header column has one.
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: 1px;
+        height: parent.height;
+        background: Theme.line;
+    }
+
+    // The ruler's band, ruled off the way the lanes' ruler is, and the held
+    // peak in it over the bars.
+    Rectangle {
+        x: 1px;
+        y: root.ruler-height - 1px;
+        width: root.width - 1px;
+        height: 1px;
+        background: Theme.line;
+    }
+    Rectangle {
+        x: root.bars-x + root.pair-w / 2 - 16px;
+        y: 0;
+        width: 32px;
+        height: root.ruler-height - 1px;
+        Text {
+            text: root.peak-text();
+            color: Meters.clipped ? Theme.danger : Theme.fg-muted;
+            font-family: Theme.font-technical;
+            font-size: Theme.fs-sm;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+        peak-touch := TouchArea { }
+        Tip {
+            text: I18n.t("meters.peak");
+            active: peak-touch.has-hover;
+        }
+    }
+
+    // The clip lights: a cap over each bar, red once the mix has hit full
+    // scale, until clicked. The box is taller than the caps so a pointer
+    // need not find three pixels.
+    Rectangle {
+        x: root.bars-x;
+        y: root.cap-y - 4px;
+        width: root.pair-w;
+        height: root.cap-h + 8px;
+        Rectangle {
+            x: 0;
+            y: 4px;
+            width: root.bar-w;
+            height: root.cap-h;
+            border-radius: 1px;
+            background: Meters.clipped ? Theme.danger : Theme.well;
+        }
+        Rectangle {
+            x: root.bar-w + root.bar-gap;
+            y: 4px;
+            width: root.bar-w;
+            height: root.cap-h;
+            border-radius: 1px;
+            background: Meters.clipped ? Theme.danger : Theme.well;
+        }
+        light-touch := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { Meters.clip-cleared(); }
+        }
+        Tip {
+            text: Meters.clipped ? I18n.t("meters.clipped") : I18n.t("meters.clipLight");
+            active: light-touch.has-hover;
+        }
+    }
+
+    // The scale: ticks against the bars, numbered ones longer and darker,
+    // and each number centred on its tick.
+    for db in root.ticks: Rectangle {
+        property <bool> major: root.numbered(db);
+        x: root.ticks-x + (self.major ? 0 : root.tick-w - root.minor-w);
+        y: root.bar-top + Math.min(root.y-of(db), Math.max(0px, root.bar-h - 1px));
+        width: self.major ? root.tick-w : root.minor-w;
+        height: 1px;
+        background: self.major ? Theme.line-strong : Theme.line;
+    }
+    for db in root.labelled: Text {
+        x: root.ix;
+        y: root.bar-top + root.y-of(db) - root.label-h / 2;
+        width: root.label-w;
+        height: root.label-h;
+        text: "\{db}";
+        color: Theme.fg-dim;
+        font-family: Theme.font-technical;
+        font-size: Theme.fs-xs;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+    }
+
+    // The bars.
+    VuBar {
+        x: root.bars-x;
+        y: root.bar-top;
+        width: root.bar-w;
+        height: root.bar-h;
+        value: Meters.left;
+        peak: Meters.hold-left;
+    }
+    VuBar {
+        x: root.bars-x + root.bar-w + root.bar-gap;
+        y: root.bar-top;
+        width: root.bar-w;
+        height: root.bar-h;
+        value: Meters.right;
+        peak: Meters.hold-right;
+    }
+
+    // Each bar's name, centred under it.
+    Text {
+        x: root.bars-x - 2px;
+        y: root.bar-bottom + 4px;
+        width: root.bar-w + 4px;
+        height: root.caption-h;
+        text: "L";
+        color: Theme.fg-muted;
+        font-size: Theme.fs-xs;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    Text {
+        x: root.bars-x + root.bar-w + root.bar-gap - 2px;
+        y: root.bar-bottom + 4px;
+        width: root.bar-w + 4px;
+        height: root.caption-h;
+        text: "R";
+        color: Theme.fg-muted;
+        font-size: Theme.fs-xs;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
