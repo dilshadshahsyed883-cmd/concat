@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import io
 import json
+import math
 import os
 import re
 import shutil
@@ -308,6 +309,31 @@ class RenderWorker:
         except (OSError, ValueError):
             return ""
 
+    @staticmethod
+    def _performance_metrics(report, elapsed):
+        """Persist actual rendering time without including upload or VPS delivery.
+
+        Frame count and video seconds come from the renderer's verified output
+        report. Older/mocked renderers without a report keep elapsed time only.
+        """
+        elapsed = max(float(elapsed), 0.001)
+        metrics = {"render_time_seconds": round(elapsed, 3)}
+        if not isinstance(report, dict):
+            return metrics
+        frames = report.get("frames")
+        seconds = report.get("seconds", report.get("duration"))
+        if (type(frames) is not int or frames <= 0 or
+                type(seconds) not in (int, float) or
+                not math.isfinite(seconds) or seconds <= 0):
+            return metrics
+        return {
+            **metrics,
+            "rendered_frames": frames,
+            "video_duration_seconds": round(seconds, 3),
+            "average_fps": round(frames / elapsed, 2),
+            "speed_multiplier": round(seconds / elapsed, 2),
+        }
+
     def _process(self, job: str):
         directory = self.inputs / job
         output = self.outputs / (job + ".mp4")
@@ -318,12 +344,14 @@ class RenderWorker:
             mode = self.status(job).get("render_mode", "native")
             if mode not in RENDER_MODES:
                 raise RuntimeError("Legacy native Vulkan jobs are retired. Source bundle retained")
+            render_started = time.perf_counter()
             if self.renderer is not None:
-                self.renderer(extracted, output)
+                report = self.renderer(extracted, output)
             elif mode == HYBRID_MODE:
-                self._hybrid_render(job, extracted, output)
+                report = self._hybrid_render(job, extracted, output)
             else:
-                self._cuda_render(extracted, output)
+                report = self._cuda_render(extracted, output)
+            elapsed = time.perf_counter() - render_started
             if not output.is_file() or output.is_symlink() or output.stat().st_size < 12:
                 raise RuntimeError("Concat did not produce an MP4")
             with output.open("rb") as handle:
@@ -331,7 +359,8 @@ class RenderWorker:
             if header[4:8] != MP4_SIGNATURE:
                 raise RuntimeError("Concat output MP4 signature invalid")
             self._change(job, state="rendered", output_size=output.stat().st_size,
-                         output_sha256=digest_file(output))
+                         output_sha256=digest_file(output),
+                         **self._performance_metrics(report, elapsed))
             if self.receiver:
                 self._change(job, state="delivering")
                 self.deliver(job, output)
@@ -357,6 +386,13 @@ class RenderWorker:
         report = log_file.read_text(encoding="utf-8").strip()
         if report:
             print(f"GPU job {job}: {report}", flush=True)
+            try:
+                return json.loads(report)
+            except ValueError:
+                # A valid MP4 must not be lost solely because old renderers
+                # did not return a machine-readable performance summary.
+                return None
+        return None
 
     def _cuda_render(self, project: Path, output: Path):
         plan = concat_stage1_plan(project)
@@ -370,6 +406,16 @@ class RenderWorker:
                                  env=env, timeout=int(os.getenv("CONCAT_RENDER_TIMEOUT", "7200")))
         if outcome.returncode:
             raise RuntimeError("CUDA Stage 1 failed: " + outcome.stderr[-700:])
+        try:
+            result = json.loads(outcome.stdout)
+        except ValueError:
+            return None
+        # Stage 1 is strictly 30 FPS and verifies the produced MP4.
+        duration = result.get("duration") if isinstance(result, dict) else None
+        if (type(duration) in (int, float) and math.isfinite(duration)
+                and duration > 0):
+            return {"frames": round(duration * 30), "seconds": duration}
+        return None
 
     def _deliver(self, job: str, output: Path):
         if not self.receiver.startswith("https://") or not self.receiver_token:
