@@ -25,6 +25,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - run: python -m pip install -r cloud_render/concat/hybrid/requirements-captions.txt
       - run: python -m compileall -q cloud_render/concat
       - run: python -m unittest discover -v -s cloud_render/concat/tests
   worker-image:
