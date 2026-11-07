@@ -1,0 +1,39 @@
+name: Concat Linux verification
+
+on:
+  push:
+    branches: ['gpu/**']
+    paths: ['cloud_render/concat/**', '.github/workflows/concat-linux.yml']
+  pull_request:
+    paths: ['cloud_render/concat/**', '.github/workflows/concat-linux.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: concat-linux-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  worker-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m compileall -q cloud_render/concat
+      - run: python -m unittest discover -v -s cloud_render/concat/tests
+  worker-image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    if: github.ref_name == 'gpu/baseline' || github.ref_name == 'gpu/integration' || github.event.pull_request.head.ref == 'gpu/integration'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: docker build -t concat-worker:ci -f cloud_render/concat/gpu/Dockerfile .
+      - run: docker run --rm --entrypoint python3 concat-worker:ci -c 'from cloud_render.concat.gpu.worker import RenderWorker'
