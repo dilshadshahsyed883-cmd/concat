@@ -2,7 +2,7 @@ name: Concat Salad candidate
 
 on:
   push:
-    branches: ['gpu/final-integration', 'desktop/queue-bulk']
+    branches: ['gpu/final-integration', 'desktop/queue-bulk', 'integration/desktop-queue-compat-metrics-20261108']
 
 permissions:
   contents: read
@@ -25,6 +25,7 @@ jobs:
           docker build --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
             --label "org.opencontainers.image.revision=$GITHUB_SHA" \
             -f cloud_render/concat/gpu/Dockerfile -t "$image" .
+          docker run --rm --entrypoint python3 "$image" -c "from cloud_render.concat.gpu.worker import RenderWorker; from cloud_render.concat.hybrid.project import validate_gpu_manifest; print('Cuda worker and compatibility validator import PASS')"
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker push "$image"
           docker logout ghcr.io
