@@ -170,7 +170,9 @@ class Nvenc:
             width, height, pixel_format, False, gpu_id=self._gpu,
             cudacontext=_context(cp), cudastream=self._stream.ptr,
             codec=codec, fps=fps.denominator, bitrate=bitrate,
-            preset="P4", bf=1, repeatspspps=1,
+            # Raw Annex B muxers assign CFR timestamps in packet order.
+            # Avoid reordering frames that have no container timestamps yet.
+            preset="P4", bf=0, repeatspspps=1,
         )
         self._next_index = 0
         self._finished = False

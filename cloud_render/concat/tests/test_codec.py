@@ -98,7 +98,7 @@ class CodecCudaTests(unittest.TestCase):
             self.assertEqual(encoder.finish(), ())
             with self.assertRaisesRegex(RuntimeError, "already flushed"):
                 encoder.encode(surface, frame_count)
-            self.assertEqual(sorted(packet.frame_index for packet in packets), list(range(frame_count)))
+            self.assertEqual([packet.frame_index for packet in packets], list(range(frame_count)))
 
             subprocess.run(
                 ["ffmpeg", "-v", "error", "-nostdin", "-f", "h264", "-framerate", "30",
