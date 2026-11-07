@@ -2,7 +2,7 @@ name: Concat native development build
 
 on:
   push:
-    branches: ['gpu/desktop-editor', 'gpu/integrated']
+    branches: ['gpu/baseline', 'gpu/desktop-editor', 'gpu/integration', 'gpu/integrated']
     paths: ['upstream/**', '.github/workflows/concat-windows.yml']
   pull_request:
     paths: ['upstream/**', '.github/workflows/concat-windows.yml']
@@ -114,14 +114,17 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
         with:
           workspaces: upstream/src
-          key: windows-concat-native-gpu-v028
+          key: windows-concat-quick-v028
+          cache-on-failure: true
           env-vars: CARGO CC CFLAGS CXX CMAKE RUST GGML ORT
       - name: Compile modified original Concat GUI from source
+        env:
+          CARGO_INCREMENTAL: '1'
         working-directory: upstream/src
         timeout-minutes: 95
         shell: pwsh
         run: |
-          cargo build --locked --profile app -p concat --target x86_64-pc-windows-msvc
+          cargo build --locked --profile quick -p concat --target x86_64-pc-windows-msvc
           if ($LASTEXITCODE -ne 0) { throw "Native Concat GUI build failed" }
       - name: Package portable edited Concat EXE and required DLLs
         shell: pwsh
@@ -129,30 +132,30 @@ jobs:
           $ErrorActionPreference = "Stop"
           $out="dist\Concat-0.2.8-GPU-Windows-x64"
           New-Item -ItemType Directory -Force $out | Out-Null
-          Copy-Item "upstream\src\target\x86_64-pc-windows-msvc\app\concat.exe" "$out\concat.exe"
+          Copy-Item "upstream\src\target\x86_64-pc-windows-msvc\quick\concat.exe" "$out\concat.exe"
           Copy-Item "$env:FFMPEG_DIR\bin\*.dll" $out
           Copy-Item "$env:SHERPA_DLL_DIR\*.dll" $out
           Copy-Item "$env:ORT_DIR\lib\*.dll" $out
-          $built=Get-ChildItem "upstream\src\target\x86_64-pc-windows-msvc\app\build\whisper-rs-sys-*\out\bin\ggml-cpu-x64.dll" |
+          $built=Get-ChildItem "upstream\src\target\x86_64-pc-windows-msvc\quick\build\whisper-rs-sys-*\out\bin\ggml-cpu-x64.dll" |
             Sort-Object LastWriteTime -Descending | Select-Object -First 1
           if (-not $built) { throw "Whisper multi-CPU DLLs not built" }
           Copy-Item "$($built.DirectoryName)\whisper.dll", "$($built.DirectoryName)\ggml*.dll" $out
           Copy-Item "upstream\LICENSE", "upstream\THIRD_PARTY_NOTICES.md" $out
           Copy-Item "README.md" $out
-          $exe="$out\concat.exe"
-          $version=& $exe --version
-          if ($LASTEXITCODE -ne 0 -or $version -notmatch "0.2.8") { throw "Modified Concat EXE version smoke failed" }
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * -property installationPath
+          $crt = Get-ChildItem "$vs\VC\Redist\MSVC\*\x64\Microsoft.VC14*.CRT" -Directory |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $crt) { throw "Visual C++ x64 redistributable missing" }
+          Copy-Item "$($crt.FullName)\*.dll" $out
           $env:CONCAT_GPU = "software"
-          $smoke = Start-Process -FilePath (Resolve-Path $exe) -WorkingDirectory (Resolve-Path $out) -ArgumentList '--smoke' -PassThru
-          try {
-            if (!$smoke.WaitForExit(120000)) { throw "Native editor startup timed out" }
-            if ($smoke.ExitCode -ne 0) { throw "Native editor startup failed: $($smoke.ExitCode)" }
-          } finally {
-            if (!$smoke.HasExited) { Stop-Process -Id $smoke.Id -Force }
-          }
-          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  concat.exe" | Set-Content -LiteralPath "$out/SHA256SUMS" -Encoding ascii
+          & ".\upstream\scripts\ci\smoke-windows.ps1" -Bundle $out
+          $hash = (Get-FileHash "$out\concat.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  concat.exe" | Set-Content -LiteralPath "$out\SHA256SUMS" -Encoding ascii
           Get-ChildItem $out -File | Select-Object Name,Length | Format-Table
+      - name: Test project editing and persistence
+        working-directory: upstream/src
+        run: cargo test --locked -p concat-project --target x86_64-pc-windows-msvc
       - uses: actions/upload-artifact@v4
         with:
           name: Concat-Windows-x64-dev
