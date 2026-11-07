@@ -14,6 +14,7 @@ export global CloudGpu {
     in property <string> connection-note;
     in property <bool> connection-error;
     in property <string> job-note;
+    in property <string> metrics-note;
     in property <bool> job-error;
     in property <int> progress: -1;
     in property <string> output-location;
@@ -77,6 +78,11 @@ export component CloudGpuPanel inherits VerticalLayout {
         if CloudGpu.job-note != "": Text {
             text: CloudGpu.job-note;
             color: CloudGpu.job-error ? Theme.danger : Theme.fg;
+            wrap: word-wrap;
+        }
+        if CloudGpu.metrics-note != "": Text {
+            text: CloudGpu.metrics-note;
+            color: Theme.fg;
             wrap: word-wrap;
         }
         if CloudGpu.progress >= 0: Progress {
