@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-pub(super) enum Phase {
+pub(crate) enum Phase {
     Preparing,
     Waiting,
     Uploading,
@@ -46,7 +46,7 @@ impl Phase {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub(super) struct Job {
+pub(crate) struct Job {
     pub id: String,
     pub remote: String,
     pub project: String,
