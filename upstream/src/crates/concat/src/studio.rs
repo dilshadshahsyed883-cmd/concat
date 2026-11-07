@@ -10711,7 +10711,7 @@ impl Studio {
                 &self.card_paths,
                 |package| matches!(
                     package.manifest.effect.id.as_str(),
-                    "concat.contrast" | "concat.saturation" | "concat.sharpen" | "concat.box-blur"
+                    "concat.contrast" | "concat.saturation" | "concat.sharpen"
                 ),
             );
             sync(&models.effect_groups, groups);
@@ -10734,7 +10734,7 @@ impl Studio {
                 &self.card_paths,
                 |package| matches!(
                     package.manifest.effect.id.as_str(),
-                    "cross-fade" | "fade-black" | "push" | "zoom" | "wipe-left" | "wipe-right"
+                    "concat.dissolve" | "concat.fade-black" | "concat.push" | "concat.zoom-transition"
                 ),
             );
             sync(&models.transition_groups, groups);

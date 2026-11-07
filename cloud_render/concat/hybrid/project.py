@@ -20,7 +20,12 @@ KEYS = {"scale": "scale", "offsetX": "pan_x", "offsetY": "pan_y",
 EASE = {"in": (.42, 0, 1, 1), "out": (0, 0, .58, 1), "inOut": (.42, 0, .58, 1)}
 TRANSITIONS = {"cross-fade": ("dissolve", "left"), "fade-black": ("fade", "left"),
                "push": ("slide", "left"), "zoom": ("zoom", "left"),
-               "wipe-left": ("wipe", "left"), "wipe-right": ("wipe", "right")}
+               "wipe-left": ("wipe", "left"), "wipe-right": ("wipe", "right"),
+               # Native IDs are the only IDs emitted by the shipping editor.
+               "concat.dissolve": ("dissolve", "left"),
+               "concat.fade-black": ("fade", "left"),
+               "concat.push": ("slide", "left"),
+               "concat.zoom-transition": ("zoom", "left")}
 
 
 
@@ -120,6 +125,8 @@ def validate_gpu_manifest(document):
                 raise ValueError(f"Unsupported caption animation on clip {ident}")
         if kind == "audio" and clip.get("transitionIn"):
             raise ValueError(f"Unsupported audio transition on clip {ident}")
+        if kind in ("audio", "video") and clip.get("preservePitch", True) is False:
+            raise ValueError(f"GPU requires preserved audio pitch on clip {ident}")
     return timeline
 
 def number(value, name):

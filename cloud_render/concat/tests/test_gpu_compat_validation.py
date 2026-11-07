@@ -66,6 +66,39 @@ class GpuManifestValidationTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "Unsupported"):
                     validate_gpu_manifest(document)
 
+
+    def test_native_catalogue_transitions_match_gpu_worker(self):
+        # These are the IDs emitted by the actual Concat catalogue, not UI aliases.
+        for native_id in ("concat.dissolve", "concat.fade-black",
+                          "concat.push", "concat.zoom-transition"):
+            with self.subTest(transition=native_id):
+                document = minimal_project()
+                document["timelines"][0]["clips"].append({
+                    "id": "photo2", "kind": "image", "trackId": "video",
+                    "mediaId": "photo", "start": 1.0, "duration": 1.0,
+                    "transitionIn": {"id": native_id, "duration": 0.4},
+                })
+                validate_gpu_manifest(document)
+                with tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    (root / "concat.json").write_text(json.dumps(document))
+                    (root / "photo.jpg").write_bytes(b"dummy jpeg")
+                    project = load_project(root, lambda _: None)
+                    self.assertEqual(project.frames, 60)
+                    self.assertTrue(any(clip.transition for lane in project.lanes
+                                        for clip in lane))
+
+    def test_audio_pitch_change_is_rejected_before_upload(self):
+        document = minimal_project()
+        document["media"].append({"id": "voice", "kind": "audio", "path": "voice.mp3"})
+        document["timelines"][0]["clips"].append({
+            "id": "voice1", "kind": "audio", "trackId": "video",
+            "mediaId": "voice", "start": 0.0, "duration": 1.0,
+            "preservePitch": False,
+        })
+        with self.assertRaisesRegex(ValueError, "preserved audio pitch"):
+            validate_gpu_manifest(document)
+
     def test_denies_non_jpeg_image_before_upload(self):
         document = minimal_project()
         document["media"][0]["path"] = "picture.png"
