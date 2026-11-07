@@ -1,9 +1,17 @@
 #Requires -Version 5.1
 # Embedded in the actual Concat Windows EXE. No additional desktop editor.
 # Use only the existing SaladCloud Gateway and existing VPS receiver.
-param([Parameter(Mandatory=$true)][string]$ProjectDir,[switch]$BundleOnly,[string]$BundlePath="")
+param(
+    [ValidateSet("Submit","Save","Test")][string]$Operation="Submit",
+    [string]$ProjectDir,
+    [switch]$BundleOnly,
+    [string]$BundlePath,
+    [switch]$DefineOnly
+)
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
+[Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -71,25 +79,25 @@ function Concat-Bundle([string]$dir,[string]$zip) {
             }
         } finally {$archive.Dispose()}
     } finally {$stream.Dispose()}
-    Write-Host "Original Concat media preserved. Packaged $($lookup.Count) files."
+    Report "Packaged $($lookup.Count) media files." 0
 }
 function Submit-Zip([string]$zip,[string]$job,[string]$domain,$headers) {
     $size=(Get-Item -LiteralPath $zip).Length
     $sha=SHA-File $zip
     $root="$domain/api/uploads/$job"
     $existing=$null
-    try {$existing=Invoke-RestMethod -Uri "$domain/api/jobs/$job" -Headers $headers -TimeoutSec 30}
+    try {$existing=Invoke-RestMethod -MaximumRedirection 0 -Uri "$domain/api/jobs/$job" -Headers $headers -TimeoutSec 30}
     catch {
         $response=$_.Exception.Response
         if (-not $response -or [int]$response.StatusCode -ne 404) {throw}
     }
     if ($existing) {
-        Write-Host "Resuming already submitted job: $job / $($existing.state)"
+        Report "Resuming job $job ($($existing.state))." 100
         return
     }
-    $manifest=@{size=[long]$size;sha256=$sha;render_mode="cuda-stage1"} | ConvertTo-Json -Compress
-    $session=Invoke-RestMethod -Method Post -Uri $root -Headers $headers -ContentType "application/json" -Body $manifest -TimeoutSec 30
-    if ($session.render_mode -ne "cuda-stage1") {throw "GPU image is outdated: CUDA Stage 1 upload not supported"}
+    $manifest=@{size=[long]$size;sha256=$sha;render_mode="cuda-hybrid-v1"} | ConvertTo-Json -Compress
+    $session=Invoke-RestMethod -MaximumRedirection 0 -Method Post -Uri $root -Headers $headers -ContentType "application/json" -Body $manifest -TimeoutSec 30
+    if ($session.render_mode -ne "cuda-hybrid-v1") {throw "This worker does not support the matching CUDA hybrid render mode"}
     $chunkSize=[long]$session.chunk_size
     $count=[int]$session.total_chunks
     if ($chunkSize -lt 1 -or $chunkSize -gt 8388608 -or $count -ne [int][Math]::Ceiling($size/$chunkSize)) {
@@ -99,7 +107,7 @@ function Submit-Zip([string]$zip,[string]$job,[string]$domain,$headers) {
     $input=[IO.File]::OpenRead($zip)
     try {
         for($i=0;$i -lt $count;$i++) {
-            if ($seen -contains $i) {Write-Host "Chunk $($i+1)/$count already verified";continue}
+            if ($seen -contains $i) {Report "Verified upload chunk $($i+1) of $count." ([int](100*($i+1)/$count));continue}
             $length=[int][Math]::Min($chunkSize,($size-[long]$i*$chunkSize))
             $bytes=New-Object byte[] $length
             [void]$input.Seek(([long]$i*$chunkSize),[IO.SeekOrigin]::Begin)
@@ -117,12 +125,12 @@ function Submit-Zip([string]$zip,[string]$job,[string]$domain,$headers) {
             $ok=$false
             for($attempt=1;$attempt -le 3;$attempt++) {
                 try {
-                    Invoke-RestMethod -Method Put -Uri "$root/chunks/$i" -Headers $h -ContentType "application/octet-stream" -Body $bytes -TimeoutSec 95 | Out-Null
+                    Invoke-RestMethod -MaximumRedirection 0 -Method Put -Uri "$root/chunks/$i" -Headers $h -ContentType "application/octet-stream" -Body $bytes -TimeoutSec 95 | Out-Null
                     $ok=$true
                     break
                 } catch {
                     try {
-                        $check=Invoke-RestMethod -Uri $root -Headers $headers -TimeoutSec 30
+                        $check=Invoke-RestMethod -MaximumRedirection 0 -Uri $root -Headers $headers -TimeoutSec 30
                         if (@($check.uploaded) -contains $i) {$ok=$true;break}
                     } catch {}
                     if ($attempt -eq 3) {throw}
@@ -130,101 +138,239 @@ function Submit-Zip([string]$zip,[string]$job,[string]$domain,$headers) {
                 }
             }
             if (-not $ok) {throw "Upload failed at chunk $i"}
-            Write-Host "Uploaded $($i+1) of $count chunks"
+            Report "Uploaded chunk $($i+1) of $count." ([int](100*($i+1)/$count))
         }
     } finally {$input.Dispose()}
-    $done=Invoke-RestMethod -Method Post -Uri "$root/complete" -Headers $headers -TimeoutSec 95
-    Write-Host "ZIP checksum verified by Salad: $($done.state)"
+    $done=Invoke-RestMethod -MaximumRedirection 0 -Method Post -Uri "$root/complete" -Headers $headers -TimeoutSec 95
+    Report "Salad verified the upload ($($done.state))." 100
 }
-$root=(Resolve-Path -LiteralPath $ProjectDir).ProviderPath
-$projectManifest=Join-Path $root "concat.json"
-if (-not (Test-Path -LiteralPath $projectManifest -PathType Leaf)) {
-    $projectManifest=Join-Path $root "wolfcut.json"
-}
-if (-not (Test-Path -LiteralPath $projectManifest -PathType Leaf)) {throw "Save a real Concat project first"}
-if ($BundleOnly) {
-    if (-not $BundlePath) {throw "Offline bundle test requires -BundlePath"}
-    Concat-Bundle $root $BundlePath
-    Write-Host "Offline native Concat ZIP contract: PASS"
-    return
-}
-$home=Join-Path $env:LOCALAPPDATA "Concat\GPU"
-$jobs=Join-Path $home "Jobs"
-New-Item -ItemType Directory -Force -Path $jobs | Out-Null
-$configFile=Join-Path $home "connection.json"
-$stateFile=Join-Path $home ("upload-"+(SHA-Bytes ([Text.Encoding]::UTF8.GetBytes($root))).Substring(0,24)+".json")
-$config=$null
-if (Test-Path -LiteralPath $configFile) {
-    $config=Get-Content -LiteralPath $configFile -Raw -Encoding UTF8 | ConvertFrom-Json
-}
-if ($null -eq $config) {
-    Write-Host "First use: configure EXISTING Salad connection. No VPS settings change."
-    $domain=Gateway (Read-Host "Salad Gateway HTTPS URL")
-    $saladSec=Read-Host "Salad API Key (hidden, encrypted with Windows DPAPI)" -AsSecureString
-    $renderSec=Read-Host "RENDERER_API_TOKEN (hidden, encrypted with Windows DPAPI)" -AsSecureString
-    $config=[pscustomobject]@{
-        domain=$domain;
-        salad=($saladSec | ConvertFrom-SecureString);
-        renderer=($renderSec | ConvertFrom-SecureString)
+function Report([string]$message,[int]$progress=-1,[string]$location="",[bool]$failed=$false) {
+    if ($headers) {
+        foreach ($secret in @($headers["Salad-Api-Key"],$headers.Authorization.Substring(7))) {
+            if ($secret) {$message=$message.Replace($secret,"[redacted]")}
+        }
     }
-    $config | ConvertTo-Json | Set-Content -LiteralPath $configFile -Encoding UTF8
+    [Console]::WriteLine((@{message=$message;progress=$progress;location=$location;failed=$failed} |
+        ConvertTo-Json -Compress))
 }
-$domain=Gateway $config.domain
-$sPtr=[IntPtr]::Zero
-$rPtr=[IntPtr]::Zero
-try {
-    $sPtr=[Runtime.InteropServices.Marshal]::SecureStringToBSTR((ConvertTo-SecureString ([string]$config.salad)))
-    $rPtr=[Runtime.InteropServices.Marshal]::SecureStringToBSTR((ConvertTo-SecureString ([string]$config.renderer)))
-    $saladKey=[Runtime.InteropServices.Marshal]::PtrToStringBSTR($sPtr)
-    $rendererKey=[Runtime.InteropServices.Marshal]::PtrToStringBSTR($rPtr)
-    if (-not $saladKey -or $rendererKey.Length -lt 32) {throw "Missing Salad authentication"}
-    $headers=@{"Salad-Api-Key"=$saladKey;"Authorization"="Bearer $rendererKey"}
-    $health=Invoke-RestMethod -Uri "$domain/health/ready" -Headers $headers -TimeoutSec 30
-    if (-not $health.ok) {throw "Existing Salad worker is not ready"}
-    if ($health.cuda_stage1 -ne $true) {
-        throw "Existing Salad image lacks native Concat CUDA Stage 1. Upgrade matching GPU image before uploading media."
+
+function Read-Connection([string]$configFile) {
+    if (Test-Path -LiteralPath $configFile) {
+        return Get-Content -LiteralPath $configFile -Raw -Encoding UTF8 | ConvertFrom-Json
     }
+}
+
+function Resolve-Connection($saved,$draft) {
+    if ($null -eq $draft) {
+        if (!$saved) {throw "Set up Salad in Settings > GPU Config before sending a project."}
+        $saved.domain=Gateway $saved.domain
+        return $saved
+    }
+    $domain=Gateway ([string]$draft.domain)
+    if ($saved -and $saved.domain -ne $domain -and (!$draft.salad -or !$draft.renderer)) {
+        throw "Enter both credentials when changing the Salad access domain."
+    }
+    if ($draft.renderer -and ([string]$draft.renderer).Trim().Length -lt 32) {
+        throw "Renderer API Token must contain at least 32 characters."
+    }
+    $salad=if ($draft.salad) {
+        ConvertFrom-SecureString (ConvertTo-SecureString ([string]$draft.salad).Trim() -AsPlainText -Force)
+    } elseif ($saved) {$saved.salad}
+    $renderer=if ($draft.renderer) {
+        ConvertFrom-SecureString (ConvertTo-SecureString ([string]$draft.renderer).Trim() -AsPlainText -Force)
+    } elseif ($saved) {$saved.renderer}
+    if (!$salad -or !$renderer) {throw "Enter the Salad API Key and Renderer API Token."}
+    [pscustomobject]@{domain=$domain;salad=$salad;renderer=$renderer}
+}
+
+function Save-Connection($config,[string]$path) {
+    # Windows PowerShell encrypts these two values with user-scoped DPAPI.
+    $temporary=$path+"."+[Guid]::NewGuid().ToString("N")+".tmp"
+    try {
+        [IO.File]::WriteAllText($temporary,($config | ConvertTo-Json -Compress),[Text.UTF8Encoding]::new($false))
+        if ([IO.File]::Exists($path)) {[IO.File]::Replace($temporary,$path,$null)}
+        else {[IO.File]::Move($temporary,$path)}
+    } finally {
+        Remove-Item -LiteralPath $temporary -ErrorAction SilentlyContinue
+    }
+}
+
+function New-ConnectionHeaders($config) {
+    $saladPtr=[IntPtr]::Zero
+    $rendererPtr=[IntPtr]::Zero
+    try {
+        $saladPtr=[Runtime.InteropServices.Marshal]::SecureStringToBSTR((ConvertTo-SecureString ([string]$config.salad)))
+        $rendererPtr=[Runtime.InteropServices.Marshal]::SecureStringToBSTR((ConvertTo-SecureString ([string]$config.renderer)))
+        $saladKey=[Runtime.InteropServices.Marshal]::PtrToStringBSTR($saladPtr)
+        $rendererKey=[Runtime.InteropServices.Marshal]::PtrToStringBSTR($rendererPtr)
+        if (!$saladKey -or $rendererKey.Length -lt 32) {throw "Invalid saved credentials."}
+        @{"Salad-Api-Key"=$saladKey;"Authorization"="Bearer $rendererKey"}
+    } catch {
+        throw "Saved credentials could not be unlocked. Re-enter both keys in GPU Config."
+    } finally {
+        if ($saladPtr -ne [IntPtr]::Zero) {[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($saladPtr)}
+        if ($rendererPtr -ne [IntPtr]::Zero) {[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($rendererPtr)}
+    }
+}
+
+function Test-Worker([string]$domain,$headers) {
+    $health=Invoke-RestMethod -MaximumRedirection 0 -Uri "$domain/health/ready" -Headers $headers -TimeoutSec 30
+    if (!$health.ok -or $health.cuda_stage1 -ne $true) {
+        throw "The worker is not ready for Concat CUDA Stage 1."
+    }
+    # Readiness can be public. This route also verifies the renderer token.
+    $diagnostics=Invoke-RestMethod -MaximumRedirection 0 -Uri "$domain/api/diagnostics/gpu" -Headers $headers -TimeoutSec 30
+    if ($diagnostics.cuda_stage1 -ne $true -or !$diagnostics.ffmpeg_available -or !$diagnostics.ffprobe_available) {
+        throw "The worker lacks the required Concat CUDA tools."
+    }
+    try {
+        $capabilities=Invoke-RestMethod -MaximumRedirection 0 -Uri "$domain/api/capabilities" -Headers $headers -TimeoutSec 30
+    } catch {
+        if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 404) {
+            throw "The Salad worker uses an older image. Start the matching Concat GPU candidate."
+        }
+        throw
+    }
+    if ($capabilities.api_version -ne 1 -or @($capabilities.bundle_versions) -notcontains 1 -or
+        @($capabilities.render_modes) -notcontains "cuda-hybrid-v1") {
+        throw "The Salad worker image does not match this Concat GPU build."
+    }
+}
+
+function Get-Output([string]$domain,[string]$job,$status,$headers,[string]$outputs) {
+    if ($job -cnotmatch '^concat-cuda-[a-f0-9]{16}$' -or $status.output_sha256 -cnotmatch '^[a-f0-9]{64}$' -or
+        [long]$status.output_size -le 0) {throw "The worker did not provide valid MP4 integrity metadata."}
+    New-Item -ItemType Directory -Force -Path $outputs | Out-Null
+    $output=Join-Path $outputs "$job.mp4"
+    if (Test-Path -LiteralPath $output) {
+        if ((SHA-File $output) -eq $status.output_sha256) {return $output}
+        throw "The existing output has a different checksum. Move it before retrying."
+    }
+    $partial=$output+"."+[Guid]::NewGuid().ToString("N")+".part"
+    try {
+        Invoke-WebRequest -UseBasicParsing -MaximumRedirection 0 -Uri "$domain/api/jobs/$job/output" -Headers $headers -TimeoutSec 900 -OutFile $partial
+        if ((Get-Item -LiteralPath $partial).Length -ne [long]$status.output_size -or
+            (SHA-File $partial) -ne $status.output_sha256) {throw "Downloaded MP4 failed checksum verification."}
+        [IO.File]::Move($partial,$output)
+        return $output
+    } finally {
+        Remove-Item -LiteralPath $partial -ErrorAction SilentlyContinue
+    }
+}
+
+function Send-Project([string]$root,[string]$gpuDataDir,[string]$domain,$headers) {
+    $projectManifest=Join-Path $root "concat.json"
+    if (!(Test-Path -LiteralPath $projectManifest -PathType Leaf)) {$projectManifest=Join-Path $root "wolfcut.json"}
+    if (!(Test-Path -LiteralPath $projectManifest -PathType Leaf)) {throw "Save a Concat project before sending it."}
+    $jobs=Join-Path $gpuDataDir "Jobs"
+    New-Item -ItemType Directory -Force -Path $jobs | Out-Null
+    $stateFile=Join-Path $gpuDataDir ("upload-"+(SHA-Bytes ([Text.Encoding]::UTF8.GetBytes($root))).Substring(0,24)+".json")
     $fp=SHA-File $projectManifest
     $state=$null
     if (Test-Path -LiteralPath $stateFile) {
         $state=Get-Content -LiteralPath $stateFile -Raw -Encoding UTF8 | ConvertFrom-Json
     }
-    if ($state -and $state.fingerprint -eq $fp -and $state.domain -eq $domain -and (Test-Path -LiteralPath $state.zip -PathType Leaf)) {
+    if ($state -and $state.fingerprint -eq $fp -and $state.domain -eq $domain -and $state.mode -eq "cuda-hybrid-v1" -and
+        $state.job -cmatch '^concat-cuda-[a-f0-9]{16}$' -and
+        $state.zip -eq (Join-Path $jobs ($state.job+".zip")) -and (Test-Path -LiteralPath $state.zip -PathType Leaf)) {
         $job=[string]$state.job
         $zip=[string]$state.zip
-        Write-Host "Resuming saved project ZIP snapshot: $job"
+        Report "Resuming saved project upload $job." 0
     } else {
         $job="concat-cuda-"+[Guid]::NewGuid().ToString("N").Substring(0,16)
         $zip=Join-Path $jobs ($job+".zip")
+        Report "Preparing project media for upload." 0
         try {Concat-Bundle $root $zip}
         catch {Remove-Item -LiteralPath $zip -ErrorAction SilentlyContinue;throw}
-        @{job=$job;zip=$zip;domain=$domain;fingerprint=$fp} |
+        @{job=$job;zip=$zip;domain=$domain;fingerprint=$fp;mode="cuda-hybrid-v1"} |
             ConvertTo-Json | Set-Content -LiteralPath $stateFile -Encoding UTF8
     }
     Submit-Zip $zip $job $domain $headers
-    Write-Host "CUDA render running. Checking existing VPS delivery..."
     $deadline=[DateTime]::UtcNow.AddHours(2)
-    while([DateTime]::UtcNow -lt $deadline) {
-        $status=Invoke-RestMethod -Uri "$domain/api/jobs/$job" -Headers $headers -TimeoutSec 30
-        Write-Host "GPU job $job : $($status.state)"
-        if ($status.state -eq "delivered") {
-            Write-Host "SUCCESS: MP4 verified on existing VPS Cloud Render as $job.mp4"
-            Remove-Item -LiteralPath $zip -ErrorAction SilentlyContinue
-            Remove-Item -LiteralPath $stateFile -ErrorAction SilentlyContinue
-            break
+    $lastState=""
+    :poll while ([DateTime]::UtcNow -lt $deadline) {
+        $status=Invoke-RestMethod -MaximumRedirection 0 -Uri "$domain/api/jobs/$job" -Headers $headers -TimeoutSec 30
+        if ($status.state -ne $lastState) {
+            Report "Job $job · $($status.state)" 100
+            $lastState=$status.state
         }
-        if ($status.state -eq "rendered") {
-            Write-Warning "Render complete; worker VPS delivery not configured. Output remains on Salad."
-            break
+        switch ($status.state) {
+            "delivered" {
+                Report "Render delivered and verified." 100 "VPS Cloud Render · $job.mp4"
+                break
+            }
+            {$_ -in "rendered","delivery_failed"} {
+                Report "Downloading and verifying the MP4." 100
+                try {$output=Get-Output $domain $job $status $headers (Join-Path $gpuDataDir "Outputs")}
+                catch {
+                    # The worker can move from rendered to delivering before this GET.
+                    if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 404 -and $_.Exception.Response.ResponseUri.AbsolutePath.EndsWith("/output")) {
+                        Start-Sleep -Seconds 2
+                        continue poll
+                    }
+                    throw
+                }
+                if ($status.state -eq "delivery_failed") {
+                    Report ("MP4 downloaded and verified. VPS delivery failed: "+[string]$status.error) 100 $output $true
+                } else {Report "Render complete. MP4 downloaded and verified." 100 $output}
+                break
+            }
+            "failed" {
+                Remove-Item -LiteralPath $stateFile -ErrorAction SilentlyContinue
+                throw ("GPU render failed: "+[string]$status.error)
+            }
         }
-        if ($status.state -in @("failed","delivery_failed")) {
-            throw ("GPU job failed: "+[string]$status.error)
+        if ($status.state -eq "delivered" -or $output) {
+            Remove-Item -LiteralPath $zip,$stateFile -ErrorAction SilentlyContinue
+            return
         }
         Start-Sleep -Seconds 6
     }
-    if ([DateTime]::UtcNow -ge $deadline) {throw "GPU job timed out; ZIP snapshot kept for recovery"}
-} finally {
-    if ($sPtr -ne [IntPtr]::Zero) {[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($sPtr)}
-    if ($rPtr -ne [IntPtr]::Zero) {[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($rPtr)}
-    Remove-Variable saladKey,rendererKey,headers -ErrorAction SilentlyContinue
+    throw "GPU job timed out. Send the same saved project to resume status checking."
+}
+
+if ($DefineOnly) {return}
+if ($BundleOnly) {
+    if (!$BundlePath) {throw "Offline bundle test requires -BundlePath"}
+    Concat-Bundle (Resolve-Path -LiteralPath $ProjectDir).ProviderPath $BundlePath
+    return
+}
+
+$headers=$null
+try {
+    if (!$env:LOCALAPPDATA) {throw "Windows did not provide a local application data directory."}
+    $gpuDataDir=Join-Path $env:LOCALAPPDATA "Concat\GPU"
+    $configFile=Join-Path $gpuDataDir "connection.json"
+    $saved=Read-Connection $configFile
+    $draft=$null
+    if ($Operation -ne "Submit") {
+        $draft=[Console]::In.ReadToEnd() | ConvertFrom-Json
+        if (!$draft) {throw "GPU settings were not provided."}
+    }
+    $config=Resolve-Connection $saved $draft
+    $headers=New-ConnectionHeaders $config
+    if ($Operation -eq "Save") {
+        New-Item -ItemType Directory -Force -Path $gpuDataDir | Out-Null
+        Save-Connection $config $configFile
+        Report "GPU settings saved for this Windows user." -1 $config.domain
+    } else {
+        Report "Checking Salad gateway and renderer authentication."
+        Test-Worker $config.domain $headers
+        if ($Operation -eq "Test") {Report "Connected. The authenticated CUDA worker is ready."}
+        else {Send-Project (Resolve-Path -LiteralPath $ProjectDir).ProviderPath $gpuDataDir $config.domain $headers}
+    }
+} catch {
+    $message=$_.Exception.Message
+    if ($_.Exception.Response) {
+        $code=[int]$_.Exception.Response.StatusCode
+        $message=switch ($code) {
+            {$_ -in 401,403} {"Salad or the renderer rejected authentication. Check both keys in GPU Config."}
+            404 {"The worker endpoint was not found. Check the Salad access domain and worker image."}
+            429 {"The worker is busy. Try again shortly."}
+            503 {"The Salad worker is not ready. Check the container group."}
+            default {"The Salad request failed (HTTP $code). Check the worker logs."}
+        }
+    }
+    Report $message -1 "" $true
+    exit 1
 }

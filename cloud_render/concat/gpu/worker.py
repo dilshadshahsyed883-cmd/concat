@@ -15,6 +15,7 @@ import re
 import shutil
 import socket
 import subprocess
+import sys
 import threading
 import time
 import urllib.parse
@@ -23,6 +24,9 @@ from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from cloud_render.concat.hybrid.contract import (
+    BUNDLE_VERSION, HYBRID_MODE, RENDER_MODES, WORKER_API_VERSION,
+)
 from cloud_render.concat.project_bundle import restore
 from cloud_render.concat.gpu.resumable import ResumableUpload, UploadError
 
@@ -32,6 +36,13 @@ CHUNK = 8 * 1024 * 1024
 MAX_BUNDLE = 4 * 1024 * 1024 * 1024
 MAX_QUEUE = 20
 MP4_SIGNATURE = b"ftyp"
+
+
+class DirectReceiver(urllib.request.HTTPRedirectHandler):
+    """VPS ingest must respond at the configured authenticated origin."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise RuntimeError("VPS ingest redirected instead of verifying the upload")
 
 
 class WorkerError(Exception):
@@ -196,7 +207,7 @@ class RenderWorker:
         self.receiver = receiver.rstrip("/")
         self.receiver_token = receiver_token
         # The optional renderer override is for offline tests only.
-        self.renderer = renderer or self._cuda_render
+        self.renderer = renderer
         self.deliver = deliver or self._deliver
         self.lock = threading.RLock()
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="concat-export")
@@ -252,8 +263,8 @@ class RenderWorker:
     def accept(self, job: str, stream, length: int, checksum: str,
                render_mode: str = "cuda-stage1") -> dict:
         job = check_id(job)
-        if render_mode != "cuda-stage1":
-            raise WorkerError(400, "Native Vulkan engine retired; only cuda-stage1 is supported")
+        if render_mode not in RENDER_MODES:
+            raise WorkerError(400, "Native Vulkan engine retired; use cuda-stage1 or cuda-hybrid-v1")
         if not 0 < length <= MAX_BUNDLE or not DIGESTS.fullmatch(checksum):
             raise WorkerError(400, "Invalid bundle size or SHA256")
         with self.lock:
@@ -305,9 +316,14 @@ class RenderWorker:
             extracted = directory / "project"
             restore(directory / "project.zip", extracted)
             mode = self.status(job).get("render_mode", "native")
-            if mode != "cuda-stage1":
-                raise RuntimeError("Legacy native Vulkan jobs are retired; use cuda-stage1. Source bundle retained")
-            self.renderer(extracted, output)
+            if mode not in RENDER_MODES:
+                raise RuntimeError("Legacy native Vulkan jobs are retired. Source bundle retained")
+            if self.renderer is not None:
+                self.renderer(extracted, output)
+            elif mode == HYBRID_MODE:
+                self._hybrid_render(job, extracted, output)
+            else:
+                self._cuda_render(extracted, output)
             if not output.is_file() or output.is_symlink() or output.stat().st_size < 12:
                 raise RuntimeError("Concat did not produce an MP4")
             with output.open("rb") as handle:
@@ -328,6 +344,19 @@ class RenderWorker:
             prior = self.status(job)
             self._change(job, state="delivery_failed" if prior["state"] == "delivering" else "failed",
                          error=str(exc)[:500])
+
+    def _hybrid_render(self, job: str, project: Path, output: Path):
+        call = [sys.executable, "-m", "cloud_render.concat.hybrid.render", str(project), str(output)]
+        # Stream progress and skipped effects to container logs while rendering.
+        log_file = self.state / f"{check_id(job)}.render.log"
+        with log_file.open("w", encoding="utf-8") as log:
+            outcome = subprocess.run(call, stdout=log, stderr=None,
+                                     timeout=int(os.getenv("CONCAT_RENDER_TIMEOUT", "7200")))
+        if outcome.returncode:
+            raise RuntimeError(f"CUDA hybrid renderer exited with code {outcome.returncode}. Check the Salad worker logs.")
+        report = log_file.read_text(encoding="utf-8").strip()
+        if report:
+            print(f"GPU job {job}: {report}", flush=True)
 
     def _cuda_render(self, project: Path, output: Path):
         plan = concat_stage1_plan(project)
@@ -351,6 +380,7 @@ class RenderWorker:
         length = output.stat().st_size
         checksum = digest_file(output)
         base = self.receiver + "/api/cloud-render/ingest/" + job + "/chunk"
+        opener = urllib.request.build_opener(DirectReceiver())
         with output.open("rb") as stream:
             for index in range((length + CHUNK - 1) // CHUNK):
                 chunk = stream.read(CHUNK)
@@ -359,7 +389,7 @@ class RenderWorker:
                 request = urllib.request.Request(url, data=chunk, method="POST",
                     headers={"X-Cloud-Render-Token": self.receiver_token,
                              "Content-Type": "application/octet-stream"})
-                with urllib.request.urlopen(request, timeout=120) as response:
+                with opener.open(request, timeout=120) as response:
                     payload = json.load(response)
                 if not payload.get("ok"):
                     raise RuntimeError("VPS chunk receiver rejected upload")
@@ -434,6 +464,10 @@ class Handler(BaseHTTPRequestHandler):
             ok = self.worker.ready()
             return self._json(200 if ok else 503, {"ok": ok, "engine": "cuda-nvenc-stage1", "cuda_stage1": True, "native_vulkan": False})
         self._authorize()
+        if action == "GET" and path == "/api/capabilities":
+            return self._json(200, {"api_version": WORKER_API_VERSION,
+                                    "bundle_versions": [BUNDLE_VERSION],
+                                    "render_modes": list(RENDER_MODES)})
         if action == "GET" and path == "/api/diagnostics/gpu":
             return self._json(200, {"engine": "cuda-nvenc-stage1",
                                     "cuda_stage1": True, "native_vulkan": False,

@@ -898,5 +898,16 @@
   "voices.styles": "Styles",
   "voices.stylesHint": "A style is a voice with effects on it. Pick one to write in it: the effects go on the speech clip, where you can change them.",
   "voices.voices": "Voices",
-  "voices.yours": "Your voices"
+  "voices.yours": "Your voices",
+  "cloudGpu.title": "GPU Config",
+  "cloudGpu.domain": "Salad Access Domain URL",
+  "cloudGpu.saladKey": "Salad API Key",
+  "cloudGpu.rendererToken": "Renderer API Token",
+  "cloudGpu.firstUseHint": "Enter your Salad worker details. Credentials are encrypted for this Windows account.",
+  "cloudGpu.savedHint": "GPU settings are saved for this Windows account.",
+  "cloudGpu.keepSaved": "Leave blank to keep the saved value",
+  "cloudGpu.save": "Save Settings",
+  "cloudGpu.test": "Test Connection",
+  "cloudGpu.job": "GPU Job Status",
+  "cloudGpu.jobHint": "Use File → Send to GPU (CUDA) to submit the saved project."
 }

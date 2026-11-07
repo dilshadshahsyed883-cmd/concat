@@ -2850,10 +2850,10 @@ impl Studio {
     /// Save the live Concat edit before handing its unchanged project to
     /// the GPU uploader. Existing local export and editing paths remain intact.
     #[cfg(windows)]
-    pub fn send_to_gpu(&mut self) {
+    pub fn save_for_gpu(&mut self) -> Option<String> {
         let Some(session) = self.session.as_mut() else {
             self.notify("Open a Concat project before sending it to GPU", true);
-            return;
+            return None;
         };
         // save_ordered uses the upstream atomic write + ticket ordering.
         // A screenshot of a preview is never a substitute for the saved edit.
@@ -2863,14 +2863,12 @@ impl Studio {
         match projects::save_ordered(&path, &document, ticket) {
             Ok(_) => {
                 self.dirty = false;
-                match crate::cloud_gpu::launch(&path) {
-                    Ok(()) => self.notify("GPU upload opened; follow progress in the new window", false),
-                    Err(error) => self.notify(&format!("Could not start GPU upload: {error}"), true),
-                }
+                Some(path)
             }
             Err(error) => {
                 self.dirty = true;
                 self.notify(&format!("GPU upload blocked; Concat save failed: {error}"), true);
+                None
             }
         }
     }
@@ -11443,6 +11441,8 @@ impl Studio {
                     "",
                     self.session.is_some(),
                 ),
+                #[cfg(windows)]
+                row("gpu-config", t("cloudGpu.title"), Glyph::Settings, "", true),
                 row(
                     "template",
                     t("studio.saveAsTemplate"),

@@ -1,0 +1,38 @@
+name: Concat Salad candidate
+
+on:
+  push:
+    branches: ['gpu/final-integration']
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build and publish the candidate image
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY,,}-gpu-candidate:${GITHUB_SHA}"
+          docker build --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            -f cloud_render/concat/gpu/Dockerfile -t "$image" .
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker push "$image"
+          docker logout ghcr.io
+          reference="$(docker inspect --format '{{index .RepoDigests 0}}' "$image")"
+          printf 'Tag: `%s`\n\nDigest: `%s`\n' "$image" "$reference" >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n%s\n' "$image" "$reference" > image-reference.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Concat-Salad-image-reference
+          path: image-reference.txt
+          if-no-files-found: error

@@ -15,6 +15,8 @@ import shutil
 import time
 from pathlib import Path
 
+from cloud_render.concat.hybrid.contract import RENDER_MODES
+
 CHUNK_BYTES = 8 * 1024 * 1024
 MAX_BYTES = 4 * 1024 * 1024 * 1024
 MAX_ACTIVE_UPLOADS = 10
@@ -95,8 +97,8 @@ class ResumableUpload:
     def begin(self, job, size, sha256, render_mode="cuda-stage1"):
         with self.worker.lock:
             self._id(job)
-            if render_mode != "cuda-stage1":
-                raise UploadError(400, "Native Vulkan engine retired; use cuda-stage1")
+            if render_mode not in RENDER_MODES:
+                raise UploadError(400, "Native Vulkan engine retired; use cuda-stage1 or cuda-hybrid-v1")
             if type(size) is not int or not 0 < size <= MAX_BYTES:
                 raise UploadError(400, "Invalid ZIP size")
             if not isinstance(sha256, str) or not SHA.fullmatch(sha256):
@@ -172,7 +174,7 @@ class ResumableUpload:
             status = self._status(job)
             # Do not silently convert an old native upload to CUDA. Keep
             # its original verified parts and require a new CUDA job ID.
-            if status["render_mode"] != "cuda-stage1":
+            if status["render_mode"] not in RENDER_MODES:
                 raise UploadError(409, "Legacy native Vulkan upload retired; existing chunks preserved")
             if status["remaining"]:
                 raise UploadError(409, f"Missing {status['remaining']} ZIP chunks")

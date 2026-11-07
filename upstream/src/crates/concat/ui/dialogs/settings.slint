@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
 
+import { CloudGpu, CloudGpuPanel } from "cloud-gpu.slint";
 import { I18n } from "../i18n.slint";
 import { Theme } from "../theme/theme.slint";
 import { NumberField } from "../primitives/number-field.slint";
@@ -62,7 +63,7 @@ export struct ShortcutData {
 export struct SettingsData {
     open: bool,
     /// 0 General, 1 Appearance, 2 Transcriber, 3 Speech, 4 Remote, 5 About,
-    /// 6 Version, 7 Shortcuts
+    /// 6 Version, 7 Shortcuts, 8 GPU Config
     tab: int,
     language: int,
     /// what the log records: 0 errors only, 1 warnings, 2 normal, 3
@@ -679,6 +680,7 @@ export component SettingsDialog inherits Modal {
         {label: I18n.t("common.transcriber"), glyph: Glyph.waveform, page: 2, desk: false},
         {label: I18n.t("common.speech"), glyph: Glyph.music, page: 3, desk: false},
         {label: I18n.t("settings.automation"), glyph: Glyph.lock, page: 4, desk: true},
+        {label: I18n.t("cloudGpu.title"), glyph: Glyph.export, page: 8, desk: true},
         {label: I18n.t("settings.version"), glyph: Glyph.tag, page: 6, desk: true},
         {label: I18n.t("settings.about"), glyph: Glyph.sparkle, page: 5, desk: false},
     ];
@@ -710,6 +712,8 @@ export component SettingsDialog inherits Modal {
     changed open => {
         if (!root.open) {
             root.token-shown = false;
+            CloudGpu.salad-key = "";
+            CloudGpu.renderer-token = "";
         }
     }
 
@@ -783,7 +787,7 @@ export component SettingsDialog inherits Modal {
                         alignment: start;
 
                         for entry in root.page-list: PageTab {
-                            visible: !(entry.desk && root.phone);
+                            visible: !(entry.desk && root.phone) && (entry.page != 8 || CloudGpu.available);
                             min-width: self.preferred-width;
                             label: entry.label;
                             glyph: entry.glyph;
@@ -809,7 +813,7 @@ export component SettingsDialog inherits Modal {
                     alignment: start;
 
                     for entry in root.page-list: PageTab {
-                        visible: !(entry.desk && root.phone);
+                        visible: !(entry.desk && root.phone) && (entry.page != 8 || CloudGpu.available);
                         label: entry.label;
                         glyph: entry.glyph;
                         current: root.data.tab == entry.page;
@@ -1437,6 +1441,8 @@ export component SettingsDialog inherits Modal {
             // is out, and any release from 0.2.5 on put in this one's place.
             // A desk's affair, like the Automation page: a phone's store does
             // its updating.
+            if root.data.tab == 8 && CloudGpu.available: CloudGpuPanel {}
+
             if root.data.tab == 6 && !root.phone: VerticalLayout {
                 DialogSection {
                     ruled: false;

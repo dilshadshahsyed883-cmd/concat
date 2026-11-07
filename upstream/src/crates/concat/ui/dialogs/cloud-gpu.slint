@@ -1,0 +1,91 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import { I18n } from "../i18n.slint";
+import { Theme } from "../theme/theme.slint";
+import { Button, DialogSection, Field, Progress } from "../primitives/modal.slint";
+
+export global CloudGpu {
+    in property <bool> available;
+    in property <bool> configured;
+    in property <bool> busy;
+    in-out property <string> domain;
+    in-out property <string> salad-key;
+    in-out property <string> renderer-token;
+    in property <string> connection-note;
+    in property <bool> connection-error;
+    in property <string> job-note;
+    in property <bool> job-error;
+    in property <int> progress: -1;
+    in property <string> output-location;
+    callback save();
+    callback test();
+}
+
+export component CloudGpuPanel inherits VerticalLayout {
+    spacing: 12px;
+
+    DialogSection {
+        title: I18n.t("cloudGpu.title");
+        hint: CloudGpu.configured ? I18n.t("cloudGpu.savedHint") : I18n.t("cloudGpu.firstUseHint");
+
+        Text { text: I18n.t("cloudGpu.domain"); color: Theme.fg; }
+        Field {
+            value: CloudGpu.domain;
+            placeholder: "https://your-access-domain.salad.cloud";
+            technical: true;
+            edited(value) => { CloudGpu.domain = value; }
+        }
+        Text { text: I18n.t("cloudGpu.saladKey"); color: Theme.fg; }
+        Field {
+            value: CloudGpu.salad-key;
+            placeholder: CloudGpu.configured ? I18n.t("cloudGpu.keepSaved") : "";
+            secret: true;
+            edited(value) => { CloudGpu.salad-key = value; }
+        }
+        Text { text: I18n.t("cloudGpu.rendererToken"); color: Theme.fg; }
+        Field {
+            value: CloudGpu.renderer-token;
+            placeholder: CloudGpu.configured ? I18n.t("cloudGpu.keepSaved") : "";
+            secret: true;
+            edited(value) => { CloudGpu.renderer-token = value; }
+        }
+
+        HorizontalLayout {
+            alignment: start;
+            spacing: 8px;
+            Button {
+                label: I18n.t("cloudGpu.save");
+                enabled: !CloudGpu.busy && CloudGpu.domain != "";
+                clicked => { CloudGpu.save(); }
+            }
+            Button {
+                label: I18n.t("cloudGpu.test");
+                enabled: !CloudGpu.busy && CloudGpu.domain != "";
+                clicked => { CloudGpu.test(); }
+            }
+        }
+        if CloudGpu.connection-note != "": Text {
+            text: CloudGpu.connection-note;
+            color: CloudGpu.connection-error ? Theme.danger : Theme.fg;
+            wrap: word-wrap;
+        }
+    }
+
+    DialogSection {
+        title: I18n.t("cloudGpu.job");
+        hint: I18n.t("cloudGpu.jobHint");
+        if CloudGpu.job-note != "": Text {
+            text: CloudGpu.job-note;
+            color: CloudGpu.job-error ? Theme.danger : Theme.fg;
+            wrap: word-wrap;
+        }
+        if CloudGpu.progress >= 0: Progress {
+            value: CloudGpu.progress / 100.0;
+        }
+        if CloudGpu.output-location != "": Text {
+            text: CloudGpu.output-location;
+            wrap: word-wrap;
+            color: Theme.fg;
+        }
+    }
+}

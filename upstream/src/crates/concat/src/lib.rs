@@ -1721,6 +1721,9 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         state.handle(Msg::Relink(RelinkMsg::Dismiss));
     }));
 
+    #[cfg(windows)]
+    cloud_gpu::wire(&app);
+
     // ── the dialogs ──
     app.on_export_clicked(on_window!(|state| {
         state.handle(Msg::Export(ExportMsg::Open));
@@ -2122,7 +2125,20 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                         ),
                         "export" => state.handle(Msg::Export(ExportMsg::Open)),
                         #[cfg(windows)]
-                        "send-gpu" => state.send_to_gpu(),
+                        "send-gpu" => {
+                            state.handle(Msg::Settings(SettingsMsg::Open));
+                            state.handle(Msg::Settings(SettingsMsg::PageChanged(cloud_gpu::SETTINGS_PAGE)));
+                            if cloud_gpu::can_submit(&app) {
+                                if let Some(path) = state.save_for_gpu() {
+                                    cloud_gpu::submit(&app, path);
+                                }
+                            }
+                        }
+                        #[cfg(windows)]
+                        "gpu-config" => {
+                            state.handle(Msg::Settings(SettingsMsg::Open));
+                            state.handle(Msg::Settings(SettingsMsg::PageChanged(cloud_gpu::SETTINGS_PAGE)));
+                        }
                         "template" => state.save_template(),
                         "speech" => state.handle(Msg::Speech(SpeechMsg::Open)),
                         "clear-cache" => state.clear_project_cache(),
