@@ -170,4 +170,37 @@ mod tests {
         assert!(reloaded.jobs[0].attempted);
         assert_eq!(reloaded.jobs[1].phase, Phase::Rendering);
     }
+    #[test]
+    fn older_saved_queue_without_metrics_still_loads() {
+        let mut value = serde_json::to_value(Queue {
+            jobs: vec![job("legacy", Phase::Queued)],
+            started: false,
+        })
+        .unwrap();
+        value["jobs"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("metrics");
+        let restored: Queue = serde_json::from_value(value).unwrap();
+        assert_eq!(restored.jobs[0].metrics, "");
+        assert_eq!(restored.jobs[0].phase, Phase::Queued);
+    }
+
+    #[test]
+    fn render_metrics_survive_queue_restart() {
+        let mut completed = job("rendered", Phase::Completed);
+        completed.metrics =
+            "Render Time: 12.00 s | Average FPS: 60.00 | Speed: 2.00x".into();
+        let saved = serde_json::to_string(&Queue {
+            jobs: vec![completed],
+            started: true,
+        })
+        .unwrap();
+        let mut restored: Queue = serde_json::from_str(&saved).unwrap();
+        restored.recover();
+        assert!(!restored.started);
+        assert_eq!(restored.jobs[0].phase, Phase::Completed);
+        assert!(restored.jobs[0].metrics.contains("Average FPS: 60.00"));
+    }
+
 }
