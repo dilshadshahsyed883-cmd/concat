@@ -42,6 +42,7 @@ use concat_project::commands::{ClipMove, ClipPatch, TrackFlag, TrimEdge};
 use concat_project::model::{
     self, AppliedFilter, Clip, Project, TextAlign, TextStyle, Timeline, Track, Transition,
 };
+use concat_project::motion_preset::{MotionPreset, PresetError};
 use concat_project::{Command, PlayheadSide};
 
 mod backdrop;
@@ -10124,6 +10125,40 @@ impl Studio {
             }
         };
         self.apply(command);
+    }
+
+    /// Adds a preset as ordinary clip keys and shows a frame in its range.
+    pub fn apply_motion_preset(&mut self, field: ClipField) {
+        let preset = match field {
+            ClipField::Scale => MotionPreset::PushIn,
+            ClipField::OffsetX => MotionPreset::PanRight,
+            ClipField::Opacity => MotionPreset::FadeIn,
+            _ => return,
+        };
+        self.flush_commit();
+        let Some(clip) = self.sole_selection().and_then(|id| self.clip(&id)) else {
+            self.notify(&t("studio.selectVideoImageClip"), true);
+            return;
+        };
+        if self.locked(&clip.track_id) {
+            self.notify(&t("studio.motionPresetLocked"), true);
+            return;
+        }
+        match preset.command(clip, self.frame_seconds()) {
+            Ok((command, preview)) => {
+                self.apply(command);
+                self.seek(preview as f32);
+            }
+            Err(error) => {
+                let message = match error {
+                    PresetError::NeedsPicture => "studio.selectVideoImageClip",
+                    PresetError::TooShort => "studio.motionPresetTooShort",
+                    PresetError::AlreadyKeyed => "studio.motionPresetAlreadyKeyed",
+                    PresetError::NoChange => "studio.motionPresetNoChange",
+                };
+                self.notify(&t(message), true);
+            }
+        }
     }
 
     /// Takes every key off a field, leaving it its constant.

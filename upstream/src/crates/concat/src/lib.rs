@@ -1157,6 +1157,9 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         keys.on_clear(on_lanes!(|state, field: ClipField| {
             state.clear_keys_on(field);
         }));
+        keys.on_apply_motion_preset(on_lanes!(|state, field: ClipField| {
+            state.apply_motion_preset(field);
+        }));
         // The same three verbs for the Adjust panel's knobs, which are
         // named rather than enumerated.
         keys.on_toggle_param(on_lanes!(|state, key: SharedString| {

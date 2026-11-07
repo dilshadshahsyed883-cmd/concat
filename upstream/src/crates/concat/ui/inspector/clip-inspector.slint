@@ -1280,6 +1280,37 @@ export component VideoPanel inherits VerticalLayout {
         }
     }
 
+    if root.canvas && (root.selected.kind == ClipKind.video || root.selected.kind == ClipKind.image): Section {
+        motion := SectionHeader {
+            title: I18n.t("clipInspector.motionPresets");
+            collapsible: true;
+            HelpButton { text: I18n.t("clipInspector.motionPresetHelp"); }
+        }
+
+        if motion.open: SectionBody {
+            HorizontalLayout {
+                padding-left: Theme.pad;
+                padding-right: Theme.pad;
+                spacing: Theme.gap;
+                Button {
+                    block: true;
+                    label: I18n.t("clipInspector.pushIn");
+                    clicked => { Keyframes.apply-motion-preset(ClipField.scale); }
+                }
+                Button {
+                    block: true;
+                    label: I18n.t("clipInspector.panRight");
+                    clicked => { Keyframes.apply-motion-preset(ClipField.offset-x); }
+                }
+                Button {
+                    block: true;
+                    label: I18n.t("clipInspector.fadeIn");
+                    clicked => { Keyframes.apply-motion-preset(ClipField.opacity); }
+                }
+            }
+        }
+    }
+
     // What fills the frame where this picture does not reach: the
     // timeline's background, or one of the clip's own. Only on the lowest
     // picture lane, which is where a background is drawn.

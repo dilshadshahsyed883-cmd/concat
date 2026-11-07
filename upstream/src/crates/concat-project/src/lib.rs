@@ -25,6 +25,7 @@ pub mod commands;
 pub mod doc;
 pub mod editor;
 pub mod model;
+pub mod motion_preset;
 pub mod placement;
 pub mod speed;
 pub mod srt;
