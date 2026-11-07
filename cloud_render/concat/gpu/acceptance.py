@@ -5,8 +5,8 @@ Usage: python -m cloud_render.concat.gpu.acceptance NEW_RESULTS_DIRECTORY
 from __future__ import annotations
 
 import argparse
-import array
 import json
+from struct import iter_unpack
 import subprocess
 import time
 from fractions import Fraction
@@ -57,28 +57,28 @@ def inspect_cut_output(output: Path) -> dict:
     if a["codec_name"] != "aac" or abs(float(a["duration"]) - FRAMES / FPS) > 1 / FPS:
         raise ValueError("Narration codec or duration is incorrect")
 
-    samples = []
-    for at in ("0.75", "1.25"):
-        pixel = ffmpeg("-ss", at, "-i", str(output), "-an", "-frames:v", "1",
-                       "-vf", "scale=1:1", "-pix_fmt", "rgb24", "-f", "rawvideo", "-")
-        if len(pixel) != 3:
-            raise ValueError("Could not sample the output picture")
-        pcm = ffmpeg("-ss", at, "-i", str(output), "-vn", "-t", "0.1",
-                     "-ac", "1", "-ar", "48000", "-f", "s16le", "-")
-        amplitudes = array.array("h", pcm)
-        if not amplitudes:
-            raise ValueError("Could not sample the output audio")
-        samples.append({"at": at, "rgb": list(pixel),
-                        "peak_pcm16": max(abs(n) for n in amplitudes)})
-    red, blue = samples
-    if not (red["rgb"][0] > 170 and red["rgb"][2] < 70
-            and blue["rgb"][2] > 170 and blue["rgb"][0] < 70):
+    picture = ffmpeg("-i", str(output), "-an", "-frames:v", "2", "-fps_mode",
+                     "passthrough", "-vf", r"select=eq(n\,29)+eq(n\,30),scale=1:1",
+                     "-pix_fmt", "rgb24", "-f", "rawvideo", "-")
+    if len(picture) != 6:
+        raise ValueError("Could not sample both sides of the picture cut")
+    red, blue = list(picture[:3]), list(picture[3:])
+    if not (red[0] > 170 and red[2] < 70 and blue[2] > 170 and blue[0] < 70):
         raise ValueError("Output pictures do not match the cut timeline")
-    if red["peak_pcm16"] > 500 or blue["peak_pcm16"] < 5000:
+
+    pcm = ffmpeg("-ss", "0.85", "-i", str(output), "-vn", "-t", "0.3",
+                 "-ac", "1", "-ar", "48000", "-f", "s16le", "-")
+    tone = next((index for index, (value,) in enumerate(iter_unpack("<h", pcm))
+                 if abs(value) >= 2500), None)
+    if tone is None:
+        raise ValueError("Output is missing the expected narration cue")
+    audio_onset = .85 + tone / 48000
+    if abs(audio_onset - 1) > 1 / FPS:
         raise ValueError("Narration transition does not align to the picture cut")
     return {"video_codec": v["codec_name"], "audio_codec": a["codec_name"],
             "resolution": [WIDTH, HEIGHT], "frames": FRAMES, "fps": FPS,
-            "audio_duration": float(a["duration"]), "samples": samples}
+            "audio_duration": float(a["duration"]), "audio_onset": audio_onset,
+            "cut_frames": [{"index": 29, "rgb": red}, {"index": 30, "rgb": blue}]}
 
 
 def run(root: Path) -> dict:
