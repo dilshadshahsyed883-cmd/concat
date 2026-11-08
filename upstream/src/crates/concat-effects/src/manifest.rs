@@ -556,11 +556,12 @@ impl Manifest {
             if param.key == "index" {
                 return Err(self.invalid("`index` is reserved"));
             }
-            // The key every filter answers to without declaring it: how much
-            // of the look is applied, read by the catalogue as a percent. A
-            // parameter under that name would be read twice, once as itself
-            // and once as the mix, and the two would disagree.
-            if param.key == "intensity" {
+            // Only transitions may declare an explicit intensity control:
+            // their two-input shader uses params.intensity without the
+            // filter's implicit frame.intensity mix. Keep the serialized
+            // name to preserve existing transition projects and presets.
+            // For filters and other packages the name stays reserved.
+            if param.key == "intensity" && self.effect.kind != Kind::Transition {
                 return Err(
                     self.invalid("`intensity` is reserved: it is the mix every filter takes")
                 );
@@ -1072,6 +1073,24 @@ mod tests {
         let transition = manifest.transition.expect("a [transition] table");
         assert_eq!(transition.entry, "effect.wgsl");
         assert_eq!(transition.xfade.as_deref(), Some("fade"));
+    }
+
+    #[test]
+    fn transition_intensity_is_a_real_shader_parameter_not_filter_mix() {
+        // The procedural transitions shipped with Concat use this existing
+        // public project key. Rejecting it panicked during app startup.
+        let source = format!(
+            "{GOOD_TRANSITION}\n[[param]]\nkey = \"intensity\"\nlabel = \"Intensity\"\nmin = 0\nmax = 100\ndefault = 70\nstep = 1\n"
+        );
+        let manifest = Manifest::parse(&source).expect("transition intensity is valid");
+        assert_eq!(manifest.effect.kind, Kind::Transition);
+        assert_eq!(manifest.params[0].key, "intensity");
+        assert_eq!(manifest.params[0].default, 70.0);
+        // A filter still reserves that name for its implicit visual mix.
+        rejects(
+            &GOOD.replace("key = \"radius\"", "key = \"intensity\""),
+            "reserved",
+        );
     }
 
     #[test]
