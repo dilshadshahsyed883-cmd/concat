@@ -11,7 +11,7 @@ from .animations import Transform
 from .captions import CaptionStyle, Cue
 from .contract import FrameSpan
 from .filters import FilterSettings
-from .transitions import NATIVE_FADES, Transition
+from .transitions import NATIVE_TRANSITIONS, Transition
 
 FPS = 30
 WIDTH, HEIGHT = 1920, 1080
@@ -120,7 +120,7 @@ def _validated_timeline(document):
         if transition is not None:
             transition_id = transition.get("id") if isinstance(transition, dict) else None
             if (kind not in ("image", "video") or not isinstance(transition_id, str)
-                    or (transition_id not in TRANSITIONS and transition_id not in NATIVE_FADES)
+                    or (transition_id not in TRANSITIONS and transition_id not in NATIVE_TRANSITIONS)
                     or set(transition) - {"id", "duration"}):
                 raise ValueError(f"Unsupported GPU transition {transition_id} on clip {ident}")
         if kind == "text" and (any(clip.get(field) for field in ("flipH", "flipV"))
@@ -277,7 +277,7 @@ def _native_cut(rank, previous, incoming, ident, duration, media_duration):
     available = ((media_duration - previous.source_start) / previous.speed
                  if type(media_duration) in (float, int) and isfinite(media_duration) else 0)
     hold = previous.kind == "video" and (available * FPS - previous_frames - 1) < tail - .5
-    return NativeCut(rank, Transition(NATIVE_FADES[ident], FrameSpan(start, end)),
+    return NativeCut(rank, Transition(NATIVE_TRANSITIONS[ident], FrameSpan(start, end)),
                      previous, incoming, hold)
 
 
@@ -529,7 +529,7 @@ def _plan_project(document, timeline, resolve_media):
             duration = positive_time(spec.get("duration", 1), "transition")
             if previous.span.end != span.start or "layer" in (incoming.kind, previous.kind):
                 raise ValueError(f"Unsupported or unaligned GPU transition {ident} on {incoming.id}")
-            if ident in NATIVE_FADES:
+            if ident in NATIVE_TRANSITIONS:
                 native_cuts.append(_native_cut(rank, previous, incoming, ident, duration,
                                                media_durations[previous.id]))
                 continue
