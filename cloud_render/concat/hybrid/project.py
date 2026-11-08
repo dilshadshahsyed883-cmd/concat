@@ -65,6 +65,9 @@ def _validated_timeline(document):
             result[ident] = item
         return result
 
+    # Resource bounds allow thousands of edits without unbounded planner work.
+    if len(timelines) > 128 or len(tracks) > 512 or len(clips) > 50000 or len(media) > 20000:
+        raise ValueError("GPU project exceeds limits: 128 timelines, 512 tracks, 50000 clips or 20000 media records")
     track_ids = index_by_id(tracks, "track")
     media_items = index_by_id(media, "media")
     index_by_id(clips, "clip")
@@ -100,6 +103,8 @@ def _validated_timeline(document):
         keys = clip.get("keys") or []
         if not isinstance(keys, list):
             raise ValueError(f"Invalid GPU keyframes on clip {ident}")
+        if len(keys) > 2048:
+            raise ValueError(f"GPU clip {ident} has too many animation keyframes (2048 maximum)")
         for key in keys:
             prop = key.get("property") if isinstance(key, dict) else None
             if kind not in ("image", "video", "layer") or not isinstance(prop, str) or prop not in KEYS:
@@ -107,6 +112,8 @@ def _validated_timeline(document):
         effects = clip.get("videoEffects") or []
         if not isinstance(effects, list):
             raise ValueError(f"Invalid GPU effects on clip {ident}")
+        if len(effects) > 256:
+            raise ValueError(f"GPU clip {ident} has too many effects (256 maximum)")
         for effect in effects:
             if not isinstance(effect, dict):
                 raise ValueError(f"Invalid GPU effect on clip {ident}")

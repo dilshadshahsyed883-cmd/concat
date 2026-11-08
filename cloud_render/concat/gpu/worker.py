@@ -28,7 +28,7 @@ from pathlib import Path
 from cloud_render.concat.hybrid.contract import (
     BUNDLE_VERSION, HYBRID_MODE, RENDER_MODES, WORKER_API_VERSION,
 )
-from cloud_render.concat.project_bundle import restore
+from cloud_render.concat.project_bundle import restore, MAX_PROJECT_MANIFEST_BYTES
 from cloud_render.concat.gpu.resumable import ResumableUpload, UploadError
 
 IDS = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
@@ -514,7 +514,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {"api_version": WORKER_API_VERSION,
                                     "bundle_versions": [BUNDLE_VERSION],
                                     "render_modes": list(RENDER_MODES),
-                                    "validation_version": 1})
+                                    "validation_version": 1,
+                                    "max_project_manifest_bytes": MAX_PROJECT_MANIFEST_BYTES})
         if action == "POST" and path == "/api/validate":
             # Read only the manifest, never accept media before validation.
             if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
@@ -523,18 +524,21 @@ class Handler(BaseHTTPRequestHandler):
                 length = int(self.headers.get("Content-Length", "0"))
             except ValueError:
                 raise WorkerError(400, "Invalid GPU validation Content-Length") from None
-            if not 0 < length <= 2 * 1024 * 1024:
-                raise WorkerError(413, "GPU project manifest exceeds validation limit")
+            if length <= 0:
+                raise WorkerError(400, "GPU project JSON is empty")
+            if length > MAX_PROJECT_MANIFEST_BYTES:
+                raise WorkerError(413, f"GPU project JSON is {length} bytes; maximum is {MAX_PROJECT_MANIFEST_BYTES} bytes (64 MiB)")
             try:
                 manifest = json.loads(self.rfile.read(length))
-            except (ValueError, UnicodeDecodeError):
-                raise WorkerError(400, "Invalid Concat project JSON") from None
+            except (ValueError, UnicodeDecodeError, RecursionError):
+                raise WorkerError(400, "Invalid Concat project JSON (syntax, UTF-8 or nesting depth)") from None
             from cloud_render.concat.hybrid.project import validate_gpu_manifest
             try:
                 validate_gpu_manifest(manifest)
             except (ValueError, KeyError, TypeError) as exc:
                 return self._json(200, {"ok": False, "errors": [str(exc)]})
-            return self._json(200, {"ok": True, "profile": "cuda-hybrid-v1"})
+            return self._json(200, {"ok": True, "profile": "cuda-hybrid-v1",
+                                    "project_bytes": length})
 
         if action == "GET" and path == "/api/diagnostics/gpu":
             return self._json(200, {"engine": "cuda-nvenc-stage1",
