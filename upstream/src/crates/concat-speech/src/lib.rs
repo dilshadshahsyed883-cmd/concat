@@ -101,26 +101,31 @@ pub(crate) fn fetch_model(
 ) -> Result<(u64, u64), String> {
     use std::sync::atomic::Ordering;
 
-    let mut last = String::new();
+    let mut failures = Vec::new();
     for url in concat_host::models::sources(file, upstream) {
         match download_to(&url, partial, id, estimate, cancel, progress) {
-            Ok(totals) => {
-                concat_host::models::verify(partial, sha256).inspect_err(|_| {
+            Ok(totals) => match concat_host::models::verify(partial, sha256) {
+                Ok(()) => return Ok(totals),
+                Err(error) => {
+                    // A server can return a complete but wrong file. Preserve
+                    // neither poisoned bytes nor a false installed status:
+                    // restart against the next pinned, digest-checked mirror.
                     let _ = std::fs::remove_file(partial);
-                })?;
-                return Ok(totals);
-            }
-            // The partial stays for the next source, or the next time:
-            // whichever answers takes up where this one stopped.
+                    failures.push(format!("{url}: {error}"));
+                }
+            },
             Err(error) => {
                 if cancel.load(Ordering::Relaxed) {
                     return Err(error);
                 }
-                last = error;
+                // A partial survives transport errors so the next mirror
+                // can resume it with a validated Content-Range.
+                failures.push(error);
             }
         }
     }
-    Err(last)
+    Err(format!("model {id} could not be downloaded or verified: {}",
+                failures.join("; ")))
 }
 
 /// Streams `url` into `partial` through the shared downloader - taking
