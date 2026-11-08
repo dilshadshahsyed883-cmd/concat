@@ -254,36 +254,30 @@ pub fn lay_out(node: &Dock, (x, y, w, h): (f32, f32, f32, f32), out: &mut DockLa
     }
 }
 
-/// The arrangement the editor opens with: the inspector a column down the
-/// whole right side, and in the rest the library and the monitor across the
-/// top and the timeline under both of them. The inspector is the tallest
-/// thing in the window - a stack of sections that would otherwise scroll -
-/// and the timeline gives up its right end to it, which is the end with
-/// nothing on it yet. About 0.22 of the width to the inspector and 0.25 to
-/// the library, which is 0.32 of what is left once the inspector has had
-/// its share; the timeline takes the lower 0.4 of the height.
+/// Default desktop arrangement: Media, Preview and Inspector share the
+/// upper workspace. The timeline is a full-width bottom row beneath *all*
+/// three seats, including Inspector. The 60/40 vertical split leaves enough
+/// room for five compact tracks, while the dock splitters still resize every
+/// region independently. Compact/phone layouts remain unchanged.
 pub fn default_dock() -> Dock {
     Dock::Split {
-        columns: true,
-        ratio: 0.78,
+        columns: false,
+        ratio: 0.60,
         first: Box::new(Dock::Split {
-            columns: false,
-            ratio: 0.6,
+            columns: true,
+            ratio: 0.78,
             first: Box::new(Dock::Split {
                 columns: true,
                 ratio: 0.32,
                 first: Dock::leaf(PaneKind::Media),
                 second: Dock::leaf(PaneKind::Preview),
             }),
-            // The timeline, whose VU meters are a column at its own right
-            // edge (see vu-meter.slint) rather than a seat of their own.
-            second: Dock::leaf(PaneKind::Timeline),
+            second: Dock::leaf(PaneKind::Inspector),
         }),
-        second: Dock::leaf(PaneKind::Inspector),
+        second: Dock::leaf(PaneKind::Timeline),
     }
 }
 
-/// The top edge of a row, measured down the stack from the first lane.
 /// The dock a narrow window shows: the monitor over the timeline, and
 /// nothing beside either. The library and the inspector are a switch away
 /// on each seat - see `PaneSwitcher` - which on a phone is how they are
