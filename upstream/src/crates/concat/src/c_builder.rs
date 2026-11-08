@@ -464,6 +464,7 @@ mod tests {
 pub struct State {
     pub folder: String,
     pub assets: Vec<Asset>,
+    pub keyword_summary: String,
     pub narration: String,
     pub duration: Option<f64>,
     pub status: String,
