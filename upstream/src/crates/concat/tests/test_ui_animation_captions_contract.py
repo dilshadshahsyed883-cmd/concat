@@ -25,7 +25,7 @@ TABS = (
 
 class DesktopUiContractTests(unittest.TestCase):
     def test_exact_eight_gpu_tabs_without_audio(self):
-        start = MEDIA.index("                        LibraryTab {\\n                            glyph: Glyph.film;")
+        start = MEDIA.index("                        LibraryTab {")
         end = MEDIA.index("// The end buttons", start)
         strip = MEDIA[start:end]
         indices = [strip.index(tab) for tab in TABS]
