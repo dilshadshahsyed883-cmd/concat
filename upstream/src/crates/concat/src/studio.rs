@@ -49,6 +49,7 @@ use concat_project::{Command, PlayheadSide};
 mod backdrop;
 mod bulk_presets;
 use bulk_presets::{BulkEffects, BulkMotion, BulkTransitions};
+mod compound;
 mod consolidate;
 use consolidate::MergeJob;
 mod masking;
@@ -11376,6 +11377,21 @@ impl Studio {
                     && (clip.kind == model::ClipKind::Video || clip.kind == model::ClipKind::Image),
             ),
         ];
+        // A compound is structural until both render engines implement
+        // group-level compositing: these actions never bake or duplicate audio.
+        rows.push(rule());
+        rows.push(action("compound-selected", "Compound Selected Media".into(),
+            Glyph::Merge, "", !locked && !self.selection.is_empty()));
+        rows.push(action("compound-all", "Compound All Layers".into(),
+            Glyph::Merge, "", !self.timeline().clips.is_empty()));
+        rows.push(action("compound-span", "Compound Selected Time Span".into(),
+            Glyph::Merge, "", !self.selection.is_empty()));
+        if self.compound_for_clip(&clip.id).is_some() {
+            rows.push(action("compound-members", "Select Compound Members".into(),
+                Glyph::None, "", true));
+            rows.push(action("compound-break", "Break Apart Compound".into(),
+                Glyph::Split, "", !locked));
+        }
         if !cfg!(windows) {
             // The row opens the clip's local Enhance model in the inspector.
             rows.push(action(
@@ -12171,6 +12187,11 @@ impl Studio {
             return;
         };
         match action {
+            "compound-selected" => self.compound_selected_from(id),
+            "compound-all" => self.compound_all_layers(),
+            "compound-span" => self.compound_selection_span(id),
+            "compound-members" => self.select_compound_members(id),
+            "compound-break" => self.break_compound_from(id),
             "copy" => self.copy_clips(Some(id)),
             "duplicate" => self.duplicate_selected(),
             // Pasted after the clip that was right-clicked, on its lane.
