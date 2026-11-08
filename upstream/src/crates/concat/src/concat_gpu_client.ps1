@@ -103,6 +103,8 @@ function Format-UploadProgress([long]$transferred, [long]$total) {
 
 function Submit-Zip([string]$zip,[string]$job,[string]$domain,$headers) {
     $size=(Get-Item -LiteralPath $zip).Length
+    # Surface the real package size even before worker negotiation or hashing.
+    Report "GPU upload package: $(Format-UploadProgress 0 $size)" 0 "" $false "" "" 0 $size
     $sha=SHA-File $zip
     $root="$domain/api/uploads/$job"
     $existing=$null
