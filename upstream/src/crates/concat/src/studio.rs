@@ -895,6 +895,8 @@ pub struct Studio {
     pub compound_rename: Option<(String, String)>,
     /// Temporary member-only timeline view; never serialized into projects.
     pub compound_edit: Option<String>,
+    /// Parent scopes when inspecting nested groups; never persisted.
+    pub compound_edit_parents: Vec<String>,
 
     // ── the launch screen ──
     pub on_start: bool,
@@ -2342,6 +2344,7 @@ impl Studio {
             toast: ToastState::default(),
             compound_rename: None,
             compound_edit: None,
+            compound_edit_parents: Vec::new(),
             on_start: true,
             start,
             recents,
