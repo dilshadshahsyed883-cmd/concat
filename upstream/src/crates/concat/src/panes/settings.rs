@@ -156,9 +156,13 @@ impl ModelState {
             transferred: if self.unpacking {
                 t("settings.unpacking").into()
             } else {
-                tf(
-                    "settings.mbOfMb",
-                    &[&format!("{fetched:.1}"), &format!("{total:.1}")],
+                format!(
+                    "{} · {:.1}%",
+                    tf(
+                        "settings.mbOfMb",
+                        &[&format!("{fetched:.1}"), &format!("{total:.1}")],
+                    ),
+                    if total > 0.0 { (fetched / total * 100.0).clamp(0.0, 99.9) } else { 0.0 }
                 )
                 .into()
             },
