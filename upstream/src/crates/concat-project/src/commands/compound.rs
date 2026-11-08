@@ -124,13 +124,40 @@ pub(crate) fn prune_compounds(timeline: &mut Timeline) {
         .map(|g| (g.id.clone(), g.members.iter().filter_map(|m| match m {
             CompoundMember::Compound(id) => Some(id.clone()), _ => None
         }).collect())).collect();
-    fn cyclic(id: &str, edges: &HashMap<String, Vec<String>>, path: &mut HashSet<String>) -> bool {
-        if !path.insert(id.to_owned()) { return true; }
-        let hit = edges.get(id).is_some_and(|next| next.iter().any(|x| cyclic(x, edges, path)));
-        path.remove(id);
-        hit
+    // Explicit stack: a legitimate deep nested compound must never
+    // overflow the Rust call stack while reopening a project.
+    let mut finished = HashSet::new();
+    let mut cyclic = false;
+    'roots: for root in edges.keys() {
+        if finished.contains(root) { continue; }
+        let mut active = HashSet::new();
+        let mut stack = vec![(root.clone(), false)];
+        while let Some((id, leaving)) = stack.pop() {
+            if leaving {
+                active.remove(&id);
+                finished.insert(id);
+                continue;
+            }
+            if finished.contains(&id) { continue; }
+            if !active.insert(id.clone()) {
+                cyclic = true;
+                break 'roots;
+            }
+            stack.push((id.clone(), true));
+            if let Some(children) = edges.get(&id) {
+                for child in children.iter().rev() {
+                    if active.contains(child) {
+                        cyclic = true;
+                        break 'roots;
+                    }
+                    if !finished.contains(child) {
+                        stack.push((child.clone(), false));
+                    }
+                }
+            }
+        }
     }
-    if edges.keys().any(|id| cyclic(id, &edges, &mut HashSet::new())) {
+    if cyclic {
         timeline.compounds.clear(); // fail-safe: original clips still render.
     }
 }
@@ -307,6 +334,34 @@ mod tests {
                                        CompoundMember::Clip("c1".into())]);
         assert_eq!(e.project().active().clips.len(), 3);
     }
+    #[test]
+    fn deep_nesting_and_cycles_are_pruned_without_recursion() {
+        let mut e = editor();
+        let timeline = e.project_mut().active_mut();
+        for n in 0..2500 {
+            let member = if n == 0 {
+                CompoundMember::Clip("c1".into())
+            } else {
+                CompoundMember::Compound(format!("cmp{}", n - 1))
+            };
+            timeline.compounds.push(Compound {
+                id: format!("cmp{n}"),
+                name: format!("Level {n}"),
+                members: vec![member],
+                extra: Default::default(),
+            });
+        }
+        prune_compounds(timeline);
+        assert_eq!(timeline.compounds.len(), 2500);
+        // Corrupted project makes a cycle; the original clips must remain
+        // intact and the group graph must be discarded deterministically.
+        timeline.compounds[0].members =
+            vec![CompoundMember::Compound("cmp2499".into())];
+        prune_compounds(timeline);
+        assert!(timeline.compounds.is_empty());
+        assert_eq!(timeline.clips.len(), 3);
+    }
+
     #[test]
     fn rename_compound_undo_redo_preserves_source_clips() {
         let mut e = editor();
