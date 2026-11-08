@@ -4372,6 +4372,7 @@ impl Studio {
                 transition_in: Some(Some(Transition {
                     id: id.to_owned(),
                     duration,
+                    intensity: None,
                 })),
                 ..ClipPatch::default()
             },
@@ -4439,6 +4440,27 @@ impl Studio {
             patch: ClipPatch {
                 transition_in: Some(Some(Transition {
                     duration,
+                    ..existing
+                })),
+                ..ClipPatch::default()
+            },
+        });
+    }
+
+    /// Controls the GPU transition effect strength at the selected cut.
+    /// Optional override keeps historical projects' preset defaults intact.
+    pub fn set_transition_intensity(&mut self, amount: f64) {
+        if !amount.is_finite() {
+            return;
+        }
+        let Some(clip_id) = self.transition_target() else { return };
+        let Some(clip) = self.clip(&clip_id) else { return };
+        let Some(existing) = clip.transition_in.clone() else { return };
+        self.apply(Command::UpdateClip {
+            clip_id,
+            patch: ClipPatch {
+                transition_in: Some(Some(Transition {
+                    intensity: Some(amount.clamp(0.0, 1.0)),
                     ..existing
                 })),
                 ..ClipPatch::default()
@@ -10433,6 +10455,13 @@ impl Studio {
             present: true,
             name: name.into(),
             duration: transition.duration as f32,
+            intensity: transition.intensity.unwrap_or(
+                if matches!(transition.id.as_str(), "concat.fade-black" | "concat.fade-white") {
+                    1.0
+                } else {
+                    0.7
+                }
+            ) as f32,
             into: clip.name.as_str().into(),
         }
     }
