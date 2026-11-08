@@ -7,7 +7,7 @@
 
 use super::{Command, Confirm, Studio};
 use concat_project::model::{Compound, CompoundMember};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Resolve a clip to its outermost visible compound. A clip can be directly
 /// owned by an inner compound, which is itself a member of another compound.
@@ -30,7 +30,55 @@ fn root_compound_for_clip(groups: &[Compound], clip_id: &str) -> Option<String> 
     None
 }
 
+/// Recursively collect actual members for the editor-only compound view.
+/// Preview and CUDA continue rendering the original timeline clips exactly once.
+fn compound_view_clips(groups: &[Compound], root: &str) -> Option<HashSet<String>> {
+    let by_id: HashMap<&str, &Compound> =
+        groups.iter().map(|g| (g.id.as_str(), g)).collect();
+    if !by_id.contains_key(root) { return None; }
+    let mut pending = vec![root];
+    let mut seen = HashSet::new();
+    let mut clips = HashSet::new();
+    while let Some(group_id) = pending.pop() {
+        if !seen.insert(group_id) { continue; }
+        let group = by_id.get(group_id)?;
+        for m in &group.members {
+            match m {
+                CompoundMember::Clip(id) => { clips.insert(id.clone()); },
+                CompoundMember::Compound(id) => pending.push(id),
+            }
+        }
+    }
+    Some(clips)
+}
+
 impl Studio {
+    pub(super) fn open_compound_from(&mut self, clicked: &str) {
+        let Some(id) = self.compound_for_clip(clicked) else { return; };
+        self.flush_commit();
+        self.compound_edit = Some(id);
+        self.selection.clear();
+        self.transition_selected = None;
+    }
+
+    pub(super) fn leave_compound_edit(&mut self) {
+        self.flush_commit();
+        self.compound_edit = None;
+        self.selection.clear();
+        self.transition_selected = None;
+    }
+
+    pub(super) fn editing_compound_label(&self) -> String {
+        self.compound_edit.as_ref()
+            .and_then(|id| self.timeline().compounds.iter().find(|g| &g.id == id))
+            .map(|g| g.name.clone())
+            .unwrap_or_default()
+    }
+
+    pub(super) fn visible_compound_clips(&self) -> Option<HashSet<String>> {
+        compound_view_clips(&self.timeline().compounds, self.compound_edit.as_deref()?)
+    }
+
     pub(super) fn compound_for_clip(&self, clip_id: &str) -> Option<String> {
         root_compound_for_clip(&self.timeline().compounds, clip_id)
     }
@@ -192,6 +240,21 @@ mod nested_lookup_tests {
         assert_eq!(root_compound_for_clip(&groups, "video").as_deref(), Some("outer"));
         assert_eq!(root_compound_for_clip(&groups, "voice").as_deref(), Some("outer"));
         assert_eq!(root_compound_for_clip(&groups, "missing"), None);
+    }
+
+    #[test]
+    fn member_view_includes_nested_clips_without_unrelated_media() {
+        let groups = vec![
+            group("inner", vec![CompoundMember::Clip("a".into())]),
+            group("outer", vec![CompoundMember::Compound("inner".into()),
+                                CompoundMember::Clip("b".into())]),
+            group("unrelated", vec![CompoundMember::Clip("c".into())]),
+        ];
+        let ids = compound_view_clips(&groups, "outer").unwrap();
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains("a") && ids.contains("b"));
+        assert!(!ids.contains("c"));
+        assert_eq!(compound_view_clips(&groups, "absent"), None);
     }
 
     #[test]
