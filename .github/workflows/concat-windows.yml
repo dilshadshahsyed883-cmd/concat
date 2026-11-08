@@ -188,6 +188,9 @@ jobs:
         if: github.ref_name != 'gpu/final-integration' && github.head_ref != 'gpu/final-integration'
         working-directory: upstream/src
         run: cargo test --locked -p concat-project --target x86_64-pc-windows-msvc
+      - name: Test Recent Projects rename, forget and manifest safety
+        working-directory: upstream/src
+        run: cargo test --locked -p concat-host --target x86_64-pc-windows-msvc
       - uses: actions/upload-artifact@v4
         with:
           name: Concat-Windows-x64-dev
