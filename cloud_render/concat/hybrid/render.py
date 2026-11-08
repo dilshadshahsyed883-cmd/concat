@@ -14,6 +14,7 @@ from itertools import groupby
 from pathlib import Path
 
 from .animations import apply_transform
+from .canvas import make_background
 from .cuda_audio import mux_cuda_audio
 from .captions import CaptionRenderer
 from .codec import Nvdec, Nvenc, nv12_from_rgba
@@ -39,6 +40,20 @@ class Sources:
         self.decoders = OrderedDict()
         self.stills = OrderedDict()
         self.rates = {}
+        self.sizes = {}
+
+    def dimensions(self, path):
+        """Probe only once per media source; never download pixels to CPU."""
+        if path not in self.sizes:
+            stream = json.loads(invoke([
+                "ffprobe", "-v", "error", "-select_streams", "v:0",
+                "-show_entries", "stream=width,height", "-of", "json", str(path)
+            ], timeout=30))["streams"][0]
+            width, height = int(stream["width"]), int(stream["height"])
+            if width < 1 or height < 1:
+                raise ValueError(f"{path.name}: invalid source dimensions")
+            self.sizes[path] = width, height
+        return self.sizes[path]
 
     def decoder(self, path):
         decoder = self.decoders.pop(path, None)
@@ -111,12 +126,17 @@ def fitted(pixels):
 NATIVE_COLOR_PASSES = {EXPOSURE: apply_exposure, CONTRAST: apply_contrast}
 
 
-def picture(sources, clip, index, tail=False, *, force_opacity=False, placement_index=None):
+def picture(sources, clip, index, tail=False, *, force_opacity=False, placement_index=None,
+            return_background=False):
     pixels = sources.image(clip.path) if clip.kind == "image" else sources.video(clip, index, tail)
     if clip.flip_h:
         pixels = pixels[:, ::-1]
     if clip.flip_v:
         pixels = pixels[::-1]
+    # Canvas samples a separate untransformed copy of the clip. Its cover
+    # remains centred while the foreground rotates, moves and animates.
+    backing = (make_background(pixels, sources.dimensions(clip.path), clip.background)
+               if return_background and clip.background is not None else None)
     transform = clip.transform(index if placement_index is None else placement_index)
     if force_opacity:
         transform = replace(transform, opacity=1)
@@ -131,19 +151,30 @@ def picture(sources, clip, index, tail=False, *, force_opacity=False, placement_
             pixels = handler(pixels, settings.at_frame(index))
         else:
             pixels = filter_picture(pixels, settings)
-    return apply_transform(pixels, transform) if native_chain else pixels
+    foreground = apply_transform(pixels, transform) if native_chain else pixels
+    return (foreground, backing) if return_background else foreground
 
 
-def native_transition_frame(sources, layers, cut, index):
+def picture_layers(sources, clip, index, *, with_canvas=False, **kwargs):
+    """Background first, sharp foreground last, using the same decoded frame."""
+    if with_canvas:
+        foreground, backdrop = picture(sources, clip, index, return_background=True, **kwargs)
+        return ([Layer(backdrop)] if backdrop is not None else []) + [Layer(foreground)]
+    return [Layer(picture(sources, clip, index, **kwargs))]
+
+
+def native_transition_frame(sources, layers, cut, index, background_rank):
     outgoing_index = cut.outgoing_frame(index)
     held = outgoing_index != index
-    outgoing = picture(sources, cut.outgoing, outgoing_index, tail=True,
-                       placement_index=cut.outgoing.span.end if held else None)
-    incoming = picture(sources, cut.incoming, index, force_opacity=True)
-    outgoing_layers = [*layers, Layer(outgoing)]
+    uses_canvas = cut.rank == background_rank
+    outgoing_layers = [*layers, *picture_layers(
+        sources, cut.outgoing, outgoing_index, with_canvas=uses_canvas, tail=True,
+        placement_index=cut.outgoing.span.end if held else None)]
+    incoming_layers = picture_layers(sources, cut.incoming, index,
+                                     with_canvas=uses_canvas, force_opacity=True)
     canvas = dict(width=WIDTH, height=HEIGHT, background=(0, 0, 0, 1))
     outgoing_stack = composite(outgoing_layers, **canvas)
-    incoming_stack = composite([*outgoing_layers, Layer(incoming)], **canvas)
+    incoming_stack = composite([*outgoing_layers, *incoming_layers], **canvas)
     return render_transition(outgoing_stack, incoming_stack, cut.transition, index)
 
 
@@ -172,7 +203,8 @@ def timeline_frames(plan, temporary, log):
         for rank, clip in active:
             if (cut and rank == cut.rank and cut.transition.span.contains(index)
                     and (clip is cut.incoming or clip is cut.outgoing)):
-                layers = [Layer(native_transition_frame(sources, layers, cut, index))]
+                layers = [Layer(native_transition_frame(
+                    sources, layers, cut, index, plan.background_rank))]
                 continue
             if clip.kind == "layer":
                 if clip.filters and layers:
@@ -182,11 +214,15 @@ def timeline_frames(plan, temporary, log):
                         effect = filter_picture(effect, settings)
                     layers = [Layer(below), Layer(effect, opacity=clip.transform(index).opacity)]
                 continue
-            pixels = picture(sources, clip, index)
+            clip_layers = picture_layers(
+                sources, clip, index,
+                with_canvas=(rank == plan.background_rank and clip.kind in ("image", "video")))
             if clip.transition and clip.transition.span.contains(index):
                 outgoing = picture(sources, clip.outgoing, index, tail=True)
-                pixels = render_transition(outgoing, pixels, clip.transition, index)
-            layers.append(Layer(pixels))
+                pixels = render_transition(outgoing, clip_layers[-1].texture,
+                                           clip.transition, index)
+                clip_layers[-1] = Layer(pixels)
+            layers.extend(clip_layers)
         canvas = composite(layers, width=WIDTH, height=HEIGHT, background=(0,0,0,1))
         for renderer in captions:
             canvas = renderer.apply(canvas, index, RATE)
