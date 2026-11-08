@@ -1195,8 +1195,8 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         keys.on_apply_random_motion(on_lanes!(|state| {
             state.apply_random_gpu_motion();
         }));
-        keys.on_apply_physics_motion(on_lanes!(|state, index: i32| {
-            state.apply_physics_motion(index);
+        keys.on_apply_physics_motion(on_lanes!(|state, index: i32, strength: f32, duration: f32, speed: f32, intensity: f32| {
+            state.apply_physics_motion(index, strength, duration, speed, intensity);
         }));
         keys.on_toggle_physics_favourite(on_lanes!(|state, index: i32| {
             state.toggle_physics_favourite(index);

@@ -22,6 +22,38 @@ pub enum PhysicsPreset {
     DampedShake,
 }
 
+/// Parameters are baked into ordinary GPU-compatible keyframes. The project
+/// manifest does not need a desktop-only physics extension.
+#[derive(Clone, Copy, Debug)]
+pub struct PhysicsControls {
+    pub strength: f64,
+    /// Fraction of the clip over which the motion evolves (0.1..=1).
+    pub duration: f64,
+    pub speed: f64,
+    /// Energy/springiness: higher values retain oscillation for longer.
+    pub intensity: f64,
+}
+
+impl Default for PhysicsControls {
+    fn default() -> Self {
+        Self { strength: 1.0, duration: 1.0, speed: 1.0, intensity: 1.0 }
+    }
+}
+
+impl PhysicsControls {
+    fn safe(self) -> Self {
+        fn limit(value: f64, min: f64, max: f64) -> f64 {
+            if value.is_finite() { value.clamp(min, max) } else { 1.0 }
+        }
+        Self {
+            strength: limit(self.strength, 0.1, 2.0),
+            duration: limit(self.duration, 0.1, 1.0),
+            speed: limit(self.speed, 0.25, 3.0),
+            intensity: limit(self.intensity, 0.2, 2.0),
+        }
+    }
+}
+
 impl PhysicsPreset {
     pub const ALL: [Self; 6] = [
         Self::SpringZoom,
@@ -59,11 +91,23 @@ impl PhysicsPreset {
     /// Sample physically modelled displacement at normalized clip time.
     /// Motion is expressed in the same transform units as the native editor.
     fn value(self, clip: &Clip, t: f64) -> f64 {
-        let t = t.clamp(0.0, 1.0);
-        match self {
+        self.value_with(clip, t, PhysicsControls::default())
+    }
+
+    fn value_with(self, clip: &Clip, t: f64, controls: PhysicsControls) -> f64 {
+        let controls = controls.safe();
+        let t = (t.clamp(0.0, 1.0) / controls.duration).min(1.0) * controls.speed;
+        let base = match self.property() {
+            KeyProperty::Scale => clip.scale,
+            KeyProperty::Rotation => clip.rotation,
+            KeyProperty::OffsetX => clip.offset_x,
+            KeyProperty::OffsetY => clip.offset_y,
+            _ => unreachable!(),
+        };
+        let original = match self {
             Self::SpringZoom => {
                 // Mass-spring-damper step response: damping ratio 0.45.
-                let zeta: f64 = 0.45;
+                let zeta: f64 = (0.45 / controls.intensity).clamp(0.05, 0.95);
                 let natural_frequency: f64 = 18.0;
                 let damped = natural_frequency * (1.0 - zeta * zeta).sqrt();
                 let response = 1.0 - (-zeta * natural_frequency * t).exp()
@@ -73,7 +117,7 @@ impl PhysicsPreset {
             }
             Self::Pendulum => {
                 // Small-angle damped pendulum, with angular drag.
-                clip.rotation + 9.0 * (-4.5 * t).exp() * (6.0 * PI * t).cos()
+                clip.rotation + 9.0 * (-4.5 * t / controls.intensity).exp() * (6.0 * PI * t).cos()
             }
             Self::GravityBounce => {
                 // Ballistic fall and restitution at each ground impact.
@@ -83,38 +127,48 @@ impl PhysicsPreset {
                 let gravity = 2.0 * height / (fall * fall);
                 if t < fall {
                     let left = 1.0 - t / fall;
-                    return clip.offset_y - height * left * left;
-                }
-                let mut remaining = t - fall;
-                let mut velocity = (2.0 * gravity * height).sqrt() * 0.56;
-                for _ in 0..12 {
-                    let flight = 2.0 * velocity / gravity;
-                    if remaining < flight {
-                        let lift = velocity * remaining - 0.5 * gravity * remaining * remaining;
-                        return clip.offset_y - lift.max(0.0);
+                    clip.offset_y - height * left * left
+                } else {
+                    let mut remaining = t - fall;
+                    let restitution = (0.56 * controls.intensity).clamp(0.1, 0.95);
+                    let mut velocity = (2.0 * gravity * height).sqrt() * restitution;
+                    let mut lift = 0.0;
+                    for _ in 0..12 {
+                        let flight = 2.0 * velocity / gravity;
+                        if remaining < flight {
+                            lift = (velocity * remaining - 0.5 * gravity * remaining * remaining).max(0.0);
+                            break;
+                        }
+                        remaining -= flight;
+                        velocity *= restitution;
                     }
-                    remaining -= flight;
-                    velocity *= 0.56; // coefficient of restitution
+                    clip.offset_y - lift
                 }
-                clip.offset_y
             }
             Self::ElasticPop => {
                 // Underdamped elastic impulse, preserving the initial framing.
-                clip.scale * (1.0 + 0.17 * (-5.0 * t).exp() * (19.0 * t).sin())
+                clip.scale * (1.0 + 0.17 * (-5.0 * t / controls.intensity).exp() * (19.0 * t).sin())
             }
             Self::InertiaGlide => {
                 // Exponential velocity decay with near-zero residual motion.
-                clip.offset_x - 0.14 * ((-5.0 * t).exp() - (-5.0_f64).exp())
+                clip.offset_x - 0.14 * ((-5.0 * t / controls.intensity).exp() - (-5.0_f64 / controls.intensity).exp())
             }
             Self::DampedShake => {
                 // Two modes of a decaying oscillator; deterministic per frame.
-                clip.rotation + (-5.5 * t).exp()
+                clip.rotation + (-5.5 * t / controls.intensity).exp()
                     * (5.0 * (23.0 * t).sin() + 1.5 * (39.0 * t).sin())
             }
-        }
+        };
+        base + (original - base) * controls.strength
     }
 
     pub fn keys(self, clip: &Clip, frame: f64) -> Result<(Vec<ClipKey>, f64), PresetError> {
+        self.keys_with(clip, frame, PhysicsControls::default())
+    }
+
+    pub fn keys_with(
+        self, clip: &Clip, frame: f64, controls: PhysicsControls,
+    ) -> Result<(Vec<ClipKey>, f64), PresetError> {
         if !matches!(clip.kind, ClipKind::Image | ClipKind::Video) {
             return Err(PresetError::NeedsPicture);
         }
@@ -136,7 +190,7 @@ impl PhysicsPreset {
         for sample in 0..=steps {
             let at_frame = ((sample as f64 * last) / steps as f64).round();
             let t = at_frame / last;
-            let value = self.value(clip, t);
+            let value = self.value_with(clip, t, controls);
             let value = match property {
                 KeyProperty::Scale => value.clamp(ranges::MIN_SCALE, ranges::MAX_SCALE),
                 KeyProperty::OffsetX | KeyProperty::OffsetY =>
@@ -161,7 +215,13 @@ impl PhysicsPreset {
     }
 
     pub fn command(self, clip: &Clip, frame: f64) -> Result<(Command, f64), PresetError> {
-        let (keys, preview) = self.keys(clip, frame)?;
+        self.command_with(clip, frame, PhysicsControls::default())
+    }
+
+    pub fn command_with(
+        self, clip: &Clip, frame: f64, controls: PhysicsControls,
+    ) -> Result<(Command, f64), PresetError> {
+        let (keys, preview) = self.keys_with(clip, frame, controls)?;
         let commands = keys.into_iter().map(|key| Command::SetClipKey {
             clip_id: clip.id.clone(),
             property: key.property,
@@ -206,6 +266,52 @@ mod tests {
             let (keys, _) = preset.keys(&pair, FRAME).unwrap();
             assert_eq!(keys.len(), 2);
         }
+    }
+
+    #[test]
+    fn adjustable_controls_are_baked_and_remain_native_keys() {
+        let clip = Clip::blank("c1", "t1", ClipKind::Image, "picture", 0.0, 4.0);
+        let normal = PhysicsPreset::DampedShake.keys(&clip, FRAME).unwrap().0;
+        let stronger = PhysicsPreset::DampedShake.keys_with(
+            &clip, FRAME, PhysicsControls {
+                strength: 1.8, duration: 0.5, speed: 1.5, intensity: 1.7,
+            },
+        ).unwrap().0;
+        assert_eq!(normal.len(), stronger.len());
+        assert_ne!(normal, stronger);
+        assert!(stronger.iter().all(|key| key.value.is_finite()));
+        let defaults = PhysicsPreset::DampedShake.keys_with(
+            &clip, FRAME, PhysicsControls::default(),
+        ).unwrap().0;
+        assert_eq!(normal, defaults);
+        for preset in PhysicsPreset::ALL {
+            for intensity in [0.2, 0.5, 1.0, 2.0] {
+                let varied = preset.keys_with(&clip, FRAME, PhysicsControls {
+                    strength: 2.0, duration: 0.3, speed: 3.0, intensity,
+                }).unwrap().0;
+                assert!(varied.iter().all(|key| key.value.is_finite()));
+            }
+        }
+    }
+
+    #[test]
+    fn strength_and_speed_change_baked_motion_without_project_extensions() {
+        let clip = Clip::blank("c1", "t1", ClipKind::Image, "photo", 0.0, 3.0);
+        let normal = PhysicsPreset::SpringZoom.keys(&clip, FRAME).unwrap().0;
+        let strong = PhysicsPreset::SpringZoom.keys_with(
+            &clip, FRAME, PhysicsControls {
+                strength: 2.0, ..PhysicsControls::default()
+            },
+        ).unwrap().0;
+        let quick = PhysicsPreset::SpringZoom.keys_with(
+            &clip, FRAME, PhysicsControls {
+                duration: 0.5, speed: 2.0, ..PhysicsControls::default()
+            },
+        ).unwrap().0;
+        assert_eq!(normal.len(), strong.len());
+        assert_eq!(normal.len(), quick.len());
+        assert_ne!(normal, strong);
+        assert_ne!(normal, quick);
     }
 
     #[test]

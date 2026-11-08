@@ -43,7 +43,7 @@ use concat_project::model::{
     self, AppliedFilter, Clip, Project, TextAlign, TextStyle, Timeline, Track, Transition,
 };
 use concat_project::motion_preset::{MotionPreset, PresetError};
-use concat_project::physics_motion::PhysicsPreset;
+use concat_project::physics_motion::{PhysicsControls, PhysicsPreset};
 use concat_project::{Command, PlayheadSide};
 
 mod backdrop;
@@ -10332,7 +10332,12 @@ impl Studio {
             self.notify(&t("studio.motionPresetLocked"), true);
             return;
         }
-        match preset.command(clip, self.frame_seconds()) {
+        match preset.command_with(clip, self.frame_seconds(), PhysicsControls {
+            strength: strength as f64,
+            duration: duration as f64,
+            speed: speed as f64,
+            intensity: intensity as f64,
+        }) {
             Ok((command, preview)) => {
                 self.apply(command);
                 self.seek(preview as f32);
@@ -10351,7 +10356,7 @@ impl Studio {
 
     /// Adds a simulated physics preset using normal native project keys.
     /// Manual keyframes are protected by the shared preset validation.
-    pub fn apply_physics_motion(&mut self, index: i32) {
+    pub fn apply_physics_motion(&mut self, index: i32, strength: f32, duration: f32, speed: f32, intensity: f32) {
         let Some(preset) = PhysicsPreset::from_index(index) else { return };
         self.flush_commit();
         let Some(clip) = self.sole_selection().and_then(|id| self.clip(&id)) else {

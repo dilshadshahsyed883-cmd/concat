@@ -236,7 +236,7 @@ export global Keyframes {
     callback apply-random-motion();
     // Physics presets resolve into ordinary GPU-compatible transform keyframes.
     in property <[bool]> physics-favourites;
-    callback apply-physics-motion(preset: int);
+    callback apply-physics-motion(preset: int, strength: float, duration: float, speed: float, intensity: float);
     callback toggle-physics-favourite(preset: int);
     callback apply-random-favourite-motion();
 
