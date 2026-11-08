@@ -41,6 +41,25 @@ class Sources:
         self.stills = OrderedDict()
         self.rates = {}
         self.sizes = {}
+        self.backgrounds = OrderedDict()
+
+    def backdrop(self, clip, pixels):
+        """Reuse still-image Canvas textures across frames without a reblur."""
+        cache_key = ((clip.path, clip.flip_h, clip.flip_v, clip.background)
+                     if clip.kind == "image" else None)
+        if cache_key is not None:
+            cached = self.backgrounds.pop(cache_key, None)
+            if cached is not None:
+                self.backgrounds[cache_key] = cached
+                return cached
+        dims = (self.dimensions(clip.path) if clip.background.kind == "blur"
+                else (pixels.shape[1], pixels.shape[0]))
+        backing = make_background(pixels, dims, clip.background)
+        if cache_key is not None:
+            if len(self.backgrounds) >= 3:
+                self.backgrounds.popitem(last=False)
+            self.backgrounds[cache_key] = backing
+        return backing
 
     def dimensions(self, path):
         """Probe only once per media source; never download pixels to CPU."""
@@ -135,7 +154,7 @@ def picture(sources, clip, index, tail=False, *, force_opacity=False, placement_
         pixels = pixels[::-1]
     # Canvas samples a separate untransformed copy of the clip. Its cover
     # remains centred while the foreground rotates, moves and animates.
-    backing = (make_background(pixels, sources.dimensions(clip.path), clip.background)
+    backing = (sources.backdrop(clip, pixels)
                if return_background and clip.background is not None else None)
     transform = clip.transform(index if placement_index is None else placement_index)
     if force_opacity:
