@@ -204,6 +204,21 @@ mod tests {
     }
 
     #[test]
+    fn interrupted_queue_remains_manual_after_new_job() {
+        let mut queue = Queue {
+            jobs: vec![job("first", Phase::Uploading)],
+            started: true,
+        };
+        queue.recover();
+        assert!(!queue.started);
+        assert_eq!(queue.jobs[0].phase, Phase::Waiting);
+        queue.enqueue(job("second", Phase::Waiting));
+        assert!(queue.next_upload().is_none());
+        queue.started = true;
+        assert_eq!(queue.next_upload().unwrap().id, "first");
+    }
+
+    #[test]
     fn enqueue_requires_explicit_start_and_keeps_existing_running_state() {
         let mut stopped = Queue::default();
         stopped.enqueue(job("pending", Phase::Waiting));
