@@ -342,6 +342,8 @@ export struct SelectedTransitionData {
     name: string,
     /// seconds it covers
     duration: float,
+    /// 0..1 effective GPU transition strength; resolved to preset default.
+    intensity: float,
     /// the name of the clip it rides into
     into: string,
 }
