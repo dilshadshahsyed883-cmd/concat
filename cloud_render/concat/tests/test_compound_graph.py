@@ -57,6 +57,46 @@ class CompoundGraphTests(unittest.TestCase):
             compound = plan(nested)
             self.assertEqual(original, compound)
 
+    def test_nested_group_preserves_mixed_audio_caption_and_filter_plan(self):
+        doc = fixture()
+        timeline = doc["timelines"][0]
+        doc["media"].append({"id": "voice", "kind": "audio", "path": "voice.mp3"})
+        timeline["tracks"].append({"id": "T2", "visible": True, "muted": False})
+        timeline["clips"][0]["videoEffects"] = [
+            {"id": "concat.box-blur", "params": {"radius": 3}}]
+        timeline["clips"].append({
+            "id": "voice1", "kind": "audio", "trackId": "T2", "mediaId": "voice",
+            "start": 0.0, "duration": 2.0,
+        })
+        timeline["clips"].append({
+            "id": "caption1", "kind": "text", "trackId": "T2", "mediaId": "",
+            "name": "Caption", "start": 0.2, "duration": 0.5,
+            "text": {"content": "Words", "fontFamily": "Hanken Grotesk",
+                     "fontSize": 0.04, "fontWeight": 600, "italic": False,
+                     "color": "#ffffff", "align": "center", "opacity": 1,
+                     "strokeWidth": 0, "strokeColor": "#000000", "shadow": True,
+                     "background": "", "backgroundRadius": .0135,
+                     "backgroundPaddingX": .0315, "backgroundPaddingY": .018,
+                     "lineHeight": 1.2, "tracking": 0,
+                     "maxWidth": 0, "maxHeight": 0},
+        })
+        nested = grouped(doc)
+        nested["timelines"][0]["compounds"][0]["members"].append(
+            {"kind": "clip", "id": "voice1"})
+        nested["timelines"][0]["compounds"][1]["members"].append(
+            {"kind": "clip", "id": "caption1"})
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "photo.jpg").write_bytes(b"image")
+            (root / "voice.mp3").write_bytes(b"audio")
+            def plan(document):
+                (root / "concat.json").write_text(json.dumps(document), encoding="utf-8")
+                return load_project(root, lambda _: None)
+            base_plan, group_plan = plan(doc), plan(nested)
+            self.assertEqual(base_plan, group_plan)
+            self.assertEqual(len(group_plan.sounds), 1)
+            self.assertEqual(len(group_plan.captions), 1)
+
     def test_rejects_parent_effects_instead_of_silently_ignoring(self):
         doc = grouped(fixture())
         doc["timelines"][0]["compounds"][0]["videoEffects"] = [{"id": "concat.blur"}]
