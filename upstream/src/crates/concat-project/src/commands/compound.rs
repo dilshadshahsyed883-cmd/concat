@@ -308,16 +308,84 @@ mod tests {
         assert_eq!(e.project().active().clips.len(), 3);
     }
     #[test]
-    fn range_refuses_partial_clips_and_preserves_gaps() {
+    fn range_auto_splits_crossing_clips_and_undoes_as_one_edit() {
         let mut e = editor();
-        assert!(e.apply(Command::CreateCompoundRange {
-            start: 0.5, end: 5.0, name: "Partial".into(),
-        }).is_err());
+        let originals = e.project().active().clips.clone();
+        // Both video lane pieces and the longer overlaid piece cross the
+        // range. Only the in-range portions should join this compound.
+        let id = e.apply(Command::CreateCompoundRange {
+            start: 0.5, end: 4.5, name: "  Scene A  ".into(),
+        }).unwrap().created_id.unwrap();
+        let t = e.project().active();
+        assert_eq!(t.clips.len(), 7);
+        let group = t.compounds.iter().find(|g| g.id == id).unwrap();
+        assert_eq!(group.name, "Scene A");
+        assert_eq!(group.members.len(), 3);
+        for member in &group.members {
+            let CompoundMember::Clip(id) = member else { panic!("expected picture clip") };
+            let clip = t.clips.iter().find(|c| &c.id == id).unwrap();
+            assert!(clip.start >= 0.5);
+            assert!(clip.start + clip.duration <= 4.5);
+        }
+        // A split changes neither the amount of footage nor its source
+        // continuity. Outside pieces remain independent, not group members.
+        let duration: f64 = t.clips.iter().map(|c| c.duration).sum();
+        assert!((duration - 8.0).abs() < 1e-8);
+        assert_eq!(t.clips.iter().filter(|c| c.start < 0.5).count(), 2);
+        assert!(e.undo());
+        assert_eq!(e.project().active().clips, originals);
+        assert!(e.project().active().compounds.is_empty());
+        assert!(e.redo());
+        assert_eq!(e.project().active().clips.len(), 7);
+        assert_eq!(e.project().active().compounds.len(), 1);
+    }
+
+    #[test]
+    fn range_groups_whole_clips_preserving_gaps_without_new_splits() {
+        let mut e = editor();
         e.apply(Command::CreateCompoundRange {
             start: 0.0, end: 5.0, name: "Whole".into(),
         }).unwrap();
+        assert_eq!(e.project().active().clips.len(), 3);
         assert_eq!(e.project().active().clips[1].start, 4.0);
         assert_eq!(e.project().active().compounds[0].members.len(), 3);
+    }
+
+    #[test]
+    fn range_rejects_speed_curves_and_short_fragments_atomically() {
+        let mut e = editor();
+        Arc::make_mut(&mut e.project_mut().active_mut().clips[0]).speed_curve =
+            Some(vec![crate::model::SpeedPoint { at: 0.0, speed: 1.5 }]);
+        let original = e.project().active().clips.clone();
+        assert!(e.apply(Command::CreateCompoundRange {
+            start: 0.5, end: 1.5, name: "Invalid curve".into(),
+        }).is_err());
+        assert_eq!(e.project().active().clips, original);
+        assert!(e.project().active().compounds.is_empty());
+        // A tiny leading fragment must not be silently left outside the
+        // requested range when split minimum-duration rules reject it.
+        assert!(e.apply(Command::CreateCompoundRange {
+            start: 0.001, end: 1.0, name: "Too small".into(),
+        }).is_err());
+        assert_eq!(e.project().active().clips, original);
+    }
+
+    #[test]
+    fn range_rejects_partial_nested_compound_without_mutating_timeline() {
+        let mut e = editor();
+        let inner = e.apply(Command::CreateCompound {
+            clip_ids: vec!["c1".into()], compound_ids: vec![],
+            name: "Inner".into(),
+        }).unwrap().created_id.unwrap();
+        e.apply(Command::CreateCompound {
+            clip_ids: vec![], compound_ids: vec![inner],
+            name: "Outer".into(),
+        }).unwrap();
+        let before = e.project().active().clone();
+        assert!(e.apply(Command::CreateCompoundRange {
+            start: 0.5, end: 4.5, name: "Crosses group".into(),
+        }).is_err());
+        assert_eq!(e.project().active(), &before);
     }
     #[test]
     fn deleting_a_group_member_prunes_only_its_reference_and_undo_restores_it() {
