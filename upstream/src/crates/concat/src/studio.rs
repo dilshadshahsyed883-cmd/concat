@@ -10462,6 +10462,8 @@ impl Studio {
                     0.7
                 }
             ) as f32,
+            intensity_supported: transition.id.starts_with("concat.")
+                && gpu_catalogue_has("transitions", &transition.id),
             into: clip.name.as_str().into(),
         }
     }
