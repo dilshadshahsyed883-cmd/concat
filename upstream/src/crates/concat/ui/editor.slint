@@ -120,7 +120,7 @@ export global Editor {
     callback library-add-shape(shape: string, label: string);
     callback library-apply-effect(effect-id: string);
     callback library-apply-transition(transition-id: string);
-    callback library-apply-random-transitions();
+    callback library-apply-random-transitions(mode: int);
     callback library-apply-random-effects();
     /// Filters page: lay the look down as a layer at the playhead.
     callback library-apply-filter(filter-id: string, label: string);
@@ -305,6 +305,7 @@ export global Editor {
     /// The transition riding into the selected clip; see VideoPanel.
     callback transition-remove();
     callback transition-duration-set(seconds: float);
+    callback transition-intensity-set(amount: float);
 
     // ── the timeline ──
     in-out property <[TimelineTabData]> timeline-tabs;

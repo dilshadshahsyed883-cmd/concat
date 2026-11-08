@@ -212,6 +212,7 @@ export component ConfigPane inherits Rectangle {
     callback clip-enhance-run();
     callback transition-remove();
     callback transition-duration-set(seconds: float);
+    callback transition-intensity-set(amount: float);
 
 
     // The tab strip follows the selection, and stays short: three tabs at
@@ -537,6 +538,7 @@ export component ConfigPane inherits Rectangle {
                     transition: root.transition;
                     remove => { root.transition-remove(); }
                     duration-set(seconds) => { root.transition-duration-set(seconds); }
+                    intensity-set(amount) => { root.transition-intensity-set(amount); }
                 }
             }
         }

@@ -1777,7 +1777,7 @@ export component MediaPane inherits Rectangle {
     /// Catalogue pages: apply to the selected clip; Rust validates & explains.
     callback apply-effect(effect-id: string);
     callback apply-transition(transition-id: string);
-    callback apply-random-transitions();
+    callback apply-random-transitions(mode: int);
     callback apply-random-effects();
     /// Filters page: lay the look down as a layer at the playhead.
     callback apply-filter(filter-id: string, label: string);
@@ -2714,9 +2714,20 @@ export component MediaPane inherits Rectangle {
                         shelf: 3;
                         placeholder: I18n.t1("common.searchKind", I18n.t("mediaPane.transition"));
                     }
-                    if GpuCompatibility.enabled && GpuCompatibility.transitions: Button {
-                        label: I18n.t("common.applyAllRandomly");
-                        clicked => { root.apply-random-transitions(); }
+                    if GpuCompatibility.enabled && GpuCompatibility.transitions: VerticalLayout {
+                        spacing: 5px;
+                        Button {
+                            label: I18n.t("common.applyAllRandomly");
+                            clicked => { root.apply-random-transitions(0); }
+                        }
+                        Button {
+                            label: "Apply to Selected Randomly";
+                            clicked => { root.apply-random-transitions(1); }
+                        }
+                        Button {
+                            label: "Apply Favorites to All Randomly";
+                            clicked => { root.apply-random-transitions(2); }
+                        }
                     }
                     ShelfGrid {
                         entries: root.catalogue-transitions;

@@ -928,8 +928,8 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     editor.on_library_apply_transition(on_window!(|state, id: SharedString| {
         state.apply_transition(id.as_str());
     }));
-    editor.on_library_apply_random_transitions(on_window!(|state| {
-        state.apply_random_gpu_transitions();
+    editor.on_library_apply_random_transitions(on_window!(|state, mode: i32| {
+        state.apply_random_gpu_transitions(mode == 1, mode == 2);
     }));
     editor.on_library_apply_random_effects(on_window!(|state| {
         state.apply_random_gpu_effects();
@@ -1531,6 +1531,9 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     }));
     editor.on_transition_duration_set(on_window!(|state, seconds: f32| {
         state.set_transition_duration(seconds as f64);
+    }));
+    editor.on_transition_intensity_set(on_window!(|state, amount: f32| {
+        state.set_transition_intensity(amount as f64);
     }));
 
     // ── the context menu ──

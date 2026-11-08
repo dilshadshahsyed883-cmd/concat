@@ -145,7 +145,7 @@ export component Seat inherits Rectangle {
             add-shape(shape, label) => { Editor.library-add-shape(shape, label); }
             apply-effect(id) => { Editor.library-apply-effect(id); }
             apply-transition(id) => { Editor.library-apply-transition(id); }
-            apply-random-transitions => { Editor.library-apply-random-transitions(); }
+            apply-random-transitions(mode) => { Editor.library-apply-random-transitions(mode); }
             apply-random-effects => { Editor.library-apply-random-effects(); }
             apply-filter(id, label) => { Editor.library-apply-filter(id, label); }
             audition: Editor.library-audition;
@@ -285,6 +285,7 @@ export component Seat inherits Rectangle {
             clip-enhance-run => { Editor.clip-enhance-run(); }
             transition-remove => { Editor.transition-remove(); }
             transition-duration-set(seconds) => { Editor.transition-duration-set(seconds); }
+            transition-intensity-set(amount) => { Editor.transition-intensity-set(amount); }
 
             project-name: Editor.project-name;
             project-folder: Editor.project-folder;

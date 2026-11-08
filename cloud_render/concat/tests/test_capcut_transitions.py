@@ -73,6 +73,28 @@ class CatalogTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unsupported GPU transition"):
             validate_gpu_manifest(document)
 
+    def test_explicit_gpu_intensity_preserves_old_defaults_and_rejects_invalid(self):
+        from dataclasses import replace
+        plain = Transition("ink-drying", FrameSpan(10, 21))
+        self.assertIsNone(plain.intensity)
+        self.assertEqual(replace(plain, intensity=.2).intensity, .2)
+        for bad in (-1, 1.5, float("nan"), float("inf"), True):
+            with self.subTest(bad=bad):
+                with self.assertRaisesRegex(ValueError, "intensity"):
+                    Transition("ink-drying", FrameSpan(10, 21), intensity=bad)
+        document = minimal_project()
+        timeline = document["timelines"][0]
+        timeline["clips"][0]["duration"] = 2
+        timeline["clips"].append({
+            "id": "photo2", "kind": "image", "trackId": "video",
+            "mediaId": "photo", "start": 2.0, "duration": 2.0,
+            "transitionIn": {"id": "concat.ink-drying", "duration": .5, "intensity": .25},
+        })
+        self.assertEqual(validate_gpu_manifest(document)["id"], "timeline")
+        timeline["clips"][-1]["transitionIn"]["intensity"] = 1.3
+        with self.assertRaisesRegex(ValueError, "intensity"):
+            validate_gpu_manifest(document)
+
     def test_validates_invalid_surface_free_arguments_before_cuda(self):
         for bad in (-.01, 1.01, float("nan"), float("inf"), True):
             with self.subTest(value=bad):

@@ -123,7 +123,7 @@ def _validated_timeline(document):
             transition_id = transition.get("id") if isinstance(transition, dict) else None
             if (kind not in ("image", "video") or not isinstance(transition_id, str)
                     or (transition_id not in TRANSITIONS and transition_id not in NATIVE_TRANSITIONS)
-                    or set(transition) - {"id", "duration"}):
+                    or set(transition) - {"id", "duration", "intensity"}):
                 raise ValueError(f"Unsupported GPU transition {transition_id} on clip {ident}")
         if kind == "text" and (any(clip.get(field) for field in ("flipH", "flipV"))
                                or clip.get("rotation", 0) != 0 or clip.get("scale", 1) != 1):
@@ -260,7 +260,7 @@ class Project:
     native_cuts: tuple[NativeCut, ...] = ()
 
 
-def _native_cut(rank, previous, incoming, ident, duration, media_duration):
+def _native_cut(rank, previous, incoming, ident, duration, media_duration, intensity=None):
     length = min(duration, (previous.span.end - previous.span.start) / FPS,
                  (incoming.span.end - incoming.span.start) / FPS)
     frames = floor(length * FPS + .5)
@@ -279,7 +279,8 @@ def _native_cut(rank, previous, incoming, ident, duration, media_duration):
     available = ((media_duration - previous.source_start) / previous.speed
                  if type(media_duration) in (float, int) and isfinite(media_duration) else 0)
     hold = previous.kind == "video" and (available * FPS - previous_frames - 1) < tail - .5
-    return NativeCut(rank, Transition(NATIVE_TRANSITIONS[ident], FrameSpan(start, end)),
+    return NativeCut(rank, Transition(NATIVE_TRANSITIONS[ident], FrameSpan(start, end),
+                                      intensity=intensity),
                      previous, incoming, hold)
 
 
@@ -574,11 +575,17 @@ def _plan_project(document, timeline, resolve_media):
             ident = spec["id"]
             span = incoming.span
             duration = positive_time(spec.get("duration", 1), "transition")
+            intensity = (None if "intensity" not in spec else
+                         number(spec["intensity"], f"GPU transition intensity on {incoming.id}"))
+            if intensity is not None and not 0 <= intensity <= 1:
+                raise ValueError(f"GPU transition intensity on {incoming.id} must be 0..1")
+            if intensity is not None and ident not in NATIVE_TRANSITIONS:
+                raise ValueError(f"GPU transition intensity is unsupported for {ident}")
             if previous.span.end != span.start or "layer" in (incoming.kind, previous.kind):
                 raise ValueError(f"Unsupported or unaligned GPU transition {ident} on {incoming.id}")
             if ident in NATIVE_TRANSITIONS:
                 native_cuts.append(_native_cut(rank, previous, incoming, ident, duration,
-                                               media_durations[previous.id]))
+                                               media_durations[previous.id], intensity))
                 continue
             mode = TRANSITIONS[ident]
             length = round(duration * FPS)

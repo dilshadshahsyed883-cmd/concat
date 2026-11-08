@@ -1308,6 +1308,10 @@ pub struct Transition {
     /// Seconds the transition covers.
     #[serde(default = "unity")]
     pub duration: f64,
+    /// Optional GPU strength override. Missing means the original preset's
+    /// default (70% for procedural effects, 100% for fades).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intensity: Option<f64>,
 }
 
 /// How a title's lines sit within their block, and which point of the block
@@ -2035,6 +2039,8 @@ impl Clip {
         self.stabilize = self.stabilize.take().map(Stabilize::tidy);
         if let Some(transition) = self.transition_in.as_mut() {
             transition.duration = finite(transition.duration, 1.0).max(MIN_TRANSITION);
+            transition.intensity = transition.intensity
+                .map(|amount| finite(amount, 1.0).clamp(0.0, 1.0));
         }
         self.keys
             .retain(|key| (0.0..=1.0).contains(&key.at) && key.value.is_finite());

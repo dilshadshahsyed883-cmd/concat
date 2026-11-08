@@ -2240,11 +2240,19 @@ export component TransitionPanel inherits VerticalLayout {
     /// Set to a new length - clamped as applying one is, so this can never
     /// ask for more than the cut can give it.
     callback duration-set(seconds: float);
+    callback intensity-set(amount: float);
 
     property <float> duration;
+    property <float> intensity;
 
-    init => { root.duration = root.transition.duration; }
-    changed transition => { root.duration = root.transition.duration; }
+    init => {
+        root.duration = root.transition.duration;
+        root.intensity = root.transition.intensity;
+    }
+    changed transition => {
+        root.duration = root.transition.duration;
+        root.intensity = root.transition.intensity;
+    }
 
     Section {
         SectionHeader {
@@ -2300,6 +2308,23 @@ export component TransitionPanel inherits VerticalLayout {
                 default-value: 0.5;
                 fmt: ParamFormat.seconds2;
                 changed(v) => { root.duration-set(v); }
+            }
+            if GpuCompatibility.enabled && root.transition.intensity-supported: Param {
+                label: "GPU Intensity";
+                value <=> root.intensity;
+                minimum: 0;
+                maximum: 1;
+                step: 0.05;
+                default-value: 0.7;
+                fmt: ParamFormat.fraction;
+                unit: "%";
+                unit-scale: 100;
+                changed(v) => { root.intensity-set(v); }
+            }
+            if GpuCompatibility.enabled: Text {
+                text: "Intensity affects the Salad GPU render. Desktop preview may differ.";
+                color: Theme.fg-muted;
+                wrap: word-wrap;
             }
         }
     }
