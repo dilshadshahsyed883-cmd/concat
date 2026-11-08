@@ -232,6 +232,9 @@ pub fn download(
     use std::io::{Read, Write};
     use std::sync::atomic::Ordering;
 
+    if cancel.load(Ordering::Relaxed) {
+        return Err(cancelled.to_owned());
+    }
     let already = std::fs::metadata(partial)
         .map(|meta| meta.len())
         .unwrap_or(0);
@@ -259,14 +262,35 @@ pub fn download(
     let remaining = response
         .header("Content-Length")
         .and_then(|value| value.parse::<u64>().ok());
-    let (mut received, total) = if resumed {
-        (
-            already,
-            remaining.map_or(estimate.max(already), |rest| already + rest),
-        )
+    // A proxy may reply 206 with an unrelated byte range. Appending those
+    // bytes silently corrupts an otherwise recoverable Whisper model.
+    let range = if resumed {
+        let header = response.header("Content-Range")
+            .ok_or_else(|| format!("{url}: resumed response has no Content-Range"))?;
+        let (unit, values) = header.split_once(' ')
+            .ok_or_else(|| format!("{url}: invalid Content-Range"))?;
+        let (bounds, size) = values.split_once('/')
+            .ok_or_else(|| format!("{url}: invalid Content-Range"))?;
+        let (start, end) = bounds.split_once('-')
+            .ok_or_else(|| format!("{url}: invalid Content-Range"))?;
+        let parsed = (start.parse::<u64>(), end.parse::<u64>(), size.parse::<u64>());
+        match parsed {
+            (Ok(start), Ok(end), Ok(size))
+                if unit == "bytes" && start == already && end >= start
+                    && end < size && remaining.is_none_or(|length| length == end - start + 1) =>
+                Some((end - start + 1, size)),
+            _ => return Err(format!("{url}: server returned the wrong resume range")),
+        }
+    } else {
+        None
+    };
+    let (mut received, total) = if let Some((_, size)) = range {
+        (already, size)
     } else {
         (0, remaining.unwrap_or(estimate))
     };
+    let expected_length = range.map(|(length, _)| already + length)
+        .or_else(|| remaining.map(|length| if resumed {already + length} else {length}));
     let mut file = if resumed {
         std::fs::OpenOptions::new().append(true).open(partial)
     } else {
@@ -303,6 +327,19 @@ pub fn download(
     if received == 0 {
         return Err(format!("{url} came back empty"));
     }
+    if let Some(expected) = expected_length {
+        if received != expected {
+            return Err(format!(
+                "{url}: download interrupted at {received} bytes (expected {expected}); retry to resume"
+            ));
+        }
+    }
+    if let Some((_, size)) = range {
+        if received != size {
+            return Err(format!("{url}: resumed file is incomplete ({received}/{size} bytes)"));
+        }
+    }
+    progress(received, received.max(total));
     Ok((received, received.max(total)))
 }
 
@@ -489,6 +526,40 @@ mod tests {
             download(&url, &partial, 0, &cancel, "stopped", &mut |_, _| {}).expect("again");
         assert!(received > 0);
         let _ = std::fs::remove_file(&partial);
+    }
+
+    #[test]
+    fn bad_range_headers_are_rejected_without_overwriting_the_partial() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 4096];
+            let _ = stream.read(&mut request);
+            stream.write_all(b"HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 0-3/8\r\nContent-Length: 4\r\nConnection: close\r\n\r\nxxxx").unwrap();
+        });
+        let partial = std::env::temp_dir().join(format!("concat-bad-range-{port}.part"));
+        std::fs::write(&partial, b"abcd").unwrap();
+        let cancelled = std::sync::atomic::AtomicBool::new(false);
+        let result = download(&format!("http://127.0.0.1:{port}/"), &partial, 8,
+                              &cancelled, "cancelled", &mut |_, _| {});
+        assert!(result.unwrap_err().contains("wrong resume range"));
+        assert_eq!(std::fs::read(&partial).unwrap(), b"abcd");
+        server.join().unwrap();
+        std::fs::remove_file(partial).unwrap();
+    }
+
+    #[test]
+    fn cancelled_download_keeps_existing_part_file() {
+        let partial = std::env::temp_dir().join(format!("concat-cancel-part-{}", std::process::id()));
+        std::fs::write(&partial, b"recoverable").unwrap();
+        let cancelled = std::sync::atomic::AtomicBool::new(true);
+        let result = download("http://127.0.0.1:1/", &partial, 1024,
+                              &cancelled, "download cancelled", &mut |_, _| {});
+        assert_eq!(result.unwrap_err(), "download cancelled");
+        assert_eq!(std::fs::read(&partial).unwrap(), b"recoverable");
+        std::fs::remove_file(partial).unwrap();
     }
 
     #[test]
