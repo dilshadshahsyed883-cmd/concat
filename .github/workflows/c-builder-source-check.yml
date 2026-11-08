@@ -73,6 +73,8 @@ jobs:
           assert 'std::process::Command' not in engine
           print('C Builder source contracts PASS — no Windows executable built')
           PY
+      - name: Verify Desktop UI tabs, animations and captions contracts
+        run: python3 upstream/src/crates/concat/tests/test_ui_animation_captions_contract.py
 
   rust-and-slint-typecheck:
     name: Concat Rust + Slint library typecheck (no EXE)
