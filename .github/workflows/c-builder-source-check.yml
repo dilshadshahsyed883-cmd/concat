@@ -40,6 +40,7 @@ jobs:
           rustfmt --edition 2024 --emit stdout upstream/src/crates/concat/src/c_builder.rs > /dev/null
           rustfmt --edition 2024 --emit stdout upstream/src/crates/concat/src/lib.rs > /dev/null
           rustfmt --edition 2024 --emit stdout upstream/src/crates/concat/src/studio.rs > /dev/null
+          rustfmt --edition 2024 --emit stdout upstream/src/crates/concat/src/studio/bulk_presets.rs > /dev/null
       - name: Verify embedded app wiring, source safety and persistent caching
         shell: bash
         run: |
@@ -73,6 +74,8 @@ jobs:
           assert 'std::process::Command' not in engine
           print('C Builder source contracts PASS — no Windows executable built')
           PY
+      - name: Validate Animations tab and Captions UI source contracts
+        run: python3 upstream/src/crates/concat/tests/test_ui_animation_captions_contract.py
 
   rust-and-slint-typecheck:
     name: Concat Rust + Slint library typecheck (no EXE)

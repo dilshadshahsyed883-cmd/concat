@@ -202,6 +202,24 @@ fn motion_controls(clip_id: &str) -> PhysicsControls {
     }
 }
 
+// Agent 4's Animations tab and Agent 3's transform tools share exactly
+// the same type filter. Audio and title clips are never eligible.
+fn requested_picture(clip: &Clip, images: bool, videos: bool) -> bool {
+    chosen_media_type(clip, images, videos)
+}
+
+/// Vary random physics amplitude/timing independently per clip, while
+/// retaining shared user control baselines and stable reroll recognition.
+fn varied_physics_controls(base: PhysicsControls, clip_id: &str) -> PhysicsControls {
+    let per_clip = motion_controls(clip_id);
+    PhysicsControls {
+        strength: (base.strength * per_clip.strength).clamp(0.1, 2.0),
+        duration: (base.duration * per_clip.duration).clamp(0.1, 1.0),
+        speed: (base.speed * per_clip.speed).clamp(0.25, 3.0),
+        intensity: (base.intensity * per_clip.intensity).clamp(0.2, 2.0),
+    }
+}
+
 fn chosen_media_type(clip: &Clip, images: bool, videos: bool) -> bool {
     match clip.kind {
         ClipKind::Image => images,
@@ -244,6 +262,16 @@ fn motion_choices(
     generated: &[GeneratedMotion],
     permitted: &[MotionKind],
 ) -> Option<(Vec<GeneratedMotion>, Option<usize>)> {
+    motion_choices_with_controls(clip, frame, generated, permitted, None)
+}
+
+fn motion_choices_with_controls(
+    clip: &Clip,
+    frame: f64,
+    generated: &[GeneratedMotion],
+    permitted: &[MotionKind],
+    controls: Option<PhysicsControls>,
+) -> Option<(Vec<GeneratedMotion>, Option<usize>)> {
     let previous = generated
         .iter()
         .find(|motion| clip.keys.as_slice() == motion.keys.as_slice());
@@ -269,7 +297,7 @@ fn motion_choices(
                 // Vary physics per clip, with stable parameters so a reroll
                 // recognizes exactly the keys that the previous bulk action owns.
                 MotionKind::Physics(physics) => physics.keys_with(
-                    &base, frame, motion_controls(&clip.id),
+                    &base, frame, controls.unwrap_or_else(|| motion_controls(&clip.id)),
                 ).ok()?,
             };
             Some(GeneratedMotion { preset, keys })
@@ -595,6 +623,125 @@ impl Studio {
         }
     }
 
+    pub fn apply_physics_bulk(
+        &mut self, index: i32, mode: i32, images: bool, videos: bool,
+        selected_only: bool, strength: f32, duration: f32, speed: f32, intensity: f32,
+    ) {
+        if !images && !videos {
+            self.notify("Select Images or Video Clips before applying animations.", true);
+            return;
+        }
+        if !self.gpu_bulk_ready() {
+            return;
+        }
+        let permitted: Vec<MotionKind> = match mode {
+            0 => PhysicsPreset::from_index(index)
+                .map(|preset| vec![MotionKind::Physics(preset)])
+                .unwrap_or_default(),
+            2 => PhysicsPreset::ALL.into_iter().map(MotionKind::Physics).collect(),
+            3 => PhysicsPreset::ALL.into_iter()
+                .filter(|preset| self.prefs.physics_motion_favourites
+                    .iter().any(|id| id == preset.id()))
+                .map(MotionKind::Physics)
+                .collect(),
+            _ => return,
+        };
+        if permitted.is_empty() {
+            self.notify("Choose a valid animation or star a physics preset first.", true);
+            return;
+        }
+        self.flush_commit();
+        let selected: HashSet<String> = self.selection.iter().cloned().collect();
+        if selected_only && selected.is_empty() {
+            self.notify("Select at least one timeline clip first.", true);
+            return;
+        }
+        let controls = PhysicsControls {
+            strength: strength as f64,
+            duration: duration as f64,
+            speed: speed as f64,
+            intensity: intensity as f64,
+        };
+        let timeline = self.timeline();
+        let frame = self.frame_seconds();
+        let media = self.gpu_picture_media();
+        let tracks: HashSet<_> = timeline.tracks.iter()
+            .filter(|track| track.visible && !self.locked(&track.id))
+            .map(|track| track.id.as_str())
+            .collect();
+        let mut plans: Vec<_> = timeline.clips.iter()
+            .filter(|clip| requested_picture(clip, images, videos)
+                && tracks.contains(clip.track_id.as_str())
+                && media.contains(clip.media_id.as_str())
+                && (!selected_only || selected.contains(&clip.id)))
+            .filter_map(|clip| {
+                let target = (timeline.id.clone(), clip.id.clone());
+                let held = self.bulk_motion.0.get(&target)
+                    .map_or(&[][..], Vec::as_slice);
+                let (choices, old) =
+                    motion_choices_with_controls(clip, frame, held, &permitted,
+                        Some(if mode == 2 || mode == 3 {
+                            varied_physics_controls(controls, &clip.id)
+                        } else {
+                            controls
+                        }))?;
+                Some((clip, target, choices, old))
+            })
+            .collect();
+        if plans.is_empty() {
+            self.notify(&t("studio.randomNoGpuMotion"), true);
+            return;
+        }
+        // Timeline order is canonical for adjacent-favourite avoidance.
+        plans.sort_by(|a, b| a.0.start.total_cmp(&b.0.start)
+            .then_with(|| a.0.id.cmp(&b.0.id)));
+        let indices: Vec<usize> = if mode == 0 {
+            vec![0; plans.len()]
+        } else {
+            let options: Vec<_> = plans.iter()
+                .map(|(_, _, choices, old)| (choices.len(), *old))
+                .collect();
+            random_assignment(&options, fresh_draw())
+        };
+        let mut updates = Vec::new();
+        let mut commands = Vec::new();
+        let mut last_preset = None;
+        for ((clip, target, choices, old), mut chosen) in plans.into_iter().zip(indices) {
+            if mode == 3 && Some(choices[chosen].preset) == last_preset {
+                if let Some(alternative) = choices.iter().position(|item|
+                    Some(item.preset) != last_preset
+                    && Some(item.preset) != old.and_then(|i| choices.get(i).map(|x| x.preset))) {
+                    chosen = alternative;
+                }
+            }
+            last_preset = Some(choices[chosen].preset);
+            if old == Some(chosen) {
+                continue;
+            }
+            let generated = choices[chosen].clone();
+            let mut result = clip.as_ref().clone();
+            result.keys = generated.keys.to_vec();
+            commands.extend(key_commands(&clip.id, clip, &result));
+            updates.push((target, generated));
+        }
+        if commands.is_empty() {
+            self.notify(&t("studio.randomGpuMotionUnchanged"), false);
+            return;
+        }
+        let revision = self.revision;
+        self.apply(Command::Batch { commands });
+        if self.revision != revision {
+            let count = updates.len();
+            for (target, motion) in updates {
+                self.bulk_motion.remember(target, motion);
+            }
+            self.notify(
+                &tf("studio.randomGpuMotionApplied", &[&count.to_string()]),
+                false,
+            );
+        }
+    }
+
     /// Kept as compatibility callbacks for older Animations-tab clients.
     pub fn apply_random_gpu_motion(&mut self) {
         self.apply_bulk_gpu_motion(1, true, true, false);
@@ -835,6 +982,35 @@ mod tests {
         // If an author changes the generated parameters, it is theirs.
         clip.video_effects[0].params.insert("stops".into(), 1.0);
         assert!(effect_choices(&clip, Some(&generated), &presets).is_none());
+    }
+
+    #[test]
+    fn physics_bulk_target_checks_both_media_types_independently() {
+        let mut clip = Clip::blank("v1", "t1", ClipKind::Video, "video", 0.0, 2.0);
+        assert!(requested_picture(&clip, false, true));
+        assert!(!requested_picture(&clip, true, false));
+        assert!(!requested_picture(&clip, false, false));
+        clip.kind = ClipKind::Image;
+        assert!(requested_picture(&clip, true, false));
+        assert!(!requested_picture(&clip, false, true));
+        clip.kind = ClipKind::Audio;
+        assert!(!requested_picture(&clip, true, true));
+    }
+
+
+    #[test]
+    fn randomized_physics_respects_user_settings_with_per_clip_variation() {
+        let base = PhysicsControls {
+            strength: 1.2, duration: 0.8, speed: 1.3, intensity: 1.1,
+        };
+        let a = varied_physics_controls(base, "clip-001");
+        let b = varied_physics_controls(base, "clip-002");
+        assert!(a.strength != b.strength || a.speed != b.speed || a.intensity != b.intensity);
+        assert_eq!(a.strength, varied_physics_controls(base, "clip-001").strength);
+        assert!((0.1..=2.0).contains(&a.strength));
+        assert!((0.1..=1.0).contains(&a.duration));
+        assert!((0.25..=3.0).contains(&a.speed));
+        assert!((0.2..=2.0).contains(&a.intensity));
     }
 
     #[test]
