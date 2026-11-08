@@ -3,7 +3,7 @@ name: Concat Linux verification
 on:
   push:
     branches: ['gpu/**', '!gpu/final-integration', 'desktop/whole-timeline-filter-presets']
-    paths: ['cloud_render/concat/**', '.github/workflows/concat-linux.yml']
+    paths: ['cloud_render/concat/**', 'upstream/src/crates/concat*/**', '.github/workflows/concat-linux.yml']
   pull_request:
     paths: ['cloud_render/concat/**', '.github/workflows/concat-linux.yml']
 
@@ -38,6 +38,15 @@ jobs:
       - name: Verify native physics keyframes (no Windows EXE build)
         working-directory: upstream/src
         run: cargo test -p concat-project --lib physics_motion --locked
+      - name: Parse modified desktop Rust modules without making an EXE
+        run: |
+          for module in upstream/src/crates/concat/src/cloud_gpu_queue.rs \
+                        upstream/src/crates/concat/src/gpu_queue_model.rs \
+                        upstream/src/crates/concat/src/panes/captions.rs \
+                        upstream/src/crates/concat-speech/src/transcribe.rs \
+                        upstream/src/crates/concat-project/src/physics_motion.rs; do
+            rustfmt --edition 2024 --emit stdout "$module" > /dev/null
+          done
       - run: python -m compileall -q cloud_render/concat
       - name: Desktop background uploads and Recent Projects regressions
         run: |
