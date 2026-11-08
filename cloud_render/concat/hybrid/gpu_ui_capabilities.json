@@ -1,4 +1,33 @@
 {
-  "video_effects": ["concat.exposure", "concat.contrast"],
-  "transitions": ["concat.fade-black", "concat.fade-white"]
+  "video_effects": [
+    "concat.exposure",
+    "concat.contrast"
+  ],
+  "transitions": [
+    "concat.fade-black",
+    "concat.fade-white"
+  ],
+  "filters": [
+    "concat.look.crystal-honey",
+    "concat.look.8k",
+    "concat.look.bright-summer",
+    "concat.look.red-tide",
+    "concat.look.iced-fog",
+    "concat.look.soft-golden",
+    "concat.look.urban-gray",
+    "concat.look.sun-glitter",
+    "concat.look.aquamarine",
+    "concat.look.coastal-dusk",
+    "concat.look.milky-fog",
+    "concat.look.city-lights",
+    "concat.look.spring-paint",
+    "concat.look.autumn-pastel",
+    "concat.look.payphone-talk",
+    "concat.look.pulp-retro-film",
+    "concat.look.velvet-halo",
+    "concat.look.honey-brown",
+    "concat.look.4k",
+    "concat.look.cold-thriller",
+    "concat.look.hdr-look"
+  ]
 }

@@ -1,0 +1,13 @@
+format = 2
+
+[effect]
+id = "concat.look.iced-fog"
+name = "Iced Fog"
+kind = "filter"
+category = "Timeline Looks"
+order = 5
+description = "SDR whole-timeline color grading preset."
+
+[wgsl]
+entry = "effect.wgsl"
+space = "display"

@@ -1,0 +1,212 @@
+[
+  {
+    "id": "concat.look.crystal-honey",
+    "name": "Crystal Honey",
+    "brightness": 0.03,
+    "contrast": 1.09,
+    "saturation": 1.06,
+    "temperature": 0.55,
+    "exposure": 0.18,
+    "sharpen": 0
+  },
+  {
+    "id": "concat.look.8k",
+    "name": "8K",
+    "brightness": 0,
+    "contrast": 1.06,
+    "saturation": 1.03,
+    "temperature": 0,
+    "exposure": 0,
+    "sharpen": 1.5
+  },
+  {
+    "id": "concat.look.bright-summer",
+    "name": "Bright Summer",
+    "brightness": 0.07,
+    "contrast": 1.08,
+    "saturation": 1.2,
+    "temperature": 0.25,
+    "exposure": 0,
+    "sharpen": 0.1
+  },
+  {
+    "id": "concat.look.red-tide",
+    "name": "Red Tide",
+    "brightness": -0.02,
+    "contrast": 1.17,
+    "saturation": 1.23,
+    "temperature": 0.6,
+    "exposure": 0,
+    "sharpen": 0
+  },
+  {
+    "id": "concat.look.iced-fog",
+    "name": "Iced Fog",
+    "brightness": 0.055,
+    "contrast": 0.88,
+    "saturation": 0.74,
+    "temperature": -0.72,
+    "exposure": 0,
+    "sharpen": 0
+  },
+  {
+    "id": "concat.look.soft-golden",
+    "name": "Soft Golden",
+    "brightness": 0.035,
+    "contrast": 0.96,
+    "saturation": 1.11,
+    "temperature": 0.5,
+    "exposure": 0,
+    "sharpen": 0
+  },
+  {
+    "id": "concat.look.urban-gray",
+    "name": "Urban Gray",
+    "brightness": -0.04,
+    "contrast": 1.15,
+    "saturation": 0.48,
+    "temperature": -0.17,
+    "exposure": 0,
+    "sharpen": 0.2
+  },
+  {
+    "id": "concat.look.sun-glitter",
+    "name": "Sun Glitter",
+    "brightness": 0.07,
+    "contrast": 1.08,
+    "saturation": 1.24,
+    "temperature": 0.44,
+    "exposure": 0,
+    "sharpen": 0.15
+  },
+  {
+    "id": "concat.look.aquamarine",
+    "name": "Aquamarine",
+    "brightness": 0.025,
+    "contrast": 1.08,
+    "saturation": 1.2,
+    "temperature": -0.47,
+    "exposure": 0,
+    "sharpen": 0.15
+  },
+  {
+    "id": "concat.look.coastal-dusk",
+    "name": "Coastal Dusk",
+    "brightness": -0.06,
+    "contrast": 1.13,
+    "saturation": 0.82,
+    "temperature": 0.21,
+    "exposure": 0,
+    "sharpen": 0
+  },
+  {
+    "id": "concat.look.milky-fog",
+    "name": "Milky Fog",
+    "brightness": 0.085,
+    "contrast": 0.85,
+    "saturation": 0.74,
+    "temperature": -0.11,
+    "exposure": 0,
+    "sharpen": 0
+  },
+  {
+    "id": "concat.look.city-lights",
+    "name": "City Lights",
+    "brightness": -0.04,
+    "contrast": 1.24,
+    "saturation": 1.18,
+    "temperature": -0.27,
+    "exposure": 0,
+    "sharpen": 0.3
+  },
+  {
+    "id": "concat.look.spring-paint",
+    "name": "Spring Paint",
+    "brightness": 0.045,
+    "contrast": 1.05,
+    "saturation": 1.17,
+    "temperature": 0.21,
+    "exposure": 0,
+    "sharpen": 0.05
+  },
+  {
+    "id": "concat.look.autumn-pastel",
+    "name": "Autumn Pastel",
+    "brightness": 0.025,
+    "contrast": 0.93,
+    "saturation": 0.78,
+    "temperature": 0.43,
+    "exposure": 0,
+    "sharpen": 0
+  },
+  {
+    "id": "concat.look.payphone-talk",
+    "name": "Payphone Talk",
+    "brightness": -0.025,
+    "contrast": 1.2,
+    "saturation": 0.87,
+    "temperature": 0.24,
+    "exposure": 0,
+    "sharpen": 0.25
+  },
+  {
+    "id": "concat.look.pulp-retro-film",
+    "name": "Pulp Retro Film",
+    "brightness": -0.035,
+    "contrast": 1.27,
+    "saturation": 0.73,
+    "temperature": 0.46,
+    "exposure": 0,
+    "sharpen": 0.32
+  },
+  {
+    "id": "concat.look.velvet-halo",
+    "name": "Velvet Halo",
+    "brightness": 0.045,
+    "contrast": 0.93,
+    "saturation": 1.02,
+    "temperature": 0.22,
+    "exposure": 0,
+    "sharpen": 0
+  },
+  {
+    "id": "concat.look.honey-brown",
+    "name": "Honey Brown",
+    "brightness": -0.005,
+    "contrast": 1.1,
+    "saturation": 0.91,
+    "temperature": 0.68,
+    "exposure": 0,
+    "sharpen": 0.12
+  },
+  {
+    "id": "concat.look.4k",
+    "name": "4K",
+    "brightness": 0,
+    "contrast": 1.04,
+    "saturation": 1.01,
+    "temperature": 0,
+    "exposure": 0,
+    "sharpen": 0.8
+  },
+  {
+    "id": "concat.look.cold-thriller",
+    "name": "Cold Thriller",
+    "brightness": -0.055,
+    "contrast": 1.19,
+    "saturation": 0.72,
+    "temperature": -0.65,
+    "exposure": 0,
+    "sharpen": 0.17
+  },
+  {
+    "id": "concat.look.hdr-look",
+    "name": "HDR Look",
+    "brightness": 0.015,
+    "contrast": 1.12,
+    "saturation": 1.08,
+    "temperature": 0.07,
+    "exposure": 0,
+    "sharpen": 0.25
+  }
+]

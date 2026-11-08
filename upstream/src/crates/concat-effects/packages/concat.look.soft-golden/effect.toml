@@ -1,0 +1,13 @@
+format = 2
+
+[effect]
+id = "concat.look.soft-golden"
+name = "Soft Golden"
+kind = "filter"
+category = "Timeline Looks"
+order = 6
+description = "SDR whole-timeline color grading preset."
+
+[wgsl]
+entry = "effect.wgsl"
+space = "display"

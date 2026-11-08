@@ -1,0 +1,13 @@
+format = 2
+
+[effect]
+id = "concat.look.honey-brown"
+name = "Honey Brown"
+kind = "filter"
+category = "Timeline Looks"
+order = 18
+description = "SDR whole-timeline color grading preset."
+
+[wgsl]
+entry = "effect.wgsl"
+space = "display"

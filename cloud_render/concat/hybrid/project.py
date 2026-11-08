@@ -11,6 +11,7 @@ from .animations import Transform
 from .captions import CaptionStyle, Cue, WordTiming
 from .contract import FrameSpan
 from .filters import FilterSettings
+from .looks import FILTER_LOOKS
 from .transitions import NATIVE_FADES, Transition
 
 FPS = 30
@@ -113,8 +114,9 @@ def _validated_timeline(document):
                 continue
             effect_id = effect.get("id")
             if (kind not in ("image", "video", "layer")
-                    or effect_id not in ("concat.box-blur", *NATIVE_COLOR_PARAMS)
-                    or (kind == "layer" and effect_id != "concat.box-blur")):
+                    or not (effect_id == "concat.box-blur"
+                            or (kind != "layer" and effect_id in NATIVE_COLOR_PARAMS)
+                            or (kind == "layer" and effect_id in FILTER_LOOKS))):
                 raise ValueError(f"Unsupported GPU effect {effect_id} on clip {ident}")
         transition = clip.get("transitionIn")
         if transition is not None:
@@ -342,6 +344,10 @@ def filters_for(clip, start, duration):
                 raise ValueError("invalid effect parameters")
             if ident in NATIVE_COLOR_PARAMS:
                 settings = _native_color_effect(effect, params, start, duration)
+            elif ident in FILTER_LOOKS:
+                if params or effect.get("keys"):
+                    raise ValueError("timeline look accepts only the layer intensity slider")
+                settings = FILTER_LOOKS[ident]
             else:
                 if effect.get("keys"):
                     raise ValueError("animated parameters")
