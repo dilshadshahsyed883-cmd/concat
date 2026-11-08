@@ -36,6 +36,7 @@ def validate_gpu_manifest(document):
 
 
 def _validated_timeline(document):
+    from .compounds import validate_compounds
     if not isinstance(document, dict) or document.get("version", 1) != 1:
         raise ValueError("Unsupported Concat project version")
     timelines = document.get("timelines", [document])
@@ -56,6 +57,7 @@ def _validated_timeline(document):
     tracks, clips, media = (timeline.get("tracks"), timeline.get("clips"), document.get("media"))
     if not all(isinstance(value, list) for value in (tracks, clips, media)):
         raise ValueError("Invalid tracks, clips, or media table in Concat project")
+    validate_compounds(timeline)
 
     def index_by_id(items, label):
         result = {}

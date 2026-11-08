@@ -103,6 +103,8 @@ def concat_stage1_plan(project: Path) -> Path:
     media = document.get("media")
     if not all(isinstance(x, list) for x in (tracks, clips, media)):
         raise ValueError("CUDA Stage 1: incomplete Concat document")
+    from cloud_render.concat.hybrid.compounds import validate_compounds
+    validate_compounds(timeline)
     track_map = {t["id"]: t for t in tracks if isinstance(t, dict) and isinstance(t.get("id"), str)}
     media_map = {m["id"]: m for m in media if isinstance(m, dict) and isinstance(m.get("id"), str)}
     if not track_map or not media_map or not clips:
