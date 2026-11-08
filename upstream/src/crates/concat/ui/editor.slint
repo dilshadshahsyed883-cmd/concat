@@ -85,6 +85,24 @@ export global Editor {
     /// editor made and put in the bin, selected, is there to be seen.
     in-out property <int> media-jump-token;
 
+    // C Builder lives alongside the ordinary Concat media bin.
+    in-out property <string> cb-media-folder;
+    in-out property <string> cb-narration;
+    in-out property <float> cb-duration;
+    in-out property <string> cb-status;
+    in-out property <string> cb-keywords;
+    in-out property <int> cb-image-count;
+    in-out property <int> cb-video-count;
+    in-out property <int> cb-probed;
+    in-out property <int> cb-reused;
+    in-out property <int> cb-scan-done;
+    in-out property <int> cb-scan-total;
+    in-out property <bool> cb-busy;
+    callback cb-import-folder();
+    callback cb-refresh-folder();
+    callback cb-choose-narration();
+    callback cb-generate-project(name: string, images: string, videos: string, coverage: int);
+
     callback import-media();
     callback media-filter-changed(filter: MediaFilter);
     callback media-sort-changed(index: int);
