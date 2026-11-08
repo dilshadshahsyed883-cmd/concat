@@ -1,9 +1,8 @@
-Concat coordinated final build retry — 2026-11-08
+Concat synchronized Windows EXE + Salad GPU image release request — 2026-11-08, attempt 3.
 
-Reason: initial 8d54ca387be9 build compiled GUI but smoke panicked because 20 built-in procedural transitions declare intensity.
-Fix: manifest validator allows explicit intensity for two-input transition shaders, while retaining the implicit filter mix restriction. Original project parameters and GPU worker code preserved.
-Source: GitHub main revision containing the dedicated validator regression test.
-Windows: native build, smoke startup and integrity verification, project tests, release ZIP and checksum.
-Salad: GHCR image build, import smoke test, immutable SHA tag and digest.
-Both outputs must be pinned to the same new request commit.
-Do not enable general automatic releases or deploy to VPS/Salad.
+The prior c9d267c69059 Windows GUI compiled but crashed on startup because the existing built-in concat.look.4k ID was rejected by the two-segment package ID validator.
+This release retains existing three-part concat.look.* IDs without renaming project format, supports existing transition intensity keys, and runs Rust preflight across all embedded built-in effect manifests before the Windows native build.
+
+Required: package Rust preflight PASS; Windows native compile and --smoke PASS; full bundle/DLL integrity, persistent project tests, SHA256, GitHub release asset.
+Required: Salad worker image import check, publish GHCR digest, commit-matched immutable SHA tag.
+Use the exact same GitHub source SHA for both artifacts. No deployment to VPS or Salad, no default automatic builds on unrelated pushes.
