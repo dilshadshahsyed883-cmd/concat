@@ -821,6 +821,8 @@ pub struct Studio {
 
     // ── the bin ──
     pub media: crate::panes::media_bin::MediaBin,
+    /// Native C Builder catalog, narration selection and background job status.
+    pub c_builder: crate::c_builder::State,
     /// Decoded art by media id, and the ids a worker is decoding for.
     pub peaks: HashMap<String, Arc<Pyramid>>,
     /// Filmstrips by media id: the picture, how many frames are in it, one
@@ -2301,6 +2303,7 @@ impl Studio {
             bulk_effects: BulkEffects::default(),
             bulk_transitions: BulkTransitions::default(),
             media: crate::panes::media_bin::MediaBin::default(),
+            c_builder: crate::c_builder::State::default(),
             peaks: HashMap::new(),
             strips: HashMap::new(),
             windows: HashMap::new(),
@@ -8932,6 +8935,18 @@ impl Studio {
             }
         };
         let editor = app.global::<Editor>();
+        editor.set_cb_media_folder(self.c_builder.folder.clone().into());
+        editor.set_cb_narration(self.c_builder.narration.clone().into());
+        editor.set_cb_duration(self.c_builder.duration.unwrap_or_default() as f32);
+        editor.set_cb_status(self.c_builder.status.clone().into());
+        editor.set_cb_keywords(self.c_builder.keyword_summary.clone().into());
+        editor.set_cb_image_count(self.c_builder.images().min(i32::MAX as usize) as i32);
+        editor.set_cb_video_count(self.c_builder.videos().min(i32::MAX as usize) as i32);
+        editor.set_cb_probed(self.c_builder.probed.min(i32::MAX as usize) as i32);
+        editor.set_cb_reused(self.c_builder.reused.min(i32::MAX as usize) as i32);
+        editor.set_cb_scan_done(self.c_builder.scan_done.min(i32::MAX as usize) as i32);
+        editor.set_cb_scan_total(self.c_builder.scan_total.min(i32::MAX as usize) as i32);
+        editor.set_cb_busy(self.c_builder.scanning);
         editor.set_keys_undo(hint("undo").into());
         editor.set_keys_redo(hint("redo").into());
         editor.set_keys_split(hint("split").into());
