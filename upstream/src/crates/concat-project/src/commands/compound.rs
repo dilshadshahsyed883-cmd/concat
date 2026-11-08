@@ -154,28 +154,73 @@ pub(super) fn apply(
             if start < 0.0 || end <= start {
                 return Err(invalid("Compound time range must have a positive duration."));
             }
-            let t = project.active();
-            let (owned_clips, owned_groups) = owned_members(t);
-            let mut clips = Vec::new();
+            // Existing root compounds cannot be cut without changing their
+            // nested source-time contract. Their existing members are never
+            // duplicated or silently pulled out of the container.
+            let timeline = project.active();
+            let (owned_clips, owned_groups) = owned_members(timeline);
             let mut groups = Vec::new();
-            for c in &t.clips {
-                if owned_clips.contains(&c.id) { continue; }
-                let a = c.start;
-                let b = a + c.duration;
+            for group in &timeline.compounds {
+                if owned_groups.contains(&group.id) { continue; }
+                let (a, b) = bounds(timeline, &group.id, &mut HashSet::new())?;
                 if a < end && b > start {
-                    if a < start || b > end { return Err(invalid("Split clips at the range boundaries before compounding.")); }
-                    clips.push(c.id.clone());
+                    if a < start || b > end {
+                        return Err(invalid(
+                            "The time range cuts through an existing compound. Break it apart first.",
+                        ));
+                    }
+                    groups.push(group.id.clone());
                 }
             }
-            for g in &t.compounds {
-                if owned_groups.contains(&g.id) { continue; }
-                let (a,b) = bounds(t, &g.id, &mut HashSet::new())?;
-                if a < end && b > start {
-                    if a < start || b > end { return Err(invalid("The time range cuts through an existing compound.")); }
-                    groups.push(g.id.clone());
+
+            // Split boundaries against a private copy. If *any* source has a
+            // curved speed map, a sub-minimum fragment, or another unsupported
+            // edit, nothing in the user's timeline or compound graph changes.
+            // The two cuts and new group are one undo/redo transaction.
+            let mut staged = project.clone();
+            for at in [start, end] {
+                let mut clip_ids = Vec::new();
+                for clip in &staged.active().clips {
+                    if owned_clips.contains(&clip.id)
+                        || clip.start >= end
+                        || clip.start + clip.duration <= start
+                        || !(clip.start < at && at < clip.start + clip.duration)
+                    {
+                        continue;
+                    }
+                    let offset = at - clip.start;
+                    if offset <= MIN_CLIP_DURATION
+                        || clip.duration - offset <= MIN_CLIP_DURATION
+                    {
+                        return Err(invalid(
+                            "Compound range would create a clip shorter than the minimum duration.",
+                        ));
+                    }
+                    if clip.speed_curve.is_some() {
+                        return Err(invalid(
+                            "Compound range cannot split a speed-curved clip losslessly.",
+                        ));
+                    }
+                    clip_ids.push(clip.id.clone());
+                }
+                if !clip_ids.is_empty() {
+                    clips::apply(&mut staged, mint, Command::SplitClips {
+                        clip_ids, time: at,
+                    })?;
                 }
             }
-            create(project, mint, clips, groups, name)
+            // Re-evaluate after splitting: new minted tails need to be
+            // included exactly once, while the outside pieces stay free.
+            let clips = staged.active().clips.iter()
+                .filter(|clip| !owned_clips.contains(&clip.id)
+                    && clip.start >= start
+                    && clip.start + clip.duration <= end
+                    && clip.start < end && clip.start + clip.duration > start)
+                .map(|clip| clip.id.clone())
+                .collect();
+            let outcome = create(&mut staged, mint, clips, groups, name)?;
+            *project = staged;
+            Ok(outcome)
         },
         Command::UngroupCompound { compound_id } => {
             let t = project.active_mut();
