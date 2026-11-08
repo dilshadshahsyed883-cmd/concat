@@ -147,7 +147,9 @@ impl ModelState {
             active: self.active && self.installed,
             downloading: self.fetched.is_some(),
             progress: if total > 0.0 {
-                (fetched / total).min(1.0)
+                // Until the digest and atomic rename have completed, do not
+                // claim 100% installation in the UI.
+                (fetched / total).min(0.999)
             } else {
                 0.0
             },
@@ -156,7 +158,7 @@ impl ModelState {
             } else {
                 tf(
                     "settings.mbOfMb",
-                    &[&format!("{fetched:.0}"), &format!("{total:.0}")],
+                    &[&format!("{fetched:.1}"), &format!("{total:.1}")],
                 )
                 .into()
             },
