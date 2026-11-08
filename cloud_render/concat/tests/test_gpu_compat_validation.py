@@ -175,8 +175,9 @@ class GpuManifestValidationTests(unittest.TestCase):
         self.assertAlmostEqual(left + tile.width / 2, 1920 * .4, delta=1)
         self.assertEqual((visible_top, visible_bottom, visible_left, visible_right),
                          (top, top + tile.height, left, left + tile.width))
+        colors = tile.getcolors(tile.width * tile.height)
         self.assertTrue(any(alpha and red == green == blue == 0
-                            for red, green, blue, alpha in tile.get_flattened_data()))
+                            for _, (red, green, blue, alpha) in colors))
 
     def test_existing_custom_caption_style_is_not_silently_dropped(self):
         for field, value in (("fontFamily", "Unsupported family"), ("fontWeight", 700),
