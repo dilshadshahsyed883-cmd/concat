@@ -1,0 +1,22 @@
+format = 2
+
+[effect]
+id = "concat.twinkle-zoom"
+name = "Twinkle Zoom"
+kind = "transition"
+category = "Zoom"
+order = 48
+description = "Sparkling zoom-through"
+
+[[param]]
+key = "intensity"
+label = "Intensity"
+min = 0
+max = 100
+default = 70
+step = 1
+unit = "%"
+
+[transition]
+entry = "effect.wgsl"
+fallback = "cross-fade"

@@ -1,0 +1,22 @@
+format = 2
+
+[effect]
+id = "concat.burning-flame"
+name = "Burning Flame"
+kind = "transition"
+category = "Flash"
+order = 46
+description = "Rising orange flame edge"
+
+[[param]]
+key = "intensity"
+label = "Intensity"
+min = 0
+max = 100
+default = 70
+step = 1
+unit = "%"
+
+[transition]
+entry = "effect.wgsl"
+fallback = "cross-fade"

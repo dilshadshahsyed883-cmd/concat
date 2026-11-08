@@ -1,0 +1,22 @@
+format = 2
+
+[effect]
+id = "concat.warp-portal"
+name = "Warp Portal"
+kind = "transition"
+category = "Warp"
+order = 43
+description = "Twisting radial reveal"
+
+[[param]]
+key = "intensity"
+label = "Intensity"
+min = 0
+max = 100
+default = 70
+step = 1
+unit = "%"
+
+[transition]
+entry = "effect.wgsl"
+fallback = "cross-fade"

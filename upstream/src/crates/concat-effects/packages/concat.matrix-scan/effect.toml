@@ -1,0 +1,22 @@
+format = 2
+
+[effect]
+id = "concat.matrix-scan"
+name = "Matrix Scan"
+kind = "transition"
+category = "Digital"
+order = 34
+description = "Green scanning line"
+
+[[param]]
+key = "intensity"
+label = "Intensity"
+min = 0
+max = 100
+default = 70
+step = 1
+unit = "%"
+
+[transition]
+entry = "effect.wgsl"
+fallback = "cross-fade"

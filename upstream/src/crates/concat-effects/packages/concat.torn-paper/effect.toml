@@ -1,0 +1,22 @@
+format = 2
+
+[effect]
+id = "concat.torn-paper"
+name = "Torn Paper"
+kind = "transition"
+category = "Organic"
+order = 33
+description = "Jagged paper edge reveal"
+
+[[param]]
+key = "intensity"
+label = "Intensity"
+min = 0
+max = 100
+default = 70
+step = 1
+unit = "%"
+
+[transition]
+entry = "effect.wgsl"
+fallback = "cross-fade"
