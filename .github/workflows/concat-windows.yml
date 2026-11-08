@@ -2,7 +2,7 @@ name: Concat native development build
 
 on:
   push:
-    branches: ['gpu/baseline', 'gpu/desktop-editor', 'gpu/integration', 'gpu/integrated', 'gpu/final-integration', 'desktop/queue-bulk']
+    branches: ['main', 'gpu/baseline', 'gpu/desktop-editor', 'gpu/integration', 'gpu/integrated', 'gpu/final-integration', 'desktop/queue-bulk']
     paths: ['upstream/**', '.github/workflows/concat-windows.yml']
   pull_request:
     paths: ['upstream/**', '.github/workflows/concat-windows.yml']
@@ -139,7 +139,12 @@ jobs:
           env-vars: CARGO CC CFLAGS CXX CMAKE RUST ORT
       - name: Compile modified original Concat GUI from source
         env:
-          CARGO_INCREMENTAL: '1'
+          # ffmpeg-sys-the-third's libclang binding generator repeatedly
+          # terminated with Windows 0xc0000005 under unconstrained parallel
+          # dependency builds. Limit simultaneous builds and incremental
+          # memory usage; retain the pinned FFmpeg and LLVM versions.
+          CARGO_BUILD_JOBS: '2'
+          CARGO_INCREMENTAL: '0'
           # The unoptimized GUI retains Whisper symbols only present in its static CPU library.
           GGML_BACKEND_DL: "OFF"
           GGML_CPU_ALL_VARIANTS: "OFF"
@@ -182,3 +187,45 @@ jobs:
           path: dist/Concat-0.2.8-GPU-Windows-x64/
           if-no-files-found: error
           retention-days: 30
+
+  publish-main-release:
+    needs: native-editor-windows
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Concat-Windows-x64-dev
+          path: Concat-0.2.8-GPU-Windows-x64
+      - name: Package verified portable Windows release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s Concat-0.2.8-GPU-Windows-x64/concat.exe
+          test -s Concat-0.2.8-GPU-Windows-x64/SHA256SUMS
+          cd Concat-0.2.8-GPU-Windows-x64
+          sha256sum -c SHA256SUMS
+          cd ..
+          zip -r "Concat-Windows-x64-${GITHUB_SHA:0:12}.zip" Concat-0.2.8-GPU-Windows-x64
+          sha256sum "Concat-Windows-x64-${GITHUB_SHA:0:12}.zip" > release-sha256.txt
+      - name: Publish commit-matched GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="concat-cuda-${GITHUB_SHA:0:12}"
+          {
+            echo "Portable Windows x64 Concat editor built and smoke-tested from main commit ${GITHUB_SHA}."
+            echo
+            echo "Salad GPU candidate (same source commit):"
+            echo "`ghcr.io/${GITHUB_REPOSITORY,,}-gpu-candidate:${GITHUB_SHA}`"
+            echo
+            echo "GPU RTX 3060 Ti acceptance is pending a live test; this release does not claim GPU acceptance."
+          } > release-notes.txt
+          gh release create "$tag" "Concat-Windows-x64-${GITHUB_SHA:0:12}.zip" release-sha256.txt \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Concat CUDA Desktop ${GITHUB_SHA:0:12}" --notes-file release-notes.txt

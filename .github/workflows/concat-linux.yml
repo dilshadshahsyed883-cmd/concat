@@ -26,6 +26,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
+        with:
+          toolchain: "1.93.0"
+          components: rustfmt
+      - name: Parse random GPU Rust module before native Windows compilation
+        run: rustfmt --edition 2024 --emit stdout upstream/src/crates/concat/src/studio/bulk_presets.rs > /dev/null
       - run: python -m pip install -r cloud_render/concat/hybrid/requirements-captions.txt
       - run: python -m compileall -q cloud_render/concat
       - run: python -m unittest discover -v -s cloud_render/concat/tests
