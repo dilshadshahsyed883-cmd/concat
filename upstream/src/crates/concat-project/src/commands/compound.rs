@@ -293,6 +293,29 @@ mod tests {
     }
 
     #[test]
+    fn splitting_inside_a_compound_keeps_both_source_pieces_grouped() {
+        let mut e = editor();
+        e.apply(Command::CreateCompound {
+            clip_ids: vec!["c1".into()], compound_ids: vec![], name: "Scene".into(),
+        }).unwrap();
+        e.apply(Command::SplitClips {
+            clip_ids: vec!["c1".into()], time: 1.0,
+        }).unwrap();
+        let timeline = e.project().active();
+        assert_eq!(timeline.clips.len(), 4);
+        let members = &timeline.compounds[0].members;
+        assert_eq!(members.len(), 2);
+        assert_eq!(members[0], CompoundMember::Clip("c1".into()));
+        let CompoundMember::Clip(tail_id) = &members[1] else { panic!("expected tail clip") };
+        let tail = timeline.clips.iter().find(|c| &c.id == tail_id).unwrap();
+        assert_eq!(tail.start, 1.0);
+        assert_eq!(tail.duration, 1.0);
+        assert!(e.undo());
+        assert_eq!(e.project().active().clips.len(), 3);
+        assert_eq!(e.project().active().compounds[0].members.len(), 1);
+    }
+
+    #[test]
     fn rename_and_break_apart_keep_source_tracks_and_timing() {
         let mut e = editor();
         let clips = e.project().active().clips.clone();
