@@ -954,7 +954,13 @@ export component BackgroundRows inherits VerticalLayout {
     init => { root.amount = root.data.amount; }
     changed data => { root.amount = root.data.amount; }
 
-    property <[string]> kinds: [
+    // CUDA supports the same native Blur and Color styles; image-backed
+    // backgrounds remain hidden until parity exists in the worker.
+    property <[string]> kinds: GpuCompatibility.enabled ? [
+        I18n.t("clipInspector.backgroundNone"),
+        I18n.t("clipInspector.backgroundBlur"),
+        I18n.t("common.color"),
+    ] : [
         I18n.t("clipInspector.backgroundNone"),
         I18n.t("clipInspector.backgroundBlur"),
         I18n.t("common.color"),
@@ -1094,12 +1100,6 @@ export component VideoPanel inherits VerticalLayout {
         root.commit();
     }
 
-    // Preview parameters for the next physics preset click; GPU receives
-    // ordinary baked transform keys, so no renderer-specific format is added.
-    property <float> physics-strength: 1;
-    property <float> physics-duration: 1;
-    property <float> physics-speed: 1;
-    property <float> physics-intensity: 1;
     property <float> scale;
     property <float> offset-x;
     property <float> offset-y;
@@ -1337,7 +1337,7 @@ export component VideoPanel inherits VerticalLayout {
                 padding-right: Theme.pad;
                 Param {
                     label: "Strength";
-                    value <=> root.physics-strength;
+                    value <=> Keyframes.physics-strength;
                     minimum: 0.1;
                     maximum: 2;
                     step: 0.1;
@@ -1346,7 +1346,7 @@ export component VideoPanel inherits VerticalLayout {
                 }
                 Param {
                     label: "Duration (clip fraction)";
-                    value <=> root.physics-duration;
+                    value <=> Keyframes.physics-duration;
                     minimum: 0.1;
                     maximum: 1;
                     step: 0.05;
@@ -1357,7 +1357,7 @@ export component VideoPanel inherits VerticalLayout {
                 }
                 Param {
                     label: "Speed";
-                    value <=> root.physics-speed;
+                    value <=> Keyframes.physics-speed;
                     minimum: 0.25;
                     maximum: 3;
                     step: 0.05;
@@ -1366,7 +1366,7 @@ export component VideoPanel inherits VerticalLayout {
                 }
                 Param {
                     label: "Physics Intensity";
-                    value <=> root.physics-intensity;
+                    value <=> Keyframes.physics-intensity;
                     minimum: 0.2;
                     maximum: 2;
                     step: 0.1;
@@ -1374,112 +1374,12 @@ export component VideoPanel inherits VerticalLayout {
                     fmt: ParamFormat.fraction;
                 }
                 Text {
-                    text: "Set controls, then click an animation to bake editable GPU-compatible keyframes.";
+                    text: "Choose an animation in the Library's Animations tab. These controls bake editable GPU-compatible keyframes.";
                     color: Theme.fg-muted;
                     wrap: word-wrap;
                 }
             }
-            // Native physics motion is sampled into ordinary clip keys;
-            // no separate desktop-only animation data or unsupported worker effect.
-            if GpuCompatibility.enabled: HorizontalLayout {
-                padding-left: Theme.pad;
-                padding-right: Theme.pad;
-                spacing: Theme.gap;
-                Button {
-                    block: true;
-                    label: "Spring Zoom";
-                    horizontal-stretch: 1;
-                    clicked => { Keyframes.apply-physics-motion(0, root.physics-strength, root.physics-duration, root.physics-speed, root.physics-intensity); }
-                }
-                Button {
-                    label: Keyframes.physics-favourites[0] ? "★" : "☆";
-                    clicked => { Keyframes.toggle-physics-favourite(0); }
-                }
-            }
-            if GpuCompatibility.enabled: HorizontalLayout {
-                padding-left: Theme.pad;
-                padding-right: Theme.pad;
-                spacing: Theme.gap;
-                Button {
-                    block: true;
-                    label: "Pendulum Swing";
-                    horizontal-stretch: 1;
-                    clicked => { Keyframes.apply-physics-motion(1, root.physics-strength, root.physics-duration, root.physics-speed, root.physics-intensity); }
-                }
-                Button {
-                    label: Keyframes.physics-favourites[1] ? "★" : "☆";
-                    clicked => { Keyframes.toggle-physics-favourite(1); }
-                }
-            }
-            if GpuCompatibility.enabled: HorizontalLayout {
-                padding-left: Theme.pad;
-                padding-right: Theme.pad;
-                spacing: Theme.gap;
-                Button {
-                    block: true;
-                    label: "Gravity Bounce";
-                    horizontal-stretch: 1;
-                    clicked => { Keyframes.apply-physics-motion(2, root.physics-strength, root.physics-duration, root.physics-speed, root.physics-intensity); }
-                }
-                Button {
-                    label: Keyframes.physics-favourites[2] ? "★" : "☆";
-                    clicked => { Keyframes.toggle-physics-favourite(2); }
-                }
-            }
-            if GpuCompatibility.enabled: HorizontalLayout {
-                padding-left: Theme.pad;
-                padding-right: Theme.pad;
-                spacing: Theme.gap;
-                Button {
-                    block: true;
-                    label: "Elastic Pop";
-                    horizontal-stretch: 1;
-                    clicked => { Keyframes.apply-physics-motion(3, root.physics-strength, root.physics-duration, root.physics-speed, root.physics-intensity); }
-                }
-                Button {
-                    label: Keyframes.physics-favourites[3] ? "★" : "☆";
-                    clicked => { Keyframes.toggle-physics-favourite(3); }
-                }
-            }
-            if GpuCompatibility.enabled: HorizontalLayout {
-                padding-left: Theme.pad;
-                padding-right: Theme.pad;
-                spacing: Theme.gap;
-                Button {
-                    block: true;
-                    label: "Inertia Glide";
-                    horizontal-stretch: 1;
-                    clicked => { Keyframes.apply-physics-motion(4, root.physics-strength, root.physics-duration, root.physics-speed, root.physics-intensity); }
-                }
-                Button {
-                    label: Keyframes.physics-favourites[4] ? "★" : "☆";
-                    clicked => { Keyframes.toggle-physics-favourite(4); }
-                }
-            }
-            if GpuCompatibility.enabled: HorizontalLayout {
-                padding-left: Theme.pad;
-                padding-right: Theme.pad;
-                spacing: Theme.gap;
-                Button {
-                    block: true;
-                    label: "Damped Shake";
-                    horizontal-stretch: 1;
-                    clicked => { Keyframes.apply-physics-motion(5, root.physics-strength, root.physics-duration, root.physics-speed, root.physics-intensity); }
-                }
-                Button {
-                    label: Keyframes.physics-favourites[5] ? "★" : "☆";
-                    clicked => { Keyframes.toggle-physics-favourite(5); }
-                }
-            }
-            if GpuCompatibility.enabled: HorizontalLayout {
-                padding-left: Theme.pad;
-                padding-right: Theme.pad;
-                Button {
-                    block: true;
-                    label: "Apply Favorites to All Randomly";
-                    clicked => { Keyframes.apply-random-favourite-motion(); }
-                }
-            }
+
         }
     }
 
@@ -1490,7 +1390,7 @@ export component VideoPanel inherits VerticalLayout {
         label: I18n.t("project.clearGpuBackground");
         clicked => { Backdrop.set-mode(true, -1); }
     }
-    if !GpuCompatibility.enabled && root.canvas && Backdrop.clip-has: Section {
+    if root.canvas && Backdrop.clip-has: Section {
         canvas := SectionHeader {
             title: I18n.t("phone.canvas");
             collapsible: true;
@@ -1500,6 +1400,8 @@ export component VideoPanel inherits VerticalLayout {
         }
 
         if canvas.open: SectionBody {
+            // Changes in these rows apply immediately to this selected clip
+            // as one native, undoable project command.
             BackgroundRows {
                 own: true;
             }

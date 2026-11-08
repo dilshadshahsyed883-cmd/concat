@@ -2,7 +2,7 @@
 # Embedded in the actual Concat Windows EXE. No additional desktop editor.
 # Use only the existing SaladCloud Gateway and existing VPS receiver.
 param(
-    [ValidateSet("Submit","Save","Test","Prepare","Upload","Status")][string]$Operation="Submit",
+    [ValidateSet("Submit","Save","Test","Prepare","Upload","Status","OfflineBundle")][string]$Operation="Submit",
     [string]$ProjectDir,
     [string]$Job,
     [string]$SnapshotID,
@@ -41,6 +41,10 @@ function Concat-Bundle([string]$dir,[string]$zip,[string]$snapshot="") {
     if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { $manifest=Join-Path $dir "wolfcut.json" }
     if ($snapshot) {$manifest=$snapshot}
     if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { throw "No saved Concat project (concat.json)" }
+    $manifestSize=(Get-Item -LiteralPath $manifest).Length
+    if ($manifestSize -le 0 -or $manifestSize -gt 64MB) {
+        throw "GPU project JSON is $(Format-ByteSize $manifestSize); permitted size is 1 byte to 64 MiB."
+    }
     $project=Get-Content -LiteralPath $manifest -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($null -eq $project.media) { throw "Concat document has no media table" }
     $media=@($project.media)
@@ -69,6 +73,8 @@ function Concat-Bundle([string]$dir,[string]$zip,[string]$snapshot="") {
         $item=$lookup[$source]
         [void]$refs.Add(@{index=[int]$i;member=$item.member;size=$item.size;sha256=$item.sha256})
     }
+    $packed=[long]0
+    $lastPercent=-1
     $stream=[IO.File]::Open($zip,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write)
     try {
         $archive=[IO.Compression.ZipArchive]::new($stream,[IO.Compression.ZipArchiveMode]::Create,$true)
@@ -80,10 +86,19 @@ function Concat-Bundle([string]$dir,[string]$zip,[string]$snapshot="") {
             [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive,$manifest,("project/"+[IO.Path]::GetFileName($manifest)),[IO.Compression.CompressionLevel]::Optimal) | Out-Null
             foreach($f in $lookup.Values) {
                 [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive,$f.source,$f.member,[IO.Compression.CompressionLevel]::NoCompression) | Out-Null
+                # Telemetry only: do not change any ZIP entries, compression, or ordering.
+                if ($Operation -eq "OfflineBundle") {
+                    $packed += [long]$f.size
+                    $pct=if ($total -gt 0) {[int][Math]::Min(99,[Math]::Floor(99.0*$packed/$total))} else {99}
+                    if ($pct -ne $lastPercent) {
+                        Report "Packing media: $(Format-UploadProgress $packed $total)" $pct
+                        $lastPercent=$pct
+                    }
+                }
             }
         } finally {$archive.Dispose()}
     } finally {$stream.Dispose()}
-    Report "Packaged $($lookup.Count) media files." 0
+    Report "Packaged $($lookup.Count) media files." $(if ($Operation -eq "OfflineBundle") {99} else {0})
 }
 function Format-ByteSize([long]$bytes) {
     if ($bytes -lt 0) { $bytes = 0 }
@@ -303,24 +318,46 @@ function Test-Worker([string]$domain,$headers) {
         $capabilities.validation_version -ne 1) {
         throw "The Salad worker image does not match this Concat GPU build."
     }
+    return $capabilities
 }
 
 
-function Validate-WorkerProject([string]$manifest,[string]$domain,$headers) {
+function Validate-WorkerProject([string]$manifest,[string]$domain,$headers,$capabilities) {
     if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) {
         throw "GPU project manifest missing; save the project again."
     }
-    $payload=[IO.File]::ReadAllBytes($manifest)
-    if (!$payload.Length -or $payload.Length -gt 2MB) {
-        throw "GPU project manifest is empty or exceeds the 2 MiB compatibility limit."
+    [long]$size=(Get-Item -LiteralPath $manifest).Length
+    [long]$maxBytes=64MB
+    if ($null -ne $capabilities.max_project_manifest_bytes) {
+        [long]$serverLimit=$capabilities.max_project_manifest_bytes
+        if ($serverLimit -le 0) {throw "Salad worker advertises an invalid project manifest limit."}
+        $maxBytes=[Math]::Min($maxBytes,$serverLimit)
     }
-    $result=Invoke-RestMethod -MaximumRedirection 0 -Method Post -Uri "$domain/api/validate" -Headers $headers -ContentType "application/json" -Body $payload -TimeoutSec 45
+    Report "Validating GPU project JSON ($(Format-ByteSize $size); maximum $(Format-ByteSize $maxBytes))." 0
+    if ($size -le 0) {throw "GPU project JSON is empty. Save the project again."}
+    if ($size -gt $maxBytes) {
+        throw "GPU project JSON is $(Format-ByteSize $size), above worker limit $(Format-ByteSize $maxBytes). Reduce the project or update the Salad worker image."
+    }
+    $payload=[IO.File]::ReadAllBytes($manifest)
+    try {
+        $result=Invoke-RestMethod -MaximumRedirection 0 -Method Post -Uri "$domain/api/validate" -Headers $headers -ContentType "application/json" -Body $payload -TimeoutSec 150
+    } catch {
+        $response=$_.Exception.Response
+        if ($response) {
+            switch ([int]$response.StatusCode) {
+                400 {throw "Salad worker rejected invalid project JSON ($(Format-ByteSize $size)). Check the saved project file."}
+                413 {throw "Salad worker rejected the $(Format-ByteSize $size) project JSON as too large. The running worker image may be outdated."}
+                415 {throw "Salad worker expects application/json for project validation."}
+            }
+        }
+        throw
+    }
     if ($result.ok -ne $true) {
         $reason=@($result.errors) -join "; "
         if (!$reason) {$reason="Unknown unsupported project feature"}
-        throw "GPU project compatibility failed: $reason"
+        throw "GPU project compatibility failed ($(Format-ByteSize $size)): $reason"
     }
-    Report "GPU compatibility verified before media upload." 0
+    Report "GPU compatibility verified ($(Format-ByteSize $size)) before media upload." 0
 }
 
 function Get-Output([string]$domain,[string]$job,$status,$headers,[string]$outputs) {
@@ -344,11 +381,11 @@ function Get-Output([string]$domain,[string]$job,$status,$headers,[string]$outpu
     }
 }
 
-function Send-Project([string]$root,[string]$gpuDataDir,[string]$domain,$headers) {
+function Send-Project([string]$root,[string]$gpuDataDir,[string]$domain,$headers,$capabilities) {
     $projectManifest=Join-Path $root "concat.json"
     if (!(Test-Path -LiteralPath $projectManifest -PathType Leaf)) {$projectManifest=Join-Path $root "wolfcut.json"}
     if (!(Test-Path -LiteralPath $projectManifest -PathType Leaf)) {throw "Save a Concat project before sending it."}
-    Validate-WorkerProject $projectManifest $domain $headers
+    Validate-WorkerProject $projectManifest $domain $headers $capabilities
     $jobs=Join-Path $gpuDataDir "Jobs"
     New-Item -ItemType Directory -Force -Path $jobs | Out-Null
     $stateFile=Join-Path $gpuDataDir ("upload-"+(SHA-Bytes ([Text.Encoding]::UTF8.GetBytes($root))).Substring(0,24)+".json")
@@ -450,6 +487,52 @@ if ($BundleOnly) {
     return
 }
 
+# Strictly local-only path. This runs before credential resolution, queue state,
+# and every worker request. Snapshot naming matches Queue::add (concat.json).
+if ($Operation -eq "OfflineBundle") {
+    $stage=$null
+    $snapshotRoot=$null
+    try {
+        if (!$ProjectDir -or !$BundlePath) {throw "Select a saved project and a ZIP destination."}
+        $root=(Resolve-Path -LiteralPath $ProjectDir).ProviderPath
+        $sourceManifest=Join-Path $root "concat.json"
+        if (!(Test-Path -LiteralPath $sourceManifest -PathType Leaf)) {
+            $sourceManifest=Join-Path $root "wolfcut.json"
+        }
+        if (!(Test-Path -LiteralPath $sourceManifest -PathType Leaf)) {
+            throw "Save a Concat project before preparing its ZIP."
+        }
+        $target=[IO.Path]::GetFullPath($BundlePath)
+        if ([IO.Path]::GetExtension($target) -ine ".zip") {throw "Choose a .zip destination."}
+        $parent=[IO.Path]::GetDirectoryName($target)
+        if (!(Test-Path -LiteralPath $parent -PathType Container)) {
+            throw "ZIP destination folder does not exist."
+        }
+        if ([IO.File]::Exists($target) -or [IO.Directory]::Exists($target)) {
+            throw "ZIP destination already exists. Choose a new filename."
+        }
+        $snapshotRoot=Join-Path ([IO.Path]::GetTempPath()) ("concat-offline-"+[Guid]::NewGuid().ToString("N"))
+        [IO.Directory]::CreateDirectory($snapshotRoot) | Out-Null
+        $snapshotManifest=Join-Path $snapshotRoot "concat.json"
+        [IO.File]::Copy($sourceManifest,$snapshotManifest)
+        $stage=Join-Path $parent ([IO.Path]::GetFileName($target)+"."+
+            [Guid]::NewGuid().ToString("N")+".part")
+        Report "Preparing local GPU ZIP (offline)..." 0
+        Concat-Bundle $root $stage $snapshotManifest
+        # Move on the same volume, atomically publishing only a complete ZIP.
+        [IO.File]::Move($stage,$target)
+        $bytes=(Get-Item -LiteralPath $target).Length
+        Report "Offline ZIP ready: $target ($(Format-ByteSize $bytes))" 100 $target $false "offline_ready"
+    } catch {
+        Report $_.Exception.Message -1 "" $true "offline_failed"
+        exit 1
+    } finally {
+        if ($stage) {Remove-Item -LiteralPath $stage -ErrorAction SilentlyContinue}
+        if ($snapshotRoot) {Remove-Item -LiteralPath $snapshotRoot -Recurse -Force -ErrorAction SilentlyContinue}
+    }
+    return
+}
+
 $headers=$null
 try {
     if (!$env:LOCALAPPDATA) {throw "Windows did not provide a local application data directory."}
@@ -495,8 +578,8 @@ try {
             }
             try {
                 Report "Checking the worker before uploading." 0
-                Test-Worker $config.domain $headers
-                Validate-WorkerProject (Join-Path (Join-Path $queueDir $SnapshotID) "concat.json") $config.domain $headers
+                $capabilities=Test-Worker $config.domain $headers
+                Validate-WorkerProject (Join-Path (Join-Path $queueDir $SnapshotID) "concat.json") $config.domain $headers $capabilities
                 Report "Uploading the saved snapshot." 0 "" $false "attempted"
                 Submit-Zip $zip $Job $config.domain $headers
                 $zipSize = (Get-Item -LiteralPath $zip).Length
@@ -514,9 +597,9 @@ try {
         Report "GPU settings saved for this Windows user." -1 $config.domain
     } else {
         Report "Checking Salad gateway and renderer authentication."
-        Test-Worker $config.domain $headers
+        $capabilities=Test-Worker $config.domain $headers
         if ($Operation -eq "Test") {Report "Connected. The authenticated CUDA worker is ready."}
-        else {Send-Project (Resolve-Path -LiteralPath $ProjectDir).ProviderPath $gpuDataDir $config.domain $headers}
+        else {Send-Project (Resolve-Path -LiteralPath $ProjectDir).ProviderPath $gpuDataDir $config.domain $headers $capabilities}
     }
 } catch {
     $message=$_.Exception.Message

@@ -8,6 +8,7 @@ from math import floor, isfinite
 from pathlib import Path
 
 from .animations import Transform
+from .canvas import CanvasBackground, parse_background
 from .captions import CaptionStyle, Cue, WordTiming
 from .contract import FrameSpan
 from .filters import FilterSettings
@@ -49,9 +50,9 @@ def _validated_timeline(document):
             video.get("rateDen"), video.get("colorSpace", "sdr")) != (
             WIDTH, HEIGHT, FPS, 1, "sdr"):
         raise ValueError("GPU supports only 1920x1080 30fps SDR timelines")
-    background = timeline.get("background") or {}
-    if not isinstance(background, dict) or background.get("kind", "none") != "none":
-        raise ValueError("Unsupported GPU timeline background")
+    # Native Canvas accepts none, blur (0–100%) and solid color.
+    # Image-backed Canvas is still fail-closed until the worker can match it.
+    parse_background(timeline.get("background"))
     tracks, clips, media = (timeline.get("tracks"), timeline.get("clips"), document.get("media"))
     if not all(isinstance(value, list) for value in (tracks, clips, media)):
         raise ValueError("Invalid tracks, clips, or media table in Concat project")
@@ -65,11 +66,14 @@ def _validated_timeline(document):
             result[ident] = item
         return result
 
+    # Resource bounds allow thousands of edits without unbounded planner work.
+    if len(timelines) > 128 or len(tracks) > 512 or len(clips) > 50000 or len(media) > 20000:
+        raise ValueError("GPU project exceeds limits: 128 timelines, 512 tracks, 50000 clips or 20000 media records")
     track_ids = index_by_id(tracks, "track")
     media_items = index_by_id(media, "media")
     index_by_id(clips, "clip")
     unsupported_fields = ("crop", "mask", "cutout", "stabilize", "enhanced",
-                          "background", "speedCurve", "shape", "transitionOut")
+                          "speedCurve", "shape", "transitionOut")
     if not clips:
         raise ValueError("Active timeline has no clips to render")
     for clip in clips:
@@ -88,6 +92,10 @@ def _validated_timeline(document):
             if kind == "image" and _media_path(item).suffix.lower() not in (
                     ".jpg", ".jpeg"):
                 raise ValueError(f"GPU clip {ident} requires a JPEG photo; PNG is not supported")
+        if clip.get("background") is not None:
+            background = parse_background(clip["background"])
+            if background is not None and kind not in ("image", "video"):
+                raise ValueError(f"Unsupported GPU Canvas background on clip {ident}")
         for field in unsupported_fields:
             if clip.get(field):
                 raise ValueError(f"Unsupported GPU feature {field} on clip {ident}")
@@ -100,6 +108,8 @@ def _validated_timeline(document):
         keys = clip.get("keys") or []
         if not isinstance(keys, list):
             raise ValueError(f"Invalid GPU keyframes on clip {ident}")
+        if len(keys) > 2048:
+            raise ValueError(f"GPU clip {ident} has too many animation keyframes (2048 maximum)")
         for key in keys:
             prop = key.get("property") if isinstance(key, dict) else None
             if kind not in ("image", "video", "layer") or not isinstance(prop, str) or prop not in KEYS:
@@ -107,6 +117,8 @@ def _validated_timeline(document):
         effects = clip.get("videoEffects") or []
         if not isinstance(effects, list):
             raise ValueError(f"Invalid GPU effects on clip {ident}")
+        if len(effects) > 256:
+            raise ValueError(f"GPU clip {ident} has too many effects (256 maximum)")
         for effect in effects:
             if not isinstance(effect, dict):
                 raise ValueError(f"Invalid GPU effect on clip {ident}")
@@ -209,6 +221,7 @@ class Picture:
     outgoing: Picture | None = None
     flip_h: bool = False
     flip_v: bool = False
+    background: CanvasBackground | None = None
 
     def transform(self, index):
         fraction = min(max((index - self.span.start) / (self.span.end - self.span.start), 0), 1)
@@ -258,6 +271,7 @@ class Project:
     sounds: tuple[Sound, ...]
     frames: int
     native_cuts: tuple[NativeCut, ...] = ()
+    background_rank: int | None = None
 
 
 def _native_cut(rank, previous, incoming, ident, duration, media_duration, intensity=None):
@@ -504,6 +518,7 @@ def load_project(root: Path, warn) -> Project:
 def _plan_project(document, timeline, resolve_media):
     tracks = {track["id"]: track for track in timeline["tracks"]}
     media = {item["id"]: item for item in document["media"]}
+    timeline_background = parse_background(timeline.get("background"))
     lanes = {track: [] for track in tracks}
     sounds, captions, pending = {}, [], {}
     media_durations, native_cuts = {}, []
@@ -558,7 +573,9 @@ def _plan_project(document, timeline, resolve_media):
                           span, source, speed, constants,
                           {key: sorted(points.values()) for key, points in keys.items()},
                           filters_for(clip, start, duration), flip_h=bool(clip.get("flipH")),
-                          flip_v=bool(clip.get("flipV")))
+                          flip_v=bool(clip.get("flipV")),
+                          background=(timeline_background if clip.get("background") is None
+                                      else parse_background(clip["background"])))
         lanes[clip["trackId"]].append(picture)
         media_durations[ident] = item.get("duration")
         if clip.get("transitionIn"):
@@ -614,6 +631,10 @@ def _plan_project(document, timeline, resolve_media):
             if any(clip.span.start < span.end and span.start < clip.span.end for clip in lane):
                 raise ValueError(f"GPU caption {ident} overlaps video or effects on its track or above; "
                                  "move the caption to a higher track")
+    # Concat draws Canvas only under the lowest track containing pictures,
+    # never under additional video layers or captions.
+    background_rank = next((rank for rank, lane in enumerate(sorted_lanes)
+                            if any(clip.kind in ("image", "video") for clip in lane)), None)
     return Project(tuple(sorted_lanes), tuple(caption for _, _, _, caption in sorted(
         captions, key=lambda entry: (entry[0], entry[1].start))), tuple(sounds.values()), end_frame,
-        tuple(native_cuts))
+        tuple(native_cuts), background_rank)

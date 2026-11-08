@@ -19,9 +19,11 @@
 //!    window as 16 kHz mono floats - the input whisper wants - and the
 //!    segments come back relative to the window.
 
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::SystemTime;
 
 use concat_host::{AppDirs, SingleFlight};
 use concat_media::{AudioDecoder, AudioOptions, SampleFormat};
@@ -218,6 +220,59 @@ pub fn cpu_backend() -> Result<String, String> {
         .clone()
 }
 
+/// Digest results are retained only while the file has the same byte count
+/// and last-modified time. Settings refresh runs on the UI thread, so
+/// rehashing six ~75–490 MB models on every refresh would freeze the editor.
+/// The first discovery and any changed file still require a real SHA-256.
+static VERIFIED_MODELS: OnceLock<Mutex<HashMap<PathBuf, (u64, Option<SystemTime>, String, bool)>>> =
+    OnceLock::new();
+
+fn installed_model(path: &Path, digest: &str) -> bool {
+    let Ok(metadata) = path.metadata() else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
+    let signature = (metadata.len(), metadata.modified().ok());
+    let cache = VERIFIED_MODELS.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(locked) = cache.lock() {
+        if let Some((length, modified, expected, valid)) = locked.get(path) {
+            if (*length, *modified) == signature && expected == digest {
+                return *valid;
+            }
+        }
+    }
+    let valid = concat_host::models::verify(path, digest).is_ok();
+    if let Ok(mut locked) = cache.lock() {
+        locked.insert(path.to_path_buf(), (signature.0, signature.1, digest.to_owned(), valid));
+    }
+    valid
+}
+
+/// Preserve any unverified existing model bytes instead of silently
+/// deleting user data. Each retry gets a fresh quarantine name, including
+/// on Windows (where rename cannot replace an existing destination).
+fn quarantine_model(path: &Path) -> Result<PathBuf, String> {
+    for index in 0..100u32 {
+        let extension = if index == 0 {
+            "bin.invalid".to_owned()
+        } else {
+            format!("bin.invalid.{index}")
+        };
+        let candidate = path.with_extension(extension);
+        if candidate.exists() {
+            continue;
+        }
+        std::fs::rename(path, &candidate).map_err(|error| {
+            format!("could not preserve unverified Whisper model {}: {error}",
+                    path.display())
+        })?;
+        return Ok(candidate);
+    }
+    Err(format!("too many old Whisper model backups beside {}", path.display()))
+}
+
 fn model_file(dirs: &AppDirs, id: &str) -> Result<PathBuf, String> {
     // Ids come from our own table; anything else is a bug, not input.
     known(id).ok_or_else(|| format!("unknown model {id:?}"))?;
@@ -330,7 +385,11 @@ impl Transcriber {
                     blurb: model.blurb.to_owned(),
                     english_only: model.english_only,
                     size_bytes: model.approx_bytes,
-                    downloaded: dir.join(format!("ggml-{}.bin", model.id)).is_file(),
+                    // A stale/truncated .bin must never be presented as
+                    // installed. In particular, keep valid old files untouched.
+                    downloaded: installed_model(
+                        &dir.join(format!("ggml-{}.bin", model.id)), model.sha256
+                    ),
                 })
                 .collect(),
         })
@@ -350,10 +409,17 @@ impl Transcriber {
     ) -> Result<(), String> {
         let job = self.downloads.begin("model download")?;
         let destination = model_file(dirs, id)?;
+        let definition = known(id).ok_or_else(|| format!("unknown model {id:?}"))?;
         if destination.is_file() {
-            return Ok(());
+            if installed_model(&destination, definition.sha256) {
+                return Ok(());
+            }
+            // The checksum failed. Preserve the previous file under a
+            // unique, non-installed backup name before downloading again,
+            // even if an earlier retry already left a .invalid backup.
+            quarantine_model(&destination)?;
         }
-        let estimate = known(id).map(|model| model.approx_bytes).unwrap_or(0);
+        let estimate = definition.approx_bytes;
         let partial = destination.with_extension("bin.part");
         let (received, total) = crate::fetch_model(
             &model_archive(id),
@@ -365,6 +431,12 @@ impl Transcriber {
             job.cancel_flag(),
             &mut progress,
         )?;
+        if job.cancel_flag().load(Ordering::Relaxed) {
+            return Err("download cancelled".to_owned());
+        }
+        // fetch_model already checks the digest, but verify again at the
+        // atomic install boundary: never publish an incomplete model.
+        concat_host::models::verify(&partial, definition.sha256)?;
         std::fs::rename(&partial, &destination)
             .map_err(|error| format!("could not finish {}: {error}", destination.display()))?;
         progress(DownloadProgress {
@@ -420,9 +492,11 @@ impl Transcriber {
         let cancel = job.cancel_handle();
 
         let model_path = model_file(dirs, &request.model_id)?;
-        if !model_path.is_file() {
+        let expected = known(&request.model_id).ok_or_else(||
+            format!("unknown Whisper model {:?}", request.model_id))?;
+        if !installed_model(&model_path, expected.sha256) {
             return Err(format!(
-                "model {} is not downloaded - see Settings > Transcriber",
+                "Whisper model {} is missing or failed checksum verification - see Settings > Transcriber to retry",
                 request.model_id
             ));
         }
@@ -609,6 +683,44 @@ mod tests {
             assert_eq!(*upstream, model_upstream(model.id));
             assert!(model.approx_bytes > 0);
         }
+    }
+
+    #[test]
+    fn repair_preserves_every_preexisting_model_backup() {
+        let scratch = std::env::temp_dir().join(format!(
+            "concat-whisper-backup-{}", std::process::id()
+        ));
+        std::fs::create_dir_all(&scratch).unwrap();
+        let file = scratch.join("ggml-base.bin");
+        std::fs::write(&file, b"older-model").unwrap();
+        let old = quarantine_model(&file).unwrap();
+        assert_eq!(std::fs::read(&old).unwrap(), b"older-model");
+        std::fs::write(&file, b"second-model").unwrap();
+        let newer = quarantine_model(&file).unwrap();
+        assert_ne!(old, newer);
+        assert_eq!(std::fs::read(&old).unwrap(), b"older-model");
+        assert_eq!(std::fs::read(&newer).unwrap(), b"second-model");
+        assert!(!file.exists());
+        std::fs::remove_dir_all(scratch).unwrap();
+    }
+
+    #[test]
+    fn status_checks_digest_once_per_unchanged_file_and_rechecks_after_edit() {
+        let path = std::env::temp_dir().join(format!(
+            "concat-whisper-digest-status-{}", std::process::id()
+        ));
+        let sha_abc = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        let sha_abcd = "88d4266fd4e6338d13b845fcf289579d209c897823b9217da3e161936f031589";
+        std::fs::write(&path, b"abc").unwrap();
+        assert!(installed_model(&path, sha_abc));
+        assert!(installed_model(&path, sha_abc), "unchanged verified model remains installed");
+        std::fs::write(&path, b"abcd").unwrap();
+        assert!(!installed_model(&path, sha_abc),
+                 "size/mtime changes invalidate the verified status");
+        assert!(installed_model(&path, sha_abcd));
+        std::fs::remove_file(&path).unwrap();
+        assert!(!installed_model(&path, sha_abcd),
+                 "missing model must never be reported as installed");
     }
 
     #[test]

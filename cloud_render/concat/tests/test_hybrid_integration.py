@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from cloud_render.concat.gpu.worker import DirectReceiver, Handler, RenderWorker
+from cloud_render.concat.project_bundle import MAX_PROJECT_MANIFEST_BYTES
 
 
 class CompatibilityTests(unittest.TestCase):
@@ -34,6 +35,7 @@ class CompatibilityTests(unittest.TestCase):
                         "api_version": 1, "bundle_versions": [1],
                         "render_modes": ["cuda-stage1", "cuda-hybrid-v1"],
                         "validation_version": 1,
+                        "max_project_manifest_bytes": MAX_PROJECT_MANIFEST_BYTES,
                     })
                 finally:
                     client.close()

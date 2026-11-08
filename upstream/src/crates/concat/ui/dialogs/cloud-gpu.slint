@@ -34,6 +34,13 @@ export global CloudGpu {
     in property <bool> queue-available;
     in property <bool> queue-started;
     in property <string> queue-note;
+    // Independent local packaging status: never a GPU queue job or connection.
+    in-out property <bool> zip-open: false;
+    in property <bool> zip-busy;
+    in property <bool> zip-error;
+    in property <int> zip-progress;
+    in property <string> zip-note;
+    in property <string> zip-path;
     in-out property <string> confirm-delete-id;
     in-out property <bool> queue-open: false;
     in property <[GpuQueueRow]> jobs;
@@ -226,6 +233,44 @@ export component GpuQueueDialog inherits Modal {
             padding: 16px;
             spacing: 12px;
             GpuQueueSection { first: true; }
+        }
+    }
+}
+
+export component OfflineZipDialog inherits Modal {
+    title: "Prepare ZIP Only";
+    glyph: Glyph.export;
+    surface-width: 560px;
+    dismissable: !CloudGpu.zip-busy;
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+        Text {
+            text: "Local GPU-ready ZIP. No upload or internet connection.";
+            color: Theme.fg-dim;
+            wrap: word-wrap;
+        }
+        Progress { value: CloudGpu.zip-progress / 100.0; }
+        Text {
+            text: CloudGpu.zip-progress + "%";
+            color: Theme.fg;
+            font-family: Theme.font-technical;
+        }
+        Text {
+            text: CloudGpu.zip-note;
+            color: CloudGpu.zip-error ? Theme.danger : Theme.fg;
+            wrap: word-wrap;
+        }
+        if CloudGpu.zip-path != "": Text {
+            text: "Location: " + CloudGpu.zip-path;
+            color: Theme.fg;
+            wrap: word-wrap;
+        }
+        Button {
+            label: "Close";
+            enabled: !CloudGpu.zip-busy;
+            clicked => { root.closed(); }
         }
     }
 }

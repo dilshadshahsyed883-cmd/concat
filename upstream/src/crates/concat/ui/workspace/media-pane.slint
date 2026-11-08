@@ -8,9 +8,9 @@ import { Theme, Fmt, Glyph, Icon, Payload, Tip } from "../primitives/primitives.
 import { Pane, PaneScroll } from "pane.slint";
 import { HairlineSplitter } from "splitter.slint";
 import { PaneKind, PaneSwitcher } from "pane-switcher.slint";
-import { TextAlignment } from "../timeline/model.slint";
+import { TextAlignment, Keyframes } from "../timeline/model.slint";
 import { CatalogueEntryData, Library } from "../inspector/clip-inspector.slint";
-import { SearchField } from "../inspector/controls.slint";
+import { Check, Param, ParamFormat, SearchField } from "../inspector/controls.slint";
 import { Select } from "../primitives/select.slint";
 import { Wave } from "../primitives/wave.slint";
 import { ContextMenu, MenuItemData } from "../primitives/context-menu.slint";
@@ -1789,6 +1789,8 @@ export component MediaPane inherits Rectangle {
     /// Text page: add a title at the playhead, in the look `preset` names.
     callback add-text(preset: string);
     callback apply-caption-preset(preset: string, all: bool);
+    // Opens the existing speech/captions dialog (including SRT and Whisper).
+    callback generate-captions();
     property <string> active-caption-preset: "cuda-caption.classic-subtitle";
     /// Stickers page: add the figure `shape` names at the playhead, as a
     /// clip called `label`.
@@ -1835,9 +1837,20 @@ export component MediaPane inherits Rectangle {
     callback pane-removed();
 
     property <int> tab;
-    /// The Audio page is up, or not: a drop of sound files on the window
-    /// goes into the library while it is.
-    changed tab => { Sounds.shown(root.tab == 8); }
+    // Audio is a Media sub-view, not a ninth top-level tab. Keep the existing
+    // sounds, voice and import implementation accessible from the Media sidebar.
+    property <bool> media-audio-view: false;
+    changed tab => { Sounds.shown(root.tab == 0 && root.media-audio-view); }
+    changed media-audio-view => { Sounds.shown(root.tab == 0 && root.media-audio-view); }
+    property <bool> physics-images: true;
+    property <bool> physics-videos: true;
+    // 0 = full timeline, 1 = selected timeline clips.
+    property <int> physics-scope: 0;
+    property <int> physics-preset: 0;
+    // Bulk transforms share Animations' type switches and scope.
+    property <float> bulk-scale: 1;
+    property <float> bulk-position-x: 0;
+    property <float> bulk-position-y: 0;
     /// The Audio page's shelf: 0 = Mine, 1 = Concat, 10 = Voices,
     /// 11 = Styles.
     property <int> audio-category;
@@ -1880,7 +1893,7 @@ export component MediaPane inherits Rectangle {
     /// pane, which has the same problem for the same reason. A library
     /// dropped into a narrow seat would otherwise hand the card grid a
     /// negative width.
-    property <length> sidebar: root.tab == 9 ? 0px : Math.max(0px,
+    property <length> sidebar: root.tab == 9 || root.tab == 10 ? 0px : Math.max(0px,
         Math.min(root.sidebar-w, root.width / 2));
 
     // The catalogues. The ids are written into project files, so they are
@@ -1966,7 +1979,7 @@ export component MediaPane inherits Rectangle {
                             glyph: Glyph.film;
                             label: I18n.t("common.media");
                             current: root.tab == 0;
-                            clicked => { root.tab = 0; }
+                            clicked => { root.tab = 0; root.media-audio-view = false; }
                         }
                         LibraryTab {
                             glyph: Glyph.film;
@@ -1974,25 +1987,11 @@ export component MediaPane inherits Rectangle {
                             current: root.tab == 9;
                             clicked => { root.tab = 9; }
                         }
-                        // Beside Media, where CapCut keeps it: the page
-                        // number is the last one handed out, not the place.
-                        LibraryTab {
-                            glyph: Glyph.music;
-                            label: I18n.t("common.audio");
-                            current: root.tab == 8;
-                            clicked => { root.tab = 8; }
-                        }
                         LibraryTab {
                             glyph: Glyph.text-mark;
                             label: I18n.t("common.text");
                             current: root.tab == 1;
                             clicked => { root.tab = 1; }
-                        }
-                        if !GpuCompatibility.enabled: LibraryTab {
-                            glyph: Glyph.sticker;
-                            label: I18n.t("mediaPane.stickers");
-                            current: root.tab == 2;
-                            clicked => { root.tab = 2; }
                         }
                         if GpuCompatibility.transitions: LibraryTab {
                             glyph: Glyph.transition;
@@ -2000,11 +1999,11 @@ export component MediaPane inherits Rectangle {
                             current: root.tab == 3;
                             clicked => { root.tab = 3; }
                         }
-                        if GpuCompatibility.video-effects: LibraryTab {
+                        if GpuCompatibility.enabled: LibraryTab {
                             glyph: Glyph.sparkle;
-                            label: I18n.t("common.effects");
-                            current: root.tab == 4;
-                            clicked => { root.tab = 4; }
+                            label: "Animations";
+                            current: root.tab == 10;
+                            clicked => { root.tab = 10; }
                         }
                         LibraryTab {
                             glyph: Glyph.filter;
@@ -2012,19 +2011,30 @@ export component MediaPane inherits Rectangle {
                             current: root.tab == 5;
                             clicked => { root.tab = 5; }
                         }
-                        // Beside Filters, where CapCut keeps it: the page
-                        // number is the last one handed out, not the place.
-                        if !GpuCompatibility.enabled: LibraryTab {
-                            glyph: Glyph.sun;
-                            label: I18n.t("mediaPane.adjustments");
-                            current: root.tab == 7;
-                            clicked => { root.tab = 7; }
-                        }
                         LibraryTab {
                             glyph: Glyph.slot;
                             label: I18n.t("mediaPane.templates");
                             current: root.tab == 6;
                             clicked => { root.tab = 6; }
+                        }
+                        if GpuCompatibility.video-effects: LibraryTab {
+                            glyph: Glyph.sparkle;
+                            label: I18n.t("common.effects");
+                            current: root.tab == 4;
+                            clicked => { root.tab = 4; }
+                        }
+                        // Legacy non-GPU editing features remain reachable.
+                        if !GpuCompatibility.enabled: LibraryTab {
+                            glyph: Glyph.sticker;
+                            label: I18n.t("mediaPane.stickers");
+                            current: root.tab == 2;
+                            clicked => { root.tab = 2; }
+                        }
+                        if !GpuCompatibility.enabled: LibraryTab {
+                            glyph: Glyph.sun;
+                            label: I18n.t("mediaPane.adjustments");
+                            current: root.tab == 7;
+                            clicked => { root.tab = 7; }
                         }
                         }
                     }
@@ -2081,7 +2091,7 @@ export component MediaPane inherits Rectangle {
             // one carrying the longest labels — "Transitions", a category
             // name — so it was also the one most likely to be wrong for a
             // given page at a given window width.
-            if root.tab != 9: HairlineSplitter {
+            if root.tab != 9 && root.tab != 10: HairlineSplitter {
                 x: root.sidebar;
                 y: 0;
                 height: parent.height;
@@ -2124,7 +2134,7 @@ export component MediaPane inherits Rectangle {
                     alignment: start;
                     padding: 4px;
 
-                    if root.tab == 0: VerticalLayout {
+                    if root.tab == 0 && !root.media-audio-view: VerticalLayout {
                         spacing: 1px;
                         CategoryHeading {
                             height: 26px;
@@ -2152,6 +2162,12 @@ export component MediaPane inherits Rectangle {
                             count: root.count-audio;
                             current: root.filter == MediaFilter.audio;
                             clicked => { root.narrow(MediaFilter.audio); }
+                        }
+                        if root.categories-open: CategoryRow {
+                            height: 24px;
+                            label: "Sounds & Voices";
+                            current: false;
+                            clicked => { root.media-audio-view = true; }
                         }
                         if root.categories-open: CategoryRow {
                             height: 24px;
@@ -2191,9 +2207,15 @@ export component MediaPane inherits Rectangle {
                         }
                     }
 
-                    // Audio: the user's own sounds.
-                    if root.tab == 8: VerticalLayout {
+                    // The former Audio top-level page now lives under Media.
+                    if root.tab == 0 && root.media-audio-view: VerticalLayout {
                         spacing: 1px;
+                        CategoryRow {
+                            height: 24px;
+                            label: "Back to Media";
+                            current: false;
+                            clicked => { root.media-audio-view = false; }
+                        }
                         CategoryHeading {
                             height: 26px;
                             title: I18n.t("sounds.sounds");
@@ -2361,7 +2383,76 @@ export component MediaPane inherits Rectangle {
                     // Filters are colour looks, the way every video editor's
                     // users understand the word. What a voice or a room does
                     // to the sound is on the Effects page.
-                    if root.tab == 5: VerticalLayout {
+                    // The same checkboxes and scope also target scale and
+                // position edits. Animated properties stay untouched.
+                if root.tab == 10 && GpuCompatibility.enabled: VerticalLayout {
+                    padding: 8px;
+                    spacing: 8px;
+                    Text {
+                        text: "Bulk Transform";
+                        font-size: Theme.fs;
+                        color: Theme.fg;
+                    }
+                    Text {
+                        text: "Use the Images/Video Clips checkboxes and scope above. Manual keyframes are protected per property.";
+                        color: Theme.fg-muted;
+                        wrap: word-wrap;
+                        font-size: Theme.fs-sm;
+                    }
+                    Param {
+                        label: "Bulk Scale";
+                        value <=> root.bulk-scale;
+                        minimum: 0.05;
+                        maximum: 8;
+                        step: 0.01;
+                        default-value: 1;
+                        fmt: ParamFormat.fraction;
+                        unit: "%";
+                        unit-scale: 100;
+                    }
+                    Button {
+                        label: "Apply Bulk Scale";
+                        enabled: root.physics-images || root.physics-videos;
+                        clicked => {
+                            Keyframes.apply-bulk-transform(0, root.physics-images,
+                                root.physics-videos, root.physics-scope == 1,
+                                root.bulk-scale, root.bulk-position-x, root.bulk-position-y);
+                        }
+                    }
+                    Param {
+                        label: "Bulk Position X";
+                        value <=> root.bulk-position-x;
+                        minimum: -1;
+                        maximum: 1;
+                        step: 0.005;
+                        default-value: 0;
+                        fmt: ParamFormat.centred;
+                        unit: "%";
+                        unit-scale: 100;
+                    }
+                    Param {
+                        label: "Bulk Position Y";
+                        value <=> root.bulk-position-y;
+                        minimum: -1;
+                        maximum: 1;
+                        step: 0.005;
+                        default-value: 0;
+                        fmt: ParamFormat.centred;
+                        unit: "%";
+                        unit-scale: 100;
+                    }
+                    Button {
+                        label: "Apply Bulk Position X/Y";
+                        enabled: root.physics-images || root.physics-videos;
+                        clicked => {
+                            Keyframes.apply-bulk-transform(1, root.physics-images,
+                                root.physics-videos, root.physics-scope == 1,
+                                root.bulk-scale, root.bulk-position-x, root.bulk-position-y);
+                        }
+                    }
+                }
+
+                if root.tab == 5: VerticalLayout {
                         spacing: 1px;
                         CategoryHeading {
                             height: 26px;
@@ -2448,7 +2539,7 @@ export component MediaPane inherits Rectangle {
                     }
                 }
 
-                if root.tab == 0: HorizontalLayout {
+                if root.tab == 0 && !root.media-audio-view: HorizontalLayout {
                     padding: 8px;
                     spacing: 8px;
                     // Import holds the left edge at the width its own word
@@ -2487,7 +2578,7 @@ export component MediaPane inherits Rectangle {
 
                 // Only worth a row when a multiple selection exists — one
                 // selected card is deleted from the card itself.
-                if root.tab == 0 && root.selected-count > 0: HorizontalLayout {
+                if root.tab == 0 && !root.media-audio-view && root.selected-count > 0: HorizontalLayout {
                     padding-left: 8px;
                     padding-right: 8px;
                     padding-bottom: 8px;
@@ -2502,7 +2593,7 @@ export component MediaPane inherits Rectangle {
                     }
                 }
 
-                if root.tab == 0 && root.selected-count > 1: HorizontalLayout {
+                if root.tab == 0 && !root.media-audio-view && root.selected-count > 1: HorizontalLayout {
                     padding-left: 8px;
                     padding-right: 8px;
                     padding-bottom: 8px;
@@ -2553,7 +2644,7 @@ export component MediaPane inherits Rectangle {
                     }
                 }
 
-                if root.tab == 0 && root.items.length == 0: Empty {
+                if root.tab == 0 && !root.media-audio-view && root.items.length == 0: Empty {
                     glyph: Glyph.import;
                     text: root.filter == MediaFilter.speech
                         ? I18n.t("mediaPane.nothingReadAloudYet")
@@ -2564,7 +2655,7 @@ export component MediaPane inherits Rectangle {
                         : "Drop video and audio files anywhere in the window to import them.";
                 }
 
-                if root.tab == 0 && root.items.length > 0: HorizontalLayout {
+                if root.tab == 0 && !root.media-audio-view && root.items.length > 0: HorizontalLayout {
                     padding-left: 8px;
                     padding-right: 8px;
                     padding-bottom: 8px;
@@ -2602,7 +2693,7 @@ export component MediaPane inherits Rectangle {
                 // Mine: the user's own sounds, copied in and kept across
                 // projects. The import is the page's head, and its rows
                 // are the sounds, newest first.
-                if root.tab == 8 && root.audio-category == 0: VerticalLayout {
+                if root.tab == 0 && root.media-audio-view && root.audio-category == 0: VerticalLayout {
                     padding: 8px;
                     spacing: 8px;
 
@@ -2625,7 +2716,7 @@ export component MediaPane inherits Rectangle {
                 // Concat's own sounds: offered, not fetched, until asked
                 // for - nothing goes online at startup - then listed, each
                 // downloaded the first time it is played or laid down.
-                if root.tab == 8 && root.audio-category == 1: VerticalLayout {
+                if root.tab == 0 && root.media-audio-view && root.audio-category == 1: VerticalLayout {
                     padding: 8px;
                     spacing: 8px;
 
@@ -2675,7 +2766,7 @@ export component MediaPane inherits Rectangle {
                     }
                 }
 
-                if root.tab == 8 && root.audio-category == 1 && Sounds.concat-state == 3: Empty {
+                if root.tab == 0 && root.media-audio-view && root.audio-category == 1 && Sounds.concat-state == 3: Empty {
                     glyph: Glyph.music;
                     text: I18n.t("sounds.comingSoon");
                 }
@@ -2683,7 +2774,7 @@ export component MediaPane inherits Rectangle {
                 // Voices: the user's saved clones and the models' own
                 // speakers, or the styles; a click opens Text to speech
                 // on one.
-                if root.tab == 8 && root.audio-category >= 10: VerticalLayout {
+                if root.tab == 0 && root.media-audio-view && root.audio-category >= 10: VerticalLayout {
                     padding: 8px;
                     spacing: 8px;
 
@@ -2698,9 +2789,17 @@ export component MediaPane inherits Rectangle {
                     }
                 }
 
-                if root.tab == 8 && root.audio-category == 0 && Sounds.mine.length == 0: Empty {
+                if root.tab == 0 && root.media-audio-view && root.audio-category == 0 && Sounds.mine.length == 0: Empty {
                     glyph: Glyph.music;
                     text: I18n.t("sounds.noSoundsYet");
+                }
+
+                if root.tab == 1 && root.text-category == 0 && GpuCompatibility.enabled: HorizontalLayout {
+                    padding: 8px;
+                    Button {
+                        label: "Generate Captions";
+                        clicked => { root.generate-captions(); }
+                    }
                 }
 
                 if root.tab == 1 && root.text-category == 0: HorizontalLayout {
@@ -2818,6 +2917,125 @@ export component MediaPane inherits Rectangle {
                             } else {
                                 root.apply-effect(id);
                             }
+                        }
+                    }
+                }
+
+                // Dedicated Animations page. Inspector knobs are shared
+                // through Keyframes; no second motion format is introduced.
+                if root.tab == 10 && GpuCompatibility.enabled: VerticalLayout {
+                    padding: 8px;
+                    spacing: 8px;
+
+                    Text {
+                        text: "Physics Animations";
+                        font-size: Theme.fs;
+                        color: Theme.fg;
+                    }
+                    Text {
+                        text: "Choose a preset below. Strength, Duration, Speed and Physics Intensity are in the right Inspector.";
+                        color: Theme.fg-muted;
+                        font-size: Theme.fs-sm;
+                        wrap: word-wrap;
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Check {
+                            checked: root.physics-images;
+                            toggled(on) => { root.physics-images = on; }
+                        }
+                        Text {
+                            text: "Images";
+                            vertical-alignment: center;
+                            color: Theme.fg;
+                        }
+                        Check {
+                            checked: root.physics-videos;
+                            toggled(on) => { root.physics-videos = on; }
+                        }
+                        Text {
+                            text: "Video Clips";
+                            vertical-alignment: center;
+                            color: Theme.fg;
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text {
+                            text: "Bulk scope";
+                            color: Theme.fg-muted;
+                            vertical-alignment: center;
+                        }
+                        Select {
+                            options: ["Whole timeline", "Selected media"];
+                            current: root.physics-scope;
+                            changed(index) => { root.physics-scope = index; }
+                        }
+                    }
+                    for label[index] in [
+                        "Spring Zoom", "Pendulum Swing", "Gravity Bounce",
+                        "Elastic Pop", "Inertia Glide", "Damped Shake"
+                    ]: HorizontalLayout {
+                        spacing: 8px;
+                        Button {
+                            horizontal-stretch: 1;
+                            block: true;
+                            label: root.physics-preset == index ? "✓ " + label : label;
+                            clicked => { root.physics-preset = index; }
+                        }
+                        Button {
+                            label: Keyframes.physics-favourites[index] ? "★" : "☆";
+                            clicked => { Keyframes.toggle-physics-favourite(index); }
+                        }
+                    }
+                    Text {
+                        text: "Manual keyframes are protected. Every bulk operation is a single Undo/Redo step.";
+                        color: Theme.fg-muted;
+                        font-size: Theme.fs-sm;
+                        wrap: word-wrap;
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Button {
+                            label: "Apply Selected";
+                            enabled: root.physics-images || root.physics-videos;
+                            clicked => {
+                                Keyframes.apply-physics-bulk(root.physics-preset, 0,
+                                    root.physics-images, root.physics-videos, true,
+                                    Keyframes.physics-strength, Keyframes.physics-duration,
+                                    Keyframes.physics-speed, Keyframes.physics-intensity);
+                            }
+                        }
+                        Button {
+                            label: "Apply All";
+                            enabled: root.physics-images || root.physics-videos;
+                            clicked => {
+                                Keyframes.apply-physics-bulk(root.physics-preset, 0,
+                                    root.physics-images, root.physics-videos,
+                                    root.physics-scope == 1,
+                                    Keyframes.physics-strength, Keyframes.physics-duration,
+                                    Keyframes.physics-speed, Keyframes.physics-intensity);
+                            }
+                        }
+                    }
+                    Button {
+                        label: "Apply All Randomly";
+                        enabled: root.physics-images || root.physics-videos;
+                        clicked => {
+                            Keyframes.apply-physics-bulk(root.physics-preset, 2,
+                                root.physics-images, root.physics-videos, root.physics-scope == 1,
+                                Keyframes.physics-strength, Keyframes.physics-duration,
+                                Keyframes.physics-speed, Keyframes.physics-intensity);
+                        }
+                    }
+                    Button {
+                        label: "Apply Favorites Randomly";
+                        enabled: root.physics-images || root.physics-videos;
+                        clicked => {
+                            Keyframes.apply-physics-bulk(root.physics-preset, 3,
+                                root.physics-images, root.physics-videos, root.physics-scope == 1,
+                                Keyframes.physics-strength, Keyframes.physics-duration,
+                                Keyframes.physics-speed, Keyframes.physics-intensity);
                         }
                     }
                 }
