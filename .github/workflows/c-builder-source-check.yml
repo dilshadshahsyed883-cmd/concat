@@ -129,3 +129,8 @@ jobs:
       - name: Check Concat application/library + Slint bindings (no EXE artifact)
         working-directory: upstream/src
         run: cargo check -p concat --lib --locked -j 2
+      - name: Run native C Builder mixed-media and bulk editor regression tests
+        working-directory: upstream/src
+        run: |
+          cargo test -p concat --lib --locked -j 2 c_builder::tests
+          cargo test -p concat --lib --locked -j 2 studio::bulk_presets::tests

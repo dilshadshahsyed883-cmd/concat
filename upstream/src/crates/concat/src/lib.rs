@@ -1308,6 +1308,23 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         keys.on_apply_random_favourite_motion(on_lanes!(|state| {
             state.apply_random_favourite_gpu_motion();
         }));
+        // Animations tab and inspector call the same owner-scoped backend.
+        keys.on_apply_bulk_motion(on_lanes!(|state, mode: i32, images: bool,
+            video_clips: bool, selected_only: bool| {
+            state.apply_bulk_gpu_motion(mode, images, video_clips, selected_only);
+        }));
+        keys.on_apply_bulk_motion_preset(on_lanes!(|state, mode: i32, preset: i32,
+            images: bool, video_clips: bool, selected_only: bool| {
+            state.apply_bulk_gpu_motion_with_preset(
+                mode, preset, images, video_clips, selected_only,
+            );
+        }));
+        keys.on_apply_bulk_transform(on_lanes!(|state, mode: i32, images: bool,
+            video_clips: bool, selected_only: bool, scale: f32, x: f32, y: f32| {
+            state.apply_bulk_gpu_transform(
+                mode, images, video_clips, selected_only, scale, x, y,
+            );
+        }));
         // The same three verbs for the Adjust panel's knobs, which are
         // named rather than enumerated.
         keys.on_toggle_param(on_lanes!(|state, key: SharedString| {
