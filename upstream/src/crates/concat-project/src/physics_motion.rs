@@ -73,7 +73,7 @@ impl PhysicsPreset {
             }
             Self::Pendulum => {
                 // Small-angle damped pendulum, with angular drag.
-                clip.rotation + 9.0 * (-4.5 * t).exp() * (6.0 * PI * t).sin()
+                clip.rotation + 9.0 * (-4.5 * t).exp() * (6.0 * PI * t).cos()
             }
             Self::GravityBounce => {
                 // Ballistic fall and restitution at each ground impact.
