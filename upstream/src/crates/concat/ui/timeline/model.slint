@@ -242,6 +242,9 @@ export global Keyframes {
     // Stable interface shared with the Animations-tab agent.
     // mode: 0 apply one preset to all, 1 random, 2 starred random.
     callback apply-bulk-motion(mode: int, images: bool, video-clips: bool, selected-only: bool);
+    // Explicit preset index into the 9 GPU-compatible native animations.
+    callback apply-bulk-motion-preset(mode: int, preset: int, images: bool,
+        video-clips: bool, selected-only: bool);
     // mode: 0 scale, 1 position X/Y; values use native Concat units.
     callback apply-bulk-transform(mode: int, images: bool, video-clips: bool,
         selected-only: bool, scale: float, position-x: float, position-y: float);
