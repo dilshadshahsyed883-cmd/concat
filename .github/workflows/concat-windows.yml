@@ -2,6 +2,9 @@ name: Concat native development build
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/release-requests/concat-final-20261108.txt']
 
 permissions:
   contents: read
@@ -196,7 +199,7 @@ jobs:
 
   publish-main-release:
     needs: native-editor-windows
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
