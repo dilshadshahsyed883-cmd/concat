@@ -297,16 +297,27 @@ impl Studio {
 
     /// Apply native GPU-supported transitions to every eligible cut in the
     /// active timeline, with a single command for undo.
-    pub fn apply_random_gpu_transitions(&mut self) {
+    pub fn apply_random_gpu_transitions(&mut self, selected_only: bool, favourites_only: bool) {
         if !self.gpu_bulk_ready() {
+            return;
+        }
+        // Selection is evaluated on the incoming clip at each cut. This
+        // supports one selected clip as well as multi-selected timeline clips.
+        let selected: HashSet<String> = self.selection.iter().cloned().collect();
+        if selected_only && selected.is_empty() {
+            self.notify("Select one or more incoming timeline clips first.", true);
             return;
         }
         let presets: Vec<_> = Catalogue::builtin()
             .of_kind(PackageKind::Transition)
             .map(|package| package.id())
             .filter(|id| gpu_catalogue_has("transitions", id))
+            .filter(|id| !favourites_only || self.prefs.favourites.iter().any(|star| star == id))
             .collect();
         if presets.is_empty() {
+            if favourites_only {
+                self.notify("Star at least one GPU-compatible transition first.", true);
+            }
             return;
         }
 
@@ -334,6 +345,7 @@ impl Studio {
                 let [previous, incoming] = [pair[0], pair[1]];
                 if !picture(previous)
                     || !picture(incoming)
+                    || (selected_only && !selected.contains(&incoming.id))
                     || !media.contains(previous.media_id.as_str())
                     || !media.contains(incoming.media_id.as_str())
                 {
