@@ -2,7 +2,8 @@
 
 import { I18n } from "../i18n.slint";
 import { Theme } from "../theme/theme.slint";
-import { Button, DialogSection, Field, Progress } from "../primitives/modal.slint";
+import { Button, DialogSection, Field, Modal, Progress } from "../primitives/modal.slint";
+import { Glyph } from "../icons.slint";
 
 export struct GpuQueueRow {
     id: string,
@@ -10,6 +11,7 @@ export struct GpuQueueRow {
     state: string,
     detail: string,
     metrics: string,
+    bytes: string,
     output: string,
     progress: int,
     retry: bool,
@@ -32,11 +34,127 @@ export global CloudGpu {
     in property <bool> queue-available;
     in property <bool> queue-started;
     in property <string> queue-note;
+    in-out property <string> confirm-delete-id;
+    in-out property <bool> queue-open: false;
     in property <[GpuQueueRow]> jobs;
     callback queue-add(path: string);
     callback queue-action(action: string, id: string);
     callback save();
     callback test();
+}
+
+export component GpuQueueSection inherits DialogSection {
+    title: I18n.t("cloudGpu.queue");
+    hint: I18n.t("cloudGpu.queueHint");
+
+    HorizontalLayout {
+        alignment: start;
+        spacing: 8px;
+        Button {
+            label: I18n.t("cloudGpu.queueStart");
+            enabled: CloudGpu.queue-available && !CloudGpu.queue-started && CloudGpu.jobs.length > 0;
+            clicked => { CloudGpu.queue-action("start", ""); }
+        }
+        Button {
+            label: I18n.t("cloudGpu.queueStop");
+            enabled: CloudGpu.queue-started;
+            clicked => { CloudGpu.queue-action("stop", ""); }
+        }
+    }
+    if CloudGpu.metrics-note != "": Text { text: CloudGpu.metrics-note; color: Theme.fg; wrap: word-wrap; }
+    Text { text: CloudGpu.queue-note; color: Theme.fg; wrap: word-wrap; }
+
+    if CloudGpu.jobs.length == 0: Text {
+        text: I18n.t("cloudGpu.noJobs");
+        color: Theme.fg-dim;
+        wrap: word-wrap;
+    }
+
+    for job in CloudGpu.jobs: VerticalLayout {
+        spacing: 4px;
+        HorizontalLayout {
+            spacing: 8px;
+            Text {
+                text: job.title;
+                color: Theme.fg;
+                font-weight: Theme.weight-title;
+                wrap: word-wrap;
+                horizontal-stretch: 1;
+            }
+            Text {
+                text: job.state;
+                color: job.state == "Completed" ? Theme.fg-hot
+                    : job.state == "Error" ? Theme.danger
+                    : (job.state == "Uploading" || job.state == "GPU Rendering") ? Theme.accent
+                    : Theme.fg-muted;
+                font-weight: Theme.weight-title;
+            }
+        }
+        if job.detail != "": Text { text: job.detail; color: Theme.fg-dim; wrap: word-wrap; }
+        if job.bytes != "": Text {
+            text: job.bytes;
+            color: Theme.accent;
+            font-family: Theme.font-technical;
+            font-size: Theme.fs-sm;
+            wrap: word-wrap;
+        }
+        if job.metrics != "": Text { text: job.metrics; color: Theme.fg; wrap: word-wrap; }
+        if job.progress > 0 && job.progress < 100: Progress {
+            value: job.progress / 100.0;
+        }
+        if job.output != "": Text { text: job.output; color: Theme.fg; wrap: word-wrap; }
+        HorizontalLayout {
+            alignment: start;
+            spacing: 4px;
+            Button {
+                label: I18n.t("cloudGpu.queueRetry");
+                enabled: CloudGpu.queue-available && job.retry;
+                clicked => { CloudGpu.queue-action("retry", job.id); }
+            }
+            Button {
+                label: I18n.t("common.cancel");
+                enabled: CloudGpu.queue-available && job.cancel;
+                clicked => { CloudGpu.queue-action("cancel", job.id); }
+            }
+            if CloudGpu.confirm-delete-id == job.id: Button {
+                label: I18n.t("common.cancel");
+                clicked => { CloudGpu.confirm-delete-id = ""; }
+            }
+            if CloudGpu.confirm-delete-id == job.id: Button {
+                label: I18n.t("common.delete");
+                danger: true;
+                enabled: CloudGpu.queue-available && job.delete;
+                clicked => {
+                    CloudGpu.confirm-delete-id = "";
+                    CloudGpu.queue-action("delete", job.id);
+                }
+            }
+            if CloudGpu.confirm-delete-id != job.id: Button {
+                label: I18n.t("common.delete");
+                enabled: CloudGpu.queue-available && job.delete;
+                clicked => { CloudGpu.confirm-delete-id = job.id; }
+            }
+            Button {
+                label: "↑";
+                enabled: CloudGpu.queue-available && job.up;
+                clicked => { CloudGpu.queue-action("up", job.id); }
+            }
+            Button {
+                label: "↓";
+                enabled: CloudGpu.queue-available && job.down;
+                clicked => { CloudGpu.queue-action("down", job.id); }
+            }
+        }
+        if CloudGpu.confirm-delete-id == job.id: Text {
+            text: "Delete queue job? Local snapshot will be removed; original project media is untouched.";
+            color: Theme.danger;
+            wrap: word-wrap;
+        }
+        Rectangle {
+            height: 1px;
+            background: Theme.line;
+        }
+    }
 }
 
 export component CloudGpuPanel inherits VerticalLayout {
@@ -89,65 +207,25 @@ export component CloudGpuPanel inherits VerticalLayout {
         }
     }
 
-    DialogSection {
-        title: I18n.t("cloudGpu.queue");
-        hint: I18n.t("cloudGpu.queueHint");
+    GpuQueueSection {}
+}
 
-        HorizontalLayout {
-            alignment: start;
-            spacing: 8px;
-            Button {
-                label: I18n.t("cloudGpu.queueStart");
-                enabled: CloudGpu.queue-available && !CloudGpu.queue-started && CloudGpu.jobs.length > 0;
-                clicked => { CloudGpu.queue-action("start", ""); }
-            }
-            Button {
-                label: I18n.t("cloudGpu.queueStop");
-                enabled: CloudGpu.queue-started;
-                clicked => { CloudGpu.queue-action("stop", ""); }
-            }
-        }
-        if CloudGpu.metrics-note != "": Text { text: CloudGpu.metrics-note; color: Theme.fg; wrap: word-wrap; }
-        Text { text: CloudGpu.queue-note; color: Theme.fg; wrap: word-wrap; }
+export component GpuQueueDialog inherits Modal {
+    in property <bool> phone;
 
-        for job in CloudGpu.jobs: VerticalLayout {
-            spacing: 4px;
-            Text { text: job.title + " — " + job.state; color: Theme.fg; wrap: word-wrap; }
-            Text { text: job.detail; color: Theme.fg-dim; wrap: word-wrap; }
-            if job.metrics != "": Text { text: job.metrics; color: Theme.fg; wrap: word-wrap; }
-            if job.progress > 0 && job.progress < 100: Progress {
-                value: job.progress / 100.0;
-            }
-            if job.output != "": Text { text: job.output; color: Theme.fg; wrap: word-wrap; }
-            HorizontalLayout {
-                alignment: start;
-                spacing: 4px;
-                Button {
-                    label: I18n.t("cloudGpu.queueRetry");
-                    enabled: CloudGpu.queue-available && job.retry;
-                    clicked => { CloudGpu.queue-action("retry", job.id); }
-                }
-                Button {
-                    label: I18n.t("common.cancel");
-                    enabled: CloudGpu.queue-available && job.cancel;
-                    clicked => { CloudGpu.queue-action("cancel", job.id); }
-                }
-                Button {
-                    label: I18n.t("common.delete");
-                    enabled: CloudGpu.queue-available && job.delete;
-                    clicked => { CloudGpu.queue-action("delete", job.id); }
-                }
-                Button {
-                    label: "↑";
-                    enabled: CloudGpu.queue-available && job.up;
-                    clicked => { CloudGpu.queue-action("up", job.id); }
-                }
-                Button {
-                    label: "↓";
-                    enabled: CloudGpu.queue-available && job.down;
-                    clicked => { CloudGpu.queue-action("down", job.id); }
-                }
-            }
+    title: I18n.t("cloudGpu.queue");
+    glyph: Glyph.export;
+    surface-width: 580px;
+
+    Flickable {
+        vertical-stretch: 1;
+        content-height: body-layout.preferred-height;
+        interactive: body-layout.preferred-height > self.height;
+
+        body-layout := VerticalLayout {
+            padding: 16px;
+            spacing: 12px;
+            GpuQueueSection { first: true; }
         }
     }
 }

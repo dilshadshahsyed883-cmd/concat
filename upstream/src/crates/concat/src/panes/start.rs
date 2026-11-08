@@ -48,6 +48,16 @@ pub enum StartMsg {
     ForgetRecent(String),
     /// Show a project's folder in the file manager.
     RevealRecent(String),
+    /// Prompt to rename a recent project.
+    PromptRename(String),
+    /// The project name being edited in the rename prompt.
+    RenameEdited(String),
+    /// Commit the project rename.
+    ApplyRename,
+    /// Dismiss the project rename prompt.
+    DismissRename,
+    /// Prompt to delete (forget) a recent project with confirmation.
+    PromptDelete(String),
     /// What the projects' search field holds now.
     SearchEdited(String),
     /// How the projects are ordered: [`SORT_RECENT`] or [`SORT_NAME`].
@@ -140,6 +150,12 @@ pub struct StartPane {
     pub query: String,
     /// [`SORT_RECENT`] or [`SORT_NAME`].
     pub sort: i32,
+    /// Whether the rename modal is currently open.
+    pub renaming: bool,
+    /// Path of the recent project being renamed.
+    pub rename_path: String,
+    /// Current edited name draft in the rename prompt.
+    pub rename_name: String,
     /// Media dropped on the launch screen, waiting for the project the
     /// sheet is about to make: imported into it once it opens, and let go
     /// if the sheet is put down instead.
@@ -163,6 +179,9 @@ impl Default for StartPane {
             error: String::new(),
             query: String::new(),
             sort: SORT_RECENT,
+            renaming: false,
+            rename_path: String::new(),
+            rename_name: String::new(),
             dropped: Vec::new(),
         }
     }
@@ -322,6 +341,60 @@ impl StartPane {
                 if let Err(error) = platform::reveal(&path) {
                     studio.notify(&error, true);
                 }
+            }
+            StartMsg::PromptRename(path) => {
+                let name = studio
+                    .recents
+                    .iter()
+                    .find(|r| projects::same_path(&r.info.path, &path))
+                    .map(|r| r.info.name.clone())
+                    .unwrap_or_else(|| {
+                        projects::open(&path)
+                            .map(|info| info.name)
+                            .unwrap_or_default()
+                    });
+                self.renaming = true;
+                self.rename_path = path;
+                self.rename_name = name;
+            }
+            StartMsg::RenameEdited(name) => self.rename_name = name,
+            StartMsg::ApplyRename => {
+                let path = self.rename_path.clone();
+                let new_name = self.rename_name.trim().to_owned();
+                if new_name.is_empty() {
+                    studio.notify(&t("start.nameCannotBeEmpty"), true);
+                    return;
+                }
+                match projects::rename(&studio.host.dirs.config, &path, &new_name) {
+                    Ok(info) => {
+                        self.renaming = false;
+                        self.rename_path.clear();
+                        self.rename_name.clear();
+                        studio.recents = projects::recents(&studio.host.dirs.config);
+                        if let Some(session) = &studio.session
+                            && projects::same_path(session.path(), &path)
+                        {
+                            studio.project_name = info.name;
+                        }
+                    }
+                    Err(error) => {
+                        studio.notify(&error, true);
+                    }
+                }
+            }
+            StartMsg::DismissRename => {
+                self.renaming = false;
+                self.rename_path.clear();
+                self.rename_name.clear();
+            }
+            StartMsg::PromptDelete(path) => {
+                let name = studio
+                    .recents
+                    .iter()
+                    .find(|r| projects::same_path(&r.info.path, &path))
+                    .map(|r| r.info.name.clone())
+                    .unwrap_or_else(|| "project".to_string());
+                studio.confirm = Some(crate::studio::Confirm::DeleteRecent { path, name });
             }
             StartMsg::SearchEdited(query) => self.query = query,
             StartMsg::Sort(sort) => {
@@ -529,6 +602,9 @@ impl StartPane {
             dropped: self.dropped.len() as i32,
             query: self.query.as_str().into(),
             sort: self.sort,
+            renaming: self.renaming,
+            rename_path: self.rename_path.as_str().into(),
+            rename_name: self.rename_name.as_str().into(),
         }
     }
 }
@@ -673,5 +749,30 @@ mod tests {
         };
         assert_eq!(pane.free_untitled(), "Untitled project 2");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn rename_and_delete_messages_work() {
+        let mut pane = StartPane::default();
+        assert!(!pane.renaming);
+
+        // PromptRename populates state
+        pane.rename_path = "/path/to/project".to_string();
+        pane.rename_name = "Original".to_string();
+        pane.renaming = true;
+
+        assert_eq!(pane.data().renaming, true);
+        assert_eq!(pane.data().rename_name, "Original");
+
+        // RenameEdited updates name
+        pane.rename_name = "New Title".to_string();
+        assert_eq!(pane.data().rename_name, "New Title");
+
+        // Dismiss clears renaming state
+        pane.renaming = false;
+        pane.rename_path.clear();
+        pane.rename_name.clear();
+        assert!(!pane.data().renaming);
+        assert_eq!(pane.data().rename_name, "");
     }
 }

@@ -676,6 +676,21 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     app.on_start_reveal_recent(on_window!(|state, path: SharedString| {
         state.handle(Msg::Start(StartMsg::RevealRecent(path.to_string())));
     }));
+    app.on_start_rename_recent(on_window!(|state, path: SharedString| {
+        state.handle(Msg::Start(StartMsg::PromptRename(path.to_string())));
+    }));
+    app.on_start_delete_recent(on_window!(|state, path: SharedString| {
+        state.handle(Msg::Start(StartMsg::PromptDelete(path.to_string())));
+    }));
+    app.on_start_rename_edited(on_window!(|state, name: SharedString| {
+        state.handle(Msg::Start(StartMsg::RenameEdited(name.to_string())));
+    }));
+    app.on_start_apply_rename(on_window!(|state| {
+        state.handle(Msg::Start(StartMsg::ApplyRename));
+    }));
+    app.on_start_dismiss_rename(on_window!(|state| {
+        state.handle(Msg::Start(StartMsg::DismissRename));
+    }));
     app.on_start_search_edited(on_window!(|state, query: SharedString| {
         state.handle(Msg::Start(StartMsg::SearchEdited(query.to_string())));
     }));
@@ -2144,12 +2159,13 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                         "export" => state.handle(Msg::Export(ExportMsg::Open)),
                         #[cfg(windows)]
                         "send-gpu" => {
-                            state.handle(Msg::Settings(SettingsMsg::Open));
-                            state.handle(Msg::Settings(SettingsMsg::PageChanged(cloud_gpu::SETTINGS_PAGE)));
                             if cloud_gpu::can_submit(&app) {
                                 if let Some(path) = state.save_for_gpu() {
                                     cloud_gpu::submit(&app, path);
+                                    state.notify("Project queued for GPU upload", false);
                                 }
+                            } else {
+                                state.notify("GPU Queue is unavailable", true);
                             }
                         }
                         #[cfg(windows)]
