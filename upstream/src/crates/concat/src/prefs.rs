@@ -57,6 +57,10 @@ pub struct Preferences {
     /// library it happens to be filed in is not part of it.
     #[serde(default)]
     pub favourites: Vec<String>,
+    /// IDs of starred physical motion presets. Kept outside project data,
+    /// like library favourites; older settings.json files default to none.
+    #[serde(default)]
+    pub physics_motion_favourites: Vec<String>,
     /// The playhead stops at the end of the content instead of going where
     /// it is put. Off by default: a click past the last clip lands there, so
     /// a clip can be dropped at the playhead beyond everything else.

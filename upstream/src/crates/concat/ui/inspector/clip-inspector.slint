@@ -1326,6 +1326,107 @@ export component VideoPanel inherits VerticalLayout {
                     clicked => { Keyframes.apply-random-motion(); }
                 }
             }
+            // Native physics motion is sampled into ordinary clip keys;
+            // no separate desktop-only animation data or unsupported worker effect.
+            if GpuCompatibility.enabled: HorizontalLayout {
+                padding-left: Theme.pad;
+                padding-right: Theme.pad;
+                spacing: Theme.gap;
+                Button {
+                    block: true;
+                    label: "Spring Zoom";
+                    horizontal-stretch: 1;
+                    clicked => { Keyframes.apply-physics-motion(0); }
+                }
+                Button {
+                    label: Keyframes.physics-favourites[0] ? "★" : "☆";
+                    clicked => { Keyframes.toggle-physics-favourite(0); }
+                }
+            }
+            if GpuCompatibility.enabled: HorizontalLayout {
+                padding-left: Theme.pad;
+                padding-right: Theme.pad;
+                spacing: Theme.gap;
+                Button {
+                    block: true;
+                    label: "Pendulum Swing";
+                    horizontal-stretch: 1;
+                    clicked => { Keyframes.apply-physics-motion(1); }
+                }
+                Button {
+                    label: Keyframes.physics-favourites[1] ? "★" : "☆";
+                    clicked => { Keyframes.toggle-physics-favourite(1); }
+                }
+            }
+            if GpuCompatibility.enabled: HorizontalLayout {
+                padding-left: Theme.pad;
+                padding-right: Theme.pad;
+                spacing: Theme.gap;
+                Button {
+                    block: true;
+                    label: "Gravity Bounce";
+                    horizontal-stretch: 1;
+                    clicked => { Keyframes.apply-physics-motion(2); }
+                }
+                Button {
+                    label: Keyframes.physics-favourites[2] ? "★" : "☆";
+                    clicked => { Keyframes.toggle-physics-favourite(2); }
+                }
+            }
+            if GpuCompatibility.enabled: HorizontalLayout {
+                padding-left: Theme.pad;
+                padding-right: Theme.pad;
+                spacing: Theme.gap;
+                Button {
+                    block: true;
+                    label: "Elastic Pop";
+                    horizontal-stretch: 1;
+                    clicked => { Keyframes.apply-physics-motion(3); }
+                }
+                Button {
+                    label: Keyframes.physics-favourites[3] ? "★" : "☆";
+                    clicked => { Keyframes.toggle-physics-favourite(3); }
+                }
+            }
+            if GpuCompatibility.enabled: HorizontalLayout {
+                padding-left: Theme.pad;
+                padding-right: Theme.pad;
+                spacing: Theme.gap;
+                Button {
+                    block: true;
+                    label: "Inertia Glide";
+                    horizontal-stretch: 1;
+                    clicked => { Keyframes.apply-physics-motion(4); }
+                }
+                Button {
+                    label: Keyframes.physics-favourites[4] ? "★" : "☆";
+                    clicked => { Keyframes.toggle-physics-favourite(4); }
+                }
+            }
+            if GpuCompatibility.enabled: HorizontalLayout {
+                padding-left: Theme.pad;
+                padding-right: Theme.pad;
+                spacing: Theme.gap;
+                Button {
+                    block: true;
+                    label: "Damped Shake";
+                    horizontal-stretch: 1;
+                    clicked => { Keyframes.apply-physics-motion(5); }
+                }
+                Button {
+                    label: Keyframes.physics-favourites[5] ? "★" : "☆";
+                    clicked => { Keyframes.toggle-physics-favourite(5); }
+                }
+            }
+            if GpuCompatibility.enabled: HorizontalLayout {
+                padding-left: Theme.pad;
+                padding-right: Theme.pad;
+                Button {
+                    block: true;
+                    label: "Apply Favorites to All Randomly";
+                    clicked => { Keyframes.apply-random-favourite-motion(); }
+                }
+            }
         }
     }
 

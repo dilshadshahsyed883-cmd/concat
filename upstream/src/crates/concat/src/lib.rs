@@ -1195,6 +1195,15 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         keys.on_apply_random_motion(on_lanes!(|state| {
             state.apply_random_gpu_motion();
         }));
+        keys.on_apply_physics_motion(on_lanes!(|state, index: i32| {
+            state.apply_physics_motion(index);
+        }));
+        keys.on_toggle_physics_favourite(on_lanes!(|state, index: i32| {
+            state.toggle_physics_favourite(index);
+        }));
+        keys.on_apply_random_favourite_motion(on_lanes!(|state| {
+            state.apply_random_favourite_gpu_motion();
+        }));
         // The same three verbs for the Adjust panel's knobs, which are
         // named rather than enumerated.
         keys.on_toggle_param(on_lanes!(|state, key: SharedString| {

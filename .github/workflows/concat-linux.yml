@@ -35,6 +35,9 @@ jobs:
       - run: python -m pip install -r cloud_render/concat/hybrid/requirements-captions.txt
       - name: Parse desktop filter editor changes without building an EXE
         run: rustfmt --edition 2024 --emit stdout upstream/src/crates/concat/src/studio.rs > /dev/null
+      - name: Verify native physics keyframes (no Windows EXE build)
+        working-directory: upstream/src
+        run: cargo test -p concat-project --lib physics_motion --locked
       - run: python -m compileall -q cloud_render/concat
       - name: Desktop background uploads and Recent Projects regressions
         run: |
