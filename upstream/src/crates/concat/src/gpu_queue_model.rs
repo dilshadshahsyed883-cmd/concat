@@ -110,6 +110,12 @@ pub(super) struct Queue {
 }
 
 impl Queue {
+    /// Adding work never opts the user into starting uploads. An already
+    /// running queue may consume it; a stopped queue remains stopped.
+    pub fn enqueue(&mut self, job: Job) {
+        self.jobs.push(job);
+    }
+
     pub fn recover(&mut self) {
         self.started = false;
         for job in &mut self.jobs {
@@ -195,6 +201,33 @@ mod tests {
             bytes: String::new(),
             output: String::new(),
         }
+    }
+
+    #[test]
+    fn interrupted_queue_remains_manual_after_new_job() {
+        let mut queue = Queue {
+            jobs: vec![job("first", Phase::Uploading)],
+            started: true,
+        };
+        queue.recover();
+        assert!(!queue.started);
+        assert_eq!(queue.jobs[0].phase, Phase::Waiting);
+        queue.enqueue(job("second", Phase::Waiting));
+        assert!(queue.next_upload().is_none());
+        queue.started = true;
+        assert_eq!(queue.next_upload().unwrap().id, "first");
+    }
+
+    #[test]
+    fn enqueue_requires_explicit_start_and_keeps_existing_running_state() {
+        let mut stopped = Queue::default();
+        stopped.enqueue(job("pending", Phase::Waiting));
+        assert!(!stopped.started);
+        assert!(stopped.next_upload().is_none());
+        stopped.started = true;
+        assert_eq!(stopped.next_upload().unwrap().id, "pending");
+        stopped.enqueue(job("next", Phase::Waiting));
+        assert!(stopped.started);
     }
 
     #[test]

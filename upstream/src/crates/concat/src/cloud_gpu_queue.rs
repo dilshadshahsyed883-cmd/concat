@@ -218,7 +218,7 @@ impl Controller {
             self.changed = true;
             return;
         }
-        self.data.jobs.push(Job {
+        self.data.enqueue(Job {
             remote: id.clone(),
             id,
             label: path
@@ -236,8 +236,11 @@ impl Controller {
             bytes: String::new(),
             output: String::new(),
         });
-        self.data.started = true;
-        self.note = "Queue started. Uploads run one at a time.".into();
+        self.note = if self.data.started {
+            "Job added to the active queue. Uploads run one at a time.".into()
+        } else {
+            "Job added. Click Start Queue to begin uploading.".into()
+        };
         self.save();
     }
 
