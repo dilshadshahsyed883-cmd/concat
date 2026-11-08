@@ -141,3 +141,6 @@ try {
         Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
+# The last child intentionally failed an overwrite; restore a successful
+# shell exit code after all assertions and cleanup have passed.
+$global:LASTEXITCODE = 0
