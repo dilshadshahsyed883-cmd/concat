@@ -6,22 +6,35 @@ use std::hash::{BuildHasher, RandomState};
 use std::path::Path;
 
 use concat_project::model::{ClipKey, ClipKind, VideoSettings};
+use concat_project::physics_motion::PhysicsPreset;
 
 use super::{
     AppliedFilter, Catalogue, Clip, ClipPatch, Command, MotionPreset, PackageKind, Studio, Transition,
     gpu_catalogue_has, key_commands, t, tf,
 };
 
-const MOTION_PRESETS: [MotionPreset; 3] = [
-    MotionPreset::PushIn,
-    MotionPreset::PanRight,
-    MotionPreset::FadeIn,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MotionKind {
+    Basic(MotionPreset),
+    Physics(PhysicsPreset),
+}
+
+const MOTION_PRESETS: [MotionKind; 9] = [
+    MotionKind::Basic(MotionPreset::PushIn),
+    MotionKind::Basic(MotionPreset::PanRight),
+    MotionKind::Basic(MotionPreset::FadeIn),
+    MotionKind::Physics(PhysicsPreset::SpringZoom),
+    MotionKind::Physics(PhysicsPreset::Pendulum),
+    MotionKind::Physics(PhysicsPreset::GravityBounce),
+    MotionKind::Physics(PhysicsPreset::ElasticPop),
+    MotionKind::Physics(PhysicsPreset::InertiaGlide),
+    MotionKind::Physics(PhysicsPreset::DampedShake),
 ];
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, PartialEq)]
 struct GeneratedMotion {
-    preset: MotionPreset,
-    keys: [ClipKey; 2],
+    preset: MotionKind,
+    keys: Vec<ClipKey>,
 }
 
 /// Keep the signatures of preset keys this editing session produced. The
@@ -178,10 +191,11 @@ fn motion_choices(
     clip: &Clip,
     frame: f64,
     generated: &[GeneratedMotion],
+    permitted: &[MotionKind],
 ) -> Option<(Vec<GeneratedMotion>, Option<usize>)> {
     let previous = generated
         .iter()
-        .find(|motion| clip.keys.as_slice() == motion.keys);
+        .find(|motion| clip.keys.as_slice() == motion.keys.as_slice());
     let base = if clip.keys.is_empty() {
         Cow::Borrowed(clip)
     } else if previous.is_some() {
@@ -194,8 +208,15 @@ fn motion_choices(
     };
     let choices: Vec<_> = MOTION_PRESETS
         .into_iter()
+        .filter(|preset| permitted.contains(preset))
         .filter_map(|preset| {
-            let (keys, _) = preset.keys(&base, frame).ok()?;
+            let (keys, _) = match preset {
+                MotionKind::Basic(basic) => {
+                    let (keys, preview) = basic.keys(&base, frame).ok()?;
+                    (keys.to_vec(), preview)
+                }
+                MotionKind::Physics(physics) => physics.keys(&base, frame).ok()?,
+            };
             Some(GeneratedMotion { preset, keys })
         })
         .collect();
@@ -454,6 +475,9 @@ impl Studio {
             self.notify(&t("studio.randomNoGpuEffects"), true);
             return;
         }
+        // Timeline ordering lets consecutive clips avoid the same favourite.
+        plans.sort_by(|a, b| a.0.start.total_cmp(&b.0.start)
+            .then_with(|| a.0.id.cmp(&b.0.id)));
         let options: Vec<_> = plans
             .iter()
             .map(|(_, _, choices, old, _)| (choices.len(), *old))
@@ -505,7 +529,26 @@ impl Studio {
 
     /// Reroll bulk motion without replacing manually authored keyframes.
     pub fn apply_random_gpu_motion(&mut self) {
+        self.apply_random_gpu_motion_internal(false);
+    }
+
+    /// Apply only starred physics presets, with one undo step for the timeline.
+    pub fn apply_random_favourite_gpu_motion(&mut self) {
+        self.apply_random_gpu_motion_internal(true);
+    }
+
+    fn apply_random_gpu_motion_internal(&mut self, favourites_only: bool) {
         if !self.gpu_bulk_ready() {
+            return;
+        }
+        let permitted: Vec<MotionKind> = MOTION_PRESETS
+            .into_iter()
+            .filter(|preset| !favourites_only || matches!(preset,
+                MotionKind::Physics(physics) if self.prefs.physics_motion_favourites
+                    .iter().any(|id| id == physics.id())))
+            .collect();
+        if permitted.is_empty() {
+            self.notify("Star at least one physics animation first.", true);
             return;
         }
         let timeline = self.timeline();
@@ -517,7 +560,7 @@ impl Studio {
             .filter(|track| track.visible && !self.locked(&track.id))
             .map(|track| track.id.as_str())
             .collect();
-        let plans: Vec<_> = timeline
+        let mut plans: Vec<_> = timeline
             .clips
             .iter()
             .filter(|clip| {
@@ -532,7 +575,7 @@ impl Studio {
                     .0
                     .get(&target)
                     .map_or(&[][..], Vec::as_slice);
-                let (choices, old) = motion_choices(clip, frame, held)?;
+                let (choices, old) = motion_choices(clip, frame, held, &permitted)?;
                 Some((clip, target, choices, old))
             })
             .collect();
@@ -546,14 +589,27 @@ impl Studio {
             .collect();
         let mut updates = Vec::new();
         let mut commands = Vec::new();
-        for ((clip, target, choices, old), chosen) in plans
+        let selected = random_assignment(&options, fresh_draw());
+        let mut last_preset = None;
+        for ((clip, target, choices, old), mut chosen) in plans
             .into_iter()
-            .zip(random_assignment(&options, fresh_draw()))
+            .zip(selected)
         {
+            if favourites_only && Some(choices[chosen].preset) == last_preset {
+                if let Some(alternative) = choices.iter().position(|entry|
+                    Some(entry.preset) != last_preset && Some(entry.preset) !=
+                    old.and_then(|index| choices.get(index).map(|item| item.preset))) {
+                    chosen = alternative;
+                } else if let Some(alternative) = choices.iter().position(|entry|
+                    Some(entry.preset) != last_preset) {
+                    chosen = alternative;
+                }
+            }
+            last_preset = Some(choices[chosen].preset);
             if old == Some(chosen) {
                 continue;
             }
-            let generated = choices[chosen];
+            let generated = choices[chosen].clone();
             let mut result = clip.as_ref().clone();
             result.keys = generated.keys.to_vec();
             commands.extend(key_commands(&clip.id, clip, &result));
@@ -625,18 +681,18 @@ mod tests {
     #[test]
     fn only_untouched_bulk_motion_can_be_rerolled() {
         let mut clip = Clip::blank("c1", "t1", ClipKind::Video, "picture", 0.0, 2.0);
-        let (choices, old) = motion_choices(&clip, 1.0 / 30.0, &[]).unwrap();
-        assert_eq!(choices.len(), 3);
+        let (choices, old) = motion_choices(&clip, 1.0 / 30.0, &[], &MOTION_PRESETS).unwrap();
+        assert_eq!(choices.len(), 9);
         assert_eq!(old, None);
         let generated = choices[0];
-        clip.keys = generated.keys.to_vec();
-        assert!(motion_choices(&clip, 1.0 / 30.0, &[]).is_none());
+        clip.keys = generated.keys.clone();
+        assert!(motion_choices(&clip, 1.0 / 30.0, &[], &MOTION_PRESETS).is_none());
         assert_eq!(
-            motion_choices(&clip, 1.0 / 30.0, &[generated]).unwrap().1,
+            motion_choices(&clip, 1.0 / 30.0, &[generated.clone()], &MOTION_PRESETS).unwrap().1,
             Some(0)
         );
         clip.keys[1].value += 0.02;
-        assert!(motion_choices(&clip, 1.0 / 30.0, &[generated]).is_none());
+        assert!(motion_choices(&clip, 1.0 / 30.0, &[generated], &MOTION_PRESETS).is_none());
     }
 
     #[test]
