@@ -90,17 +90,13 @@ pub const OUTPUTS: [(i32, i32); 6] = [
 /// splits both floor at this, as the engine's own `MIN_CLIP_DURATION` does.
 pub const MIN_DURATION: f32 = 1.0 / 60.0;
 
-/// The three lane heights, in logical pixels.
-///
-/// Picture gets the tallest because a filmstrip is the one thing that needs
-/// the room; sound the middle, where an envelope still has shape. The ladder
-/// is what `TrackSize::Auto` picks from - see `lane_height`. Raised from
-/// 80/60/40: with the name strip and the sound band taken off, a video's
-/// frames had under forty pixels and a waveform under thirty, and both
-/// read as crammed.
+/// Compact automatic lanes keep five or more tracks in view on a
+/// typical desktop. Manual sizes remain available for larger thumbnails
+/// and more detailed waveform editing.
 const LANE_LARGE: f32 = 108.0;
-const LANE_MEDIUM: f32 = 80.0;
-const LANE_SMALL: f32 = 44.0;
+const LANE_MEDIUM: f32 = 72.0;
+const LANE_SMALL: f32 = 48.0;
+const LANE_AUTO: f32 = 48.0;
 
 /// How long a title runs when it is placed: long enough to read, short
 /// enough that trimming it is a nudge rather than a fight.
@@ -2583,33 +2579,15 @@ impl Studio {
             .map_or(TrackSize::Auto, |view| view.size)
     }
 
-    /// How tall one lane is drawn: a lane takes the height of the tallest
-    /// thing on it, without the lanes having to be typed. An empty one takes
-    /// the middle size.
+    /// By default all lanes are 48 logical pixels tall. Users can expand
+    /// individual lanes to 72/108px for filmstrip or waveform detail.
+    /// Track locking, scrolling, thumbnails and zoom stay unchanged.
     fn lane_height(&self, lane: &Track) -> f32 {
         match self.lane_size(&lane.id) {
             TrackSize::Small => LANE_SMALL,
             TrackSize::Medium => LANE_MEDIUM,
             TrackSize::Large => LANE_LARGE,
-            TrackSize::Auto => {
-                let tallest = self
-                    .timeline()
-                    .clips
-                    .iter()
-                    .filter(|clip| clip.track_id == lane.id)
-                    .map(|clip| match clip.kind {
-                        model::ClipKind::Video | model::ClipKind::Image => LANE_LARGE,
-                        model::ClipKind::Audio => LANE_MEDIUM,
-                        // A title is its name strip alone; a layer has no
-                        // picture at all; a shape's name says what it is.
-                        // None needs a body's height.
-                        model::ClipKind::Text | model::ClipKind::Layer | model::ClipKind::Shape => {
-                            LANE_SMALL
-                        }
-                    })
-                    .fold(0.0_f32, f32::max);
-                if tallest > 0.0 { tallest } else { LANE_MEDIUM }
-            }
+            TrackSize::Auto => LANE_AUTO,
         }
     }
 
