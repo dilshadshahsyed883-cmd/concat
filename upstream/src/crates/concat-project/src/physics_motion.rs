@@ -107,7 +107,7 @@ impl PhysicsPreset {
         let original = match self {
             Self::SpringZoom => {
                 // Mass-spring-damper step response: damping ratio 0.45.
-                let zeta: f64 = 0.45 / controls.intensity;
+                let zeta: f64 = (0.45 / controls.intensity).clamp(0.05, 0.95);
                 let natural_frequency: f64 = 18.0;
                 let damped = natural_frequency * (1.0 - zeta * zeta).sqrt();
                 let response = 1.0 - (-zeta * natural_frequency * t).exp()
@@ -127,20 +127,23 @@ impl PhysicsPreset {
                 let gravity = 2.0 * height / (fall * fall);
                 if t < fall {
                     let left = 1.0 - t / fall;
-                    return clip.offset_y - height * left * left;
-                }
-                let mut remaining = t - fall;
-                let mut velocity = (2.0 * gravity * height).sqrt() * (0.56 * controls.intensity).clamp(0.1, 0.95);
-                for _ in 0..12 {
-                    let flight = 2.0 * velocity / gravity;
-                    if remaining < flight {
-                        let lift = velocity * remaining - 0.5 * gravity * remaining * remaining;
-                        return clip.offset_y - lift.max(0.0);
+                    clip.offset_y - height * left * left
+                } else {
+                    let mut remaining = t - fall;
+                    let restitution = (0.56 * controls.intensity).clamp(0.1, 0.95);
+                    let mut velocity = (2.0 * gravity * height).sqrt() * restitution;
+                    let mut lift = 0.0;
+                    for _ in 0..12 {
+                        let flight = 2.0 * velocity / gravity;
+                        if remaining < flight {
+                            lift = (velocity * remaining - 0.5 * gravity * remaining * remaining).max(0.0);
+                            break;
+                        }
+                        remaining -= flight;
+                        velocity *= restitution;
                     }
-                    remaining -= flight;
-                    velocity *= (0.56 * controls.intensity).clamp(0.1, 0.95); // coefficient of restitution
+                    clip.offset_y - lift
                 }
-                clip.offset_y
             }
             Self::ElasticPop => {
                 // Underdamped elastic impulse, preserving the initial framing.
@@ -281,6 +284,14 @@ mod tests {
             &clip, FRAME, PhysicsControls::default(),
         ).unwrap().0;
         assert_eq!(normal, defaults);
+        for preset in PhysicsPreset::ALL {
+            for intensity in [0.2, 0.5, 1.0, 2.0] {
+                let varied = preset.keys_with(&clip, FRAME, PhysicsControls {
+                    strength: 2.0, duration: 0.3, speed: 3.0, intensity,
+                }).unwrap().0;
+                assert!(varied.iter().all(|key| key.value.is_finite()));
+            }
+        }
     }
 
     #[test]
