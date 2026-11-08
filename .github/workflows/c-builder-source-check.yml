@@ -61,7 +61,7 @@ jobs:
                   'editor.on_cb_choose_narration', 'editor.on_cb_generate_project', 'c_builder_scan'],
             studio: ['pub c_builder:', 'set_cb_media_folder(', 'set_cb_scan_done('],
             ui: ['Media Library', 'Timeline Builder', 'Generate Native Concat Timeline'],
-            media: ['CBuilderPane', 'cb-import-folder =>', 'cb-generate-project('],
+            media: ['CBuilderPane', 'import-folder => { root.cb-import-folder(); }', 'cb-generate-project('],
             editor: ['callback cb-import-folder()', 'callback cb-generate-project('],
             seat: ['Editor.cb-import-folder()', 'Editor.cb-generate-project('],
           }
