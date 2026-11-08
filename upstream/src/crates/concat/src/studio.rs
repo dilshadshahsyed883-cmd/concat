@@ -10347,12 +10347,7 @@ impl Studio {
             self.notify(&t("studio.motionPresetLocked"), true);
             return;
         }
-        match preset.command_with(clip, self.frame_seconds(), PhysicsControls {
-            strength: strength as f64,
-            duration: duration as f64,
-            speed: speed as f64,
-            intensity: intensity as f64,
-        }) {
+        match preset.command(clip, self.frame_seconds()) {
             Ok((command, preview)) => {
                 self.apply(command);
                 self.seek(preview as f32);
@@ -10382,7 +10377,12 @@ impl Studio {
             self.notify(&t("studio.motionPresetLocked"), true);
             return;
         }
-        match preset.command(clip, self.frame_seconds()) {
+        match preset.command_with(clip, self.frame_seconds(), PhysicsControls {
+            strength: strength as f64,
+            duration: duration as f64,
+            speed: speed as f64,
+            intensity: intensity as f64,
+        }) {
             Ok((command, preview)) => {
                 self.apply(command);
                 self.seek(preview as f32);
