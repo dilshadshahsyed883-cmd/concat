@@ -4,8 +4,11 @@ on:
   push:
     branches:
       - feature/c-builder-native-library-timeline-20261108
+      - work/consolidated-concat-20261108
     paths:
       - 'upstream/src/crates/concat/src/c_builder.rs'
+      - 'upstream/src/crates/concat/src/studio/bulk_presets.rs'
+      - 'upstream/src/crates/concat/tests/test_ui_animation_captions_contract.py'
       - 'upstream/src/crates/concat/src/lib.rs'
       - 'upstream/src/crates/concat/src/studio.rs'
       - 'upstream/src/crates/concat/ui/**'
