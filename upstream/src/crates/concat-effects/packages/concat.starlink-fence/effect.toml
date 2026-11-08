@@ -1,0 +1,22 @@
+format = 2
+
+[effect]
+id = "concat.starlink-fence"
+name = "Starlink Fence"
+kind = "transition"
+category = "Graphic"
+order = 44
+description = "Fine diagonal striped reveal"
+
+[[param]]
+key = "intensity"
+label = "Intensity"
+min = 0
+max = 100
+default = 70
+step = 1
+unit = "%"
+
+[transition]
+entry = "effect.wgsl"
+fallback = "cross-fade"

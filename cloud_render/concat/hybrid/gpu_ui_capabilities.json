@@ -5,7 +5,27 @@
   ],
   "transitions": [
     "concat.fade-black",
-    "concat.fade-white"
+    "concat.fade-white",
+    "concat.ink-drying",
+    "concat.shake-flash",
+    "concat.image-blend",
+    "concat.torn-paper",
+    "concat.matrix-scan",
+    "concat.ghost-radio",
+    "concat.explosion-glitch",
+    "concat.comic-cut",
+    "concat.red-chaos",
+    "concat.cyber-beehive",
+    "concat.heat-flash",
+    "concat.shards-scatter",
+    "concat.violet-fuzz",
+    "concat.warp-portal",
+    "concat.starlink-fence",
+    "concat.liquid-melt",
+    "concat.burning-flame",
+    "concat.pulse-wipe",
+    "concat.twinkle-zoom",
+    "concat.wispy-wipe"
   ],
   "filters": [
     "concat.look.crystal-honey",

@@ -5,13 +5,16 @@ from dataclasses import dataclass
 from functools import cache
 
 from .contract import FrameSpan, cuda, rgba
+from .capcut_transitions import CAPCUT_IDS, CAPCUT_KINDS, render_capcut_transition
 
 
 _KINDS = {"dissolve": 0, "fade": 1, "wipe": 2, "slide": 3, "zoom": 4,
           "native-fade-black": 5, "native-fade-white": 6}
+_KINDS.update({slug: index + 7 for slug, index in CAPCUT_KINDS.items()})
 _DIRECTIONS = {"left": 0, "right": 1, "up": 2, "down": 3}
 NATIVE_FADES = {"concat.fade-black": "native-fade-black",
                 "concat.fade-white": "native-fade-white"}
+NATIVE_TRANSITIONS = {**NATIVE_FADES, **CAPCUT_IDS}
 
 
 @dataclass(frozen=True)
@@ -137,6 +140,9 @@ def render_transition(outgoing, incoming, transition: Transition, frame_index: i
         return source
     if progress == 1:
         return destination
+
+    if transition.kind in CAPCUT_KINDS:
+        return render_capcut_transition(source, destination, transition.kind, progress)
 
     cp = cuda()
     height, width, _ = source.shape
