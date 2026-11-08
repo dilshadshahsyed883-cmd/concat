@@ -209,10 +209,7 @@ impl CaptionsPane {
                         // Never mislabel guessed character-length pacing as
                         // voice alignment. Fail closed if experimental Whisper
                         // segmentation cannot provide one actual word per cue.
-                        if subject.karaoke && segments.iter().any(|part|
-                            part.text.split_whitespace().count() != 1
-                            || part.end <= part.start
-                        ) {
+                        if subject.karaoke && !karaoke_words_aligned(&segments) {
                             self.message = "Word timestamps unavailable for this transcription. Try another Whisper model.".into();
                             return;
                         }
@@ -602,6 +599,17 @@ impl CaptionsPane {
     }
 }
 
+/// Word-mode clips must come from Whisper's actual token-timestamp
+/// segmentation. This intentionally rejects segment-wide length estimates.
+fn karaoke_words_aligned(segments: &[Segment]) -> bool {
+    segments.iter().all(|part| {
+        part.text.split_whitespace().count() == 1
+            && part.start.is_finite()
+            && part.end.is_finite()
+            && part.end > part.start
+    }) && segments.windows(2).all(|part| part[0].end <= part[1].start + 0.01)
+}
+
 /// Imported cues keep the file's timing, including captions shorter than
 /// generated speech segments. The title command applies the engine's minimum
 /// clip duration where needed.
@@ -890,7 +898,24 @@ fn wrap_caption(sentence: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{script_captions, source_label};
+    use super::{karaoke_words_aligned, script_captions, source_label};
+    use concat_speech::transcribe::Segment;
+    #[test]
+    fn karaoke_requires_real_one_word_asr_intervals() {
+        let good = vec![
+            Segment { start: 0.1, end: 0.3, text: "Hello".into() },
+            Segment { start: 0.3, end: 0.6, text: "world".into() },
+        ];
+        assert!(karaoke_words_aligned(&good));
+        assert!(!karaoke_words_aligned(&[
+            Segment { start: 0.1, end: 0.6, text: "Hello world".into() }
+        ]));
+        assert!(!karaoke_words_aligned(&[
+            Segment { start: 0.3, end: 0.2, text: "Hello".into() }
+        ]));
+    }
+
+
 
     #[test]
     fn imported_srt_preserves_short_cues_and_multiline_text() {
