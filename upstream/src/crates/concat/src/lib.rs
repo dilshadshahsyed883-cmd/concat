@@ -1067,6 +1067,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             return;
         };
         state.selection.clear();
+        state.compound_edit = None;
         state.apply(concat_project::Command::SelectTimeline { timeline_id: id });
     }));
     editor.on_tab_renamed(on_window!(|state, index: i32, name: SharedString| {
@@ -1708,6 +1709,10 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             }
             state.clip_action(&id, action.as_str());
         }
+    }));
+
+    editor.on_compound_edit_exit(on_window!(|state| {
+        state.leave_compound_edit();
     }));
 
     // Compound Clip name changes are undoable project commands.
