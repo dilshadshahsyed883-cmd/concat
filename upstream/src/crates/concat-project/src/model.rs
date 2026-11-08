@@ -2385,6 +2385,29 @@ impl Clip {
     }
 }
 
+/// One member of a compound. Clips remain on their original tracks in the
+/// source timeline: these are references, never copied or baked media.
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "id", rename_all = "camelCase")]
+pub enum CompoundMember {
+    Clip(String),
+    Compound(String),
+}
+
+/// A non-destructive named compound. Membership is independent of time and
+/// track layout; original clips, gaps, keyframes, effects and sound remain
+/// the renderer's sole sources. There are deliberately no group-level
+/// effects or transforms until Desktop and CUDA share a compositing contract.
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Compound {
+    pub id: String,
+    pub name: String,
+    pub members: Vec<CompoundMember>,
+    #[serde(flatten, default, skip_serializing_if = "Map::is_empty")]
+    pub extra: Map<String, Value>,
+}
+
 /// One timeline: a name and its lanes and clips. Every operation takes the
 /// project and works on whichever timeline is active.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
@@ -2421,6 +2444,10 @@ pub struct Timeline {
     /// [`Timeline::clip_mut`]). Reading through the `Arc` is transparent.
     #[serde(deserialize_with = "wire::list")]
     pub clips: Vec<Arc<Clip>>,
+    /// Structural compound membership. Additive v1 field; old projects
+    /// default to an empty list and retain their exact render semantics.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub compounds: Vec<Compound>,
     /// Fields this build does not know, kept so they round-trip.
     #[serde(flatten, default, skip_serializing_if = "Map::is_empty")]
     pub extra: Map<String, Value>,
@@ -2435,6 +2462,7 @@ impl Default for Timeline {
             background: Background::None,
             tracks: Vec::new(),
             clips: Vec::new(),
+            compounds: Vec::new(),
             extra: Map::new(),
         }
     }
@@ -2654,6 +2682,7 @@ impl Project {
                     })
                     .collect(),
                 clips: Vec::new(),
+                compounds: Vec::new(),
                 extra: Map::new(),
             })],
             active_timeline_id: "TL1".to_owned(),
