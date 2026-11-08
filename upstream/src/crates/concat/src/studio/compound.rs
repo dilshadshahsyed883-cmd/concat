@@ -31,6 +31,20 @@ impl Studio {
         });
     }
 
+    /// Wrap one existing root compound and any free selected clips into a
+    /// new parent. The command rejects cycles and multiple ownership.
+    pub(super) fn nest_compound_from(&mut self, clicked: &str) {
+        let Some(compound_id) = self.compound_for_clip(clicked) else { return; };
+        let free_clips = self.selection.iter()
+            .filter(|id| self.compound_for_clip(id.as_str()).is_none())
+            .cloned()
+            .collect();
+        let name = format!("Compound {}", self.timeline().compounds.len() + 1);
+        self.apply(Command::CreateCompound {
+            clip_ids: free_clips, compound_ids: vec![compound_id], name,
+        });
+    }
+
     pub(super) fn compound_all_layers(&mut self) {
         let name = format!("Compound {}", self.timeline().compounds.len() + 1);
         self.apply(Command::CreateCompoundAll { name });
