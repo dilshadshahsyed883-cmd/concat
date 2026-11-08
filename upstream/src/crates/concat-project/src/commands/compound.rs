@@ -275,6 +275,42 @@ mod tests {
         assert_eq!(e.project().active().compounds[0].members.len(), 3);
     }
     #[test]
+    fn deleting_a_group_member_prunes_only_its_reference_and_undo_restores_it() {
+        let mut e = editor();
+        e.apply(Command::CreateCompound {
+            clip_ids: vec!["c1".into(), "c2".into()],
+            compound_ids: vec![], name: "Scene".into(),
+        }).unwrap();
+        e.apply(Command::RemoveClips {
+            clip_ids: vec!["c1".into()], ripple: false,
+        }).unwrap();
+        assert_eq!(e.project().active().compounds[0].members,
+            vec![CompoundMember::Clip("c2".into())]);
+        assert_eq!(e.project().active().clips.len(), 2);
+        assert!(e.undo());
+        assert_eq!(e.project().active().clips.len(), 3);
+        assert_eq!(e.project().active().compounds[0].members.len(), 2);
+    }
+
+    #[test]
+    fn rename_and_break_apart_keep_source_tracks_and_timing() {
+        let mut e = editor();
+        let clips = e.project().active().clips.clone();
+        let id = e.apply(Command::CreateCompoundAll {
+            name: "Whole Timeline".into(),
+        }).unwrap().created_id.unwrap();
+        e.apply(Command::RenameCompound {
+            compound_id: id.clone(), name: "New name".into(),
+        }).unwrap();
+        assert_eq!(e.project().active().compounds[0].name, "New name");
+        e.apply(Command::UngroupCompound { compound_id: id }).unwrap();
+        assert!(e.project().active().compounds.is_empty());
+        assert_eq!(e.project().active().clips, clips);
+        assert!(e.undo());
+        assert_eq!(e.project().active().compounds[0].name, "New name");
+    }
+
+    #[test]
     fn malformed_cycles_are_dropped_without_deleting_clips() {
         let mut e = editor();
         let mut doc = e.project().clone();
