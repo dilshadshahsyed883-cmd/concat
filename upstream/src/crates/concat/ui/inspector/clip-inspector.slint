@@ -1094,20 +1094,6 @@ export component VideoPanel inherits VerticalLayout {
         root.commit();
     }
 
-    // Preview parameters for the next physics preset click; GPU receives
-    // ordinary baked transform keys, so no renderer-specific format is added.
-    property <float> physics-strength: 1;
-    property <float> physics-duration: 1;
-    property <float> physics-speed: 1;
-    property <float> physics-intensity: 1;
-    // Bulk targeting is UI state, not part of a clip or project manifest.
-    property <bool> bulk-images: true;
-    property <bool> bulk-videos: true;
-    property <bool> bulk-selected-only: false;
-    property <int> bulk-preset: 0;
-    property <float> bulk-scale: 1;
-    property <float> bulk-position-x: 0;
-    property <float> bulk-position-y: 0;
     property <float> scale;
     property <float> offset-x;
     property <float> offset-y;
@@ -1331,12 +1317,21 @@ export component VideoPanel inherits VerticalLayout {
                     clicked => { Keyframes.apply-motion-preset(ClipField.opacity); }
                 }
             }
+            if GpuCompatibility.enabled: HorizontalLayout {
+                padding-left: Theme.pad;
+                padding-right: Theme.pad;
+                Button {
+                    block: true;
+                    label: I18n.t("common.applyAllRandomly");
+                    clicked => { Keyframes.apply-random-motion(); }
+                }
+            }
             if GpuCompatibility.enabled: VerticalLayout {
                 padding-left: Theme.pad;
                 padding-right: Theme.pad;
                 Param {
                     label: "Strength";
-                    value <=> root.physics-strength;
+                    value <=> Keyframes.physics-strength;
                     minimum: 0.1;
                     maximum: 2;
                     step: 0.1;
@@ -1345,7 +1340,7 @@ export component VideoPanel inherits VerticalLayout {
                 }
                 Param {
                     label: "Duration (clip fraction)";
-                    value <=> root.physics-duration;
+                    value <=> Keyframes.physics-duration;
                     minimum: 0.1;
                     maximum: 1;
                     step: 0.05;
@@ -1356,7 +1351,7 @@ export component VideoPanel inherits VerticalLayout {
                 }
                 Param {
                     label: "Speed";
-                    value <=> root.physics-speed;
+                    value <=> Keyframes.physics-speed;
                     minimum: 0.25;
                     maximum: 3;
                     step: 0.05;
@@ -1365,7 +1360,7 @@ export component VideoPanel inherits VerticalLayout {
                 }
                 Param {
                     label: "Physics Intensity";
-                    value <=> root.physics-intensity;
+                    value <=> Keyframes.physics-intensity;
                     minimum: 0.2;
                     maximum: 2;
                     step: 0.1;
@@ -1373,218 +1368,12 @@ export component VideoPanel inherits VerticalLayout {
                     fmt: ParamFormat.fraction;
                 }
                 Text {
-                    text: "Set controls, then click an animation to bake editable GPU-compatible keyframes.";
+                    text: "Choose an animation in the Library's Animations tab. These controls bake editable GPU-compatible keyframes.";
                     color: Theme.fg-muted;
                     wrap: word-wrap;
                 }
             }
-            // Native physics motion is sampled into ordinary clip keys;
-            // no separate desktop-only animation data or unsupported worker effect.
-            if GpuCompatibility.enabled: HorizontalLayout {
-                padding-left: Theme.pad;
-                padding-right: Theme.pad;
-                spacing: Theme.gap;
-                Button {
-                    block: true;
-                    label: "Spring Zoom";
-                    horizontal-stretch: 1;
-                    clicked => { Keyframes.apply-physics-motion(0, root.physics-strength, root.physics-duration, root.physics-speed, root.physics-intensity); }
-                }
-                Button {
-                    label: Keyframes.physics-favourites[0] ? "★" : "☆";
-                    clicked => { Keyframes.toggle-physics-favourite(0); }
-                }
-            }
-            if GpuCompatibility.enabled: HorizontalLayout {
-                padding-left: Theme.pad;
-                padding-right: Theme.pad;
-                spacing: Theme.gap;
-                Button {
-                    block: true;
-                    label: "Pendulum Swing";
-                    horizontal-stretch: 1;
-                    clicked => { Keyframes.apply-physics-motion(1, root.physics-strength, root.physics-duration, root.physics-speed, root.physics-intensity); }
-                }
-                Button {
-                    label: Keyframes.physics-favourites[1] ? "★" : "☆";
-                    clicked => { Keyframes.toggle-physics-favourite(1); }
-                }
-            }
-            if GpuCompatibility.enabled: HorizontalLayout {
-                padding-left: Theme.pad;
-                padding-right: Theme.pad;
-                spacing: Theme.gap;
-                Button {
-                    block: true;
-                    label: "Gravity Bounce";
-                    horizontal-stretch: 1;
-                    clicked => { Keyframes.apply-physics-motion(2, root.physics-strength, root.physics-duration, root.physics-speed, root.physics-intensity); }
-                }
-                Button {
-                    label: Keyframes.physics-favourites[2] ? "★" : "☆";
-                    clicked => { Keyframes.toggle-physics-favourite(2); }
-                }
-            }
-            if GpuCompatibility.enabled: HorizontalLayout {
-                padding-left: Theme.pad;
-                padding-right: Theme.pad;
-                spacing: Theme.gap;
-                Button {
-                    block: true;
-                    label: "Elastic Pop";
-                    horizontal-stretch: 1;
-                    clicked => { Keyframes.apply-physics-motion(3, root.physics-strength, root.physics-duration, root.physics-speed, root.physics-intensity); }
-                }
-                Button {
-                    label: Keyframes.physics-favourites[3] ? "★" : "☆";
-                    clicked => { Keyframes.toggle-physics-favourite(3); }
-                }
-            }
-            if GpuCompatibility.enabled: HorizontalLayout {
-                padding-left: Theme.pad;
-                padding-right: Theme.pad;
-                spacing: Theme.gap;
-                Button {
-                    block: true;
-                    label: "Inertia Glide";
-                    horizontal-stretch: 1;
-                    clicked => { Keyframes.apply-physics-motion(4, root.physics-strength, root.physics-duration, root.physics-speed, root.physics-intensity); }
-                }
-                Button {
-                    label: Keyframes.physics-favourites[4] ? "★" : "☆";
-                    clicked => { Keyframes.toggle-physics-favourite(4); }
-                }
-            }
-            if GpuCompatibility.enabled: HorizontalLayout {
-                padding-left: Theme.pad;
-                padding-right: Theme.pad;
-                spacing: Theme.gap;
-                Button {
-                    block: true;
-                    label: "Damped Shake";
-                    horizontal-stretch: 1;
-                    clicked => { Keyframes.apply-physics-motion(5, root.physics-strength, root.physics-duration, root.physics-speed, root.physics-intensity); }
-                }
-                Button {
-                    label: Keyframes.physics-favourites[5] ? "★" : "☆";
-                    clicked => { Keyframes.toggle-physics-favourite(5); }
-                }
-            }
-        }
-    }
 
-    // Whole-timeline bulk edits remain accessible even without a selected
-    // picture. This interface is also reused by the Animations tab.
-    if GpuCompatibility.enabled && root.canvas: Section {
-        bulk := SectionHeader {
-            title: "Bulk Media Editing";
-            collapsible: true;
-            HelpButton { text: "Apply to images, clips or both. Selected-only uses the active timeline selection. Manual keyframes and locked lanes are protected."; }
-        }
-        if bulk.open: SectionBody {
-            SwitchRow {
-                label: "Images";
-                checked <=> root.bulk-images;
-            }
-            SwitchRow {
-                label: "Video Clips";
-                checked <=> root.bulk-videos;
-            }
-            SwitchRow {
-                label: "Selected Media Only (off = whole timeline)";
-                checked <=> root.bulk-selected-only;
-            }
-            if !root.bulk-images && !root.bulk-videos: Text {
-                text: "Select Images and/or Video Clips first.";
-                color: Theme.fg-muted;
-                wrap: word-wrap;
-            }
-            Text {
-                text: "Animation preset for Apply to All";
-                color: Theme.fg-muted;
-            }
-            Select {
-                options: ["Push In", "Pan Right", "Fade In",
-                    "Spring Zoom", "Pendulum Swing", "Gravity Bounce",
-                    "Elastic Pop", "Inertia Glide", "Damped Shake"];
-                current <=> root.bulk-preset;
-            }
-            Button {
-                block: true;
-                enabled: root.bulk-images || root.bulk-videos;
-                label: "Apply Animations to All";
-                clicked => {
-                    Keyframes.apply-bulk-motion-preset(0, root.bulk-preset, root.bulk-images,
-                        root.bulk-videos, root.bulk-selected-only);
-                }
-            }
-            Button {
-                block: true;
-                enabled: root.bulk-images || root.bulk-videos;
-                label: "Apply Animations Randomly";
-                clicked => {
-                    Keyframes.apply-bulk-motion(1, root.bulk-images, root.bulk-videos, root.bulk-selected-only);
-                }
-            }
-            Button {
-                block: true;
-                enabled: root.bulk-images || root.bulk-videos;
-                label: "Apply Favorites to All Randomly";
-                clicked => {
-                    Keyframes.apply-bulk-motion(2, root.bulk-images, root.bulk-videos, root.bulk-selected-only);
-                }
-            }
-            Param {
-                label: "Bulk Scale";
-                value <=> root.bulk-scale;
-                minimum: 0.05;
-                maximum: 8;
-                step: 0.01;
-                default-value: 1;
-                fmt: ParamFormat.fraction;
-                unit: "%";
-                unit-scale: 100;
-            }
-            Button {
-                block: true;
-                enabled: root.bulk-images || root.bulk-videos;
-                label: "Apply Bulk Scale";
-                clicked => {
-                    Keyframes.apply-bulk-transform(0, root.bulk-images, root.bulk-videos,
-                        root.bulk-selected-only, root.bulk-scale, root.bulk-position-x, root.bulk-position-y);
-                }
-            }
-            Param {
-                label: "Bulk Position X";
-                value <=> root.bulk-position-x;
-                minimum: -1;
-                maximum: 1;
-                step: 0.005;
-                default-value: 0;
-                fmt: ParamFormat.centred;
-                unit: "%";
-                unit-scale: 100;
-            }
-            Param {
-                label: "Bulk Position Y";
-                value <=> root.bulk-position-y;
-                minimum: -1;
-                maximum: 1;
-                step: 0.005;
-                default-value: 0;
-                fmt: ParamFormat.centred;
-                unit: "%";
-                unit-scale: 100;
-            }
-            Button {
-                block: true;
-                enabled: root.bulk-images || root.bulk-videos;
-                label: "Apply Bulk Position X/Y";
-                clicked => {
-                    Keyframes.apply-bulk-transform(1, root.bulk-images, root.bulk-videos,
-                        root.bulk-selected-only, root.bulk-scale, root.bulk-position-x, root.bulk-position-y);
-                }
-            }
         }
     }
 
