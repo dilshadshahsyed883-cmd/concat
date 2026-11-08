@@ -14,7 +14,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  effect-catalogue-preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
+        with:
+          toolchain: "1.93.0"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          workspaces: upstream/src
+          key: effects-catalogue-preflight
+      - name: Validate every built-in manifest and compile full catalogue before Windows EXE
+        working-directory: upstream/src
+        run: |
+          cargo test --locked -p concat-effects --lib every_built_in_manifest_validates_before_gui_startup
+          cargo test --locked -p concat-effects --lib every_built_in_package_loads_and_its_fixtures_pass
+
   native-editor-windows:
+    needs: effect-catalogue-preflight
     runs-on: windows-2022
     timeout-minutes: 190
     env:
