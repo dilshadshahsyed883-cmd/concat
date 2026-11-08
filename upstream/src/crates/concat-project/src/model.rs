@@ -1524,8 +1524,6 @@ pub struct TextStyle {
     pub max_height: f64,
 }
 
-fn is_false(value: &bool) -> bool { !*value }
-
 impl TextStyle {
     /// Every number pulled into the range a title can be drawn at: a
     /// hand-edited zero size would render an invisible title, and lines
