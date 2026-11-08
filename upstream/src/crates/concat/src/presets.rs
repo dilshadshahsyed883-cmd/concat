@@ -97,6 +97,8 @@ struct PresetStyle {
     font_weight: Option<f64>,
     italic: Option<bool>,
     color: Option<String>,
+    karaoke: Option<bool>,
+    karaoke_color: Option<String>,
     align: Option<String>,
     opacity: Option<f64>,
     stroke_width: Option<f64>,
@@ -127,6 +129,8 @@ impl PresetStyle {
                 .clamp(100.0, 900.0),
             italic: self.italic.unwrap_or(false),
             color: self.color.unwrap_or(base.color),
+            karaoke: self.karaoke.unwrap_or(false),
+            karaoke_color: self.karaoke_color.unwrap_or_default(),
             align: match self.align.as_deref() {
                 Some("left") => TextAlign::Left,
                 Some("right") => TextAlign::Right,
@@ -361,10 +365,15 @@ mod tests {
             .collect();
         assert_eq!(captions.len(), 7);
         for preset in &captions {
+            if preset.id == "cuda-caption.karaoke-highlight" {
+                assert!(preset.style.karaoke);
+                assert_eq!(preset.style.karaoke_color, "#ffe13c");
+            } else {
+                assert!(!preset.style.karaoke);
+            }
             assert_eq!(preset.style.font_family, "Hanken Grotesk");
             assert_eq!(preset.style.font_weight, 600.0);
             assert!((0.01..=0.5).contains(&preset.style.font_size));
-            assert!(preset.style.background.is_empty());
             assert!(!preset.style.italic);
         }
     }

@@ -1466,6 +1466,13 @@ pub struct TextStyle {
     pub italic: bool,
     /// Fill colour as a CSS hex string, e.g. "#ffffff".
     pub color: String,
+    /// GPU karaoke paints one word at a time. Absent/false preserves old
+    /// projects and their wire format.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub karaoke: bool,
+    /// Optional word highlight color; empty uses the worker default.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub karaoke_color: String,
     /// Line alignment within the block; see [`TextAlign`].
     #[serde(deserialize_with = "wire::text_align")]
     pub align: TextAlign,
@@ -1517,6 +1524,8 @@ pub struct TextStyle {
     pub max_height: f64,
 }
 
+fn is_false(value: &bool) -> bool { !*value }
+
 impl TextStyle {
     /// Every number pulled into the range a title can be drawn at: a
     /// hand-edited zero size would render an invisible title, and lines
@@ -1552,6 +1561,8 @@ impl Default for TextStyle {
             font_weight: 700.0,
             italic: false,
             color: "#ffffff".to_owned(),
+            karaoke: false,
+            karaoke_color: String::new(),
             align: TextAlign::Center,
             opacity: 1.0,
             stroke_width: 0.0,

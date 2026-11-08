@@ -14,3 +14,4 @@ strokeColor = "#000000"
 strokeWidth = 0.005
 shadow = true
 opacity = 1.0
+background = "#e61c32ef"
