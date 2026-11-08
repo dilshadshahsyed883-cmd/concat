@@ -250,6 +250,29 @@ fn installed_model(path: &Path, digest: &str) -> bool {
     valid
 }
 
+/// Preserve any unverified existing model bytes instead of silently
+/// deleting user data. Each retry gets a fresh quarantine name, including
+/// on Windows (where rename cannot replace an existing destination).
+fn quarantine_model(path: &Path) -> Result<PathBuf, String> {
+    for index in 0..100u32 {
+        let extension = if index == 0 {
+            "bin.invalid".to_owned()
+        } else {
+            format!("bin.invalid.{index}")
+        };
+        let candidate = path.with_extension(extension);
+        if candidate.exists() {
+            continue;
+        }
+        std::fs::rename(path, &candidate).map_err(|error| {
+            format!("could not preserve unverified Whisper model {}: {error}",
+                    path.display())
+        })?;
+        return Ok(candidate);
+    }
+    Err(format!("too many old Whisper model backups beside {}", path.display()))
+}
+
 fn model_file(dirs: &AppDirs, id: &str) -> Result<PathBuf, String> {
     // Ids come from our own table; anything else is a bug, not input.
     known(id).ok_or_else(|| format!("unknown model {id:?}"))?;
@@ -391,14 +414,10 @@ impl Transcriber {
             if installed_model(&destination, definition.sha256) {
                 return Ok(());
             }
-            // The file failed its pinned SHA-256; it cannot be loaded.
-            // Remove only this damaged file so a prior .invalid quarantine
-            // cannot block subsequent retries, especially on Windows where
-            // renaming over an existing destination fails. Valid models
-            // never enter this branch and are left intact.
-            std::fs::remove_file(&destination)
-                .map_err(|error| format!("could not discard damaged model {}: {error}",
-                                        destination.display()))?;
+            // The checksum failed. Preserve the previous file under a
+            // unique, non-installed backup name before downloading again,
+            // even if an earlier retry already left a .invalid backup.
+            quarantine_model(&destination)?;
         }
         let estimate = definition.approx_bytes;
         let partial = destination.with_extension("bin.part");
@@ -664,6 +683,25 @@ mod tests {
             assert_eq!(*upstream, model_upstream(model.id));
             assert!(model.approx_bytes > 0);
         }
+    }
+
+    #[test]
+    fn repair_preserves_every_preexisting_model_backup() {
+        let scratch = std::env::temp_dir().join(format!(
+            "concat-whisper-backup-{}", std::process::id()
+        ));
+        std::fs::create_dir_all(&scratch).unwrap();
+        let file = scratch.join("ggml-base.bin");
+        std::fs::write(&file, b"older-model").unwrap();
+        let old = quarantine_model(&file).unwrap();
+        assert_eq!(std::fs::read(&old).unwrap(), b"older-model");
+        std::fs::write(&file, b"second-model").unwrap();
+        let newer = quarantine_model(&file).unwrap();
+        assert_ne!(old, newer);
+        assert_eq!(std::fs::read(&old).unwrap(), b"older-model");
+        assert_eq!(std::fs::read(&newer).unwrap(), b"second-model");
+        assert!(!file.exists());
+        std::fs::remove_dir_all(scratch).unwrap();
     }
 
     #[test]
