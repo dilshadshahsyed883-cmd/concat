@@ -19,9 +19,11 @@
 //!    window as 16 kHz mono floats - the input whisper wants - and the
 //!    segments come back relative to the window.
 
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::SystemTime;
 
 use concat_host::{AppDirs, SingleFlight};
 use concat_media::{AudioDecoder, AudioOptions, SampleFormat};
@@ -218,6 +220,36 @@ pub fn cpu_backend() -> Result<String, String> {
         .clone()
 }
 
+/// Digest results are retained only while the file has the same byte count
+/// and last-modified time. Settings refresh runs on the UI thread, so
+/// rehashing six ~75–490 MB models on every refresh would freeze the editor.
+/// The first discovery and any changed file still require a real SHA-256.
+static VERIFIED_MODELS: OnceLock<Mutex<HashMap<PathBuf, (u64, Option<SystemTime>, bool)>>> =
+    OnceLock::new();
+
+fn installed_model(path: &Path, digest: &str) -> bool {
+    let Ok(metadata) = path.metadata() else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
+    let signature = (metadata.len(), metadata.modified().ok());
+    let cache = VERIFIED_MODELS.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(locked) = cache.lock() {
+        if let Some((length, modified, valid)) = locked.get(path) {
+            if (*length, *modified) == signature {
+                return *valid;
+            }
+        }
+    }
+    let valid = concat_host::models::verify(path, digest).is_ok();
+    if let Ok(mut locked) = cache.lock() {
+        locked.insert(path.to_path_buf(), (signature.0, signature.1, valid));
+    }
+    valid
+}
+
 fn model_file(dirs: &AppDirs, id: &str) -> Result<PathBuf, String> {
     // Ids come from our own table; anything else is a bug, not input.
     known(id).ok_or_else(|| format!("unknown model {id:?}"))?;
@@ -332,9 +364,9 @@ impl Transcriber {
                     size_bytes: model.approx_bytes,
                     // A stale/truncated .bin must never be presented as
                     // installed. In particular, keep valid old files untouched.
-                    downloaded: concat_host::models::verify(
+                    downloaded: installed_model(
                         &dir.join(format!("ggml-{}.bin", model.id)), model.sha256
-                    ).is_ok(),
+                    ),
                 })
                 .collect(),
         })
@@ -356,7 +388,7 @@ impl Transcriber {
         let destination = model_file(dirs, id)?;
         let definition = known(id).ok_or_else(|| format!("unknown model {id:?}"))?;
         if destination.is_file() {
-            if concat_host::models::verify(&destination, definition.sha256).is_ok() {
+            if installed_model(&destination, definition.sha256) {
                 return Ok(());
             }
             // Only an invalid destination is moved aside. Do not overwrite
@@ -439,9 +471,11 @@ impl Transcriber {
         let cancel = job.cancel_handle();
 
         let model_path = model_file(dirs, &request.model_id)?;
-        if !model_path.is_file() {
+        let expected = known(&request.model_id).ok_or_else(||
+            format!("unknown Whisper model {:?}", request.model_id))?;
+        if !installed_model(&model_path, expected.sha256) {
             return Err(format!(
-                "model {} is not downloaded - see Settings > Transcriber",
+                "Whisper model {} is missing or failed checksum verification - see Settings > Transcriber to retry",
                 request.model_id
             ));
         }
