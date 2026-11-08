@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -20,7 +20,7 @@ mod model;
 pub(super) use model::{Job, format_upload_progress};
 use model::{Phase, Queue};
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Action {
     Prepare,
     Upload,
@@ -48,7 +48,8 @@ struct Controller {
     data: Queue,
     tx: Sender<Event>,
     rx: Receiver<Event>,
-    active_transfers: HashMap<String, AbortHandle>,
+    active_transfers: HashMap<(String, Action), AbortHandle>,
+    pending_cleanup: HashSet<String>,
     preparing: bool,
     uploading: bool,
     polling: bool,
@@ -98,6 +99,7 @@ impl Controller {
             tx,
             rx,
             active_transfers: HashMap::new(),
+            pending_cleanup: HashSet::new(),
             preparing: false,
             uploading: false,
             polling: false,
@@ -110,8 +112,32 @@ impl Controller {
     }
 
     fn abort_transfer(&mut self, id: &str) {
-        if let Some(handle) = self.active_transfers.remove(id) {
-            trigger_abort(&handle);
+        // Mark and kill every helper for this job. Keep their handles until
+        // Finished confirms exit, so another upload cannot race the old one.
+        for ((job_id, _), handle) in &self.active_transfers {
+            if job_id == id {
+                trigger_abort(handle);
+            }
+        }
+    }
+
+    fn has_active_transfer(&self, id: &str) -> bool {
+        self.active_transfers.keys().any(|(job_id, _)| job_id == id)
+    }
+
+    fn cleanup_snapshot(&self, id: &str) {
+        // IDs are validated when the queue is read and generated locally.
+        // Never touch job.project (the original project and its media).
+        let _ = fs::remove_file(self.root.join(format!("{id}.zip")));
+        let _ = fs::remove_dir_all(self.root.join(id));
+        if let Ok(entries) = fs::read_dir(&self.root) {
+            for entry in entries.flatten() {
+                if let Some(name) = entry.file_name().to_str() {
+                    if name.starts_with(id) && name.contains(".zip.") {
+                        let _ = fs::remove_file(entry.path());
+                    }
+                }
+            }
         }
     }
 
@@ -268,32 +294,21 @@ impl Controller {
                     "Cancelled before submission.".into()
                 };
                 self.data.started = false;
-                if was_active {
-                    self.uploading = false;
-                    self.preparing = false;
-                }
+                // Keep in-flight flags set until the helper exits. Starting
+                // another upload before the aborted process ends is unsafe.
                 self.note = "Queue paused after cancellation. Click Start Queue to continue.".into();
             }
             "delete" if self.can_delete(index) => {
                 self.abort_transfer(id);
                 let job = self.data.jobs.remove(index);
-                if matches!(job.phase, Phase::Uploading | Phase::Preparing) {
-                    self.uploading = false;
-                    self.preparing = false;
-                }
                 if self.save() {
-                    // This removes only the desktop's private queue snapshot and manifest.
-                    // The user's original project media in job.project is NEVER touched.
-                    let _ = fs::remove_file(self.root.join(format!("{id}.zip")));
-                    let _ = fs::remove_dir_all(self.root.join(id));
-                    if let Ok(entries) = fs::read_dir(&self.root) {
-                        for entry in entries.flatten() {
-                            if let Some(name) = entry.file_name().to_str() {
-                                if name.starts_with(id) && name.contains(".zip.") {
-                                    let _ = fs::remove_file(entry.path());
-                                }
-                            }
-                        }
+                    if self.has_active_transfer(&job.id) {
+                        // The queue entry disappears immediately, but on Windows
+                        // its snapshot must not be deleted while a helper may
+                        // still be reading the ZIP or writing to the folder.
+                        self.pending_cleanup.insert(job.id);
+                    } else {
+                        self.cleanup_snapshot(&job.id);
                     }
                 }
                 return;
@@ -331,7 +346,7 @@ impl Controller {
     fn launch(&mut self, action: Action, job: Job) {
         let id = job.id.clone();
         let abort = new_abort_handle();
-        self.active_transfers.insert(id.clone(), abort.clone());
+        self.active_transfers.insert((id.clone(), action), abort.clone());
         let tx = self.tx.clone();
         std::thread::spawn(move || {
             let result = run_script(
@@ -510,7 +525,11 @@ impl Controller {
                 self.save();
             }
             Event::Finished(id, action, result) => {
-                self.active_transfers.remove(&id);
+                self.active_transfers.remove(&(id.clone(), action));
+                if self.pending_cleanup.contains(&id) && !self.has_active_transfer(&id) {
+                    self.pending_cleanup.remove(&id);
+                    self.cleanup_snapshot(&id);
+                }
                 match action {
                     Action::Prepare => self.preparing = false,
                     Action::Status => {
