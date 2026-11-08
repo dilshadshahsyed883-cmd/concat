@@ -2,7 +2,7 @@
 # Embedded in the actual Concat Windows EXE. No additional desktop editor.
 # Use only the existing SaladCloud Gateway and existing VPS receiver.
 param(
-    [ValidateSet("Submit","Save","Test","Prepare","Upload","Status")][string]$Operation="Submit",
+    [ValidateSet("Submit","Save","Test","Prepare","Upload","Status","OfflineBundle")][string]$Operation="Submit",
     [string]$ProjectDir,
     [string]$Job,
     [string]$SnapshotID,
@@ -69,6 +69,8 @@ function Concat-Bundle([string]$dir,[string]$zip,[string]$snapshot="") {
         $item=$lookup[$source]
         [void]$refs.Add(@{index=[int]$i;member=$item.member;size=$item.size;sha256=$item.sha256})
     }
+    $packed=[long]0
+    $lastPercent=-1
     $stream=[IO.File]::Open($zip,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write)
     try {
         $archive=[IO.Compression.ZipArchive]::new($stream,[IO.Compression.ZipArchiveMode]::Create,$true)
@@ -80,10 +82,19 @@ function Concat-Bundle([string]$dir,[string]$zip,[string]$snapshot="") {
             [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive,$manifest,("project/"+[IO.Path]::GetFileName($manifest)),[IO.Compression.CompressionLevel]::Optimal) | Out-Null
             foreach($f in $lookup.Values) {
                 [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive,$f.source,$f.member,[IO.Compression.CompressionLevel]::NoCompression) | Out-Null
+                # Telemetry only: do not change any ZIP entries, compression, or ordering.
+                if ($Operation -eq "OfflineBundle") {
+                    $packed += [long]$f.size
+                    $pct=if ($total -gt 0) {[int][Math]::Min(99,[Math]::Floor(99.0*$packed/$total))} else {99}
+                    if ($pct -ne $lastPercent) {
+                        Report "Packing media: $(Format-UploadProgress $packed $total)" $pct
+                        $lastPercent=$pct
+                    }
+                }
             }
         } finally {$archive.Dispose()}
     } finally {$stream.Dispose()}
-    Report "Packaged $($lookup.Count) media files." 0
+    Report "Packaged $($lookup.Count) media files." $(if ($Operation -eq "OfflineBundle") {99} else {0})
 }
 function Format-ByteSize([long]$bytes) {
     if ($bytes -lt 0) { $bytes = 0 }
@@ -447,6 +458,52 @@ if ($DefineOnly) {return}
 if ($BundleOnly) {
     if (!$BundlePath) {throw "Offline bundle test requires -BundlePath"}
     Concat-Bundle (Resolve-Path -LiteralPath $ProjectDir).ProviderPath $BundlePath
+    return
+}
+
+# Strictly local-only path. This runs before credential resolution, queue state,
+# and every worker request. Snapshot naming matches Queue::add (concat.json).
+if ($Operation -eq "OfflineBundle") {
+    $stage=$null
+    $snapshotRoot=$null
+    try {
+        if (!$ProjectDir -or !$BundlePath) {throw "Select a saved project and a ZIP destination."}
+        $root=(Resolve-Path -LiteralPath $ProjectDir).ProviderPath
+        $sourceManifest=Join-Path $root "concat.json"
+        if (!(Test-Path -LiteralPath $sourceManifest -PathType Leaf)) {
+            $sourceManifest=Join-Path $root "wolfcut.json"
+        }
+        if (!(Test-Path -LiteralPath $sourceManifest -PathType Leaf)) {
+            throw "Save a Concat project before preparing its ZIP."
+        }
+        $target=[IO.Path]::GetFullPath($BundlePath)
+        if ([IO.Path]::GetExtension($target) -ine ".zip") {throw "Choose a .zip destination."}
+        $parent=[IO.Path]::GetDirectoryName($target)
+        if (!(Test-Path -LiteralPath $parent -PathType Container)) {
+            throw "ZIP destination folder does not exist."
+        }
+        if ([IO.File]::Exists($target) -or [IO.Directory]::Exists($target)) {
+            throw "ZIP destination already exists. Choose a new filename."
+        }
+        $snapshotRoot=Join-Path ([IO.Path]::GetTempPath()) ("concat-offline-"+[Guid]::NewGuid().ToString("N"))
+        [IO.Directory]::CreateDirectory($snapshotRoot) | Out-Null
+        $snapshotManifest=Join-Path $snapshotRoot "concat.json"
+        [IO.File]::Copy($sourceManifest,$snapshotManifest)
+        $stage=Join-Path $parent ([IO.Path]::GetFileName($target)+"."+
+            [Guid]::NewGuid().ToString("N")+".part")
+        Report "Preparing local GPU ZIP (offline)..." 0
+        Concat-Bundle $root $stage $snapshotManifest
+        # Move on the same volume, atomically publishing only a complete ZIP.
+        [IO.File]::Move($stage,$target)
+        $bytes=(Get-Item -LiteralPath $target).Length
+        Report "Offline ZIP ready: $target ($(Format-ByteSize $bytes))" 100 $target $false "offline_ready"
+    } catch {
+        Report $_.Exception.Message -1 "" $true "offline_failed"
+        exit 1
+    } finally {
+        if ($stage) {Remove-Item -LiteralPath $stage -ErrorAction SilentlyContinue}
+        if ($snapshotRoot) {Remove-Item -LiteralPath $snapshotRoot -Recurse -Force -ErrorAction SilentlyContinue}
+    }
     return
 }
 
