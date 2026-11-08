@@ -335,6 +335,10 @@ class TestRecentProjectsMenu(unittest.TestCase):
         # Task 3: Rename dialog modal
         self.assertIn("component RenameDialog inherits Modal", start_content)
         self.assertIn("RenameDialog {", app_content)
+        # Modal already defines open; redeclaration prevents Slint compilation.
+        rename_dialog = start_content.split("export component RenameDialog inherits Modal {", 1)[1]
+        self.assertNotIn("in property <bool> open;", rename_dialog)
+        self.assertNotIn("open: root.open;", rename_dialog)
 
         # Task 3: projects::rename exists in concat-host
         self.assertIn("pub fn rename(", projects_content)
