@@ -1,0 +1,13 @@
+format = 2
+
+[effect]
+id = "concat.look.crystal-honey"
+name = "Crystal Honey"
+kind = "filter"
+category = "Timeline Looks"
+order = 1
+description = "SDR whole-timeline color grading preset."
+
+[wgsl]
+entry = "effect.wgsl"
+space = "display"

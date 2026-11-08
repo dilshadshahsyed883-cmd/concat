@@ -1,0 +1,13 @@
+format = 2
+
+[effect]
+id = "concat.look.bright-summer"
+name = "Bright Summer"
+kind = "filter"
+category = "Timeline Looks"
+order = 3
+description = "SDR whole-timeline color grading preset."
+
+[wgsl]
+entry = "effect.wgsl"
+space = "display"

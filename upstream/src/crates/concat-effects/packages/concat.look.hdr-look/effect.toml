@@ -1,0 +1,13 @@
+format = 2
+
+[effect]
+id = "concat.look.hdr-look"
+name = "HDR Look"
+kind = "filter"
+category = "Timeline Looks"
+order = 21
+description = "SDR HDR-style contrast preset; not HDR10 export."
+
+[wgsl]
+entry = "effect.wgsl"
+space = "display"

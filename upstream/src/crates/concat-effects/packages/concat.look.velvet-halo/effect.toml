@@ -1,0 +1,13 @@
+format = 2
+
+[effect]
+id = "concat.look.velvet-halo"
+name = "Velvet Halo"
+kind = "filter"
+category = "Timeline Looks"
+order = 17
+description = "SDR whole-timeline color grading preset."
+
+[wgsl]
+entry = "effect.wgsl"
+space = "display"

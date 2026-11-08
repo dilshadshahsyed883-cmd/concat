@@ -1,0 +1,13 @@
+format = 2
+
+[effect]
+id = "concat.look.city-lights"
+name = "City Lights"
+kind = "filter"
+category = "Timeline Looks"
+order = 12
+description = "SDR whole-timeline color grading preset."
+
+[wgsl]
+entry = "effect.wgsl"
+space = "display"

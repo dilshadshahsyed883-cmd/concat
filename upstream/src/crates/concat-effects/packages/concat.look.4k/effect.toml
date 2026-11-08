@@ -1,0 +1,13 @@
+format = 2
+
+[effect]
+id = "concat.look.4k"
+name = "4K"
+kind = "filter"
+category = "Timeline Looks"
+order = 19
+description = "Detail/sharpen preset; not an upscaler."
+
+[wgsl]
+entry = "effect.wgsl"
+space = "display"

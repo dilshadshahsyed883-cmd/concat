@@ -1,0 +1,13 @@
+format = 2
+
+[effect]
+id = "concat.look.8k"
+name = "8K"
+kind = "filter"
+category = "Timeline Looks"
+order = 2
+description = "Detail/sharpen preset; not an upscaler."
+
+[wgsl]
+entry = "effect.wgsl"
+space = "display"

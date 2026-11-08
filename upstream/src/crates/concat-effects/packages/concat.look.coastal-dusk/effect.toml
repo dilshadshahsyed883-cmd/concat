@@ -1,0 +1,13 @@
+format = 2
+
+[effect]
+id = "concat.look.coastal-dusk"
+name = "Coastal Dusk"
+kind = "filter"
+category = "Timeline Looks"
+order = 10
+description = "SDR whole-timeline color grading preset."
+
+[wgsl]
+entry = "effect.wgsl"
+space = "display"

@@ -1,0 +1,13 @@
+format = 2
+
+[effect]
+id = "concat.look.sun-glitter"
+name = "Sun Glitter"
+kind = "filter"
+category = "Timeline Looks"
+order = 8
+description = "SDR whole-timeline color grading preset."
+
+[wgsl]
+entry = "effect.wgsl"
+space = "display"
