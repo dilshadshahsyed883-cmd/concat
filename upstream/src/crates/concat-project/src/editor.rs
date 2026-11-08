@@ -276,8 +276,9 @@ impl Editor {
         // A clip or track delete can orphan compound references. Reconcile
         // them in this same undoable edit, never as a separate silent change.
         for timeline in &mut self.project.timelines {
-            let t = std::sync::Arc::make_mut(timeline);
-            crate::commands::prune_compounds(t);
+            if !timeline.compounds.is_empty() {
+                crate::commands::prune_compounds(std::sync::Arc::make_mut(timeline));
+            }
         }
         self.tidy_touched(&before);
         self.follow_first_hdr(&before);
