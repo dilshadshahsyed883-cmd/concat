@@ -675,6 +675,11 @@ impl Studio {
                 Some((clip, target, choices, old))
             })
             .collect();
+        // On short clips a preset may have no valid keyframe span.
+        // Omit only that target rather than misindexing another animation.
+        let chosen_preset = (mode == 0).then(|| MOTION_PRESETS[preset as usize]);
+        plans.retain(|(_, _, choices, _)| chosen_preset.is_none_or(|wanted|
+            choices.iter().any(|motion| motion.preset == wanted)));
         // Never depend on HashMap/track traversal ordering when applying
         // adjacent favourites: the media sequence must define that order.
         plans.sort_by(|a, b| a.0.start.total_cmp(&b.0.start)
@@ -686,10 +691,10 @@ impl Studio {
         let options: Vec<_> = plans.iter()
             .map(|(_, _, choices, old)| (choices.len(), *old))
             .collect();
-        let picks = if mode == 0 {
-            // The permitted list preserves MOTION_PRESETS' catalogue order.
-            // The same explicitly selected animation goes to every target.
-            vec![preset as usize; plans.len()]
+        let picks = if let Some(wanted) = chosen_preset {
+            plans.iter().map(|(_, _, choices, _)|
+                choices.iter().position(|entry| entry.preset == wanted).unwrap_or(0))
+                .collect()
         } else {
             random_assignment(&options, fresh_draw())
         };
