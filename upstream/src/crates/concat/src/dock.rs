@@ -324,3 +324,30 @@ pub fn nearest_row(heights: &[f32], y: f32) -> i32 {
     }
     best
 }
+
+#[cfg(test)]
+mod full_width_timeline_tests {
+    use super::*;
+
+    #[test]
+    fn default_timeline_extends_under_inspector_and_resizes() {
+        for (width, height) in [(1280.0, 900.0), (1920.0, 1080.0), (900.0, 650.0)] {
+            let mut layout = DockLayout::default();
+            lay_out(&default_dock(), (0.0, 0.0, width, height), &mut layout);
+            assert_eq!(layout.seats.len(), 4);
+            let by_kind = |kind| layout.seats.iter().find(|seat| seat.kind == kind).unwrap();
+            let media = by_kind(PaneKind::Media);
+            let preview = by_kind(PaneKind::Preview);
+            let inspector = by_kind(PaneKind::Inspector);
+            let timeline = by_kind(PaneKind::Timeline);
+            assert!(timeline.y >= media.y + media.height);
+            assert!(timeline.y >= preview.y + preview.height);
+            assert!(timeline.y >= inspector.y + inspector.height);
+            assert_eq!(timeline.x, 0.0);
+            assert!((timeline.width - width).abs() < 0.01);
+            assert!(timeline.height > 0.0);
+            assert!(preview.width > 0.0 && inspector.width > 0.0);
+            assert!(layout.dividers.iter().any(|divider| !divider.columns));
+        }
+    }
+}
