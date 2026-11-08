@@ -129,6 +129,11 @@ def mixed_pcm(sounds, frames, *, backend=None, block_samples=BLOCK_SAMPLES):
             right = min(left + block_samples, total)
             mixed = xp.zeros((right - left, CHANNELS), dtype=xp.float32)
             for source in sources:
+                # Release completed decoder processes and their pipe handles
+                # during long projects rather than only when the mux finishes.
+                if source.end <= left:
+                    source.close()
+                    continue
                 overlap_left = max(left, source.start)
                 overlap_right = min(right, source.end)
                 if overlap_left >= overlap_right:
