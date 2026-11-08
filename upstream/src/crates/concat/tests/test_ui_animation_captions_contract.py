@@ -55,7 +55,7 @@ class DesktopUiContractTests(unittest.TestCase):
         self.assertIn("callback apply-physics-bulk(", KEYFRAMES)
         self.assertIn("keys.on_apply_physics_bulk(", LIB)
         self.assertIn("pub fn apply_physics_bulk(", BULK)
-        self.assertIn("requested_picture(clip, images, videos)", BULK)
+        self.assertIn("chosen_media_type(clip, images, videos)", BULK)
         self.assertIn("if selected_only && selected.is_empty()", BULK)
         self.assertIn("Command::Batch { commands }", BULK)
 
