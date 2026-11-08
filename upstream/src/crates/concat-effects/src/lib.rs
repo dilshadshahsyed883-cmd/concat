@@ -124,6 +124,25 @@ mod tests {
     }
 
     #[test]
+    fn every_built_in_manifest_validates_before_gui_startup() {
+        // Inspect every embedded package rather than stopping at the first
+        // startup panic. The editor can contain old project IDs such as
+        // concat.look.4k and shader knobs named intensity on transitions.
+        let mut invalid = Vec::new();
+        for (id, source, _, _) in super::builtins::BUILTIN_SOURCES {
+            match Manifest::parse(source) {
+                Ok(manifest) if manifest.effect.id == *id => {}
+                Ok(manifest) => invalid.push(format!(
+                    "{id}: folder and manifest IDs disagree: {}",
+                    manifest.effect.id
+                )),
+                Err(error) => invalid.push(format!("{id}: {error}")),
+            }
+        }
+        assert!(invalid.is_empty(), "Invalid built-ins:\n{}", invalid.join("\n"));
+    }
+
+    #[test]
     fn every_built_in_package_loads_and_its_fixtures_pass() {
         let catalogue = Catalogue::builtin();
         assert!(catalogue.packages().count() >= 28);
