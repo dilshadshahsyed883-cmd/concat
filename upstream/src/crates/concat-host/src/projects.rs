@@ -1028,4 +1028,3 @@ mod tests {
         let _ = std::fs::remove_dir_all(&config_dir);
     }
 }
-}
