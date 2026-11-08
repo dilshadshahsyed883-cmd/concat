@@ -234,11 +234,21 @@ export global Keyframes {
     /// Apply the inspector's motion preset for this field.
     callback apply-motion-preset(field: ClipField);
     callback apply-random-motion();
+    // Shared by the Inspector's four knobs and the Library's Animations tab.
+    // Using one global prevents the presets from silently using different controls.
+    in-out property <float> physics-strength: 1;
+    in-out property <float> physics-duration: 1;
+    in-out property <float> physics-speed: 1;
+    in-out property <float> physics-intensity: 1;
     // Physics presets resolve into ordinary GPU-compatible transform keyframes.
     in property <[bool]> physics-favourites;
     callback apply-physics-motion(preset: int, strength: float, duration: float, speed: float, intensity: float);
     callback toggle-physics-favourite(preset: int);
     callback apply-random-favourite-motion();
+    // 0: chosen preset, 2: random physics, 3: random starred physics.
+    // Each operation is one undoable transaction; authored keys remain protected.
+    callback apply-physics-bulk(preset: int, mode: int, images: bool, videos: bool,
+        selected-only: bool, strength: float, duration: float, speed: float, intensity: float);
 
     /// The same three verbs for a knob named rather than enumerated - the
     /// Adjust panel's, whose rows come from the colour package's manifest
