@@ -220,15 +220,20 @@ fn run_script(
     drop(input);
 
     let output = child.stdout.take().expect("piped GPU helper output");
+    // Keep ownership explicit across both abort and non-abort paths: Rust
+    // cannot assume two separate Option matches take the same branch.
+    let mut owned_child = Some(child);
 
     if let Some(ref handle) = abort {
         let mut guard = handle.lock().unwrap();
         if guard.aborted {
-            let _ = child.kill();
-            let _ = child.wait();
+            if let Some(mut interrupted) = owned_child.take() {
+                let _ = interrupted.kill();
+                let _ = interrupted.wait();
+            }
             return Err("The transfer was cancelled.".into());
         }
-        guard.child = Some(child);
+        guard.child = owned_child.take();
     }
 
     let mut reported = false;
@@ -258,7 +263,11 @@ fn run_script(
             return Err("The transfer process was lost.".into());
         }
     } else {
-        child.wait().map_err(|_| "Could not read the GPU helper exit status.")?
+        owned_child
+            .as_mut()
+            .ok_or("The transfer process was lost.")?
+            .wait()
+            .map_err(|_| "Could not read the GPU helper exit status.")?
     };
 
     if (!status.success() && !explained_failure) || !reported {
