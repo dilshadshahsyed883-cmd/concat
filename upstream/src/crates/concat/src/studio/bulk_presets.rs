@@ -6,7 +6,7 @@ use std::hash::{BuildHasher, RandomState};
 use std::path::Path;
 
 use concat_project::model::{ClipKey, ClipKind, VideoSettings};
-use concat_project::physics_motion::PhysicsPreset;
+use concat_project::physics_motion::{PhysicsControls, PhysicsPreset};
 
 use super::{
     AppliedFilter, Catalogue, Clip, ClipPatch, Command, MotionPreset, PackageKind, Studio, Transition,
@@ -121,6 +121,16 @@ fn picture(clip: &Clip) -> bool {
     matches!(clip.kind, ClipKind::Image | ClipKind::Video)
 }
 
+/// A checked media type is required; audio, text, locked and hidden media
+/// never become implicit animation targets.
+fn requested_picture(clip: &Clip, images: bool, videos: bool) -> bool {
+    match clip.kind {
+        ClipKind::Image => images,
+        ClipKind::Video => videos,
+        _ => false,
+    }
+}
+
 const FPS: f64 = 30.0;
 
 #[derive(Clone, Copy)]
@@ -192,6 +202,7 @@ fn motion_choices(
     frame: f64,
     generated: &[GeneratedMotion],
     permitted: &[MotionKind],
+    controls: Option<PhysicsControls>,
 ) -> Option<(Vec<GeneratedMotion>, Option<usize>)> {
     let previous = generated
         .iter()
@@ -215,7 +226,9 @@ fn motion_choices(
                     let (keys, preview) = basic.keys(&base, frame).ok()?;
                     (keys.to_vec(), preview)
                 }
-                MotionKind::Physics(physics) => physics.keys(&base, frame).ok()?,
+                MotionKind::Physics(physics) => physics.keys_with(
+                    &base, frame, controls.unwrap_or_default()
+                ).ok()?,
             };
             Some(GeneratedMotion { preset, keys })
         })
@@ -540,6 +553,122 @@ impl Studio {
         }
     }
 
+    /// Apply a physics preset (or varied physics/favourites) to the requested
+    /// media types and timeline scope. Like the other bulk actions, all
+    /// generated keys are one undo step; unknown/user-authored keys are skipped.
+    /// The parameters are the same shared Inspector controls used by a
+    /// single clip and are baked into the worker-compatible project keys.
+    pub fn apply_physics_bulk(
+        &mut self, index: i32, mode: i32, images: bool, videos: bool,
+        selected_only: bool, strength: f32, duration: f32, speed: f32, intensity: f32,
+    ) {
+        if !images && !videos {
+            self.notify("Select Images or Video Clips before applying animations.", true);
+            return;
+        }
+        if !self.gpu_bulk_ready() {
+            return;
+        }
+        let permitted: Vec<MotionKind> = match mode {
+            0 => PhysicsPreset::from_index(index)
+                .map(|preset| vec![MotionKind::Physics(preset)])
+                .unwrap_or_default(),
+            2 => PhysicsPreset::ALL.into_iter().map(MotionKind::Physics).collect(),
+            3 => PhysicsPreset::ALL.into_iter()
+                .filter(|preset| self.prefs.physics_motion_favourites
+                    .iter().any(|id| id == preset.id()))
+                .map(MotionKind::Physics)
+                .collect(),
+            _ => return,
+        };
+        if permitted.is_empty() {
+            self.notify("Choose a valid animation or star a physics preset first.", true);
+            return;
+        }
+        self.flush_commit();
+        let selected: HashSet<String> = self.selection.iter().cloned().collect();
+        if selected_only && selected.is_empty() {
+            self.notify("Select at least one timeline clip first.", true);
+            return;
+        }
+        let controls = PhysicsControls {
+            strength: strength as f64,
+            duration: duration as f64,
+            speed: speed as f64,
+            intensity: intensity as f64,
+        };
+        let timeline = self.timeline();
+        let frame = self.frame_seconds();
+        let media = self.gpu_picture_media();
+        let tracks: HashSet<_> = timeline.tracks.iter()
+            .filter(|track| track.visible && !self.locked(&track.id))
+            .map(|track| track.id.as_str())
+            .collect();
+        let plans: Vec<_> = timeline.clips.iter()
+            .filter(|clip| requested_picture(clip, images, videos)
+                && tracks.contains(clip.track_id.as_str())
+                && media.contains(clip.media_id.as_str())
+                && (!selected_only || selected.contains(&clip.id)))
+            .filter_map(|clip| {
+                let target = (timeline.id.clone(), clip.id.clone());
+                let held = self.bulk_motion.0.get(&target)
+                    .map_or(&[][..], Vec::as_slice);
+                let (choices, old) =
+                    motion_choices(clip, frame, held, &permitted, Some(controls))?;
+                Some((clip, target, choices, old))
+            })
+            .collect();
+        if plans.is_empty() {
+            self.notify(&t("studio.randomNoGpuMotion"), true);
+            return;
+        }
+        let indices: Vec<usize> = if mode == 0 {
+            vec![0; plans.len()]
+        } else {
+            let options: Vec<_> = plans.iter()
+                .map(|(_, _, choices, old)| (choices.len(), *old))
+                .collect();
+            random_assignment(&options, fresh_draw())
+        };
+        let mut updates = Vec::new();
+        let mut commands = Vec::new();
+        let mut last_preset = None;
+        for ((clip, target, choices, old), mut chosen) in plans.into_iter().zip(indices) {
+            if mode == 3 && Some(choices[chosen].preset) == last_preset {
+                if let Some(alternative) = choices.iter().position(|item|
+                    Some(item.preset) != last_preset
+                    && Some(item.preset) != old.and_then(|i| choices.get(i).map(|x| x.preset))) {
+                    chosen = alternative;
+                }
+            }
+            last_preset = Some(choices[chosen].preset);
+            if old == Some(chosen) {
+                continue;
+            }
+            let generated = choices[chosen].clone();
+            let mut result = clip.as_ref().clone();
+            result.keys = generated.keys.to_vec();
+            commands.extend(key_commands(&clip.id, clip, &result));
+            updates.push((target, generated));
+        }
+        if commands.is_empty() {
+            self.notify(&t("studio.randomGpuMotionUnchanged"), false);
+            return;
+        }
+        let revision = self.revision;
+        self.apply(Command::Batch { commands });
+        if self.revision != revision {
+            let count = updates.len();
+            for (target, motion) in updates {
+                self.bulk_motion.remember(target, motion);
+            }
+            self.notify(
+                &tf("studio.randomGpuMotionApplied", &[&count.to_string()]),
+                false,
+            );
+        }
+    }
+
     /// Reroll bulk motion without replacing manually authored keyframes.
     pub fn apply_random_gpu_motion(&mut self) {
         self.apply_random_gpu_motion_internal(false);
@@ -588,7 +717,7 @@ impl Studio {
                     .0
                     .get(&target)
                     .map_or(&[][..], Vec::as_slice);
-                let (choices, old) = motion_choices(clip, frame, held, &permitted)?;
+                let (choices, old) = motion_choices(clip, frame, held, &permitted, None)?;
                 Some((clip, target, choices, old))
             })
             .collect();
@@ -650,6 +779,20 @@ impl Studio {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn physics_bulk_target_checks_both_media_types_independently() {
+        let mut clip = Clip::blank("v1", "t1", ClipKind::Video, "video", 0.0, 2.0);
+        assert!(requested_picture(&clip, false, true));
+        assert!(!requested_picture(&clip, true, false));
+        assert!(!requested_picture(&clip, false, false));
+        clip.kind = ClipKind::Image;
+        assert!(requested_picture(&clip, true, false));
+        assert!(!requested_picture(&clip, false, true));
+        clip.kind = ClipKind::Audio;
+        assert!(!requested_picture(&clip, true, true));
+    }
+
 
     #[test]
     fn a_full_repeat_is_changed_where_another_choice_exists() {
