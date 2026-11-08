@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -153,9 +154,9 @@ class TestGpuQueueOfflineCancelDelete(unittest.TestCase):
 
     def test_termination_of_active_local_transfers(self):
         """Verify that cancelling or deleting terminates in-flight local transfer processes."""
-        script = 'Start-Sleep -Seconds 60'
+        script = 'import time; time.sleep(60)'
         proc = subprocess.Popen(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+            [sys.executable, "-c", script],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
         )
