@@ -2095,6 +2095,8 @@ pub enum Confirm {
     /// this a disk unplugged, full or read-only made a window that would
     /// never close.
     QuitWithoutSaving { error: String },
+    /// Removing a project from Recent Projects.
+    DeleteRecent { path: String, name: String },
 }
 
 /// One clip on the clipboard: the clip as it was when copied, and the row
@@ -2489,6 +2491,12 @@ impl Studio {
                 self.release_project();
                 slint::quit_event_loop().ok();
             }
+            Some(Confirm::DeleteRecent { path, .. }) => {
+                if let Err(error) = concat_host::projects::forget(&self.host.dirs.config, &path) {
+                    self.notify(&error, true);
+                }
+                self.recents = concat_host::projects::recents(&self.host.dirs.config);
+            }
             None => {}
         }
     }
@@ -2529,6 +2537,12 @@ impl Studio {
                 title: t("close.unsavedTitle").into(),
                 message: tf("close.unsavedMessage", &[error]).into(),
                 action: t("close.quitWithoutSaving").into(),
+            },
+            Confirm::DeleteRecent { name, .. } => crate::ui::ConfirmData {
+                open: true,
+                title: t("start.deleteRecentTitle").into(),
+                message: tf("start.deleteRecentMessage", &[name]).into(),
+                action: t("common.delete").into(),
             },
         }
     }

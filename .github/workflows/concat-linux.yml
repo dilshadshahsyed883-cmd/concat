@@ -36,6 +36,10 @@ jobs:
       - name: Parse desktop filter editor changes without building an EXE
         run: rustfmt --edition 2024 --emit stdout upstream/src/crates/concat/src/studio.rs > /dev/null
       - run: python -m compileall -q cloud_render/concat
+      - name: Desktop background uploads and Recent Projects regressions
+        run: |
+          python upstream/src/crates/concat/tests/test_cloud_gpu_background_uploads.py
+          python upstream/src/crates/concat/tests/test_recent_projects_menu.py
       - run: python -m unittest discover -v -s cloud_render/concat/tests
   worker-image:
     runs-on: ubuntu-24.04

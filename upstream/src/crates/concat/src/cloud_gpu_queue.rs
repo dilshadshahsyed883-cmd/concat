@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -11,15 +12,15 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use serde_json::Value;
 use slint::{ComponentHandle, ModelRc, VecModel};
 
-use super::{Task, run_script};
+use super::{AbortHandle, Task, new_abort_handle, run_script, trigger_abort};
 use crate::ui::{App, CloudGpu, GpuQueueRow};
 
 #[path = "gpu_queue_model.rs"]
 mod model;
-pub(super) use model::Job;
+pub(super) use model::{Job, format_upload_progress};
 use model::{Phase, Queue};
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Action {
     Prepare,
     Upload,
@@ -47,6 +48,8 @@ struct Controller {
     data: Queue,
     tx: Sender<Event>,
     rx: Receiver<Event>,
+    active_transfers: HashMap<(String, Action), AbortHandle>,
+    pending_cleanup: HashSet<String>,
     preparing: bool,
     uploading: bool,
     polling: bool,
@@ -95,6 +98,8 @@ impl Controller {
             data,
             tx,
             rx,
+            active_transfers: HashMap::new(),
+            pending_cleanup: HashSet::new(),
             preparing: false,
             uploading: false,
             polling: false,
@@ -104,6 +109,36 @@ impl Controller {
             note: "Queue stopped. Click Start Queue when ready.".into(),
             changed: true,
         })
+    }
+
+    fn abort_transfer(&mut self, id: &str) {
+        // Mark and kill every helper for this job. Keep their handles until
+        // Finished confirms exit, so another upload cannot race the old one.
+        for ((job_id, _), handle) in &self.active_transfers {
+            if job_id == id {
+                trigger_abort(handle);
+            }
+        }
+    }
+
+    fn has_active_transfer(&self, id: &str) -> bool {
+        self.active_transfers.keys().any(|(job_id, _)| job_id == id)
+    }
+
+    fn cleanup_snapshot(&self, id: &str) {
+        // IDs are validated when the queue is read and generated locally.
+        // Never touch job.project (the original project and its media).
+        let _ = fs::remove_file(self.root.join(format!("{id}.zip")));
+        let _ = fs::remove_dir_all(self.root.join(id));
+        if let Ok(entries) = fs::read_dir(&self.root) {
+            for entry in entries.flatten() {
+                if let Some(name) = entry.file_name().to_str() {
+                    if name.starts_with(id) && name.contains(".zip.") {
+                        let _ = fs::remove_file(entry.path());
+                    }
+                }
+            }
+        }
     }
 
     fn save(&mut self) -> bool {
@@ -151,6 +186,18 @@ impl Controller {
         if !self.storage_ok {
             return;
         }
+        // Prevent duplicate transfers while this project is already being prepared or uploaded
+        if self.data.jobs.iter().any(|job| {
+            job.project == project
+                && matches!(
+                    job.phase,
+                    Phase::Preparing | Phase::Waiting | Phase::Uploading
+                )
+        }) {
+            self.note = "Project is already in the upload queue.".into();
+            self.changed = true;
+            return;
+        }
         let path = Path::new(project);
         let manifest = ["concat.json", "wolfcut.json"]
             .iter()
@@ -186,8 +233,11 @@ impl Controller {
             progress: 0,
             detail: "Preparing a local snapshot.".into(),
             metrics: String::new(),
+            bytes: String::new(),
             output: String::new(),
         });
+        self.data.started = true;
+        self.note = "Queue started. Uploads run one at a time.".into();
         self.save();
     }
 
@@ -233,15 +283,33 @@ impl Controller {
                 job.detail = "Ready to retry.".into();
             }
             "cancel" if self.can_cancel(index) => {
-                self.data.jobs[index].phase = Phase::Cancelled;
-                self.data.jobs[index].detail = "Cancelled before submission.".into();
+                self.abort_transfer(id);
+                let job = &mut self.data.jobs[index];
+                let was_active = matches!(job.phase, Phase::Uploading | Phase::Preparing);
+                let submitted = job.phase.submitted() || was_active || job.attempted;
+                job.phase = Phase::Cancelled;
+                job.detail = if submitted {
+                    "Cancelled locally.".into()
+                } else {
+                    "Cancelled before submission.".into()
+                };
+                self.data.started = false;
+                // Keep in-flight flags set until the helper exits. Starting
+                // another upload before the aborted process ends is unsafe.
+                self.note = "Queue paused after cancellation. Click Start Queue to continue.".into();
             }
             "delete" if self.can_delete(index) => {
-                self.data.jobs.remove(index);
+                self.abort_transfer(id);
+                let job = self.data.jobs.remove(index);
                 if self.save() {
-                    // This removes only the desktop's private queue snapshot and manifest.
-                    let _ = fs::remove_file(self.root.join(format!("{id}.zip")));
-                    let _ = fs::remove_dir_all(self.root.join(id));
+                    if self.has_active_transfer(&job.id) {
+                        // The queue entry disappears immediately, but on Windows
+                        // its snapshot must not be deleted while a helper may
+                        // still be reading the ZIP or writing to the folder.
+                        self.pending_cleanup.insert(job.id);
+                    } else {
+                        self.cleanup_snapshot(&job.id);
+                    }
                 }
                 return;
             }
@@ -268,32 +336,26 @@ impl Controller {
     }
 
     fn can_cancel(&self, index: usize) -> bool {
-        let job = &self.data.jobs[index];
-        !job.attempted
-            && matches!(
-                job.phase,
-                Phase::Waiting | Phase::PrepareFailed | Phase::UploadFailed
-            )
+        self.data.jobs[index].phase.can_cancel()
     }
 
     fn can_delete(&self, index: usize) -> bool {
-        self.can_cancel(index)
-            || matches!(
-                self.data.jobs[index].phase,
-                Phase::Cancelled | Phase::Completed | Phase::RenderFailed | Phase::StatusFailed
-            )
+        self.data.jobs[index].phase.can_delete()
     }
 
-    fn launch(&self, action: Action, job: Job) {
+    fn launch(&mut self, action: Action, job: Job) {
+        let id = job.id.clone();
+        let abort = new_abort_handle();
+        self.active_transfers.insert((id.clone(), action), abort.clone());
         let tx = self.tx.clone();
         std::thread::spawn(move || {
-            let id = job.id.clone();
             let result = run_script(
                 &Task::Queue {
                     operation: action.operation(),
                     job,
                 },
                 None,
+                Some(abort),
                 |value| {
                     let _ = tx.send(Event::Update(id.clone(), action, value));
                 },
@@ -313,9 +375,10 @@ impl Controller {
                     .jobs
                     .iter()
                     .find(|job| job.phase == Phase::Preparing)
+                    .cloned()
                 {
                     self.preparing = true;
-                    self.launch(Action::Prepare, job.clone());
+                    self.launch(Action::Prepare, job);
                 }
             }
             if self.data.started
@@ -406,6 +469,9 @@ impl Controller {
                 let Some(job) = self.data.jobs.iter_mut().find(|job| job.id == id) else {
                     return;
                 };
+                if job.phase == Phase::Cancelled {
+                    return;
+                }
                 let detail = value["message"].as_str().unwrap_or_default().to_owned();
                 let phase = value["phase"].as_str().unwrap_or_default();
                 let failure = value["failed"].as_bool().unwrap_or(false);
@@ -416,6 +482,14 @@ impl Controller {
                 job.detail = detail.clone();
                 if let Some(metrics) = value["metrics"].as_str().filter(|s| !s.is_empty()) {
                     job.metrics = metrics.into();
+                }
+                if let (Some(transferred), Some(total)) = (
+                    value["transferred_bytes"].as_i64(),
+                    value["total_bytes"].as_i64(),
+                ) {
+                    if total > 0 {
+                        job.bytes = format_upload_progress(transferred, total);
+                    }
                 }
                 if let Some(output) = value["location"].as_str().filter(|value| !value.is_empty()) {
                     job.output = output.into();
@@ -451,6 +525,11 @@ impl Controller {
                 self.save();
             }
             Event::Finished(id, action, result) => {
+                self.active_transfers.remove(&(id.clone(), action));
+                if self.pending_cleanup.contains(&id) && !self.has_active_transfer(&id) {
+                    self.pending_cleanup.remove(&id);
+                    self.cleanup_snapshot(&id);
+                }
                 match action {
                     Action::Prepare => self.preparing = false,
                     Action::Status => {
@@ -462,6 +541,9 @@ impl Controller {
                 let Some(job) = self.data.jobs.iter_mut().find(|job| job.id == id) else {
                     return;
                 };
+                if job.phase == Phase::Cancelled {
+                    return;
+                }
                 match action {
                     Action::Upload if job.phase == Phase::Uploading => {
                         job.attempted = true;
@@ -510,6 +592,7 @@ impl Controller {
                 state: job.phase.label().into(),
                 detail: job.detail.as_str().into(),
                 metrics: job.metrics.as_str().into(),
+                bytes: job.bytes.as_str().into(),
                 output: job.output.as_str().into(),
                 progress: job.progress,
                 retry: job.phase.can_retry(),

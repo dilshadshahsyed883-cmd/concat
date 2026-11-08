@@ -5,6 +5,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
@@ -17,6 +18,27 @@ mod queue;
 
 pub(crate) const SETTINGS_PAGE: i32 = 8;
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+#[derive(Default)]
+pub(crate) struct AbortState {
+    pub aborted: bool,
+    pub child: Option<std::process::Child>,
+}
+
+pub(crate) type AbortHandle = Arc<Mutex<AbortState>>;
+
+pub(crate) fn new_abort_handle() -> AbortHandle {
+    Arc::new(Mutex::new(AbortState::default()))
+}
+
+pub(crate) fn trigger_abort(handle: &AbortHandle) {
+    if let Ok(mut guard) = handle.lock() {
+        guard.aborted = true;
+        if let Some(child) = guard.child.as_mut() {
+            let _ = child.kill();
+        }
+    }
+}
 
 enum Task {
     Save,
@@ -101,7 +123,7 @@ fn run(app: &App, task: Task) {
 
     let weak = app.as_weak();
     std::thread::spawn(move || {
-        let result = run_script(&task, Some(draft), |event| {
+        let result = run_script(&task, Some(draft), None, |event| {
             let _ = weak.upgrade_in_event_loop(move |app| {
                 let gpu = app.global::<CloudGpu>();
                 let message = event["message"].as_str().unwrap_or_default();
@@ -142,6 +164,7 @@ impl Drop for TemporaryScript {
 fn run_script(
     task: &Task,
     draft: Option<String>,
+    abort: Option<AbortHandle>,
     mut publish: impl FnMut(Value),
 ) -> Result<(), String> {
     let stamp = SystemTime::now()
@@ -196,9 +219,25 @@ fn run_script(
     }
     drop(input);
 
+    let output = child.stdout.take().expect("piped GPU helper output");
+    // Keep ownership explicit across both abort and non-abort paths: Rust
+    // cannot assume two separate Option matches take the same branch.
+    let mut owned_child = Some(child);
+
+    if let Some(ref handle) = abort {
+        let mut guard = handle.lock().unwrap();
+        if guard.aborted {
+            if let Some(mut interrupted) = owned_child.take() {
+                let _ = interrupted.kill();
+                let _ = interrupted.wait();
+            }
+            return Err("The transfer was cancelled.".into());
+        }
+        guard.child = owned_child.take();
+    }
+
     let mut reported = false;
     let mut explained_failure = false;
-    let output = child.stdout.take().expect("piped GPU helper output");
     for line in BufReader::new(output).lines().map_while(Result::ok) {
         if let Ok(event) = serde_json::from_str::<Value>(&line) {
             if event["message"].is_string() {
@@ -208,9 +247,29 @@ fn run_script(
             }
         }
     }
-    let status = child
-        .wait()
-        .map_err(|_| "Could not read the GPU helper exit status.")?;
+
+    let status = if let Some(ref handle) = abort {
+        let mut guard = handle.lock().unwrap();
+        if guard.aborted {
+            if let Some(mut child) = guard.child.take() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            return Err("The transfer was cancelled.".into());
+        }
+        if let Some(mut child) = guard.child.take() {
+            child.wait().map_err(|_| "Could not read the GPU helper exit status.")?
+        } else {
+            return Err("The transfer process was lost.".into());
+        }
+    } else {
+        owned_child
+            .as_mut()
+            .ok_or("The transfer process was lost.")?
+            .wait()
+            .map_err(|_| "Could not read the GPU helper exit status.")?
+    };
+
     if (!status.success() && !explained_failure) || !reported {
         return Err(format!("The GPU helper stopped unexpectedly ({status})."));
     }

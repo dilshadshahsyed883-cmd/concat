@@ -4,7 +4,7 @@
 import { GpuCompatibility } from "gpu-compatibility.slint";
 import { I18n } from "i18n.slint";
 import { Theme } from "theme/theme.slint";
-import { CopyChip, Modal } from "primitives/modal.slint";
+import { Button, CopyChip, Modal } from "primitives/modal.slint";
 import { FocusRing } from "primitives/focus-ring.slint";
 import { Glyph, Icon } from "icons.slint";
 import { ThinScrollbar } from "primitives/scrollbar.slint";
@@ -151,6 +151,9 @@ export struct StartData {
     /// recent first, 1 by name.
     query: string,
     sort: int,
+    renaming: bool,
+    rename-path: string,
+    rename-name: string,
 }
 
 // ── the small parts ──────────────────────────────────────────────────────
@@ -845,6 +848,52 @@ component DropTile inherits Rectangle {
     }
 }
 
+// One row in the Recent Projects more (⋯) popup menu.
+component RecentMenuRow inherits Rectangle {
+    in property <Glyph> glyph;
+    in property <string> label;
+    in property <bool> danger;
+
+    callback clicked();
+
+    height: 26px;
+    border-radius: Theme.r-xs;
+    background: touch.has-hover ? (root.danger ? Theme.danger-soft : Theme.field) : Colors.transparent;
+
+    property <brush> ink: (root.danger && touch.has-hover) ? Theme.danger
+        : touch.has-hover ? Theme.fg
+        : (root.danger ? Theme.fg-muted : Theme.fg);
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 8px;
+
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                glyph: root.glyph;
+                size: 13px;
+                tint: root.ink;
+            }
+        }
+
+        Text {
+            horizontal-stretch: 1;
+            text: root.label;
+            color: root.ink;
+            font-size: Theme.fs;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
 // A small round button over a poster: Show in folder, Remove from list.
 // Dark glass under a white mark whatever the theme, because what is under
 // it is a picture, not the page.
@@ -899,8 +948,12 @@ component PosterCard inherits Pressable {
     callback opened();
     callback forgotten();
     callback revealed();
+    callback rename-requested();
+    callback delete-requested();
 
     property <length> inset: 6px;
+    property <length> menu-w: 150px;
+    property <length> menu-h: 90px;
     property <bool> actions: root.touchy || root.lit || root.ring || root.project.missing;
 
     label: root.project.name;
@@ -999,6 +1052,62 @@ component PosterCard inherits Pressable {
                 label: I18n.t("start.removeFromList");
                 clicked => { root.forgotten(); }
             }
+
+            PosterAction {
+                glyph: Glyph.more;
+                label: I18n.t("start.moreOptions");
+                clicked => { menu.show(); }
+            }
+        }
+    }
+
+    menu := PopupWindow {
+        x: root.width - root.menu-w - 8px;
+        y: 42px;
+        width: root.menu-w;
+        height: root.menu-h;
+        close-policy: close-on-click-outside;
+
+        Rectangle {
+            background: Theme.raised;
+            border-width: 1px;
+            border-color: Theme.line-strong;
+            border-radius: Theme.r-md;
+            clip: true;
+
+            VerticalLayout {
+                padding: 4px;
+                spacing: 2px;
+                alignment: center;
+
+                RecentMenuRow {
+                    glyph: Glyph.folder;
+                    label: I18n.t("start.open");
+                    clicked => {
+                        menu.close();
+                        root.opened();
+                    }
+                }
+
+                RecentMenuRow {
+                    glyph: Glyph.text-mark;
+                    label: I18n.t("start.rename");
+                    clicked => {
+                        menu.close();
+                        root.rename-requested();
+                    }
+                }
+
+                RecentMenuRow {
+                    glyph: Glyph.trash;
+                    label: I18n.t("common.delete");
+                    danger: true;
+                    clicked => {
+                        menu.close();
+                        root.delete-requested();
+                    }
+                }
+            }
         }
     }
 
@@ -1044,6 +1153,8 @@ component ProjectsGrid inherits Rectangle {
     callback opened(path: string);
     callback forgotten(path: string);
     callback revealed(path: string);
+    callback rename-requested(path: string);
+    callback delete-requested(path: string);
 
     property <length> gap: 16px;
     property <length> min-card: 220px;
@@ -1068,6 +1179,8 @@ component ProjectsGrid inherits Rectangle {
         opened => { root.opened(project.path); }
         forgotten => { root.forgotten(project.path); }
         revealed => { root.revealed(project.path); }
+        rename-requested => { root.rename-requested(project.path); }
+        delete-requested => { root.delete-requested(project.path); }
     }
 }
 
@@ -1612,9 +1725,12 @@ component WideHome inherits Rectangle {
     callback open-recent(path: string);
     callback forget-recent(path: string);
     callback reveal-recent(path: string);
+    callback rename-recent(path: string);
+    callback delete-recent(path: string);
     callback search-edited(query: string);
     callback sort-changed(sort: int);
     callback link(name: string);
+    callback open-gpu-queue();
 
     /// The margin the page keeps from the window's edges.
     property <length> pad: Math.max(24px, Math.min(64px, root.width / 18));
@@ -1655,29 +1771,44 @@ component WideHome inherits Rectangle {
                 alignment: start;
 
                 // ── the greeting ─────────────────────────────────────
-                Text {
-                    text: root.recents-total == 0
-                        ? I18n.t("start.welcome")
-                        : I18n.t("start.welcomeBack");
-                    color: Theme.fg;
-                    // The one display-sized line in the app. The tree
-                    // bundles no display face, so the interface face
-                    // carries it at its heaviest weight and tight tracking.
-                    font-size: Theme.fs-display;
-                    font-weight: Theme.weight-display;
-                    letter-spacing: -1px;
-                    wrap: word-wrap;
-                }
+                HorizontalLayout {
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        Text {
+                            text: root.recents-total == 0
+                                ? I18n.t("start.welcome")
+                                : I18n.t("start.welcomeBack");
+                            color: Theme.fg;
+                            // The one display-sized line in the app. The tree
+                            // bundles no display face, so the interface face
+                            // carries it at its heaviest weight and tight tracking.
+                            font-size: Theme.fs-display;
+                            font-weight: Theme.weight-display;
+                            letter-spacing: -1px;
+                            wrap: word-wrap;
+                        }
 
-                Rectangle { height: 8px; }
+                        Rectangle { height: 8px; }
 
-                Text {
-                    text: root.recents-total == 0
-                        ? I18n.t("start.welcomeNote")
-                        : I18n.t("start.welcomeBackNote");
-                    color: Theme.fg-muted;
-                    font-size: Theme.fs-xl;
-                    wrap: word-wrap;
+                        Text {
+                            text: root.recents-total == 0
+                                ? I18n.t("start.welcomeNote")
+                                : I18n.t("start.welcomeBackNote");
+                            color: Theme.fg-muted;
+                            font-size: Theme.fs-xl;
+                            wrap: word-wrap;
+                        }
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+                        Button {
+                            glyph: Glyph.export;
+                            label: I18n.t("cloudGpu.gpuQueue");
+                            enabled: !root.busy;
+                            clicked => { root.open-gpu-queue(); }
+                        }
+                    }
                 }
 
                 Rectangle { height: 28px; }
@@ -1770,6 +1901,8 @@ component WideHome inherits Rectangle {
                     opened(path) => { root.open-recent(path); }
                     forgotten(path) => { root.forget-recent(path); }
                     revealed(path) => { root.reveal-recent(path); }
+                    rename-requested(path) => { root.rename-recent(path); }
+                    delete-requested(path) => { root.delete-recent(path); }
                 }
 
                 // ── learn, under the projects ────────────────────────
@@ -1880,6 +2013,7 @@ component NarrowHome inherits Rectangle {
     callback compose();
     callback open();
     callback open-settings();
+    callback open-gpu-queue();
     callback open-recent(path: string);
     callback forget-recent(path: string);
     callback search-edited(query: string);
@@ -1927,6 +2061,16 @@ component NarrowHome inherits Rectangle {
                         label: I18n.t("start.openProject");
                         enabled: !root.busy;
                         clicked => { root.open(); }
+                    }
+                }
+
+                VerticalLayout {
+                    alignment: center;
+                    BarAction {
+                        glyph: Glyph.export;
+                        label: I18n.t("cloudGpu.gpuQueue");
+                        enabled: !root.busy;
+                        clicked => { root.open-gpu-queue(); }
                     }
                 }
 
@@ -2076,7 +2220,10 @@ export component StartScreen inherits Rectangle {
     callback open-recent(path: string);
     callback forget-recent(path: string);
     callback reveal-recent(path: string);
+    callback rename-recent(path: string);
+    callback delete-recent(path: string);
     callback open-settings();
+    callback open-gpu-queue();
     callback search-edited(query: string);
     callback sort-changed(sort: int);
     /// One of the page's links, by name; see `start::link` in Rust.
@@ -2102,9 +2249,12 @@ export component StartScreen inherits Rectangle {
         open-recent(path) => { root.open-recent(path); }
         forget-recent(path) => { root.forget-recent(path); }
         reveal-recent(path) => { root.reveal-recent(path); }
+        rename-recent(path) => { root.rename-recent(path); }
+        delete-recent(path) => { root.delete-recent(path); }
         search-edited(query) => { root.search-edited(query); }
         sort-changed(sort) => { root.sort-changed(sort); }
         link(name) => { root.link(name); }
+        open-gpu-queue => { root.open-gpu-queue(); }
     }
 
     if root.narrow: NarrowHome {
@@ -2119,6 +2269,7 @@ export component StartScreen inherits Rectangle {
         compose => { root.compose(); }
         open => { root.open(); }
         open-settings => { root.open-settings(); }
+        open-gpu-queue => { root.open-gpu-queue(); }
         open-recent(path) => { root.open-recent(path); }
         forget-recent(path) => { root.forget-recent(path); }
         search-edited(query) => { root.search-edited(query); }
@@ -2581,6 +2732,76 @@ export component NewProjectDialog inherits Modal {
                 font-size: Theme.fs-sm;
                 horizontal-alignment: center;
                 wrap: word-wrap;
+            }
+        }
+    }
+}
+
+// The dialog to prompt for renaming a recent project.
+export component RenameDialog inherits Modal {
+    in property <string> name;
+
+    callback name-edited(name: string);
+    callback renamed();
+    callback dismissed();
+
+    title: I18n.t("start.renameProject");
+    glyph: Glyph.text-mark;
+    surface-width: 400px;
+
+    closed => { root.dismissed(); }
+
+    changed open => {
+        if (root.open) {
+            name-input.take-focus();
+        }
+    }
+
+    keys := FocusScope {
+        key-pressed(event) => {
+            if (event.text == Key.Escape) {
+                root.dismissed();
+                return accept;
+            }
+            if (event.text == Key.Return) {
+                if (root.name != "") {
+                    root.renamed();
+                }
+                return accept;
+            }
+            reject
+        }
+
+        VerticalLayout {
+            padding: 16px;
+            spacing: 16px;
+
+            name-input := PlainInput {
+                text: root.name;
+                placeholder: I18n.t("common.name");
+                edited(text) => { root.name-edited(text); }
+                accepted => {
+                    if (root.name != "") {
+                        root.renamed();
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                alignment: end;
+                spacing: 8px;
+
+                Button {
+                    label: I18n.t("common.cancel");
+                    clicked => { root.dismissed(); }
+                }
+
+                Button {
+                    primary: true;
+                    label: I18n.t("start.rename");
+                    enabled: root.name != "";
+                    clicked => { root.renamed(); }
+                }
             }
         }
     }

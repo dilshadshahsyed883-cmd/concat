@@ -70,6 +70,13 @@ jobs:
             }
             Write-Host "Offline queue snapshot and retry PASS"
           } finally { $env:LOCALAPPDATA = $originalLocalData }
+      - name: Regression tests - offline Cancel/Delete and live GPU progress
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & ./upstream/src/crates/concat/tests/test_gpu_queue_offline.ps1
+          & ./upstream/src/crates/concat/tests/test_home_gpu_queue_progress.ps1
+
       - name: Exact Rust 1.93 toolchain
         uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
         with:
@@ -177,6 +184,9 @@ jobs:
         if: github.ref_name != 'gpu/final-integration' && github.head_ref != 'gpu/final-integration'
         working-directory: upstream/src
         run: cargo test --locked -p concat-project --target x86_64-pc-windows-msvc
+      - name: Test Recent Projects rename, forget and manifest safety
+        working-directory: upstream/src
+        run: cargo test --locked -p concat-host --target x86_64-pc-windows-msvc
       - uses: actions/upload-artifact@v4
         with:
           name: Concat-Windows-x64-dev

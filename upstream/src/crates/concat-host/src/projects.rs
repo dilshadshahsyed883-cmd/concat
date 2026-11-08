@@ -533,6 +533,50 @@ pub fn forget(config: &Path, path: &str) -> Result<(), String> {
     write_recents(config, &entries)
 }
 
+/// Renames an existing project: updates the display name in the manifest (`concat.json` or legacy)
+/// and in the recents list (`recents.json`), preserving the project folder path and all
+/// media references without breaking anything.
+pub fn rename(config: &Path, path: &str, new_name: &str) -> Result<ProjectInfo, String> {
+    let trimmed = new_name.trim();
+    if trimmed.is_empty() {
+        return Err("project name cannot be empty".to_string());
+    }
+
+    let root = Path::new(path);
+    if !is_project(root) {
+        return Err(format!("a Concat project was not found at {}", root.display()));
+    }
+
+    // 1. Update the project manifest on disk (`concat.json` or legacy manifest)
+    let mut document = read_document(path)?
+        .ok_or_else(|| format!("could not read project manifest at {}", root.display()))?;
+
+    if let Some(obj) = document.as_object_mut() {
+        obj.insert("name".to_string(), serde_json::Value::String(trimmed.to_string()));
+    } else {
+        return Err(format!("invalid project manifest at {}", root.display()));
+    }
+
+    save(path, &document)?;
+
+    // 2. Update the name in recents.json
+    let mut entries = read_recents(config);
+    let mut updated_info = None;
+    for entry in &mut entries {
+        if same_path(&entry.path, path) {
+            entry.name = trimmed.to_string();
+            updated_info = Some(entry.clone());
+        }
+    }
+    write_recents(config, &entries)?;
+
+    if let Some(info) = updated_info {
+        Ok(info)
+    } else {
+        open(path)
+    }
+}
+
 fn read_recents(config: &Path) -> Vec<ProjectInfo> {
     // A missing or corrupt list is not an error worth showing anyone; it just
     // means there is no history yet.
@@ -556,7 +600,7 @@ fn write_recents(config: &Path, entries: &[ProjectInfo]) -> Result<(), String> {
 /// with either slash, because a path typed or joined with `/` names the same
 /// folder as the one the file dialog hands back with `\`. A trailing
 /// separator names the same folder too.
-fn same_path(left: &str, right: &str) -> bool {
+pub fn same_path(left: &str, right: &str) -> bool {
     fn spelled(path: &str) -> String {
         let path = if cfg!(windows) {
             path.replace('/', "\\")
@@ -863,5 +907,124 @@ mod tests {
 
         let _ = std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o755));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn rename_updates_manifest_and_recents_preserving_media_and_path() {
+        let root = scratch("rename-preserves-media");
+        let config_dir = std::env::temp_dir().join(format!("concat-config-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&config_dir);
+        std::fs::create_dir_all(&config_dir).expect("config dir");
+
+        let project_dir = Path::new(&root).join("My Project");
+        std::fs::create_dir_all(&project_dir).expect("project dir");
+        let manifest_file = project_dir.join(MANIFEST);
+
+        // A manifest with video settings, timelines, clips, and media references
+        let document = serde_json::json!({
+            "concat": "0.2.7",
+            "name": "Original Name",
+            "video": { "width": 1920, "height": 1080, "rateNum": 30, "rateDen": 1 },
+            "tracks": [{ "id": "t1", "clips": ["c1"] }],
+            "clips": [{ "id": "c1", "name": "intro", "mediaId": "m1" }],
+            "media": [{ "id": "m1", "path": "/media/footage.mp4", "duration": 120 }]
+        });
+        std::fs::write(&manifest_file, serde_json::to_vec_pretty(&document).unwrap()).expect("write manifest");
+
+        let info = open(&project_dir.to_string_lossy()).expect("opens");
+        remember(&config_dir, &info).expect("remember");
+
+        let updated = rename(&config_dir, &project_dir.to_string_lossy(), "Renamed Showcase")
+            .expect("rename succeeds");
+        assert_eq!(updated.name, "Renamed Showcase");
+        assert_eq!(updated.path, project_dir.to_string_lossy());
+
+        // Manifest on disk has updated name, but unchanged media, tracks, and video
+        let read_back = read_document(&project_dir.to_string_lossy())
+            .expect("read")
+            .expect("some doc");
+        assert_eq!(read_back["name"], "Renamed Showcase");
+        assert_eq!(read_back["video"]["width"], 1920);
+        assert_eq!(read_back["tracks"], document["tracks"]);
+        assert_eq!(read_back["clips"], document["clips"]);
+        assert_eq!(read_back["media"], document["media"]);
+
+        // Recents list reflects the renamed project with identical path
+        let recents_list = recents(&config_dir);
+        assert_eq!(recents_list.len(), 1);
+        assert_eq!(recents_list[0].info.name, "Renamed Showcase");
+        assert_eq!(recents_list[0].info.path, project_dir.to_string_lossy());
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&config_dir);
+    }
+
+    #[test]
+    fn rename_persists_across_reloads() {
+        let root = scratch("rename-reload");
+        let config_dir = std::env::temp_dir().join(format!("concat-config-reload-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&config_dir);
+        std::fs::create_dir_all(&config_dir).expect("config dir");
+
+        let info = create(&root, "Initial Project", 1920, 1080, 30, 1).expect("create");
+        remember(&config_dir, &info).expect("remember");
+
+        rename(&config_dir, &info.path, "New Project Title").expect("rename");
+
+        // Simulate app reload: read recents afresh and open project from disk
+        let listed = list(&config_dir);
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].name, "New Project Title");
+
+        let reopened = open(&info.path).expect("open");
+        assert_eq!(reopened.name, "New Project Title");
+        assert_eq!(reopened.path, info.path);
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&config_dir);
+    }
+
+    #[test]
+    fn delete_forgets_from_recents_without_touching_media_or_other_projects() {
+        let root_a = scratch("delete-proj-a");
+        let root_b = scratch("delete-proj-b");
+        let config_dir = std::env::temp_dir().join(format!("concat-config-del-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&config_dir);
+        std::fs::create_dir_all(&config_dir).expect("config dir");
+
+        let proj_a = create(&root_a, "Project A", 1920, 1080, 30, 1).expect("create a");
+        let proj_b = create(&root_b, "Project B", 1920, 1080, 30, 1).expect("create b");
+
+        // Put dummy media files inside project A and project B
+        let media_a = Path::new(&proj_a.path).join("clip_a.mp4");
+        std::fs::write(&media_a, b"media content a").expect("write media a");
+        let media_b = Path::new(&proj_b.path).join("clip_b.mp4");
+        std::fs::write(&media_b, b"media content b").expect("write media b");
+
+        remember(&config_dir, &proj_a).expect("remember a");
+        remember(&config_dir, &proj_b).expect("remember b");
+
+        assert_eq!(recents(&config_dir).len(), 2);
+
+        // Delete (forget) Project A
+        forget(&config_dir, &proj_a.path).expect("forget a");
+
+        // Recents only contains Project B now
+        let current_recents = recents(&config_dir);
+        assert_eq!(current_recents.len(), 1);
+        assert_eq!(current_recents[0].info.name, "Project B");
+
+        // Project A on disk is completely untouched: manifest and media exist!
+        assert!(Path::new(&proj_a.path).exists());
+        assert!(manifest_path(Path::new(&proj_a.path)).exists());
+        assert!(media_a.exists());
+        assert_eq!(std::fs::read(&media_a).unwrap(), b"media content a");
+
+        // Project B is also completely intact
+        assert!(media_b.exists());
+
+        let _ = std::fs::remove_dir_all(&root_a);
+        let _ = std::fs::remove_dir_all(&root_b);
+        let _ = std::fs::remove_dir_all(&config_dir);
     }
 }

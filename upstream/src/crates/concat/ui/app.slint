@@ -23,7 +23,7 @@ import { EffectData } from "demo/effects-panel.slint";
 import { MediaFilter, MediaItemData, MediaKind, SourcePreview, TextPresetData } from "workspace/media-pane.slint";
 import { SoundCardData, Sounds, VoiceCardData } from "workspace/audio-page.slint";
 import { ContextMenu, MenuItemData, MenuRow } from "primitives/context-menu.slint";
-import { CloudGpu, GpuQueueRow } from "dialogs/cloud-gpu.slint";
+import { CloudGpu, GpuQueueDialog, GpuQueueRow } from "dialogs/cloud-gpu.slint";
 import { ExportData, ExportDialog, ExportPhase } from "dialogs/export.slint";
 import { ModelData, SettingsData, SettingsDialog, SystemFactData } from "dialogs/settings.slint";
 import { ProjectDialog, ProjectSheetData } from "dialogs/project.slint";
@@ -36,7 +36,7 @@ import { VoiceoverData, VoiceoverPanel } from "dialogs/voiceover.slint";
 import { DockDivider, DockSide, SeatBox } from "dock.slint";
 import { Editor } from "editor.slint";
 import { PaneKind, Panes } from "workspace/pane-switcher.slint";
-import { ChipOption, NewProjectDialog, RecentProjectData, StartData, StartScreen } from "start.slint";
+import { ChipOption, NewProjectDialog, RecentProjectData, RenameDialog, StartData, StartScreen } from "start.slint";
 import { TitleBar } from "title-bar.slint";
 import { PhoneEditor } from "phone/editor.slint";
 import {
@@ -58,7 +58,7 @@ import {
 import { KeyEditor, KeyMarkData, KeyRowData } from "workspace/keyframes-pane.slint";
 
 export {
-    Curves, Fmt, Focus, Payload, Theme, Bezier, Editor, I18n, CloudGpu, GpuQueueRow, GpuCompatibility,
+    Curves, Fmt, Focus, Payload, Theme, Bezier, Editor, I18n, CloudGpu, GpuQueueDialog, GpuQueueRow, GpuCompatibility,
     AppliedEntryData, AppliedParamData, CatalogueEntryData, Library, LibraryViewData, ParamFormat,
     DockDivider, DockSide, PaneKind, SeatBox,
     EffectData, FontSearch, Meters, MediaFilter, MediaItemData, MediaKind, SourcePreview, TextPresetData,
@@ -122,7 +122,7 @@ export component App inherits Window {
     }
     property <bool> sheet-open: root.export.open || root.settings.open
         || root.project-sheet.open || root.captions.open || root.speech.open
-        || root.start.composing;
+        || root.start.composing || CloudGpu.queue-open;
     changed sheet-open => {
         if (!root.sheet-open) {
             keys.focus();
@@ -164,6 +164,11 @@ export component App inherits Window {
     callback start-open-recent(path: string);
     callback start-forget-recent(path: string);
     callback start-reveal-recent(path: string);
+    callback start-rename-recent(path: string);
+    callback start-delete-recent(path: string);
+    callback start-rename-edited(name: string);
+    callback start-apply-rename();
+    callback start-dismiss-rename();
     callback start-search-edited(query: string);
     callback start-sort-changed(sort: int);
     /// One of the launch screen's links, by name; see `start::link`.
@@ -506,6 +511,7 @@ export component App inherits Window {
             // with a job keeps itself - its × is gone then too - and the
             // key is spent on it, not passed to the editor underneath.
             if (event.text == Key.Escape) {
+                if (root.start.renaming) { root.start-dismiss-rename(); return accept; }
                 if (root.confirm.open) { root.confirm-dismissed(); return accept; }
                 if (root.relink.open) { root.relink-dismiss(); return accept; }
                 if (root.project-sheet.open) { root.project-closed(); return accept; }
@@ -599,9 +605,12 @@ export component App inherits Window {
                 compose => { root.start-compose(); }
                 open => { root.start-open(); }
                 open-settings => { root.open-settings(); }
+                open-gpu-queue => { CloudGpu.queue-open = true; }
                 open-recent(path) => { root.start-open-recent(path); }
                 forget-recent(path) => { root.start-forget-recent(path); }
                 reveal-recent(path) => { root.start-reveal-recent(path); }
+                rename-recent(path) => { root.start-rename-recent(path); }
+                delete-recent(path) => { root.start-delete-recent(path); }
                 search-edited(query) => { root.start-search-edited(query); }
                 sort-changed(sort) => { root.start-sort-changed(sort); }
                 link(name) => { root.start-link(name); }
@@ -789,6 +798,23 @@ export component App inherits Window {
         dismiss-error => { root.start-dismiss-error(); }
     }
 
+    RenameDialog {
+        fill: root.sheets-fill;
+        inset-top: root.safe-area-insets.top;
+        inset-bottom: root.safe-area-insets.bottom;
+        inset-left: root.safe-area-insets.left;
+        inset-right: root.safe-area-insets.right;
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        open: root.start.renaming;
+        name: root.start.rename-name;
+        name-edited(name) => { root.start-rename-edited(name); }
+        renamed => { root.start-apply-rename(); }
+        dismissed => { root.start-dismiss-rename(); }
+    }
+
     ExportDialog {
         inset-top: root.safe-area-insets.top;
         inset-bottom: root.safe-area-insets.bottom;
@@ -935,6 +961,21 @@ export component App inherits Window {
         data: root.confirm;
         confirmed => { root.confirm-accepted(); }
         dismissed => { root.confirm-dismissed(); }
+    }
+
+    GpuQueueDialog {
+        fill: root.sheets-fill;
+        inset-top: root.safe-area-insets.top;
+        inset-bottom: root.safe-area-insets.bottom;
+        inset-left: root.safe-area-insets.left;
+        inset-right: root.safe-area-insets.right;
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        phone: root.phone;
+        open: CloudGpu.queue-open;
+        closed => { CloudGpu.queue-open = false; }
     }
 
 

@@ -85,8 +85,26 @@ function Concat-Bundle([string]$dir,[string]$zip,[string]$snapshot="") {
     } finally {$stream.Dispose()}
     Report "Packaged $($lookup.Count) media files." 0
 }
+function Format-ByteSize([long]$bytes) {
+    if ($bytes -lt 0) { $bytes = 0 }
+    if ($bytes -ge 1GB) { return ("{0:0.00} GB" -f ($bytes / 1GB)) }
+    if ($bytes -ge 1MB) { return ("{0:0.00} MB" -f ($bytes / 1MB)) }
+    if ($bytes -ge 1KB) { return ("{0:0.00} KB" -f ($bytes / 1KB)) }
+    return ("{0} B" -f $bytes)
+}
+
+function Format-UploadProgress([long]$transferred, [long]$total) {
+    if ($total -le 0) { return "0 B / 0 B (0%)" }
+    $pct = [int][Math]::Min(100, [Math]::Max(0, [Math]::Floor(([double]$transferred / [double]$total) * 100)))
+    $tStr = Format-ByteSize $transferred
+    $totStr = Format-ByteSize $total
+    return "$tStr / $totStr ($pct%)"
+}
+
 function Submit-Zip([string]$zip,[string]$job,[string]$domain,$headers) {
     $size=(Get-Item -LiteralPath $zip).Length
+    # Surface the real package size even before worker negotiation or hashing.
+    Report "GPU upload package: $(Format-UploadProgress 0 $size)" 0 "" $false "" "" 0 $size
     $sha=SHA-File $zip
     $root="$domain/api/uploads/$job"
     $existing=$null
@@ -99,7 +117,8 @@ function Submit-Zip([string]$zip,[string]$job,[string]$domain,$headers) {
         if ($existing.sha256 -ne $sha -or [long]$existing.size -ne $size) {
             throw "Existing worker job does not match the saved snapshot."
         }
-        Report "Resuming job $job ($($existing.state))." 100
+        $formatted = Format-UploadProgress $size $size
+        Report "Resuming job $job ($($existing.state)). $formatted" 100 "" $false "" "" $size $size
         return
     }
     $manifest=@{size=[long]$size;sha256=$sha;render_mode="cuda-hybrid-v1"} | ConvertTo-Json -Compress
@@ -111,11 +130,28 @@ function Submit-Zip([string]$zip,[string]$job,[string]$domain,$headers) {
         throw "Invalid Salad chunk layout"
     }
     $seen=@($session.uploaded)
+    $uploadedMap = New-Object 'System.Collections.Generic.HashSet[int]'
+    [long]$transferredBytes = 0
+    foreach ($idx in $seen) {
+        if ($idx -ge 0 -and $idx -lt $count -and $uploadedMap.Add([int]$idx)) {
+            $chunkLen = [long][Math]::Min($chunkSize, ($size - [long]$idx * $chunkSize))
+            if ($chunkLen -gt 0) { $transferredBytes += $chunkLen }
+        }
+    }
     $input=[IO.File]::OpenRead($zip)
     try {
         for($i=0;$i -lt $count;$i++) {
-            if ($seen -contains $i) {Report "Verified upload chunk $($i+1) of $count." ([int](100*($i+1)/$count));continue}
-            $length=[int][Math]::Min($chunkSize,($size-[long]$i*$chunkSize))
+            $chunkLen = [long][Math]::Min($chunkSize, ($size - [long]$i * $chunkSize))
+            if ($seen -contains $i) {
+                if ($uploadedMap.Add([int]$i)) {
+                    $transferredBytes += $chunkLen
+                }
+                $pct = if ($size -gt 0) { [int][Math]::Min(100, [Math]::Max(0, [Math]::Floor(([double]$transferredBytes / [double]$size) * 100))) } else { 100 }
+                $formatted = Format-UploadProgress $transferredBytes $size
+                Report "Verified upload chunk $($i+1) of $count ($formatted)." $pct "" $false "" "" $transferredBytes $size
+                continue
+            }
+            $length=[int]$chunkLen
             $bytes=New-Object byte[] $length
             [void]$input.Seek(([long]$i*$chunkSize),[IO.SeekOrigin]::Begin)
             $offset=0
@@ -145,20 +181,28 @@ function Submit-Zip([string]$zip,[string]$job,[string]$domain,$headers) {
                 }
             }
             if (-not $ok) {throw "Upload failed at chunk $i"}
-            Report "Uploaded chunk $($i+1) of $count." ([int](100*($i+1)/$count))
+            if ($uploadedMap.Add([int]$i)) {
+                $transferredBytes += $chunkLen
+            }
+            $pct = if ($size -gt 0) { [int][Math]::Min(100, [Math]::Max(0, [Math]::Floor(([double]$transferredBytes / [double]$size) * 100))) } else { 100 }
+            $formatted = Format-UploadProgress $transferredBytes $size
+            Report "Uploaded chunk $($i+1) of $count ($formatted)." $pct "" $false "" "" $transferredBytes $size
         }
     } finally {$input.Dispose()}
     $done=Invoke-RestMethod -MaximumRedirection 0 -Method Post -Uri "$root/complete" -Headers $headers -TimeoutSec 95
-    Report "Salad verified the upload ($($done.state))." 100
+    $formatted = Format-UploadProgress $size $size
+    Report "Salad verified the upload ($($done.state)). $formatted" 100 "" $false "" "" $size $size
 }
-function Report([string]$message,[int]$progress=-1,[string]$location="",[bool]$failed=$false,[string]$phase="",[string]$metrics="") {
+function Report([string]$message,[int]$progress=-1,[string]$location="",[bool]$failed=$false,[string]$phase="",[string]$metrics="",[long]$transferred_bytes=-1,[long]$total_bytes=-1) {
     if ($headers) {
         foreach ($secret in @($headers["Salad-Api-Key"],$headers.Authorization.Substring(7))) {
             if ($secret) {$message=$message.Replace($secret,"[redacted]")}
         }
     }
-    [Console]::WriteLine((@{message=$message;progress=$progress;location=$location;failed=$failed;phase=$phase;metrics=$metrics} |
-        ConvertTo-Json -Compress))
+    $obj=[ordered]@{message=$message;progress=$progress;location=$location;failed=$failed;phase=$phase;metrics=$metrics}
+    if ($transferred_bytes -ge 0) { $obj["transferred_bytes"] = $transferred_bytes }
+    if ($total_bytes -ge 0) { $obj["total_bytes"] = $total_bytes }
+    [Console]::WriteLine(($obj | ConvertTo-Json -Compress))
 }
 
 function Format-RenderMetrics($status) {
@@ -455,7 +499,9 @@ try {
                 Validate-WorkerProject (Join-Path (Join-Path $queueDir $SnapshotID) "concat.json") $config.domain $headers
                 Report "Uploading the saved snapshot." 0 "" $false "attempted"
                 Submit-Zip $zip $Job $config.domain $headers
-                Report "Upload verified. Waiting for GPU rendering." 100 "" $false "uploaded"
+                $zipSize = (Get-Item -LiteralPath $zip).Length
+                $formatted = Format-UploadProgress $zipSize $zipSize
+                Report "Upload verified. Waiting for GPU rendering ($formatted)." 100 "" $false "uploaded" "" $zipSize $zipSize
             } finally {$lease.Dispose()}
         } else {
             Queue-Status $Job $config.domain $headers $gpuDataDir
