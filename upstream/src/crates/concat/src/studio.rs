@@ -9066,6 +9066,14 @@ impl Studio {
                 .collect(),
         );
 
+        // Membership labels are visual hints only. The timeline still
+        // publishes each original clip once so Preview, waveforms, sync and
+        // CUDA export cannot accidentally duplicate source audio.
+        let compound_names: HashMap<&str, &str> = timeline.compounds.iter()
+            .flat_map(|group| group.members.iter().filter_map(move |member| match member {
+                model::CompoundMember::Clip(id) => Some((id.as_str(), group.name.as_str())),
+                model::CompoundMember::Compound(_) => None,
+            })).collect();
         // Only the clips near the view: what the lanes show plus a screen
         // either side; see `TimelinePane::published_span`.
         let span = self.lanes.published_span();
@@ -9090,7 +9098,10 @@ impl Studio {
                         };
                     ClipData {
                         id: clip.id.as_str().into(),
-                        name: clip.name.as_str().into(),
+                        name: match compound_names.get(clip.id.as_str()) {
+                            Some(group) => format!("▣ {} · {}", group, clip.name).into(),
+                            None => clip.name.as_str().into(),
+                        },
                         kind: kind_of(clip),
                         row: self.row_of(&clip.track_id),
                         start: clip.start as f32,
