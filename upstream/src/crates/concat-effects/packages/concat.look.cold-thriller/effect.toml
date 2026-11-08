@@ -1,0 +1,13 @@
+format = 2
+
+[effect]
+id = "concat.look.cold-thriller"
+name = "Cold Thriller"
+kind = "filter"
+category = "Timeline Looks"
+order = 20
+description = "SDR whole-timeline color grading preset."
+
+[wgsl]
+entry = "effect.wgsl"
+space = "display"

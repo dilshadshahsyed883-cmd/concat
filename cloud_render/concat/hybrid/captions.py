@@ -117,6 +117,7 @@ class CaptionStyle:
     outline_width: int = 2
     padding: int = 10
     margin: int = 24
+    plate_radius: int = 0
     placement: str = "bottom"
     # Native Concat captions are placed by the center of their text block.
     # An unset anchor preserves the SRT renderer's edge placement/stacking.
@@ -131,8 +132,9 @@ class CaptionStyle:
             if (not isinstance(color, tuple) or len(color) != 4
                     or any(type(c) is not int or not 0 <= c <= 255 for c in color)):
                 raise ValueError("Caption colors must be 8-bit RGBA tuples")
-        sizes = (self.font_size, self.outline_width, self.padding, self.margin)
-        limits = ((8, 540 if self.anchor is not None else 512), (0, 32), (0, 128), (0, 512))
+        sizes = (self.font_size, self.outline_width, self.padding, self.margin, self.plate_radius)
+        limits = ((8, 540 if self.anchor is not None else 512),
+                  (0, 32), (0, 128), (0, 512), (0, 512))
         if any(type(size) is not int or not low <= size <= high
                for size, (low, high) in zip(sizes, limits)):
             raise ValueError("Caption font size, outline, padding, or margin is out of range")
@@ -214,7 +216,13 @@ def _glyph_texture(cue: Cue, active: int | None, style: CaptionStyle,
             or height - 2 * (pad - style.padding) > frame_height - 2 * style.margin):
         raise ValueError("Caption exceeds the available frame area")
 
-    texture = Image.new("RGBA", (width, height), style.background)
+    texture = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    if style.background[3]:
+        ImageDraw.Draw(texture).rounded_rectangle(
+            (0, 0, width - 1, height - 1),
+            radius=min(style.plate_radius, width // 2, height // 2),
+            fill=style.background,
+        )
     fill_mask = Image.new("L", texture.size)
     outline_mask = Image.new("L", texture.size)
     highlight_box = None

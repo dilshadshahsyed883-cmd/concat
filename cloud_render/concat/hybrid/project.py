@@ -8,9 +8,10 @@ from math import floor, isfinite
 from pathlib import Path
 
 from .animations import Transform
-from .captions import CaptionStyle, Cue
+from .captions import CaptionStyle, Cue, WordTiming
 from .contract import FrameSpan
 from .filters import FilterSettings
+from .looks import FILTER_LOOKS
 from .transitions import NATIVE_TRANSITIONS, Transition
 
 FPS = 30
@@ -113,8 +114,9 @@ def _validated_timeline(document):
                 continue
             effect_id = effect.get("id")
             if (kind not in ("image", "video", "layer")
-                    or effect_id not in ("concat.box-blur", *NATIVE_COLOR_PARAMS)
-                    or (kind == "layer" and effect_id != "concat.box-blur")):
+                    or not (effect_id == "concat.box-blur"
+                            or (kind != "layer" and effect_id in NATIVE_COLOR_PARAMS)
+                            or (kind == "layer" and effect_id in FILTER_LOOKS))):
                 raise ValueError(f"Unsupported GPU effect {effect_id} on clip {ident}")
         transition = clip.get("transitionIn")
         if transition is not None:
@@ -342,6 +344,10 @@ def filters_for(clip, start, duration):
                 raise ValueError("invalid effect parameters")
             if ident in NATIVE_COLOR_PARAMS:
                 settings = _native_color_effect(effect, params, start, duration)
+            elif ident in FILTER_LOOKS:
+                if params or effect.get("keys"):
+                    raise ValueError("timeline look accepts only the layer intensity slider")
+                settings = FILTER_LOOKS[ident]
             else:
                 if effect.get("keys"):
                     raise ValueError("animated parameters")
@@ -397,12 +403,12 @@ def _caption(clip, first, end, index, track_rank):
     # The Rust serializer writes every TextStyle field. Accept the native
     # defaults where they have no visible effect and reject changed styles
     # that the worker cannot faithfully draw.
-    neutral = {"italic": False, "align": "center", "background": "",
-               "backgroundRadius": .0135, "backgroundPaddingX": .0315,
-               "backgroundPaddingY": .018, "lineHeight": 1.2, "tracking": 0,
-               "maxWidth": 0, "maxHeight": 0}
+    neutral = {"italic": False,
+               "backgroundPaddingX": .0315, "backgroundPaddingY": .018,
+               "lineHeight": 1.2, "tracking": 0, "maxWidth": 0, "maxHeight": 0}
     supported = {"content", "fontFamily", "fontSize", "fontWeight", "color",
-                 "opacity", "strokeWidth", "strokeColor", "shadow"}
+                 "opacity", "strokeWidth", "strokeColor", "shadow", "align",
+                 "background", "backgroundRadius", "karaoke", "karaokeColor"}
     for name, value in style.items():
         if name not in supported and (name not in neutral or value != neutral[name]):
             raise ValueError(f"Unsupported caption styling {name} on clip {ident}")
@@ -411,6 +417,11 @@ def _caption(clip, first, end, index, track_rank):
             or style.get("fontWeight", 600) != 600):
         raise ValueError(f"Unsupported caption styling fontFamily or fontWeight on clip {ident}; "
                          "use Hanken Grotesk SemiBold")
+    if style.get("align", "center") != "center":
+        raise ValueError(f"Unsupported caption styling align on clip {ident}")
+    karaoke = style.get("karaoke", False)
+    if type(karaoke) is not bool:
+        raise ValueError(f"Invalid caption karaoke on clip {ident}")
     shadow = style.get("shadow", True)
     if type(shadow) is not bool:
         raise ValueError(f"Invalid caption shadow on clip {ident}")
@@ -418,6 +429,14 @@ def _caption(clip, first, end, index, track_rank):
     stroke = round(number(style.get("strokeWidth", 0), f"caption strokeWidth on {ident}") * HEIGHT)
     fill = _caption_color(style.get("color", "#ffffff"), "color", ident)
     outline = _caption_color(style.get("strokeColor", "#000000"), "strokeColor", ident)
+    background = (_caption_color(style["background"], "background", ident)
+                  if style.get("background") else (0, 0, 0, 0))
+    highlight = (_caption_color(style["karaokeColor"], "karaokeColor", ident)
+                 if style.get("karaokeColor") else (255, 225, 60, 255))
+    radius = number(style.get("backgroundRadius", .0135),
+                    f"caption backgroundRadius on {ident}")
+    if radius < 0 or radius > .2:
+        raise ValueError(f"Unsupported caption styling backgroundRadius on clip {ident}")
     anchor_x = .5 + number(clip.get("offsetX", 0), f"caption offsetX on {ident}")
     anchor_y = .5 + number(clip.get("offsetY", 0), f"caption offsetY on {ident}")
     opacity = number(style.get("opacity", 1), f"caption opacity on {ident}")
@@ -433,10 +452,38 @@ def _caption(clip, first, end, index, track_rank):
         return None
     # Floor the cue boundary to keep its quantized start/end on exact 30fps
     # frames rather than dropping a frame when rounding 66.667ms to 67ms.
-    cue = Cue(index, first * 1000 // FPS, end * 1000 // FPS, content)
+    words = ()
+    if karaoke:
+        # Without ASR word timestamps, the native caption's exact clip
+        # frames are apportioned by word length. This is approximate
+        # pacing, not claimed to be speech-aligned transcription.
+        tokens = content.split()
+        frames = end - first
+        if len(tokens) > frames:
+            raise ValueError(f"Caption karaoke on {ident} needs at least one frame per word")
+        remaining = frames
+        weight_left = sum(max(1, len(token)) for token in tokens)
+        start_frame = first
+        built = []
+        for index_word, token in enumerate(tokens):
+            weight = max(1, len(token))
+            left = len(tokens) - index_word - 1
+            allot = (remaining if not left else
+                     max(1, min(remaining - left, round(remaining * weight / weight_left))))
+            stop_frame = start_frame + allot
+            built.append(WordTiming(token, start_frame * 1000 // FPS,
+                                    stop_frame * 1000 // FPS))
+            start_frame = stop_frame
+            remaining -= allot
+            weight_left -= weight
+        words = tuple(built)
+    cue = Cue(index, first * 1000 // FPS, end * 1000 // FPS, content, words)
     caption_style = CaptionStyle(font=str(_hanken_font()), font_size=size, fill=fill,
-                                 outline=outline, background=(0, 0, 0, 0),
-                                 outline_width=stroke, padding=0, margin=0,
+                                 outline=outline, background=background,
+                                 highlight=highlight,
+                                 outline_width=stroke,
+                                 padding=(12 if background[3] else 0), margin=0,
+                                 plate_radius=(round(radius * HEIGHT) if background[3] else 0),
                                  anchor=(anchor_x, anchor_y), shadow=shadow,
                                  opacity=opacity * clip_opacity, track_rank=track_rank)
     return cue, caption_style

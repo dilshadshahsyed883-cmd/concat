@@ -1,0 +1,13 @@
+format = 2
+
+[effect]
+id = "concat.look.urban-gray"
+name = "Urban Gray"
+kind = "filter"
+category = "Timeline Looks"
+order = 7
+description = "SDR whole-timeline color grading preset."
+
+[wgsl]
+entry = "effect.wgsl"
+space = "display"

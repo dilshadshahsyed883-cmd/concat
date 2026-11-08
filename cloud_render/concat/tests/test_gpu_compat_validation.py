@@ -181,7 +181,7 @@ class GpuManifestValidationTests(unittest.TestCase):
 
     def test_existing_custom_caption_style_is_not_silently_dropped(self):
         for field, value in (("fontFamily", "Unsupported family"), ("fontWeight", 700),
-                             ("tracking", .01), ("background", "#111111"), ("align", "left")):
+                             ("tracking", .01), ("background", "not-a-color"), ("align", "left")):
             with self.subTest(field=field):
                 document = minimal_project()
                 native_caption(document, **{field: value})
@@ -189,6 +189,30 @@ class GpuManifestValidationTests(unittest.TestCase):
                     validate_gpu_manifest(document)
                 with self.assertRaisesRegex(ValueError, rf"caption styling.*{field}.*caption1"):
                     load_fixture(document)
+
+    def test_seven_caption_looks_and_karaoke_timing_pass_worker_validation(self):
+        document = minimal_project()
+        native_caption(document, content="Hello world", karaoke=True,
+                       karaokeColor="#ffe13c", background="#e61c32ef")
+        validate_gpu_manifest(document)
+        cue, style = load_fixture(document).captions[0]
+        self.assertEqual([word.text for word in cue.words], ["Hello", "world"])
+        self.assertEqual(cue.words[0].start_ms, cue.start_ms)
+        self.assertEqual(cue.words[-1].end_ms, cue.end_ms)
+        self.assertEqual(style.highlight, (255, 225, 60, 255))
+        self.assertEqual(style.background, (230, 28, 50, 239))
+        self.assertGreater(style.plate_radius, 0)
+        renderer = CaptionRenderer([cue], style)
+        rate = FrameRate(30, 1)
+        self.assertNotEqual(renderer.active(2, rate)[0][1],
+                            renderer.active(5, rate)[0][1])
+
+    def test_karaoke_rejects_more_words_than_visible_frames(self):
+        document = minimal_project()
+        native_caption(document, content="one two three four five")
+        document["timelines"][0]["clips"][-1]["text"]["karaoke"] = True
+        with self.assertRaisesRegex(ValueError, "at least one frame per word"):
+            validate_gpu_manifest(document)
 
     def test_track_order_and_caption_stacking_are_native(self):
         document = minimal_project()

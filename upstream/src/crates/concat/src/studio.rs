@@ -3834,12 +3834,12 @@ impl Studio {
             }
             // A look dragged from the Filters page: a layer over a span.
             // The package id rides in `media`, there being no file.
-            "filter" if !cfg!(windows) => Some(DropPlan {
+            "filter" if !cfg!(windows) || gpu_catalogue_has("filters", id) => Some(DropPlan {
                 kind: ClipKind::Filter,
                 label: label.to_owned(),
                 media: id.to_owned(),
                 start: 0.0,
-                duration: LAYER_DURATION,
+                duration: self.duration().max(MIN_DURATION),
                 row: 0,
             }),
             _ => None,
@@ -3908,13 +3908,9 @@ impl Studio {
                 &plan.label,
             )
         } else if plan.kind == ClipKind::Filter {
-            self.apply(Command::AddLayerClip {
-                track_id: Some(track_id),
-                start: f64::from(plan.start),
-                duration: Some(f64::from(plan.duration)),
-                effect_id: plan.media.clone(),
-                name: plan.label.clone(),
-            })
+            // Never place a look only on the track or at the drop point.
+            self.place_filter_layer(&plan.media, &plan.label);
+            return;
         } else if let Some(media_ids) = self.dragged_selection(&plan.media) {
             // A card dragged out of a selection in the bin brings the whole
             // selection, laid end to end from the drop, in the bin's order.
@@ -3960,13 +3956,8 @@ impl Studio {
                 &plan.label,
             )
         } else if plan.kind == ClipKind::Filter {
-            self.apply(Command::AddLayerClip {
-                track_id: None,
-                start,
-                duration: Some(f64::from(plan.duration)),
-                effect_id: plan.media.clone(),
-                name: plan.label.clone(),
-            })
+            self.place_filter_layer(&plan.media, &plan.label);
+            return;
         } else {
             self.apply(Command::AddClipAtFirstFree {
                 media_id: plan.media.clone(),
@@ -3975,6 +3966,70 @@ impl Studio {
         };
         if let Some(id) = created {
             self.selection = vec![id];
+        }
+    }
+
+    /// Apply a CUDA caption look to a selection, or to every unlocked title
+    /// in the active timeline. Preserve each caption's words, duration,
+    /// position, keys, and track; one batch is one Undo step.
+    pub fn apply_caption_preset(&mut self, preset: &str, all: bool) {
+        self.flush_commit();
+        let Some(style) = self.text_presets.iter()
+            .find(|held| held.id == preset && held.id.starts_with("cuda-caption."))
+            .map(|found| found.style.clone())
+        else {
+            self.notify("Unknown CUDA caption preset", true);
+            return;
+        };
+        let ids: Vec<String> = if all {
+            // A timeline also contains title cards. "Apply to all captions"
+            // means the active caption lane (or the busiest text lane),
+            // not unrelated title tracks elsewhere in the project.
+            let lane = self.sole_selection()
+                .and_then(|id| self.clip(&id))
+                .filter(|clip| clip.kind == model::ClipKind::Text)
+                .map(|clip| clip.track_id.clone())
+                .or_else(|| concat_project::srt::busiest_title_lane(self.timeline()));
+            self.timeline().clips.iter()
+                .filter(|clip| clip.kind == model::ClipKind::Text
+                    && lane.as_deref() == Some(clip.track_id.as_str())
+                    && !self.locked(&clip.track_id))
+                .map(|clip| clip.id.clone())
+                .collect()
+        } else {
+            self.edit_targets().into_iter()
+                .filter(|id| self.clip(id).is_some_and(|clip|
+                    clip.kind == model::ClipKind::Text && !self.locked(&clip.track_id)))
+                .collect()
+        };
+        if ids.is_empty() {
+            if all {
+                self.notify("No unlocked captions on this timeline", true);
+            } else {
+                // With no caption selected, a card places a new caption at
+                // the playhead just like the existing text preset shelf.
+                self.place_at_playhead(&format!("text:{preset}:Caption"));
+            }
+            return;
+        }
+        let commands: Vec<Command> = ids.into_iter().filter_map(|id| {
+            let clip = self.clip(&id)?;
+            let original = clip.text.as_ref()?;
+            let mut next = style.clone();
+            next.content = original.content.clone();
+            if &next == original {
+                return None;
+            }
+            Some(Command::UpdateClip {
+                clip_id: id,
+                patch: ClipPatch {
+                    text: Some(Some(next)),
+                    ..ClipPatch::default()
+                },
+            })
+        }).collect();
+        if !commands.is_empty() {
+            self.apply(Command::Batch { commands });
         }
     }
 
@@ -4090,12 +4145,30 @@ impl Studio {
         self.request_preview();
     }
 
-    /// Lays a filter down as a layer at the playhead - what the Filters
-    /// page's double-click and plus do - and ends the showing, the layer
-    /// now being on the timeline to see.
+    /// A filter always spans the entire edit from zero, regardless of the
+    /// playhead, any selected clip, or the timeline lane under a drop.
+    /// One AddLayerClip command means one undo step and one independent layer.
     pub fn place_filter_layer(&mut self, id: &str, label: &str) {
         self.audition = None;
-        self.place_at_playhead(&format!("filter:{id}:{label}"));
+        if cfg!(windows) && !gpu_catalogue_has("filters", id) {
+            self.notify(&t("studio.unsupportedGpuControl"), true);
+            return;
+        }
+        let length = self.duration();
+        if length <= 0.0 {
+            self.notify("Add video or images before applying a timeline filter", true);
+            return;
+        }
+        let created = self.apply(Command::AddLayerClip {
+            track_id: None,
+            start: 0.0,
+            duration: Some(f64::from(length)),
+            effect_id: id.to_owned(),
+            name: label.to_owned(),
+        });
+        if let Some(id) = created {
+            self.selection = vec![id];
+        }
     }
 
     /// Lays an adjustment layer at the playhead - the colour panel's own
@@ -10758,7 +10831,7 @@ impl Studio {
                 starred,
                 &self.look_art,
                 &self.card_paths,
-                |package| !cfg!(windows) && !is_lut(package),
+                |package| (!cfg!(windows) || gpu_catalogue_has("filters", package.id())) && !is_lut(package),
             );
             sync(&models.filter_groups, groups);
             sync(&models.catalogue_filters, entries);
@@ -10910,7 +10983,14 @@ impl Studio {
         let latin = |card: &TextPresetData| card.language.eq_ignore_ascii_case("latin");
         sync(
             &models.style_presets,
-            cards.iter().filter(|card| latin(card)).cloned().collect(),
+            cards.iter()
+                .filter(|card| if cfg!(windows) {
+                    card.id.as_str().starts_with("cuda-caption.")
+                } else {
+                    latin(card)
+                })
+                .cloned()
+                .collect(),
         );
         sync(
             &models.language_presets,

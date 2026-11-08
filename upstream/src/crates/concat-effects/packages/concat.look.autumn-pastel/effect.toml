@@ -1,0 +1,13 @@
+format = 2
+
+[effect]
+id = "concat.look.autumn-pastel"
+name = "Autumn Pastel"
+kind = "filter"
+category = "Timeline Looks"
+order = 14
+description = "SDR whole-timeline color grading preset."
+
+[wgsl]
+entry = "effect.wgsl"
+space = "display"

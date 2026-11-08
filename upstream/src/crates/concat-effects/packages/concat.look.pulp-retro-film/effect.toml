@@ -1,0 +1,13 @@
+format = 2
+
+[effect]
+id = "concat.look.pulp-retro-film"
+name = "Pulp Retro Film"
+kind = "filter"
+category = "Timeline Looks"
+order = 16
+description = "SDR whole-timeline color grading preset."
+
+[wgsl]
+entry = "effect.wgsl"
+space = "display"

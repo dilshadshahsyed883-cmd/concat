@@ -1,0 +1,16 @@
+id = "cuda-caption.cinematic-title"
+name = "Cinematic Title"
+order = 1030
+language = "Latin"
+sample = "THE FINAL MATCH"
+offsetY = 0
+[style]
+content = "THE FINAL MATCH"
+fontFamily = "Hanken Grotesk"
+fontSize = 0.08
+fontWeight = 600
+color = "#ffffff"
+strokeColor = "#000000"
+strokeWidth = 0.004
+shadow = true
+opacity = 1.0

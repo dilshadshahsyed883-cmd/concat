@@ -1,0 +1,13 @@
+format = 2
+
+[effect]
+id = "concat.look.red-tide"
+name = "Red Tide"
+kind = "filter"
+category = "Timeline Looks"
+order = 4
+description = "SDR whole-timeline color grading preset."
+
+[wgsl]
+entry = "effect.wgsl"
+space = "display"

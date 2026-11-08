@@ -1,0 +1,13 @@
+format = 2
+
+[effect]
+id = "concat.look.aquamarine"
+name = "Aquamarine"
+kind = "filter"
+category = "Timeline Looks"
+order = 9
+description = "SDR whole-timeline color grading preset."
+
+[wgsl]
+entry = "effect.wgsl"
+space = "display"

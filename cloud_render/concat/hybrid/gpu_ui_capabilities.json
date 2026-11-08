@@ -26,5 +26,28 @@
     "concat.pulse-wipe",
     "concat.twinkle-zoom",
     "concat.wispy-wipe"
+  ],
+  "filters": [
+    "concat.look.crystal-honey",
+    "concat.look.8k",
+    "concat.look.bright-summer",
+    "concat.look.red-tide",
+    "concat.look.iced-fog",
+    "concat.look.soft-golden",
+    "concat.look.urban-gray",
+    "concat.look.sun-glitter",
+    "concat.look.aquamarine",
+    "concat.look.coastal-dusk",
+    "concat.look.milky-fog",
+    "concat.look.city-lights",
+    "concat.look.spring-paint",
+    "concat.look.autumn-pastel",
+    "concat.look.payphone-talk",
+    "concat.look.pulp-retro-film",
+    "concat.look.velvet-halo",
+    "concat.look.honey-brown",
+    "concat.look.4k",
+    "concat.look.cold-thriller",
+    "concat.look.hdr-look"
   ]
 }
