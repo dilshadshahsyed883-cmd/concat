@@ -1,0 +1,16 @@
+id = "cuda-caption.minimal-clean"
+name = "Minimal Clean"
+order = 1040
+language = "Latin"
+sample = "A moment to remember."
+offsetY = 0.33
+[style]
+content = "A moment to remember."
+fontFamily = "Hanken Grotesk"
+fontSize = 0.044
+fontWeight = 600
+color = "#ffffff"
+strokeColor = "#000000"
+strokeWidth = 0.001
+shadow = false
+opacity = 1.0

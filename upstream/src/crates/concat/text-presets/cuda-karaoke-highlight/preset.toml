@@ -1,0 +1,16 @@
+id = "cuda-caption.karaoke-highlight"
+name = "Karaoke Highlight"
+order = 1070
+language = "Latin"
+sample = "This is the moment"
+offsetY = 0.35
+[style]
+content = "This is the moment"
+fontFamily = "Hanken Grotesk"
+fontSize = 0.053
+fontWeight = 600
+color = "#ffffff"
+strokeColor = "#000000"
+strokeWidth = 0.004
+shadow = true
+opacity = 1.0

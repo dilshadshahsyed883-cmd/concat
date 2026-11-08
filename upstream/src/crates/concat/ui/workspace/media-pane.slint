@@ -1769,6 +1769,8 @@ export component MediaPane inherits Rectangle {
     in property <[string]> transition-groups;
     /// Text page: add a title at the playhead, in the look `preset` names.
     callback add-text(preset: string);
+    callback apply-caption-preset(preset: string, all: bool);
+    property <string> active-caption-preset: "cuda-caption.classic-subtitle";
     /// Stickers page: add the figure `shape` names at the playhead, as a
     /// clip called `label`.
     callback add-shape(shape: string, label: string);
@@ -2237,9 +2239,9 @@ export component MediaPane inherits Rectangle {
                             current: root.text-category == 0;
                             clicked => { root.text-category = 0; }
                         }
-                        if !GpuCompatibility.enabled && root.text-open: CategoryRow {
+                        if root.text-open: CategoryRow {
                             height: 24px;
-                            label: I18n.t("mediaPane.styles");
+                            label: GpuCompatibility.enabled ? "Caption Presets" : I18n.t("mediaPane.styles");
                             current: root.text-category == 1;
                             clicked => { root.text-category = 1; }
                         }
@@ -2667,13 +2669,30 @@ export component MediaPane inherits Rectangle {
                 // The looks. Each card is a title in that look, placed at
                 // the playhead on a click or dragged onto a lane; a preset
                 // that brings a font installs it on the way.
-                if !GpuCompatibility.enabled && root.tab == 1 && root.text-category >= 1: HorizontalLayout {
+                if root.tab == 1 && ((GpuCompatibility.enabled && root.text-category == 1)
+                        || (!GpuCompatibility.enabled && root.text-category >= 1)): VerticalLayout {
                     padding: 8px;
-
+                    if GpuCompatibility.enabled: Text {
+                        text: "Select a preset to style selected captions, or add one at the playhead.";
+                        color: Theme.fg-muted;
+                        font-size: Theme.fs-sm;
+                        wrap: word-wrap;
+                    }
+                    if GpuCompatibility.enabled: Button {
+                        label: "Apply Selected Preset to All Captions";
+                        clicked => { root.apply-caption-preset(root.active-caption-preset, true); }
+                    }
                     PresetGrid {
                         horizontal-stretch: 1;
                         items: root.text-category == 2 ? root.language-presets : root.presets;
-                        applied(id) => { root.add-text(id); }
+                        applied(id) => {
+                            if (GpuCompatibility.enabled) {
+                                root.active-caption-preset = id;
+                                root.apply-caption-preset(id, false);
+                            } else {
+                                root.add-text(id);
+                            }
+                        }
                     }
                 }
 

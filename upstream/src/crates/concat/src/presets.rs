@@ -354,6 +354,21 @@ mod tests {
         }
     }
 
+    #[test]
+    fn seven_cuda_caption_presets_are_embedded_and_worker_safe() {
+        let captions: Vec<_> = builtin().into_iter()
+            .filter(|item| item.id.starts_with("cuda-caption."))
+            .collect();
+        assert_eq!(captions.len(), 7);
+        for preset in &captions {
+            assert_eq!(preset.style.font_family, "Hanken Grotesk");
+            assert_eq!(preset.style.font_weight, 600.0);
+            assert!((0.01..=0.5).contains(&preset.style.font_size));
+            assert!(preset.style.background.is_empty());
+            assert!(!preset.style.italic);
+        }
+    }
+
     /// A file under text-presets/ that does not parse would be skipped
     /// without a word, and its card would simply be missing.
     #[test]

@@ -1,0 +1,16 @@
+id = "cuda-caption.classic-subtitle"
+name = "Classic Subtitle"
+order = 1010
+language = "Latin"
+sample = "This is our story."
+offsetY = 0.35
+[style]
+content = "This is our story."
+fontFamily = "Hanken Grotesk"
+fontSize = 0.05
+fontWeight = 600
+color = "#ffffff"
+strokeColor = "#000000"
+strokeWidth = 0.003
+shadow = true
+opacity = 1.0
