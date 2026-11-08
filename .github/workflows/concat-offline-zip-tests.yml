@@ -1,0 +1,58 @@
+name: Concat offline ZIP contract tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'work/concat-offline-zip-control-*'
+    paths:
+      - 'upstream/src/crates/concat/src/cloud_gpu.rs'
+      - 'upstream/src/crates/concat/src/lib.rs'
+      - 'upstream/src/crates/concat/src/studio.rs'
+      - 'upstream/src/crates/concat/src/concat_gpu_client.ps1'
+      - 'upstream/src/crates/concat/ui/**'
+      - 'upstream/src/crates/concat/tests/test_offline_zip_only.ps1'
+      - 'concat_gpu/concat_gpu_client.ps1'
+      - '.github/workflows/concat-offline-zip-tests.yml'
+  pull_request:
+    paths:
+      - 'upstream/src/crates/concat/src/cloud_gpu.rs'
+      - 'upstream/src/crates/concat/src/lib.rs'
+      - 'upstream/src/crates/concat/src/studio.rs'
+      - 'upstream/src/crates/concat/src/concat_gpu_client.ps1'
+      - 'upstream/src/crates/concat/ui/**'
+      - 'upstream/src/crates/concat/tests/test_offline_zip_only.ps1'
+      - 'concat_gpu/concat_gpu_client.ps1'
+      - '.github/workflows/concat-offline-zip-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  offline-zip-contract:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify both bundled clients are identical and parse correctly
+        shell: pwsh
+        run: |
+          $source = "upstream/src/crates/concat/src/concat_gpu_client.ps1"
+          $mirror = "concat_gpu/concat_gpu_client.ps1"
+          if ((Get-FileHash $source).Hash -ne (Get-FileHash $mirror).Hash) {
+            throw "Embedded GPU PowerShell clients drifted apart"
+          }
+          $tokens = $null
+          $errors = $null
+          [Management.Automation.Language.Parser]::ParseFile((Resolve-Path $source).Path,[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | Format-List
+            throw "PowerShell client syntax errors"
+          }
+      - name: Run offline ZIP parity and isolation regression tests
+        shell: pwsh
+        run: |
+          & ./upstream/src/crates/concat/tests/test_offline_zip_only.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Offline ZIP regression failed" }
