@@ -59,6 +59,13 @@ fn compound_view_clips(groups: &[Compound], root: &str) -> Option<HashSet<String
 
 impl Studio {
     pub(super) fn open_compound_from(&mut self, clicked: &str) {
+        // Undo, deletion or a reopened document can invalidate a member view.
+        // Recover to the full timeline rather than trapping navigation.
+        if self.compound_edit.as_ref().is_some_and(|id|
+            !self.timeline().compounds.iter().any(|g| &g.id == id)) {
+            self.compound_edit = None;
+            self.compound_edit_parents.clear();
+        }
         let Some(ancestry) = compound_ancestry(&self.timeline().compounds, clicked) else {
             return;
         };
@@ -79,7 +86,14 @@ impl Studio {
 
     pub(super) fn leave_compound_edit(&mut self) {
         self.flush_commit();
-        self.compound_edit = self.compound_edit_parents.pop();
+        // A parent may have been ungrouped while its child was open.
+        self.compound_edit = None;
+        while let Some(parent) = self.compound_edit_parents.pop() {
+            if self.timeline().compounds.iter().any(|g| g.id == parent) {
+                self.compound_edit = Some(parent);
+                break;
+            }
+        }
         self.selection.clear();
         self.transition_selected = None;
     }
