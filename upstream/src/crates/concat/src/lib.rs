@@ -2083,6 +2083,9 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     app.on_captions_model_changed(on_window!(|state, index: i32| {
         state.handle(Msg::Captions(CaptionsMsg::ModelChanged(index)));
     }));
+    app.on_captions_karaoke_toggled(on_window!(|state, on: bool| {
+        state.handle(Msg::Captions(CaptionsMsg::KaraokeToggled(on)));
+    }));
     app.on_captions_placement_changed(on_window!(|state, index: i32| {
         state.handle(Msg::Captions(CaptionsMsg::PlacementChanged(index)));
     }));

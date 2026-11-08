@@ -57,6 +57,7 @@ pub enum CaptionsMsg {
     SourceChanged(i32),
     TextEdited(String),
     ModelChanged(i32),
+    KaraokeToggled(bool),
     PlacementChanged(i32),
     SizeChanged(i32),
     /// Run the pass the sheet describes.
@@ -88,6 +89,7 @@ struct Subject {
     /// the sound in: what the run's timing is kept by.
     model: String,
     windows: f32,
+    karaoke: bool,
 }
 
 /// Seconds whisper takes over one thirty-second window, per megabyte of
@@ -102,6 +104,8 @@ pub struct CaptionsPane {
     /// "Use Sample Voice": the words come from [`Self::clip`]'s sound
     /// when on, from [`Self::text`] when off.
     pub from_voice: bool,
+    /// Opt in to audio-aligned, one-word caption clips.
+    pub karaoke: bool,
     /// The clip whose voice is transcribed: one with sound, chosen from the
     /// timeline's. Kept while the switch is off, so turning it back on
     /// returns to the same clip. The panel floats over a live editor, so
@@ -170,6 +174,7 @@ impl CaptionsPane {
             }
             CaptionsMsg::TextEdited(text) => self.text = text,
             CaptionsMsg::ModelChanged(index) => self.model = index.max(0) as usize,
+            CaptionsMsg::KaraokeToggled(on) => self.karaoke = on,
             CaptionsMsg::PlacementChanged(index) => {
                 self.placement = (index.max(0) as usize).min(2);
             }
@@ -201,6 +206,13 @@ impl CaptionsPane {
                         };
                         let look = subject.look;
                         let base = studio.prefs.title_style.clone();
+                        // Never mislabel guessed character-length pacing as
+                        // voice alignment. Fail closed if experimental Whisper
+                        // segmentation cannot provide one actual word per cue.
+                        if subject.karaoke && !karaoke_words_aligned(&segments, subject.start, subject.speed) {
+                            self.message = "Word timestamps unavailable for this transcription. Try another Whisper model.".into();
+                            return;
+                        }
                         let commands: Vec<Command> = segments
                             .into_iter()
                             .filter_map(|segment| {
@@ -209,9 +221,16 @@ impl CaptionsPane {
                                     caption_clip(
                                         text,
                                         subject.start + segment.start / subject.speed,
-                                        ((segment.end - segment.start) / subject.speed).max(0.2),
+                                        if subject.karaoke {
+                                            // Preserve ASR boundaries. Extending every word
+                                            // to two frames would overlap the next word.
+                                            (segment.end - segment.start) / subject.speed
+                                        } else {
+                                            ((segment.end - segment.start) / subject.speed).max(0.2)
+                                        },
                                         look,
                                         base.as_ref(),
+                                        subject.karaoke,
                                     )
                                 })
                             })
@@ -455,7 +474,7 @@ impl CaptionsPane {
         let commands: Vec<Command> = lines
             .into_iter()
             .map(|(text, seconds)| {
-                let command = caption_clip(text, at, seconds, look, base.as_ref());
+                let command = caption_clip(text, at, seconds, look, base.as_ref(), false);
                 at += seconds;
                 command
             })
@@ -495,6 +514,7 @@ impl CaptionsPane {
             source_start: clip.source_start,
             window: clip.duration * clip.speed,
             model_id: model.clone(),
+            word_level: self.karaoke,
         };
         let dirs = studio.host.dirs.clone();
         let transcriber = Arc::clone(&studio.host.transcriber);
@@ -524,6 +544,7 @@ impl CaptionsPane {
             look: self.look(),
             model,
             windows,
+            karaoke: self.karaoke,
         });
         self.running = true;
         self.message.clear();
@@ -564,6 +585,7 @@ impl CaptionsPane {
             model: self.model as i32,
             placement: self.placement as i32,
             size: self.size as i32,
+            karaoke: self.karaoke,
             running: self.running,
             progress: self.pace.floor,
             ceiling: self.pace.ceiling,
@@ -581,6 +603,32 @@ impl CaptionsPane {
     }
 }
 
+/// Word-mode clips must come from Whisper's actual token-timestamp
+/// segmentation. This intentionally rejects segment-wide length estimates.
+fn karaoke_words_aligned(segments: &[Segment], start: f64, speed: f64) -> bool {
+    if segments.is_empty() || !start.is_finite() || !speed.is_finite() || speed <= 0.0 {
+        return false;
+    }
+    let mut previous_end = i64::MIN;
+    segments.iter().all(|part| {
+        if part.text.split_whitespace().count() != 1
+            || !part.start.is_finite() || !part.end.is_finite()
+            || part.end <= part.start {
+            return false;
+        }
+        // The GPU output is 30fps: reject unrepresentable or overlapping
+        // word highlights instead of inventing word timing.
+        let first = ((start + part.start / speed) * 30.0).round();
+        let last = ((start + part.end / speed) * 30.0).round();
+        if !first.is_finite() || !last.is_finite()
+            || first < 0.0 || last <= first || first < previous_end as f64 {
+            return false;
+        }
+        previous_end = last as i64;
+        true
+    })
+}
+
 /// Imported cues keep the file's timing, including captions shorter than
 /// generated speech segments. The title command applies the engine's minimum
 /// clip duration where needed.
@@ -594,6 +642,7 @@ fn srt_commands(cues: Vec<srt::Cue>, look: (f64, f64), base: Option<&TextStyle>)
                 cue.end - cue.start,
                 look,
                 base,
+                false,
             )
         })
         .collect()
@@ -743,6 +792,7 @@ fn caption_clip(
     duration: f64,
     look: (f64, f64),
     base: Option<&TextStyle>,
+    karaoke: bool,
 ) -> Command {
     let (offset_y, font_size) = look;
     // The kept look where there is one - family, weight, colours, stroke,
@@ -751,6 +801,7 @@ fn caption_clip(
     let style = match base.filter(|_| !cfg!(windows)) {
         Some(base) => TextStyle {
             content: text,
+            karaoke,
             font_size,
             max_width: 0.0,
             max_height: 0.0,
@@ -758,6 +809,7 @@ fn caption_clip(
         },
         None => TextStyle {
             content: text,
+            karaoke,
             font_family: "Hanken Grotesk".to_owned(),
             font_size,
             font_weight: 600.0,
@@ -865,7 +917,34 @@ fn wrap_caption(sentence: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{script_captions, source_label};
+    use super::{karaoke_words_aligned, script_captions, source_label};
+    use concat_speech::transcribe::Segment;
+    #[test]
+    fn karaoke_requires_real_one_word_asr_intervals() {
+        let good = vec![
+            Segment { start: 0.1, end: 0.3, text: "Hello".into() },
+            Segment { start: 0.3, end: 0.6, text: "world".into() },
+        ];
+        assert!(karaoke_words_aligned(&good, 0.0, 1.0));
+        assert!(!karaoke_words_aligned(&[
+            Segment { start: 0.1, end: 0.6, text: "Hello world".into() }
+        ], 0.0, 1.0));
+        assert!(!karaoke_words_aligned(&[
+            Segment { start: 0.3, end: 0.2, text: "Hello".into() }
+        ], 0.0, 1.0));
+        assert!(karaoke_words_aligned(&good, 2.0, 0.5));
+        assert!(!karaoke_words_aligned(&good, 2.0, 0.0));
+        assert!(!karaoke_words_aligned(&[], 0.0, 1.0));
+        assert!(!karaoke_words_aligned(&[
+            Segment { start: 0.10, end: 0.11, text: "too-short".into() },
+        ], 0.0, 1.0));
+        assert!(!karaoke_words_aligned(&[
+            Segment { start: 0.1, end: 0.2, text: "overlap".into() },
+            Segment { start: 0.19, end: 0.3, text: "next".into() },
+        ], 0.0, 1.0));
+    }
+
+
 
     #[test]
     fn imported_srt_preserves_short_cues_and_multiline_text() {
