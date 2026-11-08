@@ -1,8 +1,4 @@
-Concat synchronized Windows EXE + Salad GPU image release request — 2026-11-08, attempt 3.
-
-The prior c9d267c69059 Windows GUI compiled but crashed on startup because the existing built-in concat.look.4k ID was rejected by the two-segment package ID validator.
-This release retains existing three-part concat.look.* IDs without renaming project format, supports existing transition intensity keys, and runs Rust preflight across all embedded built-in effect manifests before the Windows native build.
-
-Required: package Rust preflight PASS; Windows native compile and --smoke PASS; full bundle/DLL integrity, persistent project tests, SHA256, GitHub release asset.
-Required: Salad worker image import check, publish GHCR digest, commit-matched immutable SHA tag.
-Use the exact same GitHub source SHA for both artifacts. No deployment to VPS or Salad, no default automatic builds on unrelated pushes.
+Concat final synchronized Windows EXE + Salad CUDA image release, 2026-11-08.
+All effects catalogue manifests and compiled catalogue Rust tests passed in prior 54ad4e59 build. Windows GUI compiled and concat.exe --smoke passed, portable DLL and project-persistence checks passed.
+The only remaining failure was two stale host integration test Transition struct initializers in tests/export.rs missing a newly optional intensity field. Both fixtures now set intensity: None without changing production behavior.
+Build exactly this new main commit with both workflows. Native Windows release is permitted only after full host test pass and SHA256 packaging; publish a GitHub Release ZIP, and matching GHCR image with immutable source SHA/digest. No VPS or Salad live deployment. No generalized auto build on unrelated pushes.
