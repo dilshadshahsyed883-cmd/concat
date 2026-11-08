@@ -49,6 +49,7 @@ use concat_project::{Command, PlayheadSide};
 mod backdrop;
 mod bulk_presets;
 use bulk_presets::{BulkEffects, BulkMotion, BulkTransitions};
+mod compound;
 mod consolidate;
 use consolidate::MergeJob;
 mod masking;
@@ -90,17 +91,13 @@ pub const OUTPUTS: [(i32, i32); 6] = [
 /// splits both floor at this, as the engine's own `MIN_CLIP_DURATION` does.
 pub const MIN_DURATION: f32 = 1.0 / 60.0;
 
-/// The three lane heights, in logical pixels.
-///
-/// Picture gets the tallest because a filmstrip is the one thing that needs
-/// the room; sound the middle, where an envelope still has shape. The ladder
-/// is what `TrackSize::Auto` picks from - see `lane_height`. Raised from
-/// 80/60/40: with the name strip and the sound band taken off, a video's
-/// frames had under forty pixels and a waveform under thirty, and both
-/// read as crammed.
+/// Compact automatic lanes keep five or more tracks in view on a
+/// typical desktop. Manual sizes remain available for larger thumbnails
+/// and more detailed waveform editing.
 const LANE_LARGE: f32 = 108.0;
-const LANE_MEDIUM: f32 = 80.0;
-const LANE_SMALL: f32 = 44.0;
+const LANE_MEDIUM: f32 = 72.0;
+const LANE_SMALL: f32 = 48.0;
+const LANE_AUTO: f32 = 48.0;
 
 /// How long a title runs when it is placed: long enough to read, short
 /// enough that trimming it is a nudge rather than a fight.
@@ -894,6 +891,8 @@ pub struct Studio {
     /// line of the activity trail; see `note_activity`.
     activity_burst: Option<crate::panes::Burst>,
     pub toast: ToastState,
+    /// Transient modal state; never persisted into the timeline.
+    pub compound_rename: Option<(String, String)>,
 
     // ── the launch screen ──
     pub on_start: bool,
@@ -2089,6 +2088,8 @@ fn few(names: &[String]) -> String {
 /// What the confirmation sheet can ask about.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Confirm {
+    /// Delete only a compound container; every original source clip stays.
+    RemoveCompound { compound_id: String, name: String },
     /// Deleting a whole track, and every clip on it.
     RemoveTrack { track_id: String },
     /// Exporting over a file that is already at `path`.
@@ -2337,6 +2338,7 @@ impl Studio {
             menu_token: 0,
             activity_burst: None,
             toast: ToastState::default(),
+            compound_rename: None,
             on_start: true,
             start,
             recents,
@@ -2482,6 +2484,9 @@ impl Studio {
     /// The confirmation sheet's answer: go ahead with what it asked about.
     pub fn confirm_accepted(&mut self) {
         match self.confirm.take() {
+            Some(Confirm::RemoveCompound { compound_id, .. }) => {
+                self.apply(Command::UngroupCompound { compound_id });
+            }
             Some(Confirm::RemoveTrack { track_id }) => {
                 self.apply(Command::RemoveTrack { track_id });
             }
@@ -2511,6 +2516,12 @@ impl Studio {
             return crate::ui::ConfirmData::default();
         };
         match confirm {
+            Confirm::RemoveCompound { name, .. } => crate::ui::ConfirmData {
+                open: true,
+                title: "Delete Compound Clip?".into(),
+                message: format!("Remove grouping for \"{name}\"? Original video, audio, clips, effects, timing and files will all be preserved.").into(),
+                action: "Delete Group".into(),
+            },
             Confirm::RemoveTrack { track_id } => {
                 let clips = self
                     .timeline()
@@ -2583,33 +2594,15 @@ impl Studio {
             .map_or(TrackSize::Auto, |view| view.size)
     }
 
-    /// How tall one lane is drawn: a lane takes the height of the tallest
-    /// thing on it, without the lanes having to be typed. An empty one takes
-    /// the middle size.
+    /// By default all lanes are 48 logical pixels tall. Users can expand
+    /// individual lanes to 72/108px for filmstrip or waveform detail.
+    /// Track locking, scrolling, thumbnails and zoom stay unchanged.
     fn lane_height(&self, lane: &Track) -> f32 {
         match self.lane_size(&lane.id) {
             TrackSize::Small => LANE_SMALL,
             TrackSize::Medium => LANE_MEDIUM,
             TrackSize::Large => LANE_LARGE,
-            TrackSize::Auto => {
-                let tallest = self
-                    .timeline()
-                    .clips
-                    .iter()
-                    .filter(|clip| clip.track_id == lane.id)
-                    .map(|clip| match clip.kind {
-                        model::ClipKind::Video | model::ClipKind::Image => LANE_LARGE,
-                        model::ClipKind::Audio => LANE_MEDIUM,
-                        // A title is its name strip alone; a layer has no
-                        // picture at all; a shape's name says what it is.
-                        // None needs a body's height.
-                        model::ClipKind::Text | model::ClipKind::Layer | model::ClipKind::Shape => {
-                            LANE_SMALL
-                        }
-                    })
-                    .fold(0.0_f32, f32::max);
-                if tallest > 0.0 { tallest } else { LANE_MEDIUM }
-            }
+            TrackSize::Auto => LANE_AUTO,
         }
     }
 
@@ -8957,6 +8950,9 @@ impl Studio {
             }
         };
         let editor = app.global::<Editor>();
+        app.set_compound_rename_open(self.compound_rename.is_some());
+        app.set_compound_rename_name(self.compound_rename.as_ref()
+            .map(|(_, name)| name.as_str()).unwrap_or_default().into());
         editor.set_cb_media_folder(self.c_builder.folder.clone().into());
         editor.set_cb_narration(self.c_builder.narration.clone().into());
         editor.set_cb_duration(self.c_builder.duration.unwrap_or_default() as f32);
@@ -9087,6 +9083,14 @@ impl Studio {
                 .collect(),
         );
 
+        // Membership labels are visual hints only. The timeline still
+        // publishes each original clip once so Preview, waveforms, sync and
+        // CUDA export cannot accidentally duplicate source audio.
+        let compound_names: HashMap<&str, &str> = timeline.compounds.iter()
+            .flat_map(|group| group.members.iter().filter_map(move |member| match member {
+                model::CompoundMember::Clip(id) => Some((id.as_str(), group.name.as_str())),
+                model::CompoundMember::Compound(_) => None,
+            })).collect();
         // Only the clips near the view: what the lanes show plus a screen
         // either side; see `TimelinePane::published_span`.
         let span = self.lanes.published_span();
@@ -9111,7 +9115,10 @@ impl Studio {
                         };
                     ClipData {
                         id: clip.id.as_str().into(),
-                        name: clip.name.as_str().into(),
+                        name: match compound_names.get(clip.id.as_str()) {
+                            Some(group) => format!("▣ {} · {}", group, clip.name).into(),
+                            None => clip.name.as_str().into(),
+                        },
                         kind: kind_of(clip),
                         row: self.row_of(&clip.track_id),
                         start: clip.start as f32,
@@ -11398,6 +11405,27 @@ impl Studio {
                     && (clip.kind == model::ClipKind::Video || clip.kind == model::ClipKind::Image),
             ),
         ];
+        // A compound is structural until both render engines implement
+        // group-level compositing: these actions never bake or duplicate audio.
+        rows.push(rule());
+        rows.push(action("compound-selected", "Compound Selected Media".into(),
+            Glyph::Merge, "", !locked && !self.selection.is_empty()));
+        rows.push(action("compound-all", "Compound All Layers".into(),
+            Glyph::Merge, "", !self.timeline().clips.is_empty()));
+        rows.push(action("compound-span", "Compound Selected Time Span".into(),
+            Glyph::Merge, "", !self.selection.is_empty()));
+        if self.compound_for_clip(&clip.id).is_some() {
+            rows.push(action("compound-nest", "Nest Compound".into(),
+                Glyph::Merge, "", !locked));
+            rows.push(action("compound-members", "Select Compound Members".into(),
+                Glyph::None, "", true));
+            rows.push(action("compound-rename", "Rename Compound Clip".into(),
+                Glyph::None, "", !locked));
+            rows.push(action("compound-delete", "Delete Compound (keep all media)".into(),
+                Glyph::None, "", !locked));
+            rows.push(action("compound-break", "Break Apart Compound".into(),
+                Glyph::Split, "", !locked));
+        }
         if !cfg!(windows) {
             // The row opens the clip's local Enhance model in the inspector.
             rows.push(action(
@@ -12201,6 +12229,14 @@ impl Studio {
             return;
         };
         match action {
+            "compound-selected" => self.compound_selected_from(id),
+            "compound-all" => self.compound_all_layers(),
+            "compound-span" => self.compound_selection_span(id),
+            "compound-nest" => self.nest_compound_from(id),
+            "compound-members" => self.select_compound_members(id),
+            "compound-rename" => self.prompt_compound_rename(id),
+            "compound-delete" => self.ask_delete_compound(id),
+            "compound-break" => self.break_compound_from(id),
             "copy" => self.copy_clips(Some(id)),
             "duplicate" => self.duplicate_selected(),
             // Pasted after the clip that was right-clicked, on its lane.

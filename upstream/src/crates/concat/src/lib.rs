@@ -1710,6 +1710,17 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         }
     }));
 
+    // Compound Clip name changes are undoable project commands.
+    app.on_compound_rename_edited(on_window!(|state, name: SharedString| {
+        state.compound_rename_edit(name.to_string());
+    }));
+    app.on_compound_rename_apply(on_window!(|state| {
+        state.compound_rename_apply();
+    }));
+    app.on_compound_rename_dismiss(on_window!(|state| {
+        state.compound_rename_dismiss();
+    }));
+
     // ── the keyboard ──
     //
     // A press on any pane's floor takes focus back from the field that had

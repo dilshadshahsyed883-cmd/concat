@@ -169,6 +169,12 @@ export component App inherits Window {
     callback start-rename-edited(name: string);
     callback start-apply-rename();
     callback start-dismiss-rename();
+    // An in-project undoable compound rename, not a filesystem rename.
+    in property <bool> compound-rename-open;
+    in property <string> compound-rename-name;
+    callback compound-rename-edited(name: string);
+    callback compound-rename-apply();
+    callback compound-rename-dismiss();
     callback start-search-edited(query: string);
     callback start-sort-changed(sort: int);
     /// One of the launch screen's links, by name; see `start::link`.
@@ -512,6 +518,7 @@ export component App inherits Window {
             // with a job keeps itself - its × is gone then too - and the
             // key is spent on it, not passed to the editor underneath.
             if (event.text == Key.Escape) {
+                if (root.compound-rename-open) { root.compound-rename-dismiss(); return accept; }
                 if (root.start.renaming) { root.start-dismiss-rename(); return accept; }
                 if (root.confirm.open) { root.confirm-dismissed(); return accept; }
                 if (root.relink.open) { root.relink-dismiss(); return accept; }
@@ -815,6 +822,24 @@ export component App inherits Window {
         name-edited(name) => { root.start-rename-edited(name); }
         renamed => { root.start-apply-rename(); }
         dismissed => { root.start-dismiss-rename(); }
+    }
+
+    RenameDialog {
+        fill: root.sheets-fill;
+        inset-top: root.safe-area-insets.top;
+        inset-bottom: root.safe-area-insets.bottom;
+        inset-left: root.safe-area-insets.left;
+        inset-right: root.safe-area-insets.right;
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        heading: "Rename Compound Clip";
+        open: root.compound-rename-open;
+        name: root.compound-rename-name;
+        name-edited(name) => { root.compound-rename-edited(name); }
+        renamed => { root.compound-rename-apply(); }
+        dismissed => { root.compound-rename-dismiss(); }
     }
 
     ExportDialog {
