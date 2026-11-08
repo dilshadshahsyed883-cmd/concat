@@ -1068,6 +1068,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         };
         state.selection.clear();
         state.compound_edit = None;
+        state.compound_edit_parents.clear();
         state.apply(concat_project::Command::SelectTimeline { timeline_id: id });
     }));
     editor.on_tab_renamed(on_window!(|state, index: i32, name: SharedString| {
