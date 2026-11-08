@@ -1,11 +1,7 @@
 name: Concat native development build
 
 on:
-  push:
-    branches: ['main', 'gpu/baseline', 'gpu/desktop-editor', 'gpu/integration', 'gpu/integrated', 'gpu/final-integration', 'desktop/queue-bulk']
-    paths: ['upstream/**', '.github/workflows/concat-windows.yml']
-  pull_request:
-    paths: ['upstream/**', '.github/workflows/concat-windows.yml']
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -200,7 +196,7 @@ jobs:
 
   publish-main-release:
     needs: native-editor-windows
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -231,7 +227,7 @@ jobs:
           {
             echo "Portable Windows x64 Concat editor built and smoke-tested from main commit ${GITHUB_SHA}."
             echo
-            echo "Salad GPU candidate (same source commit):"
+            echo "Optional Salad GPU candidate (only after a separate manual image build):"
             echo "`ghcr.io/${GITHUB_REPOSITORY,,}-gpu-candidate:${GITHUB_SHA}`"
             echo
             echo "GPU RTX 3060 Ti acceptance is pending a live test; this release does not claim GPU acceptance."
