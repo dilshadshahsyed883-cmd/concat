@@ -395,7 +395,19 @@ pub(super) fn apply(
                 head.source_start = head_source;
                 head.fade_out = 0.0;
                 head.rewindow_keys(whole, 0.0, offset);
+                let tail_id = tail.id.clone();
                 timeline.clips.insert(index + 1, Arc::new(tail));
+                // A cut while editing a compound must keep both parts
+                // in that compound. Otherwise its new tail silently escapes
+                // the group even though it still renders on the same track.
+                for group in &mut timeline.compounds {
+                    if let Some(member_index) = group.members.iter().position(|member| {
+                        matches!(member, crate::model::CompoundMember::Clip(id) if id == &clip_id)
+                    }) {
+                        group.members.insert(member_index + 1,
+                            crate::model::CompoundMember::Clip(tail_id.clone()));
+                    }
+                }
             }
             // A split always mints the tail, so "minted anything" and
             // "changed anything" are the same fact here.
