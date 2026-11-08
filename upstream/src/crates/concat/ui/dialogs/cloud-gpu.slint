@@ -99,7 +99,7 @@ export component GpuQueueSection inherits DialogSection {
             wrap: word-wrap;
         }
         if job.metrics != "": Text { text: job.metrics; color: Theme.fg; wrap: word-wrap; }
-        if job.progress > 0 && job.progress < 100: Progress {
+        if job.state == "Uploading": Progress {
             value: job.progress / 100.0;
         }
         if job.output != "": Text { text: job.output; color: Theme.fg; wrap: word-wrap; }
