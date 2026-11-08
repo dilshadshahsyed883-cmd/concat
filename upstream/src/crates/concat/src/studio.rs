@@ -3991,8 +3991,18 @@ impl Studio {
             return;
         };
         let ids: Vec<String> = if all {
+            // A timeline also contains title cards. "Apply to all captions"
+            // means the active caption lane (or the busiest text lane),
+            // not unrelated title tracks elsewhere in the project.
+            let lane = self.sole_selection()
+                .and_then(|id| self.clip(&id))
+                .filter(|clip| clip.kind == model::ClipKind::Text)
+                .map(|clip| clip.track_id.clone())
+                .or_else(|| concat_project::srt::busiest_title_lane(self.timeline()));
             self.timeline().clips.iter()
-                .filter(|clip| clip.kind == model::ClipKind::Text && !self.locked(&clip.track_id))
+                .filter(|clip| clip.kind == model::ClipKind::Text
+                    && lane.as_deref() == Some(clip.track_id.as_str())
+                    && !self.locked(&clip.track_id))
                 .map(|clip| clip.id.clone())
                 .collect()
         } else {
