@@ -2,7 +2,7 @@ name: Concat Salad candidate
 
 on:
   push:
-    branches: ['gpu/final-integration', 'desktop/queue-bulk', 'integration/desktop-queue-compat-metrics-20261108', 'desktop/gpu-compat']
+    branches: ['gpu/final-integration', 'desktop/queue-bulk', 'integration/desktop-queue-compat-metrics-20261108', 'desktop/gpu-compat', 'desktop/cuda-assets-random']
 
 permissions:
   contents: read

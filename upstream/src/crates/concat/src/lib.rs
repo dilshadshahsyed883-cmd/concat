@@ -908,6 +908,9 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     editor.on_library_apply_transition(on_window!(|state, id: SharedString| {
         state.apply_transition(id.as_str());
     }));
+    editor.on_library_apply_random_transitions(on_window!(|state| {
+        state.apply_random_gpu_transitions();
+    }));
     editor.on_library_save_template(on_window!(|state| {
         state.save_template();
     }));
@@ -1165,6 +1168,9 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         }));
         keys.on_apply_motion_preset(on_lanes!(|state, field: ClipField| {
             state.apply_motion_preset(field);
+        }));
+        keys.on_apply_random_motion(on_lanes!(|state| {
+            state.apply_random_gpu_motion();
         }));
         // The same three verbs for the Adjust panel's knobs, which are
         // named rather than enumerated.

@@ -3,10 +3,10 @@
 //! Inspector motion presets expressed as ordinary, undoable clip keys.
 
 use crate::Command;
-use crate::model::{Clip, ClipKind, KeyEase, KeyProperty, ranges};
+use crate::model::{Clip, ClipKey, ClipKind, KeyEase, KeyProperty, ranges};
 
 /// The starter animations available from the native picture inspector.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MotionPreset {
     /// Increase the clip's current scale by 18 percent.
     PushIn,
@@ -33,6 +33,22 @@ impl MotionPreset {
     /// Build one undoable edit and return the timeline time of a frame in
     /// its range so the inspector can show the effect immediately.
     pub fn command(self, clip: &Clip, frame: f64) -> Result<(Command, f64), PresetError> {
+        let (keys, preview) = self.keys(clip, frame)?;
+        let commands = keys
+            .into_iter()
+            .map(|key| Command::SetClipKey {
+                clip_id: clip.id.clone(),
+                property: key.property,
+                at: key.at,
+                value: key.value,
+                ease: key.ease,
+            })
+            .collect();
+        Ok((Command::Batch { commands }, preview))
+    }
+
+    /// Calculate the preset's native keys before committing an edit.
+    pub fn keys(self, clip: &Clip, frame: f64) -> Result<([ClipKey; 2], f64), PresetError> {
         if !matches!(clip.kind, ClipKind::Video | ClipKind::Image) {
             return Err(PresetError::NeedsPicture);
         }
@@ -72,21 +88,18 @@ impl MotionPreset {
             return Err(PresetError::NoChange);
         }
         let end = end_frame * frame / clip.duration;
-        let commands = [
+        let keys = [
             (0.0, first, KeyEase::LINEAR),
             (end, final_value, KeyEase::IN_OUT),
         ]
-        .into_iter()
-        .map(|(at, value, ease)| Command::SetClipKey {
-            clip_id: clip.id.clone(),
+        .map(|(at, value, ease)| ClipKey {
             property,
             at,
             value,
             ease,
-        })
-        .collect();
+        });
         let preview = clip.start + (end_frame / 2.0).round() * frame;
-        Ok((Command::Batch { commands }, preview))
+        Ok((keys, preview))
     }
 }
 

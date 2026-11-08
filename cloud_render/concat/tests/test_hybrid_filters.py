@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 from cloud_render.concat.hybrid.contract import cuda
-from cloud_render.concat.hybrid.filters import CubeLut, FilterSettings, apply
+from cloud_render.concat.hybrid.filters import CubeLut, FilterSettings, apply, apply_contrast, apply_exposure
 
 
 def identity_cube():
@@ -91,6 +91,29 @@ class CudaFilterTests(unittest.TestCase):
         cp.testing.assert_array_equal(blurred[..., 3], frame[..., 3])
         sharpened = apply(frame, FilterSettings(sharpen=1))
         self.assertAlmostEqual(float(sharpened[0, 1, 2]), 0.9, places=5)
+
+    def test_native_exposure_matches_light_gain_and_retains_highlights(self):
+        cp = self.cp
+        frame = cp.array([[[.2, .8, .9, .5], [0, .5, .1, 1]]], dtype=cp.float32)
+        expected = cp.power(cp.power(frame[..., :3], 2.4) * 4, 1 / 2.4)
+        raised = apply_exposure(frame, 2)
+        cp.testing.assert_allclose(raised[..., :3], expected, atol=1e-6)
+        cp.testing.assert_array_equal(raised[..., 3], frame[..., 3])
+        self.assertGreater(float(raised[0, 0, 2]), 1)
+        cp.testing.assert_allclose(apply_exposure(raised, -2), frame, atol=1e-6)
+
+    def test_native_contrast_matches_desktop_linear_light_shader(self):
+        cp = self.cp
+        gray = .18 ** (1 / 2.4)
+        frame = cp.array([[[0, gray, 1, .5], [.2, .7, 1.5, 1]]], dtype=cp.float32)
+        light = cp.power(frame[..., :3], 2.4)
+        for amount in (-100, 0, 100):
+            with self.subTest(amount=amount):
+                expected = cp.where(
+                    light > 0, .18 * cp.power(cp.maximum(light, 1e-10) / .18, 1 + amount / 100), light)
+                result = apply_contrast(frame, amount)
+                cp.testing.assert_allclose(result[..., :3], cp.power(expected, 1 / 2.4), atol=1e-6)
+                cp.testing.assert_array_equal(result[..., 3], frame[..., 3])
 
     def test_trilinear_identity_with_asymmetric_channels_and_strides(self):
         cp = self.cp

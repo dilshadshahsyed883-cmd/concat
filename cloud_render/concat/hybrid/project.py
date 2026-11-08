@@ -3,21 +3,24 @@ from __future__ import annotations
 
 import json
 from bisect import bisect_right
-from dataclasses import dataclass, field
-from math import isfinite
+from dataclasses import dataclass, field, replace
+from math import floor, isfinite
 from pathlib import Path
 
 from .animations import Transform
 from .captions import CaptionStyle, Cue
 from .contract import FrameSpan
 from .filters import FilterSettings
-from .transitions import Transition
+from .transitions import NATIVE_FADES, Transition
 
 FPS = 30
 WIDTH, HEIGHT = 1920, 1080
 KEYS = {"scale": "scale", "offsetX": "pan_x", "offsetY": "pan_y",
         "rotation": "rotation_degrees", "opacity": "opacity"}
 EASE = {"in": (.42, 0, 1, 1), "out": (0, 0, .58, 1), "inOut": (.42, 0, .58, 1)}
+EXPOSURE = "concat.exposure"
+CONTRAST = "concat.contrast"
+NATIVE_COLOR_PARAMS = {EXPOSURE: ("stops", -4, 4), CONTRAST: ("amount", -100, 100)}
 TRANSITIONS = {"cross-fade": ("dissolve", "left"), "fade-black": ("fade", "left"),
                "push": ("slide", "left"), "zoom": ("zoom", "left"),
                "wipe-left": ("wipe", "left"), "wipe-right": ("wipe", "right")}
@@ -109,13 +112,16 @@ def _validated_timeline(document):
             if effect.get("enabled", True) is False:
                 continue
             effect_id = effect.get("id")
-            if kind not in ("image", "video", "layer") or effect_id != "concat.box-blur":
+            if (kind not in ("image", "video", "layer")
+                    or effect_id not in ("concat.box-blur", *NATIVE_COLOR_PARAMS)
+                    or (kind == "layer" and effect_id != "concat.box-blur")):
                 raise ValueError(f"Unsupported GPU effect {effect_id} on clip {ident}")
         transition = clip.get("transitionIn")
         if transition is not None:
             transition_id = transition.get("id") if isinstance(transition, dict) else None
             if (kind not in ("image", "video") or not isinstance(transition_id, str)
-                    or transition_id not in TRANSITIONS or set(transition) - {"id", "duration"}):
+                    or (transition_id not in TRANSITIONS and transition_id not in NATIVE_FADES)
+                    or set(transition) - {"id", "duration"}):
                 raise ValueError(f"Unsupported GPU transition {transition_id} on clip {ident}")
         if kind == "text" and (any(clip.get(field) for field in ("flipH", "flipV"))
                                or clip.get("rotation", 0) != 0 or clip.get("scale", 1) != 1):
@@ -159,6 +165,33 @@ def ease(fraction, curve):
     return axis((lo + hi) / 2, y1, y2)
 
 
+@dataclass(frozen=True)
+class NativeColorEffect:
+    """A native color pass with one constant or animated catalogue parameter."""
+
+    id: str
+    value: float
+    keys: tuple[tuple[float, float, tuple | str | None], ...]
+    start: float
+    duration: float
+
+    def at_frame(self, index):
+        if not self.keys:
+            return self.value
+        fraction = (index / FPS - self.start) / self.duration
+        right = bisect_right(self.keys, fraction, key=lambda point: point[0])
+        if right == 0:
+            return self.keys[0][1]
+        if right == len(self.keys):
+            return self.keys[-1][1]
+        left, after = self.keys[right - 1], self.keys[right]
+        if fraction == left[0]:
+            return left[1]
+        weight = ease((fraction - left[0]) / (after[0] - left[0]), after[2])
+        _, minimum, maximum = NATIVE_COLOR_PARAMS[self.id]
+        return min(maximum, max(minimum, left[1] + (after[1] - left[1]) * weight))
+
+
 @dataclass
 class Picture:
     id: str
@@ -169,7 +202,7 @@ class Picture:
     speed: float
     constants: dict
     keys: dict = field(default_factory=dict)
-    filters: tuple[FilterSettings, ...] = ()
+    filters: tuple[FilterSettings | NativeColorEffect, ...] = ()
     transition: Transition | None = None
     outgoing: Picture | None = None
     flip_h: bool = False
@@ -205,25 +238,116 @@ class Sound:
 
 
 @dataclass(frozen=True)
+class NativeCut:
+    rank: int
+    transition: Transition
+    outgoing: Picture
+    incoming: Picture
+    hold_outgoing: bool
+
+    def outgoing_frame(self, index):
+        return min(index, self.outgoing.span.end - 1) if self.hold_outgoing else index
+
+
+@dataclass(frozen=True)
 class Project:
     lanes: tuple[tuple[Picture, ...], ...]
     captions: tuple[tuple[Cue, CaptionStyle], ...]
     sounds: tuple[Sound, ...]
     frames: int
+    native_cuts: tuple[NativeCut, ...] = ()
 
 
-def filters_for(clip):
+def _native_cut(rank, previous, incoming, ident, duration, media_duration):
+    length = min(duration, (previous.span.end - previous.span.start) / FPS,
+                 (incoming.span.end - incoming.span.start) / FPS)
+    frames = floor(length * FPS + .5)
+    if frames < 2:
+        raise ValueError(f"GPU transition {ident} on {incoming.id} needs at least two frames")
+    cut = incoming.span.start
+    head = length / 2
+    if incoming.kind == "video":
+        head = min(head, incoming.source_start / incoming.speed)
+    if head < .5 / FPS:
+        head = 0
+    start = floor(cut - head * FPS + .5)
+    end = start + frames
+    tail = max(0, end - cut)
+    previous_frames = previous.span.end - previous.span.start
+    available = ((media_duration - previous.source_start) / previous.speed
+                 if type(media_duration) in (float, int) and isfinite(media_duration) else 0)
+    hold = previous.kind == "video" and (available * FPS - previous_frames - 1) < tail - .5
+    return NativeCut(rank, Transition(NATIVE_FADES[ident], FrameSpan(start, end)),
+                     previous, incoming, hold)
+
+
+def _native_cut_audio(sounds, cut):
+    """Extend audio into the same source handles as video without moving the cut."""
+    span = cut.transition.span
+    seconds = (span.end - span.start) / FPS
+    if (incoming := sounds.get(cut.incoming.id)) is not None:
+        lead = max(incoming.start - span.start, 0)
+        sounds[cut.incoming.id] = replace(
+            incoming, start=incoming.start - lead,
+            source_start=max(incoming.source_start - lead * incoming.speed / FPS, 0),
+            seconds=incoming.seconds + lead / FPS, fade_in=max(incoming.fade_in, seconds))
+    if not cut.hold_outgoing and (outgoing := sounds.get(cut.outgoing.id)) is not None:
+        tail = max(span.end - cut.outgoing.span.end, 0)
+        sounds[cut.outgoing.id] = replace(
+            outgoing, seconds=outgoing.seconds + tail / FPS,
+            fade_out=max(outgoing.fade_out, seconds))
+
+
+def _native_color_effect(effect, params, start, duration):
+    effect_id = effect["id"]
+    parameter, minimum, maximum = NATIVE_COLOR_PARAMS[effect_id]
+    if set(params) - {parameter}:
+        raise ValueError("unknown effect parameter")
+    value = number(params.get(parameter, 0), parameter)
+    if not minimum <= value <= maximum:
+        raise ValueError(f"{parameter} must be within {minimum} to {maximum}")
+    keys = effect.get("keys", {})
+    if not isinstance(keys, dict) or set(keys) - {parameter}:
+        raise ValueError("invalid effect keyframe parameters")
+    points = keys.get(parameter, [])
+    if not isinstance(points, list):
+        raise ValueError("invalid effect keyframes")
+    parsed = {}
+    for point in points:
+        if not isinstance(point, dict):
+            raise ValueError("invalid effect keyframe")
+        at = number(point.get("at"), "effect key position")
+        key_value = number(point.get("value"), f"effect key {parameter}")
+        if not 0 <= at <= 1 or not minimum <= key_value <= maximum or at in parsed:
+            raise ValueError("invalid or duplicate effect keyframe")
+        curve = point.get("ease")
+        if isinstance(curve, list) and len(curve) == 4:
+            curve = tuple(number(part, "effect key easing") for part in curve)
+            if curve == (0, 0, 1, 1):
+                curve = None
+        elif curve is not None and curve not in ("linear", *EASE):
+            raise ValueError("invalid effect key easing")
+        parsed[at] = at, key_value, curve
+    return NativeColorEffect(effect_id, value, tuple(sorted(parsed.values())), start, duration)
+
+
+def filters_for(clip, start, duration):
     filters = []
     for effect in clip.get("videoEffects") or ():
         if effect.get("enabled", True) is False:
             continue
-        ident, params = effect.get("id"), effect.get("params") or {}
+        ident, params = effect.get("id"), effect.get("params", {})
         try:
-            if effect.get("keys"):
-                raise ValueError("animated parameters")
-            if not isinstance(params, dict) or set(params) - {"radius"}:
-                raise ValueError("unknown effect parameters")
-            settings = FilterSettings(blur_radius=round(number(params.get("radius", 4), "radius")))
+            if not isinstance(params, dict):
+                raise ValueError("invalid effect parameters")
+            if ident in NATIVE_COLOR_PARAMS:
+                settings = _native_color_effect(effect, params, start, duration)
+            else:
+                if effect.get("keys"):
+                    raise ValueError("animated parameters")
+                if set(params) - {"radius"}:
+                    raise ValueError("unknown effect parameters")
+                settings = FilterSettings(blur_radius=round(number(params.get("radius", 4), "radius")))
         except (TypeError, ValueError) as exc:
             raise ValueError(f"Unsupported GPU effect {ident} on {clip.get('id', '?')} ({exc})") from exc
         else:
@@ -333,7 +457,8 @@ def _plan_project(document, timeline, resolve_media):
     tracks = {track["id"]: track for track in timeline["tracks"]}
     media = {item["id"]: item for item in document["media"]}
     lanes = {track: [] for track in tracks}
-    sounds, captions, pending = [], [], {}
+    sounds, captions, pending = {}, [], {}
+    media_durations, native_cuts = {}, []
     track_order = {track: rank for rank, track in enumerate(tracks)}
     end_frame = 0
     for clip in timeline["clips"]:
@@ -358,10 +483,10 @@ def _plan_project(document, timeline, resolve_media):
             raise ValueError(f"Clip {ident} has unsupported playback speed")
         source = positive_time(clip.get("sourceStart", 0), "source start")
         if audible:
-            sounds.append(Sound(resolve_media(item), first, source, (end-first)/FPS, speed,
-                                clip.get("audioStream"), number(clip.get("volume", 1), "volume"),
-                                positive_time(clip.get("fadeIn", 0), "fade in"),
-                                positive_time(clip.get("fadeOut", 0), "fade out")))
+            sounds[ident] = Sound(resolve_media(item), first, source, (end-first)/FPS, speed,
+                                  clip.get("audioStream"), number(clip.get("volume", 1), "volume"),
+                                  positive_time(clip.get("fadeIn", 0), "fade in"),
+                                  positive_time(clip.get("fadeOut", 0), "fade out"))
         if not visible:
             continue
         if kind == "text":
@@ -384,31 +509,48 @@ def _plan_project(document, timeline, resolve_media):
         picture = Picture(ident, kind, None if kind == "layer" else resolve_media(item),
                           span, source, speed, constants,
                           {key: sorted(points.values()) for key, points in keys.items()},
-                          filters_for(clip), flip_h=bool(clip.get("flipH")),
+                          filters_for(clip, start, duration), flip_h=bool(clip.get("flipH")),
                           flip_v=bool(clip.get("flipV")))
         lanes[clip["trackId"]].append(picture)
+        media_durations[ident] = item.get("duration")
         if clip.get("transitionIn"):
             pending[ident] = clip["transitionIn"]
 
     sorted_lanes = []
     # Native track index zero is the bottom of the picture stack.
-    for lane in lanes.values():
+    for rank, lane in enumerate(lanes.values()):
         lane.sort(key=lambda clip: clip.span.start)
         for previous, incoming in zip(lane, lane[1:]):
             spec = pending.pop(incoming.id, None)
             if not spec:
                 continue
-            mode = TRANSITIONS.get(spec.get("id"))
+            ident = spec["id"]
             span = incoming.span
-            length = round(positive_time(spec.get("duration", 1), "transition") * FPS)
-            if (not mode or previous.span.end != span.start or not 2 <= length <= span.end - span.start
-                    or "layer" in (incoming.kind, previous.kind)):
-                raise ValueError(f"Unsupported or unaligned GPU transition {spec.get('id')} on {incoming.id}")
+            duration = positive_time(spec.get("duration", 1), "transition")
+            if previous.span.end != span.start or "layer" in (incoming.kind, previous.kind):
+                raise ValueError(f"Unsupported or unaligned GPU transition {ident} on {incoming.id}")
+            if ident in NATIVE_FADES:
+                native_cuts.append(_native_cut(rank, previous, incoming, ident, duration,
+                                               media_durations[previous.id]))
+                continue
+            mode = TRANSITIONS[ident]
+            length = round(duration * FPS)
+            if not 2 <= length <= span.end - span.start:
+                raise ValueError(f"Unsupported or unaligned GPU transition {ident} on {incoming.id}")
             incoming.transition = Transition(mode[0], FrameSpan(span.start, span.start+length), mode[1])
             incoming.outgoing = previous
         sorted_lanes.append(tuple(lane))
     for ident, spec in pending.items():
         raise ValueError(f"GPU transition {spec.get('id')} lacks an adjacent clip on {ident}")
+    native_cuts.sort(key=lambda cut: cut.transition.span.start)
+    for first, second in zip(native_cuts, native_cuts[1:]):
+        if first.transition.span.end > second.transition.span.start:
+            raise ValueError(f"GPU transition on {second.incoming.id} overlaps another transition")
+    for cut in native_cuts:
+        previous = cut.outgoing.transition
+        if previous and previous.span.end > cut.transition.span.start:
+            raise ValueError(f"GPU transition on {cut.incoming.id} overlaps another transition")
+        _native_cut_audio(sounds, cut)
     if not any(clip.path for lane in sorted_lanes for clip in lane):
         raise ValueError("The active timeline contains no visible video or images")
     # The worker composites captions above its picture stack. A caption
@@ -419,4 +561,5 @@ def _plan_project(document, timeline, resolve_media):
                 raise ValueError(f"GPU caption {ident} overlaps video or effects on its track or above; "
                                  "move the caption to a higher track")
     return Project(tuple(sorted_lanes), tuple(caption for _, _, _, caption in sorted(
-        captions, key=lambda entry: (entry[0], entry[1].start))), tuple(sounds), end_frame)
+        captions, key=lambda entry: (entry[0], entry[1].start))), tuple(sounds.values()), end_frame,
+        tuple(native_cuts))

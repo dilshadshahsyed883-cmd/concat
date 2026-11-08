@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 from collections import OrderedDict
+from dataclasses import replace
 from fractions import Fraction
 from itertools import groupby
 from pathlib import Path
@@ -17,8 +18,8 @@ from .captions import CaptionRenderer
 from .codec import Nvdec, Nvenc, nv12_from_rgba
 from .compositor import Layer, composite
 from .contract import FrameRate, cuda
-from .filters import apply as filter_picture
-from .project import FPS, HEIGHT, WIDTH, load_project
+from .filters import apply as filter_picture, apply_contrast, apply_exposure
+from .project import CONTRAST, EXPOSURE, FPS, HEIGHT, WIDTH, NativeColorEffect, load_project
 from .transitions import render_transition
 
 RATE = FrameRate(FPS)
@@ -81,8 +82,8 @@ class Sources:
                 raise ValueError(f"{path.name}: a constant frame rate is required")
             self.rates[path] = rate
         decoder = self.decoder(path)
-        offset = max(index - clip.span.start, 0) * clip.speed / FPS
-        source = int((clip.source_start + offset) * self.rates[path] + 1e-7)
+        offset = (index - clip.span.start) * clip.speed / FPS
+        source = int(max(clip.source_start + offset, 0) * self.rates[path] + 1e-7)
         if tail or source == len(decoder):
             source = min(source, len(decoder)-1)
         if source >= len(decoder):
@@ -106,16 +107,43 @@ def fitted(pixels):
     return canvas
 
 
-def picture(sources, clip, index, tail=False):
+NATIVE_COLOR_PASSES = {EXPOSURE: apply_exposure, CONTRAST: apply_contrast}
+
+
+def picture(sources, clip, index, tail=False, *, force_opacity=False, placement_index=None):
     pixels = sources.image(clip.path) if clip.kind == "image" else sources.video(clip, index, tail)
     if clip.flip_h:
         pixels = pixels[:, ::-1]
     if clip.flip_v:
         pixels = pixels[::-1]
-    pixels = apply_transform(pixels, clip.transform(index))
+    transform = clip.transform(index if placement_index is None else placement_index)
+    if force_opacity:
+        transform = replace(transform, opacity=1)
+    # Native packages run on the fitted picture before placement. Preserve
+    # the old post-placement order for clips with only legacy filters.
+    native_chain = any(isinstance(settings, NativeColorEffect) for settings in clip.filters)
+    if not native_chain:
+        pixels = apply_transform(pixels, transform)
     for settings in clip.filters:
-        pixels = filter_picture(pixels, settings)
-    return pixels
+        if isinstance(settings, NativeColorEffect):
+            handler = NATIVE_COLOR_PASSES[settings.id]
+            pixels = handler(pixels, settings.at_frame(index))
+        else:
+            pixels = filter_picture(pixels, settings)
+    return apply_transform(pixels, transform) if native_chain else pixels
+
+
+def native_transition_frame(sources, layers, cut, index):
+    outgoing_index = cut.outgoing_frame(index)
+    held = outgoing_index != index
+    outgoing = picture(sources, cut.outgoing, outgoing_index, tail=True,
+                       placement_index=cut.outgoing.span.end if held else None)
+    incoming = picture(sources, cut.incoming, index, force_opacity=True)
+    outgoing_layers = [*layers, Layer(outgoing)]
+    canvas = dict(width=WIDTH, height=HEIGHT, background=(0, 0, 0, 1))
+    outgoing_stack = composite(outgoing_layers, **canvas)
+    incoming_stack = composite([*outgoing_layers, Layer(incoming)], **canvas)
+    return render_transition(outgoing_stack, incoming_stack, cut.transition, index)
 
 
 def timeline_frames(plan, temporary, log):
@@ -129,14 +157,22 @@ def timeline_frames(plan, temporary, log):
     events = iter(groupby(starts, key=lambda row: row[0]))
     event = next(events, None)
     active = []
+    cuts = iter(plan.native_cuts)
+    cut = next(cuts, None)
     for index in range(plan.frames):
+        if cut and index >= cut.transition.span.end:
+            cut = next(cuts, None)
         active = [item for item in active if item[1].span.end > index]
         if event is not None and event[0] == index:
             active.extend((rank, clip) for _, rank, clip in event[1])
             active.sort(key=lambda row: (row[0], row[1].span.start))
             event = next(events, None)
         layers = []
-        for _, clip in active:
+        for rank, clip in active:
+            if (cut and rank == cut.rank and cut.transition.span.contains(index)
+                    and (clip is cut.incoming or clip is cut.outgoing)):
+                layers = [Layer(native_transition_frame(sources, layers, cut, index))]
+                continue
             if clip.kind == "layer":
                 if clip.filters and layers:
                     below = composite(layers, width=WIDTH, height=HEIGHT, background=(0,0,0,1))

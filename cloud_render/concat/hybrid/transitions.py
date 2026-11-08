@@ -7,8 +7,11 @@ from functools import cache
 from .contract import FrameSpan, cuda, rgba
 
 
-_KINDS = {"dissolve": 0, "fade": 1, "wipe": 2, "slide": 3, "zoom": 4}
+_KINDS = {"dissolve": 0, "fade": 1, "wipe": 2, "slide": 3, "zoom": 4,
+          "native-fade-black": 5, "native-fade-white": 6}
 _DIRECTIONS = {"left": 0, "right": 1, "up": 2, "down": 3}
+NATIVE_FADES = {"concat.fade-black": "native-fade-black",
+                "concat.fade-white": "native-fade-white"}
 
 
 @dataclass(frozen=True)
@@ -28,11 +31,13 @@ class Transition:
             raise ValueError("Unknown transition direction")
 
     def progress(self, frame_index: int) -> float:
-        """First overlap frame is outgoing, last is incoming. One frame is a cut."""
+        """Native packages divide elapsed frames by their full half-open span."""
         if type(frame_index) is not int or frame_index < 0:
             raise ValueError("Frame index must be a nonnegative integer")
         if frame_index < self.span.start:
             return 0.0
+        if self.kind in NATIVE_FADES.values():
+            return min((frame_index - self.span.start) / (self.span.end - self.span.start), 1.0)
         last = self.span.end - 1
         if frame_index >= last:
             return 1.0
@@ -92,10 +97,19 @@ extern "C" __global__ void transition_rgba(
         const long long source_index = horizontal
             ? (long long)y * width + source_axis : (long long)source_axis * width + x;
         output[i] = enters ? incoming[source_index] : outgoing[source_index];
-    } else {
+    } else if (kind == 4) {
         const float4 a = sample_zoom(outgoing, x, y, width, height, 1 + progress);
         const float4 b = sample_zoom(incoming, x, y, width, height, 1.5f - 0.5f * progress);
         output[i] = blend_rgba(a, b, progress);
+    } else {
+        // The packaged WGSL fades in display encoding, which is also the
+        // worker surface encoding. Preserve alpha from the selected stage.
+        const float4 base = progress < 0.5f ? outgoing[i] : incoming[i];
+        const float amount = 1.0f - fabsf(2.0f * progress - 1.0f);
+        const float target = kind == 5 ? 0.0f : 1.0f;
+        output[i] = make_float4(base.x + (target - base.x) * amount,
+                                base.y + (target - base.y) * amount,
+                                base.z + (target - base.z) * amount, base.w);
     }
 }
 """

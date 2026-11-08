@@ -11,7 +11,7 @@ from pathlib import Path
 from cloud_render.concat.gpu.worker import Handler, RenderWorker
 from cloud_render.concat.hybrid.captions import CaptionRenderer, _glyph_texture, _tile_region
 from cloud_render.concat.hybrid.contract import FrameRate
-from cloud_render.concat.hybrid.project import load_project, validate_gpu_manifest
+from cloud_render.concat.hybrid.project import NativeColorEffect, load_project, validate_gpu_manifest
 
 
 def minimal_project():
@@ -220,8 +220,8 @@ class GpuManifestValidationTests(unittest.TestCase):
     def test_rejects_inexact_packaged_transitions_in_preflight(self):
         capabilities = json.loads((Path(__file__).parents[1] / "hybrid"
                                    / "gpu_ui_capabilities.json").read_text())
-        self.assertEqual(capabilities["transitions"], [])
-        for native_id in ("concat.dissolve", "concat.fade-black", "concat.push", "concat.zoom-transition"):
+        self.assertEqual(capabilities["transitions"], ["concat.fade-black", "concat.fade-white"])
+        for native_id in ("concat.dissolve", "concat.push", "concat.zoom-transition"):
             with self.subTest(transition=native_id):
                 document = minimal_project()
                 document["timelines"][0]["clips"].append({
@@ -232,16 +232,126 @@ class GpuManifestValidationTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, rf"{native_id}.*photo2"):
                     validate_gpu_manifest(document)
 
+    def test_packaged_fades_plan_centered_still_cut_without_changing_length(self):
+        document = minimal_project()
+        incoming = {"id": "photo2", "kind": "image", "trackId": "video",
+                    "mediaId": "photo", "start": 1, "duration": 1}
+        document["timelines"][0]["clips"].append(incoming)
+        for ident, kind in (("concat.fade-black", "native-fade-black"),
+                            ("concat.fade-white", "native-fade-white")):
+            with self.subTest(transition=ident):
+                incoming["transitionIn"] = {"id": ident, "duration": .4}
+                validate_gpu_manifest(document)
+                project = load_fixture(document)
+                cut, = project.native_cuts
+                self.assertEqual(project.frames, 60)
+                self.assertEqual((cut.transition.span.start, cut.transition.span.end), (24, 36))
+                self.assertEqual((cut.incoming.id, cut.outgoing.id), ("photo2", "photo1"))
+                self.assertEqual(cut.transition.kind, kind)
+                self.assertEqual(cut.transition.progress(30), .5)
+                self.assertFalse(cut.hold_outgoing)
+
+    def test_packaged_fades_shift_later_when_video_has_no_incoming_handle(self):
+        document = minimal_project()
+        timeline = document["timelines"][0]
+        document["media"].append({"id": "video1", "kind": "video", "path": "photo.jpg",
+                                  "duration": 1})
+        timeline["clips"][0].update(kind="video", mediaId="video1")
+        incoming = {"id": "clip2", "kind": "video", "trackId": "video",
+                    "mediaId": "video1", "start": 1, "duration": .7, "sourceStart": 0,
+                    "transitionIn": {"id": "concat.fade-white", "duration": .4}}
+        timeline["clips"].append(incoming)
+        validate_gpu_manifest(document)
+        cut, = load_fixture(document).native_cuts
+        self.assertEqual((cut.transition.span.start, cut.transition.span.end), (30, 42))
+        self.assertTrue(cut.hold_outgoing)
+        self.assertEqual(cut.outgoing_frame(31), 29)
+        incoming["sourceStart"] = .1
+        cut, = load_fixture(document).native_cuts
+        self.assertEqual((cut.transition.span.start, cut.transition.span.end), (27, 39))
+
+    def test_packaged_fade_audio_reads_same_source_at_original_cut(self):
+        document = minimal_project()
+        timeline = document["timelines"][0]
+        document["media"].append({"id": "video1", "kind": "video", "path": "photo.jpg",
+                                  "duration": 3, "hasAudio": True})
+        timeline["clips"][0].update(kind="video", mediaId="video1")
+        timeline["clips"].append({
+            "id": "clip2", "kind": "video", "trackId": "video", "mediaId": "video1",
+            "start": 1, "duration": 1, "sourceStart": .6, "speed": 2,
+            "transitionIn": {"id": "concat.fade-white", "duration": .4},
+        })
+        project = load_fixture(document)
+        first, second = project.sounds
+        self.assertAlmostEqual(first.seconds, 1.2)
+        self.assertAlmostEqual(first.fade_out, .4)
+        self.assertEqual(second.start, 24)
+        self.assertAlmostEqual(second.fade_in, .4)
+        self.assertAlmostEqual(second.source_start + (30 - second.start) * second.speed / 30, .6)
+        self.assertEqual(project.frames, 60)
+
+    def test_overlapping_packaged_fades_fail_in_preflight(self):
+        document = minimal_project()
+        timeline = document["timelines"][0]
+        timeline["tracks"].append({"id": "upper"})
+        first = timeline["clips"][0]
+        timeline["clips"] += [
+            {**first, "id": "upper1", "trackId": "upper"},
+            {**first, "id": "photo2", "start": 1,
+             "transitionIn": {"id": "concat.fade-black", "duration": .4}},
+            {**first, "id": "upper2", "trackId": "upper", "start": 1,
+             "transitionIn": {"id": "concat.fade-white", "duration": .4}},
+        ]
+        for operation in (validate_gpu_manifest, load_fixture):
+            with self.assertRaisesRegex(ValueError, "upper2.*overlaps another transition"):
+                operation(document)
+
     def test_rejects_inexact_packaged_filters_in_preflight(self):
         capabilities = json.loads((Path(__file__).parents[1] / "hybrid"
                                    / "gpu_ui_capabilities.json").read_text())
-        self.assertEqual(capabilities["video_effects"], [])
-        for effect_id in ("concat.contrast", "concat.saturation", "concat.sharpen"):
+        self.assertEqual(capabilities["video_effects"], ["concat.exposure", "concat.contrast"])
+        for effect_id in ("concat.saturation", "concat.sharpen"):
             with self.subTest(effect=effect_id):
                 document = minimal_project()
                 document["timelines"][0]["clips"][0]["videoEffects"] = [{"id": effect_id}]
                 with self.assertRaisesRegex(ValueError, rf"{effect_id}.*photo1"):
                     validate_gpu_manifest(document)
+
+    def test_native_exposure_plans_animated_stops(self):
+        document = minimal_project()
+        clip = document["timelines"][0]["clips"][0]
+        clip.update(start=.5, duration=2, videoEffects=[{
+            "id": "concat.exposure", "params": {"stops": -1},
+            "keys": {"stops": [{"at": 0.25, "value": 0},
+                               {"at": 0.75, "value": 2, "ease": [0, 0, 1, 1]}]},
+        }])
+        validate_gpu_manifest(document)
+        exposure, = load_fixture(document).lanes[0][0].filters
+        self.assertIsInstance(exposure, NativeColorEffect)
+        self.assertAlmostEqual(exposure.at_frame(45), 1, places=5)
+        self.assertEqual((exposure.at_frame(15), exposure.at_frame(70)), (0, 2))
+
+    def test_invalid_exposure_rejected_before_upload(self):
+        for effect in ({"params": {"stops": 5}}, {"params": {"wrong": 1}},
+                       {"keys": {"stops": [{"at": .5, "value": 1, "ease": [0, 1]}]}}):
+            with self.subTest(effect=effect):
+                document = minimal_project()
+                document["timelines"][0]["clips"][0]["videoEffects"] = [
+                    {"id": "concat.exposure", **effect}]
+                with self.assertRaisesRegex(ValueError, "concat.exposure.*photo1"):
+                    validate_gpu_manifest(document)
+
+    def test_native_contrast_uses_catalogue_amount_and_validates_limits(self):
+        document = minimal_project()
+        clip = document["timelines"][0]["clips"][0]
+        clip["videoEffects"] = [{"id": "concat.contrast", "params": {"amount": 42}}]
+        validate_gpu_manifest(document)
+        contrast, = load_fixture(document).lanes[0][0].filters
+        self.assertEqual(contrast.id, "concat.contrast")
+        self.assertEqual(contrast.at_frame(0), 42)
+        clip["videoEffects"][0]["params"]["amount"] = 101
+        with self.assertRaisesRegex(ValueError, "concat.contrast.*photo1"):
+            validate_gpu_manifest(document)
 
     def test_preflight_validates_timing_and_filter_parameters(self):
         for update, error in (({"duration": .001}, "sub-frame duration"),

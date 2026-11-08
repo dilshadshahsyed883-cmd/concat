@@ -1775,6 +1775,7 @@ export component MediaPane inherits Rectangle {
     /// Catalogue pages: apply to the selected clip; Rust validates & explains.
     callback apply-effect(effect-id: string);
     callback apply-transition(transition-id: string);
+    callback apply-random-transitions();
     /// Filters page: lay the look down as a layer at the playhead.
     callback apply-filter(filter-id: string, label: string);
     /// Filters page: a single click shows the look over the whole picture
@@ -2692,6 +2693,10 @@ export component MediaPane inherits Rectangle {
                     ShelfSearch {
                         shelf: 3;
                         placeholder: I18n.t1("common.searchKind", I18n.t("mediaPane.transition"));
+                    }
+                    if GpuCompatibility.enabled && GpuCompatibility.transitions: Button {
+                        label: I18n.t("common.applyAllRandomly");
+                        clicked => { root.apply-random-transitions(); }
                     }
                     ShelfGrid {
                         entries: root.catalogue-transitions;

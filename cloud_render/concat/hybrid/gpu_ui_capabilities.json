@@ -1,4 +1,4 @@
 {
-  "video_effects": [],
-  "transitions": []
+  "video_effects": ["concat.exposure", "concat.contrast"],
+  "transitions": ["concat.fade-black", "concat.fade-white"]
 }

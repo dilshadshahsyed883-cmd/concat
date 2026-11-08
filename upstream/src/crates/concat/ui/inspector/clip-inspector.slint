@@ -1317,6 +1317,15 @@ export component VideoPanel inherits VerticalLayout {
                     clicked => { Keyframes.apply-motion-preset(ClipField.opacity); }
                 }
             }
+            if GpuCompatibility.enabled: HorizontalLayout {
+                padding-left: Theme.pad;
+                padding-right: Theme.pad;
+                Button {
+                    block: true;
+                    label: I18n.t("common.applyAllRandomly");
+                    clicked => { Keyframes.apply-random-motion(); }
+                }
+            }
         }
     }
 

@@ -261,3 +261,65 @@ def apply(pixels, settings: FilterSettings = FilterSettings(), lut: CudaLut | No
                                     *map(cp.float32, parameters), cp.int32(size),
                                     *map(cp.float32, (*low, *scale))))
     return out
+
+
+# The desktop stores SDR RGB with BT.1886's 2.4 gamma and holds the native
+# shader's linear-light output to the finite range of an f16 texture.
+_SDR_GAMMA = 2.4
+_MAX_ENCODED = 65504 ** (1 / _SDR_GAMMA)
+
+
+@cache
+def _native_color_kernels():
+    cp = cuda()
+    exposure = cp.ElementwiseKernel(
+        "float32 level, float32 gain, float32 ceiling", "float32 out",
+        "out = fminf(ceiling, fmaxf(-ceiling, level * gain));",
+        "concat_native_exposure",
+    )
+    contrast = cp.ElementwiseKernel(
+        "float32 level, float32 gray, float32 floor, float32 ceiling, float32 factor",
+        "float32 out",
+        """
+        out = level > 0.0f
+            ? fminf(ceiling, gray * powf(fmaxf(level, floor) / gray, factor))
+            : level;
+        """,
+        "concat_native_contrast",
+    )
+    return exposure, contrast
+
+
+def apply_exposure(pixels, stops: float):
+    """Apply the native linear-light exposure gain on an encoded CUDA surface."""
+    pixels = rgba(pixels)
+    if type(stops) not in (int, float) or not -4 <= stops <= 4:
+        raise ValueError("Exposure stops must be within -4 to +4")
+    if stops == 0:
+        return pixels
+    cp = cuda()
+    result = cp.empty_like(pixels)
+    exposure, _ = _native_color_kernels()
+    # The shader's 2**stops gain in linear light can be applied directly
+    # to encoded levels as 2**(stops / gamma).
+    gain = 2 ** (stops / _SDR_GAMMA)
+    exposure(pixels[..., :3], cp.float32(gain), cp.float32(_MAX_ENCODED), result[..., :3])
+    result[..., 3] = pixels[..., 3]
+    return result
+
+
+def apply_contrast(pixels, amount: float):
+    """Apply native Contrast in stops about 18% gray on a CUDA surface."""
+    pixels = rgba(pixels)
+    if type(amount) not in (int, float) or not -100 <= amount <= 100:
+        raise ValueError("Contrast amount must be within -100 to +100")
+    cp = cuda()
+    result = cp.empty_like(pixels)
+    _, contrast = _native_color_kernels()
+    # Encoding both the gray pivot and toe floor keeps the desktop's
+    # linear-light power curve equivalent without two extra conversions.
+    parameters = (.18 ** (1 / _SDR_GAMMA), 1e-10 ** (1 / _SDR_GAMMA),
+                  _MAX_ENCODED, 1 + amount / 100)
+    contrast(pixels[..., :3], *map(cp.float32, parameters), result[..., :3])
+    result[..., 3] = pixels[..., 3]
+    return result
