@@ -209,7 +209,7 @@ impl CaptionsPane {
                         // Never mislabel guessed character-length pacing as
                         // voice alignment. Fail closed if experimental Whisper
                         // segmentation cannot provide one actual word per cue.
-                        if subject.karaoke && !karaoke_words_aligned(&segments) {
+                        if subject.karaoke && !karaoke_words_aligned(&segments, subject.start, subject.speed) {
                             self.message = "Word timestamps unavailable for this transcription. Try another Whisper model.".into();
                             return;
                         }
@@ -221,9 +221,13 @@ impl CaptionsPane {
                                     caption_clip(
                                         text,
                                         subject.start + segment.start / subject.speed,
-                                        ((segment.end - segment.start) / subject.speed).max(
-                                            if subject.karaoke { 2.0 / 30.0 } else { 0.2 }
-                                        ),
+                                        if subject.karaoke {
+                                            // Preserve ASR boundaries. Extending every word
+                                            // to two frames would overlap the next word.
+                                            (segment.end - segment.start) / subject.speed
+                                        } else {
+                                            ((segment.end - segment.start) / subject.speed).max(0.2)
+                                        },
                                         look,
                                         base.as_ref(),
                                         subject.karaoke,
@@ -601,13 +605,28 @@ impl CaptionsPane {
 
 /// Word-mode clips must come from Whisper's actual token-timestamp
 /// segmentation. This intentionally rejects segment-wide length estimates.
-fn karaoke_words_aligned(segments: &[Segment]) -> bool {
+fn karaoke_words_aligned(segments: &[Segment], start: f64, speed: f64) -> bool {
+    if segments.is_empty() || !start.is_finite() || !speed.is_finite() || speed <= 0.0 {
+        return false;
+    }
+    let mut previous_end = i64::MIN;
     segments.iter().all(|part| {
-        part.text.split_whitespace().count() == 1
-            && part.start.is_finite()
-            && part.end.is_finite()
-            && part.end > part.start
-    }) && segments.windows(2).all(|part| part[0].end <= part[1].start + 0.01)
+        if part.text.split_whitespace().count() != 1
+            || !part.start.is_finite() || !part.end.is_finite()
+            || part.end <= part.start {
+            return false;
+        }
+        // The GPU output is 30fps: reject unrepresentable or overlapping
+        // word highlights instead of inventing word timing.
+        let first = ((start + part.start / speed) * 30.0).round();
+        let last = ((start + part.end / speed) * 30.0).round();
+        if !first.is_finite() || !last.is_finite()
+            || first < 0.0 || last <= first || first < previous_end as f64 {
+            return false;
+        }
+        previous_end = last as i64;
+        true
+    })
 }
 
 /// Imported cues keep the file's timing, including captions shorter than
@@ -906,13 +925,21 @@ mod tests {
             Segment { start: 0.1, end: 0.3, text: "Hello".into() },
             Segment { start: 0.3, end: 0.6, text: "world".into() },
         ];
-        assert!(karaoke_words_aligned(&good));
+        assert!(karaoke_words_aligned(&good, 0.0, 1.0));
         assert!(!karaoke_words_aligned(&[
             Segment { start: 0.1, end: 0.6, text: "Hello world".into() }
-        ]));
+        ], 0.0, 1.0));
         assert!(!karaoke_words_aligned(&[
             Segment { start: 0.3, end: 0.2, text: "Hello".into() }
-        ]));
+        ], 0.0, 1.0));
+        assert!(!karaoke_words_aligned(&[], 0.0, 1.0));
+        assert!(!karaoke_words_aligned(&[
+            Segment { start: 0.10, end: 0.11, text: "too-short".into() },
+        ], 0.0, 1.0));
+        assert!(!karaoke_words_aligned(&[
+            Segment { start: 0.1, end: 0.2, text: "overlap".into() },
+            Segment { start: 0.19, end: 0.3, text: "next".into() },
+        ], 0.0, 1.0));
     }
 
 
