@@ -1094,6 +1094,12 @@ export component VideoPanel inherits VerticalLayout {
         root.commit();
     }
 
+    // Preview parameters for the next physics preset click; GPU receives
+    // ordinary baked transform keys, so no renderer-specific format is added.
+    property <float> physics-strength: 1;
+    property <float> physics-duration: 1;
+    property <float> physics-speed: 1;
+    property <float> physics-intensity: 1;
     property <float> scale;
     property <float> offset-x;
     property <float> offset-y;
@@ -1326,6 +1332,53 @@ export component VideoPanel inherits VerticalLayout {
                     clicked => { Keyframes.apply-random-motion(); }
                 }
             }
+            if GpuCompatibility.enabled: VerticalLayout {
+                padding-left: Theme.pad;
+                padding-right: Theme.pad;
+                Param {
+                    label: "Strength";
+                    value <=> root.physics-strength;
+                    minimum: 0.1;
+                    maximum: 2;
+                    step: 0.1;
+                    default-value: 1;
+                    fmt: ParamFormat.fraction;
+                }
+                Param {
+                    label: "Duration (clip fraction)";
+                    value <=> root.physics-duration;
+                    minimum: 0.1;
+                    maximum: 1;
+                    step: 0.05;
+                    default-value: 1;
+                    fmt: ParamFormat.fraction;
+                    unit: "%";
+                    unit-scale: 100;
+                }
+                Param {
+                    label: "Speed";
+                    value <=> root.physics-speed;
+                    minimum: 0.25;
+                    maximum: 3;
+                    step: 0.05;
+                    default-value: 1;
+                    fmt: ParamFormat.fraction;
+                }
+                Param {
+                    label: "Physics Intensity";
+                    value <=> root.physics-intensity;
+                    minimum: 0.2;
+                    maximum: 2;
+                    step: 0.1;
+                    default-value: 1;
+                    fmt: ParamFormat.fraction;
+                }
+                Text {
+                    text: "Set controls, then click an animation to bake editable GPU-compatible keyframes.";
+                    color: Theme.fg-muted;
+                    wrap: word-wrap;
+                }
+            }
             // Native physics motion is sampled into ordinary clip keys;
             // no separate desktop-only animation data or unsupported worker effect.
             if GpuCompatibility.enabled: HorizontalLayout {
@@ -1336,7 +1389,7 @@ export component VideoPanel inherits VerticalLayout {
                     block: true;
                     label: "Spring Zoom";
                     horizontal-stretch: 1;
-                    clicked => { Keyframes.apply-physics-motion(0); }
+                    clicked => { Keyframes.apply-physics-motion(0, root.physics-strength, root.physics-duration, root.physics-speed, root.physics-intensity); }
                 }
                 Button {
                     label: Keyframes.physics-favourites[0] ? "★" : "☆";
@@ -1351,7 +1404,7 @@ export component VideoPanel inherits VerticalLayout {
                     block: true;
                     label: "Pendulum Swing";
                     horizontal-stretch: 1;
-                    clicked => { Keyframes.apply-physics-motion(1); }
+                    clicked => { Keyframes.apply-physics-motion(1, root.physics-strength, root.physics-duration, root.physics-speed, root.physics-intensity); }
                 }
                 Button {
                     label: Keyframes.physics-favourites[1] ? "★" : "☆";
@@ -1366,7 +1419,7 @@ export component VideoPanel inherits VerticalLayout {
                     block: true;
                     label: "Gravity Bounce";
                     horizontal-stretch: 1;
-                    clicked => { Keyframes.apply-physics-motion(2); }
+                    clicked => { Keyframes.apply-physics-motion(2, root.physics-strength, root.physics-duration, root.physics-speed, root.physics-intensity); }
                 }
                 Button {
                     label: Keyframes.physics-favourites[2] ? "★" : "☆";
@@ -1381,7 +1434,7 @@ export component VideoPanel inherits VerticalLayout {
                     block: true;
                     label: "Elastic Pop";
                     horizontal-stretch: 1;
-                    clicked => { Keyframes.apply-physics-motion(3); }
+                    clicked => { Keyframes.apply-physics-motion(3, root.physics-strength, root.physics-duration, root.physics-speed, root.physics-intensity); }
                 }
                 Button {
                     label: Keyframes.physics-favourites[3] ? "★" : "☆";
@@ -1396,7 +1449,7 @@ export component VideoPanel inherits VerticalLayout {
                     block: true;
                     label: "Inertia Glide";
                     horizontal-stretch: 1;
-                    clicked => { Keyframes.apply-physics-motion(4); }
+                    clicked => { Keyframes.apply-physics-motion(4, root.physics-strength, root.physics-duration, root.physics-speed, root.physics-intensity); }
                 }
                 Button {
                     label: Keyframes.physics-favourites[4] ? "★" : "☆";
@@ -1411,7 +1464,7 @@ export component VideoPanel inherits VerticalLayout {
                     block: true;
                     label: "Damped Shake";
                     horizontal-stretch: 1;
-                    clicked => { Keyframes.apply-physics-motion(5); }
+                    clicked => { Keyframes.apply-physics-motion(5, root.physics-strength, root.physics-duration, root.physics-speed, root.physics-intensity); }
                 }
                 Button {
                     label: Keyframes.physics-favourites[5] ? "★" : "☆";
