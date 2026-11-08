@@ -1,0 +1,40 @@
+name: Agent 6 compound model regression (no EXE or Docker)
+
+on:
+  pull_request:
+    paths:
+      - 'upstream/src/crates/concat-project/**'
+      - 'upstream/src/crates/concat-export/src/flatten.rs'
+      - 'upstream/src/crates/concat/src/dock.rs'
+      - 'upstream/src/crates/concat/src/studio.rs'
+      - '.github/workflows/concat-compound.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compound-core:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
+        with:
+          toolchain: '1.93.0'
+          components: rustfmt
+      - name: Parse native compound edit module
+        run: rustfmt --edition 2024 --emit stdout upstream/src/crates/concat-project/src/commands/compound.rs > /dev/null
+      - name: Run compound edit and project model unit tests
+        working-directory: upstream/src
+        run: cargo test --locked -p concat-project --lib compound -- --nocapture
+      - name: Run project save/reopen and native model regression suite
+        working-directory: upstream/src
+        run: cargo test --locked -p concat-project --lib
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify CUDA structural compound equivalence and fail-closed validation
+        run: python -m unittest -v cloud_render.concat.tests.test_compound_graph
