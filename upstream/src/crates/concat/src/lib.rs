@@ -33,6 +33,7 @@ mod ui {
 
 mod batch_volume;
 mod chips;
+mod c_builder;
 mod dock;
 mod fonts;
 mod format;
@@ -802,6 +803,109 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         } / extent;
         *ratio = (from + delta / extent).clamp(floor, 1.0 - floor);
     }));
+
+    // ── embedded C Builder (no separate EXE) ──
+    editor.on_cb_import_folder(|| {
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        host::after_dialog(
+            || rfd::FileDialog::new().set_title("C Builder - Import Media Folder").pick_folder(),
+            |studio, _, _, folder| c_builder_scan(studio, folder),
+        );
+    });
+    editor.on_cb_refresh_folder(on_window!(|studio| {
+        if !studio.c_builder.folder.is_empty() && !studio.c_builder.scanning {
+            let folder = std::path::PathBuf::from(studio.c_builder.folder.clone());
+            c_builder_scan(studio, folder);
+        }
+    }));
+    editor.on_cb_choose_narration(|| {
+        host::pick_files_then("C Builder - Narration".into(),
+            Some(("Audio".into(), &["mp3", "wav", "m4a", "aac", "flac", "ogg", "opus"])),
+            |studio, _, _, paths| {
+                let Some(path) = paths.into_iter().next() else { return; };
+                if studio.c_builder.scanning { return; }
+                studio.c_builder.scanning = true;
+                studio.c_builder.status = "Reading narration duration...".into();
+                host::spawn(
+                    move || {
+                        let duration = c_builder::narration_seconds(&path)?;
+                        Ok::<_, String>((path, duration))
+                    },
+                    |studio, _, _, outcome| {
+                        studio.c_builder.scanning = false;
+                        match outcome {
+                            Ok((path, duration)) => {
+                                studio.c_builder.narration = path.to_string_lossy().into_owned();
+                                studio.c_builder.duration = Some(duration);
+                                studio.c_builder.status = format!("Narration ready: {duration:.2}s");
+                            }
+                            Err(error) => {
+                                studio.c_builder.status = format!("Narration error: {error}");
+                                studio.notify(&error, true);
+                            }
+                        }
+                    },
+                );
+            },
+        );
+    });
+    editor.on_cb_generate_project(on_window!(
+        |studio, name: SharedString, images: SharedString, videos: SharedString, coverage: i32| {
+            if studio.c_builder.scanning { return; }
+            let Some(duration) = studio.c_builder.duration else {
+                studio.notify("Select narration first", true);
+                return;
+            };
+            let Some(session) = studio.session.as_ref() else {
+                studio.notify("Open a Concat project before generating", true);
+                return;
+            };
+            let output = std::path::Path::new(session.path()).parent()
+                .map(std::path::Path::to_path_buf);
+            let Some(output) = output else {
+                studio.notify("Could not determine project folder", true);
+                return;
+            };
+            let audio = std::path::PathBuf::from(studio.c_builder.narration.clone());
+            let assets = studio.c_builder.assets.clone();
+            let project_name = name.to_string();
+            let image_weights = images.to_string();
+            let video_weights = videos.to_string();
+            let cache_path = studio.host.dirs.data.join("c-builder-media-cache.json");
+            studio.c_builder.scanning = true;
+            studio.c_builder.status = "Planning and verifying native Concat timeline...".into();
+            host::spawn(
+                move || {
+                    let shots = c_builder::plan(&assets, duration, &image_weights,
+                        &video_weights, coverage.max(0) as u32, c_builder::random_seed())?;
+                    let folder = c_builder::write_native(&shots, &audio, duration, &output,
+                        &project_name)?;
+                    let used: Vec<String> = shots.iter().map(|s| s.asset.path.clone())
+                        .collect::<std::collections::HashSet<_>>().into_iter().collect();
+                    let usage_warning = c_builder::mark_used(&cache_path, &used).err();
+                    Ok::<_, String>((folder, shots.len(), usage_warning))
+                },
+                |studio, _, _, result| {
+                    studio.c_builder.scanning = false;
+                    match result {
+                        Ok((folder, clips, warning)) => {
+                            studio.c_builder.status = format!(
+                                "Created {clips} editable clips: {}{}",
+                                folder.display(),
+                                warning.map(|w| format!(" (usage cache warning: {w})"))
+                                    .unwrap_or_default()
+                            );
+                            studio.notify("C Builder project created. Use File > Open Project to edit it.", false);
+                        }
+                        Err(error) => {
+                            studio.c_builder.status = format!("Generation failed: {error}");
+                            studio.notify(&error, true);
+                        }
+                    }
+                },
+            );
+        }
+    ));
 
     // ── the bin ──
     editor.on_media_filter_changed(on_window!(|state, filter: MediaFilter| {
@@ -2768,4 +2872,60 @@ mod tests {
         assert!(outcome.is_err());
         assert!(!relaunched.get(), "nothing is relaunched on a failed save");
     }
+}
+
+
+/// Import or refresh a folder using Concat's own probe. Work stays off the UI thread;
+/// saved metadata is reused for every unchanged file, and completed scans are durable.
+fn c_builder_scan(studio: &mut Studio, folder: std::path::PathBuf) {
+    if studio.c_builder.scanning { return; }
+    let folder_label = folder.to_string_lossy().into_owned();
+    studio.c_builder.folder = folder_label.clone();
+    studio.c_builder.scanning = true;
+    studio.c_builder.scan_done = 0;
+    studio.c_builder.scan_total = 0;
+    studio.c_builder.status = "Scanning media...".into();
+    let cache_path = studio.host.dirs.data.join("c-builder-media-cache.json");
+    host::spawn(
+        move || {
+            c_builder::scan(&folder, &cache_path, |done, total| {
+                if done == 0 || done == total || done % 8 == 0 {
+                    let expected = folder_label.clone();
+                    host::on_ui(move |studio, _, _| {
+                        if studio.c_builder.scanning && studio.c_builder.folder == expected {
+                            studio.c_builder.scan_done = done;
+                            studio.c_builder.scan_total = total;
+                        }
+                    });
+                }
+            })
+        },
+        |studio, _, _, result| {
+            studio.c_builder.scanning = false;
+            match result {
+                Ok(report) => {
+                    studio.c_builder.folder = report.root.to_string_lossy().into_owned();
+                    studio.c_builder.keyword_summary = report.keywords();
+                    studio.c_builder.assets = report.assets;
+                    studio.c_builder.probed = report.probed;
+                    studio.c_builder.reused = report.reused;
+                    studio.c_builder.removed = report.removed;
+                    studio.c_builder.scan_done = studio.c_builder.assets.len() + report.failures.len();
+                    studio.c_builder.scan_total = studio.c_builder.scan_done;
+                    studio.c_builder.status = format!(
+                        "Library ready: {} images, {} videos; {} probed, {} cached, {} removed, {} errors",
+                        studio.c_builder.images(), studio.c_builder.videos(), report.probed,
+                        report.reused, report.removed, report.failures.len(),
+                    );
+                    if let Some(error) = report.failures.first() {
+                        studio.notify(&format!("Media import: {error}"), true);
+                    }
+                }
+                Err(error) => {
+                    studio.c_builder.status = format!("Scan failed: {error}");
+                    studio.notify(&error, true);
+                }
+            }
+        },
+    );
 }
