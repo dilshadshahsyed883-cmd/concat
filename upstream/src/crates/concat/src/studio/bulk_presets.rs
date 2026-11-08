@@ -8,7 +8,7 @@ use std::path::Path;
 use concat_project::model::{ClipKey, ClipKind, VideoSettings};
 
 use super::{
-    Catalogue, Clip, ClipPatch, Command, MotionPreset, PackageKind, Studio, Transition,
+    AppliedFilter, Catalogue, Clip, ClipPatch, Command, MotionPreset, PackageKind, Studio, Transition,
     gpu_catalogue_has, key_commands, t, tf,
 };
 
@@ -38,6 +38,33 @@ impl BulkMotion {
         let signatures = self.0.entry(target).or_default();
         signatures.retain(|old| old.preset != motion.preset);
         signatures.push(motion);
+    }
+}
+
+
+#[derive(Clone)]
+struct GeneratedEffect {
+    index: usize,
+    entry: AppliedFilter,
+}
+
+/// This is only session state, not a project-format change. If an authored
+/// edit changes the entry, it stops being owned by the bulk operation.
+#[derive(Default)]
+pub(super) struct BulkEffects(HashMap<(String, String), GeneratedEffect>);
+
+impl BulkEffects {
+    pub(super) fn clear(&mut self) {
+        self.0.clear();
+    }
+}
+
+#[derive(Default)]
+pub(super) struct BulkTransitions(HashMap<(String, String), Transition>);
+
+impl BulkTransitions {
+    pub(super) fn clear(&mut self) {
+        self.0.clear();
     }
 }
 
@@ -177,6 +204,48 @@ fn motion_choices(
     (!choices.is_empty()).then_some((choices, current))
 }
 
+
+fn gpu_effect_preset(id: &str) -> Option<AppliedFilter> {
+    // Never advertise an effect unless both the catalogue and the worker
+    // support it. Values are deliberately non-neutral and within the worker's
+    // validated parameter bounds (Exposure +/-4 EV; Contrast +/-100).
+    let mut entry = AppliedFilter::new(id);
+    match id {
+        "concat.exposure" => {
+            entry.params.insert("stops".to_owned(), 0.5);
+        }
+        "concat.contrast" => {
+            entry.params.insert("amount".to_owned(), 25.0);
+        }
+        _ => return None,
+    }
+    Some(entry)
+}
+
+/// Treat every other chain entry as manually authored, including a previously
+/// generated entry whose index, parameters or enabled status were edited.
+fn effect_choices(
+    clip: &Clip,
+    saved: Option<&GeneratedEffect>,
+    presets: &[AppliedFilter],
+) -> Option<(Vec<AppliedFilter>, Option<usize>, Option<usize>)> {
+    let managed = saved.filter(|held| clip.video_effects.get(held.index) == Some(&held.entry));
+    let managed_index = managed.map(|held| held.index);
+    let choices: Vec<_> = presets
+        .iter()
+        .filter(|preset| {
+            !clip.video_effects.iter().enumerate().any(|(index, applied)| {
+                Some(index) != managed_index && applied.id == preset.id
+            })
+        })
+        .cloned()
+        .collect();
+    let old = managed.and_then(|held| {
+        choices.iter().position(|choice| choice.id == held.entry.id)
+    });
+    (!choices.is_empty()).then_some((choices, old, managed_index))
+}
+
 impl Studio {
     fn gpu_picture_media(&self) -> HashSet<&str> {
         self.project()
@@ -219,7 +288,9 @@ impl Studio {
         if presets.is_empty() {
             return;
         }
+
         let media = self.gpu_picture_media();
+        let timeline_id = self.timeline().id.clone();
         let mut lanes: HashMap<_, Vec<_>> = self
             .timeline()
             .tracks
@@ -248,12 +319,21 @@ impl Studio {
                     continue;
                 }
                 let existing = incoming.transition_in.as_ref();
-                let old = existing.and_then(|cut| presets.iter().position(|id| *id == cut.id));
+
+                let target = (timeline_id.clone(), incoming.id.clone());
+                let old = existing
+                    .filter(|cut| self.bulk_transitions.0.get(&target) == Some(*cut))
+                    .and_then(|cut| presets.iter().position(|id| *id == cut.id));
                 if let Some(cut) = existing {
+                    let native = presets.iter().any(|id| *id == cut.id);
                     occupied.push((
                         &incoming.id,
-                        transition_span(previous, incoming, cut.duration, old.is_some()),
+                        transition_span(previous, incoming, cut.duration, native),
                     ));
+                    // A manually placed transition is not owned by this button.
+                    if old.is_none() {
+                        continue;
+                    }
                 }
                 if !self.locked(&incoming.track_id)
                     && let Some((duration, span)) = transition_length(previous, incoming)
@@ -282,17 +362,27 @@ impl Studio {
             return;
         }
         let options: Vec<_> = plans.iter().map(|plan| (presets.len(), plan.2)).collect();
+
+        let mut generated = Vec::new();
         let commands: Vec<_> = plans
             .into_iter()
             .zip(random_assignment(&options, fresh_draw()))
             .filter_map(|((clip, duration, old, _), chosen)| {
-                (old != Some(chosen)).then(|| Command::UpdateClip {
+                if old == Some(chosen) {
+                    return None;
+                }
+                let transition = Transition {
+                    id: presets[chosen].to_owned(),
+                    duration,
+                };
+                generated.push((
+                    (timeline_id.clone(), clip.id.clone()),
+                    transition.clone(),
+                ));
+                Some(Command::UpdateClip {
                     clip_id: clip.id.clone(),
                     patch: ClipPatch {
-                        transition_in: Some(Some(Transition {
-                            id: presets[chosen].to_owned(),
-                            duration,
-                        })),
+                        transition_in: Some(Some(transition)),
                         ..ClipPatch::default()
                     },
                 })
@@ -305,9 +395,109 @@ impl Studio {
         let count = commands.len();
         let revision = self.revision;
         self.apply(Command::Batch { commands });
+
         if self.revision != revision {
+            for (target, transition) in generated {
+                self.bulk_transitions.0.insert(target, transition);
+            }
             self.notify(
                 &tf("studio.randomGpuCutsApplied", &[&count.to_string()]),
+                false,
+            );
+        }
+    }
+
+
+    /// Draw one compatible video effect per eligible picture clip. A second
+    /// click replaces only the exact entry created by an earlier bulk click;
+    /// manually added/edited effects stay where they are. One batch = one Undo.
+    pub fn apply_random_gpu_effects(&mut self) {
+        if !self.gpu_bulk_ready() {
+            return;
+        }
+        let presets: Vec<_> = Catalogue::builtin()
+            .of_kind(PackageKind::Effect)
+            .map(|package| package.id())
+            .filter(|id| gpu_catalogue_has("video_effects", id))
+            .filter_map(gpu_effect_preset)
+            .collect();
+        if presets.is_empty() {
+            return;
+        }
+        let timeline = self.timeline();
+        let media = self.gpu_picture_media();
+        let tracks: HashSet<_> = timeline
+            .tracks
+            .iter()
+            .filter(|track| track.visible && !self.locked(&track.id))
+            .map(|track| track.id.as_str())
+            .collect();
+        let mut plans: Vec<_> = timeline
+            .clips
+            .iter()
+            .filter(|clip| {
+                picture(clip)
+                    && tracks.contains(clip.track_id.as_str())
+                    && media.contains(clip.media_id.as_str())
+            })
+            .filter_map(|clip| {
+                let target = (timeline.id.clone(), clip.id.clone());
+                let saved = self.bulk_effects.0.get(&target);
+                let (choices, old, managed_index) = effect_choices(clip, saved, &presets)?;
+                Some((clip, target, choices, old, managed_index))
+            })
+            .collect();
+        plans.sort_by(|(a, ..), (b, ..)| {
+            a.start.total_cmp(&b.start).then_with(|| a.id.cmp(&b.id))
+        });
+        if plans.is_empty() {
+            self.notify(&t("studio.randomNoGpuEffects"), true);
+            return;
+        }
+        let options: Vec<_> = plans
+            .iter()
+            .map(|(_, _, choices, old, _)| (choices.len(), *old))
+            .collect();
+        let mut commands = Vec::new();
+        let mut generated = Vec::new();
+        for ((clip, target, choices, old, managed_index), chosen) in plans
+            .into_iter()
+            .zip(random_assignment(&options, fresh_draw()))
+        {
+            if old == Some(chosen) {
+                continue;
+            }
+            let entry = choices[chosen].clone();
+            let mut effects = clip.video_effects.clone();
+            let index = if let Some(index) = managed_index {
+                effects[index] = entry.clone();
+                index
+            } else {
+                effects.push(entry.clone());
+                effects.len() - 1
+            };
+            commands.push(Command::UpdateClip {
+                clip_id: clip.id.clone(),
+                patch: ClipPatch {
+                    video_effects: Some(effects),
+                    ..ClipPatch::default()
+                },
+            });
+            generated.push((target, GeneratedEffect { index, entry }));
+        }
+        if commands.is_empty() {
+            self.notify(&t("studio.randomGpuEffectsUnchanged"), false);
+            return;
+        }
+        let revision = self.revision;
+        self.apply(Command::Batch { commands });
+        if self.revision != revision {
+            let count = generated.len();
+            for (target, effect) in generated {
+                self.bulk_effects.0.insert(target, effect);
+            }
+            self.notify(
+                &tf("studio.randomGpuEffectsApplied", &[&count.to_string()]),
                 false,
             );
         }
@@ -403,6 +593,33 @@ mod tests {
             random_assignment(&[(3, Some(2)), (3, Some(0))], |_| 0),
             vec![0, 0]
         );
+    }
+
+
+    #[test]
+    fn video_effect_rerolls_preserve_authored_chain_and_do_not_stack() {
+        let presets = vec![
+            gpu_effect_preset("concat.exposure").unwrap(),
+            gpu_effect_preset("concat.contrast").unwrap(),
+        ];
+        assert!(gpu_effect_preset("concat.saturation").is_none());
+        let mut clip = Clip::blank("c1", "t1", ClipKind::Video, "picture", 0.0, 2.0);
+        let (choices, old, index) = effect_choices(&clip, None, &presets).unwrap();
+        assert_eq!((choices.len(), old, index), (2, None, None));
+        let generated = GeneratedEffect { index: 0, entry: presets[0].clone() };
+        clip.video_effects.push(generated.entry.clone());
+        let (choices, old, index) =
+            effect_choices(&clip, Some(&generated), &presets).unwrap();
+        assert_eq!((choices.len(), old, index), (2, Some(0), Some(0)));
+        assert_eq!(random_assignment(&[(2, old)], |_| 0), vec![1]);
+        // A second effect authored by the user cannot be duplicated.
+        clip.video_effects.push(presets[1].clone());
+        let (choices, old, index) =
+            effect_choices(&clip, Some(&generated), &presets).unwrap();
+        assert_eq!((choices.len(), old, index), (1, Some(0), Some(0)));
+        // If an author changes the generated parameters, it is theirs.
+        clip.video_effects[0].params.insert("stops".into(), 1.0);
+        assert!(effect_choices(&clip, Some(&generated), &presets).is_none());
     }
 
     #[test]

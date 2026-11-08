@@ -1776,6 +1776,7 @@ export component MediaPane inherits Rectangle {
     callback apply-effect(effect-id: string);
     callback apply-transition(transition-id: string);
     callback apply-random-transitions();
+    callback apply-random-effects();
     /// Filters page: lay the look down as a layer at the playhead.
     callback apply-filter(filter-id: string, label: string);
     /// Filters page: a single click shows the look over the whole picture
@@ -2722,6 +2723,10 @@ export component MediaPane inherits Rectangle {
                             : I18n.t1("common.searchKind", I18n.t("common.effect"));
                         reloads: true;
                         reload => { root.reload-packages(); }
+                    }
+                    if GpuCompatibility.enabled && GpuCompatibility.video-effects && !root.audio-shelf: Button {
+                        label: I18n.t("common.applyAllRandomly");
+                        clicked => { root.apply-random-effects(); }
                     }
                     ShelfGrid {
                         entries: root.audio-shelf ? root.catalogue-audio : root.catalogue-effects;

@@ -911,6 +911,9 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     editor.on_library_apply_random_transitions(on_window!(|state| {
         state.apply_random_gpu_transitions();
     }));
+    editor.on_library_apply_random_effects(on_window!(|state| {
+        state.apply_random_gpu_effects();
+    }));
     editor.on_library_save_template(on_window!(|state| {
         state.save_template();
     }));
