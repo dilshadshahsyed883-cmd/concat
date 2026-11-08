@@ -280,6 +280,10 @@ pub struct TranscribeRequest {
     pub window: f64,
     /// Which model to use, e.g. "base.en".
     pub model_id: String,
+    /// Opt-in: Whisper experimental token timestamps, split at word
+    /// boundaries for voice-synced karaoke instead of sentence captions.
+    #[serde(default)]
+    pub word_level: bool,
 }
 
 struct LoadedModel {
@@ -495,6 +499,13 @@ impl Transcriber {
         params.set_print_realtime(false);
         params.set_print_timestamps(false);
         params.set_suppress_blank(true);
+        if request.word_level {
+            // Only in the opt-in karaoke mode: keep normal transcription's
+            // sentence segmentation unchanged.
+            params.set_token_timestamps(true);
+            params.set_split_on_word(true);
+            params.set_max_len(1);
+        }
         // The raw hooks, not `set_abort_callback_safe`. whisper-rs 0.16's
         // safe one hands whisper a pointer to a boxed trait object with a
         // trampoline typed for the closure itself, so whisper reads the
