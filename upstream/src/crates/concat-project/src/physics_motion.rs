@@ -295,6 +295,26 @@ mod tests {
     }
 
     #[test]
+    fn strength_and_speed_change_baked_motion_without_project_extensions() {
+        let clip = Clip::blank("c1", "t1", ClipKind::Image, "photo", 0.0, 3.0);
+        let normal = PhysicsPreset::SpringZoom.keys(&clip, FRAME).unwrap().0;
+        let strong = PhysicsPreset::SpringZoom.keys_with(
+            &clip, FRAME, PhysicsControls {
+                strength: 2.0, ..PhysicsControls::default()
+            },
+        ).unwrap().0;
+        let quick = PhysicsPreset::SpringZoom.keys_with(
+            &clip, FRAME, PhysicsControls {
+                duration: 0.5, speed: 2.0, ..PhysicsControls::default()
+            },
+        ).unwrap().0;
+        assert_eq!(normal.len(), strong.len());
+        assert_eq!(normal.len(), quick.len());
+        assert_ne!(normal, strong);
+        assert_ne!(normal, quick);
+    }
+
+    #[test]
     fn manual_keys_are_never_overwritten() {
         let mut clip = Clip::blank("c1", "t1", ClipKind::Image, "picture", 0.0, 4.0);
         clip.set_key(KeyProperty::Scale, 0.25, 1.5, KeyEase::LINEAR);
