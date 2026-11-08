@@ -163,7 +163,7 @@ def picture_layers(sources, clip, index, *, with_canvas=False, **kwargs):
     return [Layer(picture(sources, clip, index, **kwargs))]
 
 
-def native_transition_frame(sources, layers, cut, index, background_rank):
+def native_transition_frame(sources, layers, cut, index, background_rank=None):
     outgoing_index = cut.outgoing_frame(index)
     held = outgoing_index != index
     uses_canvas = cut.rank == background_rank
