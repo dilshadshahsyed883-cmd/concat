@@ -36,13 +36,10 @@ export struct TimelineTabData {
 
 /// How tall a lane is drawn.
 ///
-/// `auto` is the default, and the only one that thinks: a lane is as tall as
-/// the tallest thing on it, so a lane of footage opens large, a lane of sound
-/// medium, and a lane of filter layers minimal. That is the shape a typed
-/// timeline gets by typing its tracks — arrived at here without typing them,
-/// which matters because these lanes are deliberately untyped and a mixed one
-/// still has to be right. The other three are the override, per lane, from
-/// the dropdown in its header.
+/// `auto` is a compact 48px lane by default so five tracks remain
+/// visible at once on ordinary desktop heights. Users may expand any
+/// individual lane to Small (48px), Medium (72px) or Large (108px)
+/// when filmstrips or waveforms need more editing room.
 export enum TrackSize { auto, small, medium, large }
 
 /// One lane. Deliberately untyped: any media goes on any track, which is why
