@@ -407,6 +407,7 @@ impl Studio {
                 let transition = Transition {
                     id: presets[chosen].to_owned(),
                     duration,
+                    intensity: None,
                 };
                 generated.push((
                     (timeline_id.clone(), clip.id.clone()),
