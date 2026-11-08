@@ -932,6 +932,8 @@ mod tests {
         assert!(!karaoke_words_aligned(&[
             Segment { start: 0.3, end: 0.2, text: "Hello".into() }
         ], 0.0, 1.0));
+        assert!(karaoke_words_aligned(&good, 2.0, 0.5));
+        assert!(!karaoke_words_aligned(&good, 2.0, 0.0));
         assert!(!karaoke_words_aligned(&[], 0.0, 1.0));
         assert!(!karaoke_words_aligned(&[
             Segment { start: 0.10, end: 0.11, text: "too-short".into() },
