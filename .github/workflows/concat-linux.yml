@@ -2,7 +2,7 @@ name: Concat Linux verification
 
 on:
   push:
-    branches: ['gpu/**', '!gpu/final-integration']
+    branches: ['gpu/**', '!gpu/final-integration', 'desktop/whole-timeline-filter-presets']
     paths: ['cloud_render/concat/**', '.github/workflows/concat-linux.yml']
   pull_request:
     paths: ['cloud_render/concat/**', '.github/workflows/concat-linux.yml']
@@ -33,6 +33,8 @@ jobs:
       - name: Parse random GPU Rust module before native Windows compilation
         run: rustfmt --edition 2024 --emit stdout upstream/src/crates/concat/src/studio/bulk_presets.rs > /dev/null
       - run: python -m pip install -r cloud_render/concat/hybrid/requirements-captions.txt
+      - name: Parse desktop filter editor changes without building an EXE
+        run: rustfmt --edition 2024 --emit stdout upstream/src/crates/concat/src/studio.rs > /dev/null
       - run: python -m compileall -q cloud_render/concat
       - run: python -m unittest discover -v -s cloud_render/concat/tests
   worker-image:

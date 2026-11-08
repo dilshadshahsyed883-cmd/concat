@@ -1979,7 +1979,7 @@ export component MediaPane inherits Rectangle {
                             current: root.tab == 4;
                             clicked => { root.tab = 4; }
                         }
-                        if !GpuCompatibility.enabled: LibraryTab {
+                        LibraryTab {
                             glyph: Glyph.filter;
                             label: I18n.t("mediaPane.filters");
                             current: root.tab == 5;

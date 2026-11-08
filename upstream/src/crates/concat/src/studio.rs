@@ -3834,12 +3834,12 @@ impl Studio {
             }
             // A look dragged from the Filters page: a layer over a span.
             // The package id rides in `media`, there being no file.
-            "filter" if !cfg!(windows) => Some(DropPlan {
+            "filter" if !cfg!(windows) || gpu_catalogue_has("filters", id) => Some(DropPlan {
                 kind: ClipKind::Filter,
                 label: label.to_owned(),
                 media: id.to_owned(),
                 start: 0.0,
-                duration: LAYER_DURATION,
+                duration: self.duration().max(MIN_DURATION),
                 row: 0,
             }),
             _ => None,
@@ -3908,13 +3908,9 @@ impl Studio {
                 &plan.label,
             )
         } else if plan.kind == ClipKind::Filter {
-            self.apply(Command::AddLayerClip {
-                track_id: Some(track_id),
-                start: f64::from(plan.start),
-                duration: Some(f64::from(plan.duration)),
-                effect_id: plan.media.clone(),
-                name: plan.label.clone(),
-            })
+            // Never place a look only on the track or at the drop point.
+            self.place_filter_layer(&plan.media, &plan.label);
+            return;
         } else if let Some(media_ids) = self.dragged_selection(&plan.media) {
             // A card dragged out of a selection in the bin brings the whole
             // selection, laid end to end from the drop, in the bin's order.
@@ -3960,13 +3956,8 @@ impl Studio {
                 &plan.label,
             )
         } else if plan.kind == ClipKind::Filter {
-            self.apply(Command::AddLayerClip {
-                track_id: None,
-                start,
-                duration: Some(f64::from(plan.duration)),
-                effect_id: plan.media.clone(),
-                name: plan.label.clone(),
-            })
+            self.place_filter_layer(&plan.media, &plan.label);
+            return;
         } else {
             self.apply(Command::AddClipAtFirstFree {
                 media_id: plan.media.clone(),
@@ -4090,12 +4081,30 @@ impl Studio {
         self.request_preview();
     }
 
-    /// Lays a filter down as a layer at the playhead - what the Filters
-    /// page's double-click and plus do - and ends the showing, the layer
-    /// now being on the timeline to see.
+    /// A filter always spans the entire edit from zero, regardless of the
+    /// playhead, any selected clip, or the timeline lane under a drop.
+    /// One AddLayerClip command means one undo step and one independent layer.
     pub fn place_filter_layer(&mut self, id: &str, label: &str) {
         self.audition = None;
-        self.place_at_playhead(&format!("filter:{id}:{label}"));
+        if cfg!(windows) && !gpu_catalogue_has("filters", id) {
+            self.notify(&t("studio.unsupportedGpuControl"), true);
+            return;
+        }
+        let length = self.duration();
+        if length <= 0.0 {
+            self.notify("Add video or images before applying a timeline filter", true);
+            return;
+        }
+        let created = self.apply(Command::AddLayerClip {
+            track_id: None,
+            start: 0.0,
+            duration: Some(f64::from(length)),
+            effect_id: id.to_owned(),
+            name: label.to_owned(),
+        });
+        if let Some(id) = created {
+            self.selection = vec![id];
+        }
     }
 
     /// Lays an adjustment layer at the playhead - the colour panel's own
@@ -10758,7 +10767,7 @@ impl Studio {
                 starred,
                 &self.look_art,
                 &self.card_paths,
-                |package| !cfg!(windows) && !is_lut(package),
+                |package| (!cfg!(windows) || gpu_catalogue_has("filters", package.id())) && !is_lut(package),
             );
             sync(&models.filter_groups, groups);
             sync(&models.catalogue_filters, entries);
