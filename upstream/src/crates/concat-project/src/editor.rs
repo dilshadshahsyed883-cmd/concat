@@ -273,6 +273,12 @@ impl Editor {
         if !outcome.applied {
             return Ok(outcome);
         }
+        // A clip or track delete can orphan compound references. Reconcile
+        // them in this same undoable edit, never as a separate silent change.
+        for timeline in &mut self.project.timelines {
+            let t = std::sync::Arc::make_mut(timeline);
+            crate::commands::prune_compounds(t);
+        }
         self.tidy_touched(&before);
         self.follow_first_hdr(&before);
         let continues = match (gesture, self.undo.back()) {
