@@ -131,3 +131,9 @@ jobs:
       - name: Check Concat application/library + Slint bindings (no EXE artifact)
         working-directory: upstream/src
         run: cargo check -p concat --lib --locked -j 2
+      - name: Test native GPU-compatible physics animations
+        working-directory: upstream/src
+        run: cargo test -p concat-project --lib physics_motion --locked -j 2
+      - name: Test image/video selective bulk animation targeting
+        working-directory: upstream/src
+        run: cargo test -p concat --lib physics_bulk_target_checks_both_media_types_independently --locked -j 2
