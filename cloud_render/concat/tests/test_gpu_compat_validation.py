@@ -220,7 +220,9 @@ class GpuManifestValidationTests(unittest.TestCase):
     def test_rejects_inexact_packaged_transitions_in_preflight(self):
         capabilities = json.loads((Path(__file__).parents[1] / "hybrid"
                                    / "gpu_ui_capabilities.json").read_text())
-        self.assertEqual(capabilities["transitions"], ["concat.fade-black", "concat.fade-white"])
+        from cloud_render.concat.hybrid.capcut_transitions import CAPCUT_IDS
+        self.assertEqual(set(capabilities["transitions"]),
+                         {"concat.fade-black", "concat.fade-white", *CAPCUT_IDS})
         for native_id in ("concat.dissolve", "concat.push", "concat.zoom-transition"):
             with self.subTest(transition=native_id):
                 document = minimal_project()

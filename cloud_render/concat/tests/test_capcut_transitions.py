@@ -14,6 +14,23 @@ from cloud_render.concat.tests.test_gpu_compat_validation import minimal_project
 
 
 class CatalogTests(unittest.TestCase):
+    def test_desktop_catalog_packages_match_worker_contract(self):
+        import tomllib
+        root = Path(__file__).parents[3] / "upstream" / "src" / "crates" / "concat-effects" / "packages"
+        for slug, name in CAPCUT_PRESETS:
+            with self.subTest(slug=slug):
+                package = root / ("concat." + slug)
+                manifest = tomllib.loads((package / "effect.toml").read_text())
+                shader = (package / "effect.wgsl").read_text()
+                self.assertEqual(manifest["effect"]["id"], "concat." + slug)
+                self.assertEqual(manifest["effect"]["name"], name)
+                self.assertEqual(manifest["effect"]["kind"], "transition")
+                self.assertEqual(manifest["param"][0]["key"], "intensity")
+                self.assertEqual(manifest["param"][0]["default"], 70)
+                self.assertEqual(manifest["transition"]["entry"], "effect.wgsl")
+                self.assertIn("fn transition(", shader)
+                self.assertIn("params.intensity", shader)
+
     def test_twenty_unique_stable_gpu_ids(self):
         self.assertEqual(len(CAPCUT_PRESETS), 20)
         self.assertEqual(len(CAPCUT_IDS), 20)
