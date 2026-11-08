@@ -234,6 +234,11 @@ export global Keyframes {
     /// Apply the inspector's motion preset for this field.
     callback apply-motion-preset(field: ClipField);
     callback apply-random-motion();
+    // Physics presets resolve into ordinary GPU-compatible transform keyframes.
+    in property <[bool]> physics-favourites;
+    callback apply-physics-motion(preset: int);
+    callback toggle-physics-favourite(preset: int);
+    callback apply-random-favourite-motion();
 
     /// The same three verbs for a knob named rather than enumerated - the
     /// Adjust panel's, whose rows come from the colour package's manifest
