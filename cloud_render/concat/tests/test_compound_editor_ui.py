@@ -30,7 +30,7 @@ class CompoundEditorUiTests(unittest.TestCase):
         studio = (ROOT / "upstream/src/crates/concat/src/studio.rs").read_text()
         compound = (ROOT / "upstream/src/crates/concat/src/studio/compound.rs").read_text()
         self.assertIn("callback compound-edit-exit()", editor)
-        self.assertIn("Back to full timeline", pane)
+        self.assertIn("Back to parent", pane)
         self.assertIn("Editor.compound-edit-exit()", seat)
         self.assertIn("on_compound_edit_exit", lib)
         self.assertIn("visible_compound_clips()", studio)
