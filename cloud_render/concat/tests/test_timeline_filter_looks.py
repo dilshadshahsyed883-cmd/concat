@@ -101,6 +101,17 @@ class TimelineFilterLookTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "timeline look accepts only"):
                     validate_gpu_manifest(document)
 
+    def test_professional_detail_looks_preserve_sdr_and_limit_halos(self):
+        # 4K/8K/HDR are perceived-detail and tone looks, never output modes.
+        detail = [next(item for item in LOOK_CATALOGUE if item["name"] == name)
+                  for name in ("4K", "8K", "HDR Look")]
+        for item in detail:
+            self.assertLessEqual(item["sharpen"], .65)
+            self.assertLessEqual(item["contrast"], 1.08)
+            self.assertLessEqual(item["saturation"], 1.045)
+            self.assertEqual(item["exposure"], 0)
+        self.assertLess(detail[0]["sharpen"], detail[1]["sharpen"])
+
     def test_detail_and_hdr_look_do_not_misrepresent_export_mode(self):
         for effect_id in ("concat.look.4k", "concat.look.8k", "concat.look.hdr-look"):
             document = project_with_filter(effect_id)
