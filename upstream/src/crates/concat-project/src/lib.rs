@@ -1471,6 +1471,7 @@ mod tests {
             .transition_in = Some(crate::model::Transition {
             id: "cross-fade".into(),
             duration: 0.4,
+            intensity: None,
         });
         assert!(
             crate::consolidation_clips(
@@ -1950,6 +1951,7 @@ mod tests {
                 transition_in: Some(Some(crate::model::Transition {
                     id: "cross-fade".to_owned(),
                     duration: f64::NAN,
+                    intensity: None,
                 })),
                 ..Default::default()
             },
@@ -2932,6 +2934,7 @@ mod tests {
                     transition_in: Some(Some(crate::model::Transition {
                         id: "cross-fade".to_owned(),
                         duration: 1.5,
+                        intensity: None,
                     })),
                     ..ClipPatch::default()
                 },
