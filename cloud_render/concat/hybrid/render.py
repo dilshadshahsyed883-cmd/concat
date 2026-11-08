@@ -1,4 +1,4 @@
-"""Render a Concat timeline with GPU-resident picture frames and CPU audio."""
+"""Render a Concat timeline with CUDA video effects and CUDA audio mixing."""
 from __future__ import annotations
 
 import argparse
@@ -272,7 +272,9 @@ def render_project(project, output, log=lambda message: print(message, file=sys.
     if output.suffix.lower() != ".mp4" or os.path.lexists(output):
         raise ValueError("The output must be a new MP4 path")
     cuda()
-    log("Using NVDEC, CUDA effects, NVENC H.264 and CUDA audio mixing; FFmpeg handles audio decode/AAC.")
+    log("Using NVDEC, CUDA effects and NVENC H.264. No software video fallback.")
+    if plan.sounds:
+        log("Audio: CUDA PCM mixing; FFmpeg decodes, retimes, limits and encodes AAC.")
     with tempfile.TemporaryDirectory(prefix=".concat-hybrid-", dir=output.parent) as temporary:
         temporary = Path(temporary)
         raw, result = temporary/"video.h264", temporary/"video.mp4"
