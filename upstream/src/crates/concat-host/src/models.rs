@@ -487,13 +487,17 @@ mod tests {
                     .lines()
                     .find_map(|line| line.strip_prefix("Range: bytes="))
                     .and_then(|range| range.trim_end_matches('-').parse::<usize>().ok());
-                let (status, slice) = match from {
-                    Some(from) if from < served.len() => ("206 Partial Content", &served[from..]),
-                    _ => ("200 OK", &served[..]),
+                let (status, slice, range) = match from {
+                    Some(from) if from < served.len() => (
+                        "206 Partial Content", &served[from..],
+                        format!("Content-Range: bytes {}-{}/{}\r\n",
+                                from, served.len() - 1, served.len())
+                    ),
+                    _ => ("200 OK", &served[..], String::new()),
                 };
                 let _ = write!(
                     stream,
-                    "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    "HTTP/1.1 {status}\r\nContent-Length: {}\r\n{range}Connection: close\r\n\r\n",
                     slice.len()
                 );
                 let _ = stream.write_all(slice);
