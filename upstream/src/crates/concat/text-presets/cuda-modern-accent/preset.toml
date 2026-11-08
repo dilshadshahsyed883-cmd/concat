@@ -1,0 +1,16 @@
+id = "cuda-caption.modern-accent"
+name = "Modern Accent"
+order = 1060
+language = "Latin"
+sample = "THE BIG MOMENT"
+offsetY = 0.22
+[style]
+content = "THE BIG MOMENT"
+fontFamily = "Hanken Grotesk"
+fontSize = 0.074
+fontWeight = 600
+color = "#20e9fa"
+strokeColor = "#000000"
+strokeWidth = 0.004
+shadow = true
+opacity = 1.0

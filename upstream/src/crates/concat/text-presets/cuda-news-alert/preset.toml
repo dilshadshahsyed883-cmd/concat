@@ -1,0 +1,17 @@
+id = "cuda-caption.news-alert"
+name = "News Alert"
+order = 1050
+language = "Latin"
+sample = "BREAKING NEWS"
+offsetY = -0.22
+[style]
+content = "BREAKING NEWS"
+fontFamily = "Hanken Grotesk"
+fontSize = 0.078
+fontWeight = 600
+color = "#ff323b"
+strokeColor = "#000000"
+strokeWidth = 0.005
+shadow = true
+opacity = 1.0
+background = "#e61c32ef"
