@@ -1302,6 +1302,12 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         keys.on_apply_physics_motion(on_lanes!(|state, index: i32, strength: f32, duration: f32, speed: f32, intensity: f32| {
             state.apply_physics_motion(index, strength, duration, speed, intensity);
         }));
+        keys.on_apply_physics_bulk(on_lanes!(|state, preset: i32, mode: i32,
+            images: bool, videos: bool, selected_only: bool,
+            strength: f32, duration: f32, speed: f32, intensity: f32| {
+            state.apply_physics_bulk(preset, mode, images, videos, selected_only,
+                strength, duration, speed, intensity);
+        }));
         keys.on_toggle_physics_favourite(on_lanes!(|state, index: i32| {
             state.toggle_physics_favourite(index);
         }));
