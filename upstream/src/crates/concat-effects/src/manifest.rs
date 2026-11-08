@@ -519,13 +519,20 @@ impl Manifest {
             )));
         }
         let id = &self.effect.id;
-        let namespaced = id
-            .split_once('.')
-            .is_some_and(|(author, name)| is_id_segment(author) && is_id_segment(name));
+        let segments: Vec<_> = id.split('.').collect();
+        // Package IDs normally use author.name. The built-in timeline-look
+        // catalogue already ships IDs such as concat.look.4k, saved in
+        // existing projects. Accept only that established nested namespace:
+        // renaming the packages would break project and GPU compatibility.
+        let namespaced = match segments.as_slice() {
+            [author, name] => is_id_segment(author) && is_id_segment(name),
+            ["concat", "look", name] => is_id_segment(name),
+            _ => false,
+        };
         if !namespaced {
-            return Err(
-                self.invalid("id must be `author.name`, lower-case letters, digits and hyphens")
-            );
+            return Err(self.invalid(
+                "id must be `author.name` or `concat.look.name`, lower-case letters, digits and hyphens",
+            ));
         }
         if self.effect.name.trim().is_empty() {
             return Err(self.invalid("name is empty"));
@@ -840,6 +847,23 @@ mod tests {
     fn rejects(source: &str, needle: &str) {
         let error = Manifest::parse(source).expect_err("rejected").to_string();
         assert!(error.contains(needle), "{error}");
+    }
+
+    #[test]
+    fn built_in_timeline_look_ids_roundtrip_without_renaming() {
+        for id in ["concat.look.4k", "concat.look.8k", "concat.look.hdr-look"] {
+            let source = GOOD.replace("concat.blur", id);
+            let manifest = Manifest::parse(&source).expect("existing timeline-look ID is valid");
+            assert_eq!(manifest.effect.id, id);
+        }
+        for id in [
+            "concat.look.",
+            "concat..4k",
+            "concat.look.foo.extra",
+            "other.look.4k",
+        ] {
+            rejects(&GOOD.replace("concat.blur", id), "author.name");
+        }
     }
 
     #[test]
