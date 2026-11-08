@@ -2309,7 +2309,7 @@ export component TransitionPanel inherits VerticalLayout {
                 fmt: ParamFormat.seconds2;
                 changed(v) => { root.duration-set(v); }
             }
-            if GpuCompatibility.enabled: Param {
+            if GpuCompatibility.enabled && root.transition.intensity-supported: Param {
                 label: "GPU Intensity";
                 value <=> root.intensity;
                 minimum: 0;
