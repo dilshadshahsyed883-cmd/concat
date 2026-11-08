@@ -22,6 +22,7 @@ use crate::model::{
 mod audio;
 mod clips;
 mod compound;
+pub(crate) use compound::prune_compounds;
 pub use clips::{PlayheadSide, consolidation_clips, delete_to_playhead, why_not_merge};
 mod media;
 mod properties;
