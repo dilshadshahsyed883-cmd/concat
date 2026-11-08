@@ -21,6 +21,7 @@ from .compositor import Layer, composite
 from .contract import FrameRate, cuda
 from .filters import apply as filter_picture, apply_contrast, apply_exposure
 from .project import CONTRAST, EXPOSURE, FPS, HEIGHT, WIDTH, NativeColorEffect, load_project
+from .performance import StageProfiler
 from .transitions import render_transition
 
 RATE = FrameRate(FPS)
@@ -34,10 +35,14 @@ def invoke(args, timeout=3600):
 
 
 class Sources:
-    def __init__(self, temporary):
+    def __init__(self, temporary, profiler=None):
         self.temporary = temporary
+        self.profiler = profiler if profiler is not None else StageProfiler()
         self.decoders = OrderedDict()
         self.stills = OrderedDict()
+        # Only two fitted 1080p RGBA GPU surfaces are retained (about 63 MiB).
+        # Repeated 24/25fps frames and transition holds avoid NVDEC and resize.
+        self.video_frames = OrderedDict()
         self.rates = {}
 
     def decoder(self, path):
@@ -89,7 +94,20 @@ class Sources:
             source = min(source, len(decoder)-1)
         if source >= len(decoder):
             raise ValueError(f"{path.name}: timeline extends past available video frames")
-        return fitted(decoder.frame(source))
+
+        key = (path, source)
+        cached = self.video_frames.pop(key, None)
+        if cached is not None:
+            self.video_frames[key] = cached
+            self.profiler.count("video_frame_cache_hit")
+            return cached
+        self.profiler.count("video_frame_cache_miss")
+        with self.profiler.stage("nvdec_and_fit", index):
+            pixels = fitted(decoder.frame(source))
+        if len(self.video_frames) >= 2:
+            self.video_frames.popitem(last=False)
+        self.video_frames[key] = pixels
+        return pixels
 
 
 def fitted(pixels):
@@ -147,8 +165,9 @@ def native_transition_frame(sources, layers, cut, index):
     return render_transition(outgoing_stack, incoming_stack, cut.transition, index)
 
 
-def timeline_frames(plan, temporary, log):
-    sources = Sources(temporary)
+def timeline_frames(plan, temporary, log, profiler=None):
+    profiler = profiler if profiler is not None else StageProfiler()
+    sources = Sources(temporary, profiler=profiler)
     captions = {}
     for cue, style in plan.captions:
         captions.setdefault(style, []).append(cue)
@@ -168,28 +187,31 @@ def timeline_frames(plan, temporary, log):
             active.extend((rank, clip) for _, rank, clip in event[1])
             active.sort(key=lambda row: (row[0], row[1].span.start))
             event = next(events, None)
-        layers = []
-        for rank, clip in active:
-            if (cut and rank == cut.rank and cut.transition.span.contains(index)
-                    and (clip is cut.incoming or clip is cut.outgoing)):
-                layers = [Layer(native_transition_frame(sources, layers, cut, index))]
-                continue
-            if clip.kind == "layer":
-                if clip.filters and layers:
-                    below = composite(layers, width=WIDTH, height=HEIGHT, background=(0,0,0,1))
-                    effect = below
-                    for settings in clip.filters:
-                        effect = filter_picture(effect, settings)
-                    layers = [Layer(below), Layer(effect, opacity=clip.transform(index).opacity)]
-                continue
-            pixels = picture(sources, clip, index)
-            if clip.transition and clip.transition.span.contains(index):
-                outgoing = picture(sources, clip.outgoing, index, tail=True)
-                pixels = render_transition(outgoing, pixels, clip.transition, index)
-            layers.append(Layer(pixels))
-        canvas = composite(layers, width=WIDTH, height=HEIGHT, background=(0,0,0,1))
-        for renderer in captions:
-            canvas = renderer.apply(canvas, index, RATE)
+        with profiler.stage("scene_build", index):
+            layers = []
+            for rank, clip in active:
+                if (cut and rank == cut.rank and cut.transition.span.contains(index)
+                        and (clip is cut.incoming or clip is cut.outgoing)):
+                    layers = [Layer(native_transition_frame(sources, layers, cut, index))]
+                    continue
+                if clip.kind == "layer":
+                    if clip.filters and layers:
+                        below = composite(layers, width=WIDTH, height=HEIGHT, background=(0,0,0,1))
+                        effect = below
+                        for settings in clip.filters:
+                            effect = filter_picture(effect, settings)
+                        layers = [Layer(below), Layer(effect, opacity=clip.transform(index).opacity)]
+                    continue
+                pixels = picture(sources, clip, index)
+                if clip.transition and clip.transition.span.contains(index):
+                    outgoing = picture(sources, clip.outgoing, index, tail=True)
+                    pixels = render_transition(outgoing, pixels, clip.transition, index)
+                layers.append(Layer(pixels))
+        with profiler.stage("composite", index):
+            canvas = composite(layers, width=WIDTH, height=HEIGHT, background=(0,0,0,1))
+        with profiler.stage("captions", index):
+            for renderer in captions:
+                canvas = renderer.apply(canvas, index, RATE)
         if index and index % 300 == 0:
             log(f"CUDA rendered {index}/{plan.frames} frames")
         yield canvas
@@ -267,7 +289,11 @@ def verify(output, frames, has_audio):
 
 
 def render_project(project, output, log=lambda message: print(message, file=sys.stderr, flush=True)):
-    plan = load_project(Path(project), log)
+    # Explicit opt-in only. Synchronized sample stages are diagnostics, not FPS benchmarks.
+    profiler = StageProfiler.from_environment(
+        synchronize=lambda: cuda().cuda.get_current_stream().synchronize())
+    with profiler.stage("project_validation"):
+        plan = load_project(Path(project), log)
     output = Path(output)
     if output.suffix.lower() != ".mp4" or os.path.lexists(output):
         raise ValueError("The output must be a new MP4 path")
@@ -281,8 +307,12 @@ def render_project(project, output, log=lambda message: print(message, file=sys.
         encoder = Nvenc(WIDTH, HEIGHT, RATE)
         written = 0
         with raw.open("wb") as handle:
-            for index, frame in enumerate(timeline_frames(plan, temporary, log)):
-                for packet in encoder.encode(nv12_from_rgba(frame), index):
+            for index, frame in enumerate(timeline_frames(plan, temporary, log, profiler)):
+                with profiler.stage("nv12_pack", index):
+                    packed = nv12_from_rgba(frame)
+                with profiler.stage("nvenc", index):
+                    packets = encoder.encode(packed, index)
+                for packet in packets:
                     if packet.frame_index != written:
                         raise RuntimeError("NVENC returned a missing or reordered frame")
                     handle.write(packet.data)
@@ -294,9 +324,13 @@ def render_project(project, output, log=lambda message: print(message, file=sys.
                 written += 1
         if written != plan.frames:
             raise RuntimeError(f"NVENC returned {written} frames for a {plan.frames}-frame timeline")
-        mux(raw, result, plan.sounds, plan.frames)
-        verify(result, plan.frames, bool(plan.sounds))
+        with profiler.stage("audio_mix_and_mux" if plan.sounds else "mux"):
+            mux(raw, result, plan.sounds, plan.frames)
+        with profiler.stage("output_verification"):
+            verify(result, plan.frames, bool(plan.sounds))
         os.link(result, output)
+    if profiler.enabled:
+        log("CUDA stage diagnostics: " + json.dumps(profiler.summary(), sort_keys=True))
     return {"frames": plan.frames, "seconds": plan.frames/FPS, "encoder": "nvenc-h264"}
 
 
