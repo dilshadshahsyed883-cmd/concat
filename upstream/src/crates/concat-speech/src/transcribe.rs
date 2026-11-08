@@ -391,11 +391,13 @@ impl Transcriber {
             if installed_model(&destination, definition.sha256) {
                 return Ok(());
             }
-            // Only an invalid destination is moved aside. Do not overwrite
-            // or delete a valid Whisper model on a retry.
-            let invalid = destination.with_extension("bin.invalid");
-            std::fs::rename(&destination, &invalid)
-                .map_err(|error| format!("could not isolate damaged model {}: {error}",
+            // The file failed its pinned SHA-256; it cannot be loaded.
+            // Remove only this damaged file so a prior .invalid quarantine
+            // cannot block subsequent retries, especially on Windows where
+            // renaming over an existing destination fails. Valid models
+            // never enter this branch and are left intact.
+            std::fs::remove_file(&destination)
+                .map_err(|error| format!("could not discard damaged model {}: {error}",
                                         destination.display()))?;
         }
         let estimate = definition.approx_bytes;
