@@ -99,8 +99,9 @@ pub const MIN_DURATION: f32 = 1.0 / 60.0;
 /// frames had under forty pixels and a waveform under thirty, and both
 /// read as crammed.
 const LANE_LARGE: f32 = 108.0;
-const LANE_MEDIUM: f32 = 80.0;
-const LANE_SMALL: f32 = 44.0;
+const LANE_MEDIUM: f32 = 72.0;
+const LANE_SMALL: f32 = 48.0;
+const LANE_AUTO: f32 = 48.0;
 
 /// How long a title runs when it is placed: long enough to read, short
 /// enough that trimming it is a nudge rather than a fight.
@@ -2591,25 +2592,7 @@ impl Studio {
             TrackSize::Small => LANE_SMALL,
             TrackSize::Medium => LANE_MEDIUM,
             TrackSize::Large => LANE_LARGE,
-            TrackSize::Auto => {
-                let tallest = self
-                    .timeline()
-                    .clips
-                    .iter()
-                    .filter(|clip| clip.track_id == lane.id)
-                    .map(|clip| match clip.kind {
-                        model::ClipKind::Video | model::ClipKind::Image => LANE_LARGE,
-                        model::ClipKind::Audio => LANE_MEDIUM,
-                        // A title is its name strip alone; a layer has no
-                        // picture at all; a shape's name says what it is.
-                        // None needs a body's height.
-                        model::ClipKind::Text | model::ClipKind::Layer | model::ClipKind::Shape => {
-                            LANE_SMALL
-                        }
-                    })
-                    .fold(0.0_f32, f32::max);
-                if tallest > 0.0 { tallest } else { LANE_MEDIUM }
-            }
+            TrackSize::Auto => LANE_AUTO,
         }
     }
 
