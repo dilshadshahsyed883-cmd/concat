@@ -74,6 +74,15 @@ jobs:
             }
             Write-Host "Offline queue snapshot and retry PASS"
           } finally { $env:LOCALAPPDATA = $originalLocalData }
+      - name: Regression tests - offline Cancel/Delete and live GPU progress
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & ./upstream/src/crates/concat/tests/test_gpu_queue_offline.ps1
+          if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) { throw "Offline GPU queue regression failed" }
+          & ./upstream/src/crates/concat/tests/test_home_gpu_queue_progress.ps1
+          if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) { throw "Home GPU queue and progress regression failed" }
+
       - name: Exact Rust 1.93 toolchain
         uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
         with:
