@@ -14,20 +14,25 @@ use std::collections::{HashMap, HashSet};
 /// Context-menu operations must target the same outermost container the user
 /// sees, not accidentally edit/delete only its hidden inner membership.
 /// Damaged or cyclic graphs fail closed without touching source clips.
-fn root_compound_for_clip(groups: &[Compound], clip_id: &str) -> Option<String> {
+fn compound_ancestry(groups: &[Compound], clip_id: &str) -> Option<Vec<String>> {
     let mut current = groups.iter().find(|g| g.members.iter().any(|m| {
         matches!(m, CompoundMember::Clip(id) if id == clip_id)
     }))?.id.clone();
     let mut visited = HashSet::new();
+    let mut ancestry = Vec::new();
     while visited.insert(current.clone()) {
+        ancestry.push(current.clone());
         match groups.iter().find(|g| g.members.iter().any(|m| {
             matches!(m, CompoundMember::Compound(id) if id == &current)
         })) {
             Some(parent) => current = parent.id.clone(),
-            None => return Some(current),
+            None => return Some(ancestry),
         }
     }
     None
+}
+fn root_compound_for_clip(groups: &[Compound], clip_id: &str) -> Option<String> {
+    compound_ancestry(groups, clip_id)?.last().cloned()
 }
 
 /// Recursively collect actual members for the editor-only compound view.
@@ -54,16 +59,27 @@ fn compound_view_clips(groups: &[Compound], root: &str) -> Option<HashSet<String
 
 impl Studio {
     pub(super) fn open_compound_from(&mut self, clicked: &str) {
-        let Some(id) = self.compound_for_clip(clicked) else { return; };
+        let Some(ancestry) = compound_ancestry(&self.timeline().compounds, clicked) else {
+            return;
+        };
+        let next = match self.compound_edit.as_deref() {
+            None => ancestry.last(),
+            Some(scope) => ancestry.iter().position(|id| id == scope)
+                .and_then(|index| index.checked_sub(1))
+                .and_then(|index| ancestry.get(index)),
+        };
+        let Some(next) = next.cloned() else { return; };
         self.flush_commit();
-        self.compound_edit = Some(id);
+        if let Some(previous) = self.compound_edit.replace(next) {
+            self.compound_edit_parents.push(previous);
+        }
         self.selection.clear();
         self.transition_selected = None;
     }
 
     pub(super) fn leave_compound_edit(&mut self) {
         self.flush_commit();
-        self.compound_edit = None;
+        self.compound_edit = self.compound_edit_parents.pop();
         self.selection.clear();
         self.transition_selected = None;
     }
@@ -80,7 +96,14 @@ impl Studio {
     }
 
     pub(super) fn compound_for_clip(&self, clip_id: &str) -> Option<String> {
-        root_compound_for_clip(&self.timeline().compounds, clip_id)
+        let ancestry = compound_ancestry(&self.timeline().compounds, clip_id)?;
+        match self.compound_edit.as_deref() {
+            Some(scope) => {
+                let index = ancestry.iter().position(|id| id == scope)?;
+                Some(ancestry[if index == 0 { 0 } else { index - 1 }].clone())
+            }
+            None => ancestry.last().cloned(),
+        }
     }
 
     pub(super) fn compound_selected_from(&mut self, clicked: &str) {
@@ -255,6 +278,21 @@ mod nested_lookup_tests {
         assert!(ids.contains("a") && ids.contains("b"));
         assert!(!ids.contains("c"));
         assert_eq!(compound_view_clips(&groups, "absent"), None);
+    }
+
+    #[test]
+    fn open_nested_groups_descends_one_level_per_step() {
+        let groups = vec![
+            group("inner", vec![CompoundMember::Clip("a".into())]),
+            group("middle", vec![CompoundMember::Compound("inner".into())]),
+            group("outer", vec![CompoundMember::Compound("middle".into())]),
+        ];
+        let path = compound_ancestry(&groups, "a").unwrap();
+        assert_eq!(path, vec!["inner", "middle", "outer"]);
+        let index = path.iter().position(|id| id == "outer").unwrap();
+        assert_eq!(path[index - 1], "middle");
+        let index = path.iter().position(|id| id == "middle").unwrap();
+        assert_eq!(path[index - 1], "inner");
     }
 
     #[test]
