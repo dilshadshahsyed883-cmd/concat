@@ -293,6 +293,23 @@ mod tests {
     }
 
     #[test]
+    fn curved_source_time_cannot_be_silently_flattened_inside_compound() {
+        let mut e = editor();
+        e.apply(Command::CreateCompound {
+            clip_ids: vec!["c1".into()], compound_ids: vec![], name: "Curve".into(),
+        }).unwrap();
+        let timeline = e.project_mut().active_mut();
+        Arc::make_mut(&mut timeline.clips[0]).speed_curve =
+            Some(vec![crate::model::SpeedPoint { at: 0.0, speed: 1.5 }]);
+        let before = e.project().active().clips.clone();
+        assert!(e.apply(Command::SplitClips {
+            clip_ids: vec!["c1".into()], time: 1.0,
+        }).is_err());
+        assert_eq!(e.project().active().clips, before);
+        assert_eq!(e.project().active().compounds[0].members.len(), 1);
+    }
+
+    #[test]
     fn splitting_inside_a_compound_keeps_both_source_pieces_grouped() {
         let mut e = editor();
         e.apply(Command::CreateCompound {
