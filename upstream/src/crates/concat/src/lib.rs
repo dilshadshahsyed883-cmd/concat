@@ -873,6 +873,11 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     editor.on_library_add_text(on_window!(|state, preset: SharedString| {
         state.place_at_playhead(&format!("text:{preset}:Title"));
     }));
+    editor.on_library_apply_caption_preset(on_window!(
+        |state, preset: SharedString, all: bool| {
+            state.apply_caption_preset(preset.as_str(), all);
+        }
+    ));
     // A figure from the Stickers page, named in the interface's language.
     editor.on_library_add_shape(on_window!(
         |state, shape: SharedString, label: SharedString| {

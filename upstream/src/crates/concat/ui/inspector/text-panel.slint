@@ -485,6 +485,53 @@ export component TextPanel inherits VerticalLayout {
         }
     }
 
+    // Only expose styling knobs the CUDA worker reproduces. The broader
+    // typography drawers stay available in non-GPU mode below.
+    if GpuCompatibility.enabled: Section {
+        gpu-style := SectionHeader {
+            title: "Caption Appearance";
+            collapsible: true;
+            summary: "Color · outline · shadow";
+        }
+        if gpu-style.open: SectionBody {
+            ColourField {
+                label: I18n.t("common.color");
+                value: root.selected.fill;
+                alpha: false;
+                changed(colour) => {
+                    root.set-colour(ClipTextField.color, colour);
+                    root.commit();
+                }
+            }
+            Param {
+                label: "Outline";
+                value <=> root.stroke-width;
+                minimum: 0;
+                maximum: 0.029;
+                step: 0.001;
+                default-value: 0.003;
+                fmt: ParamFormat.outline;
+                unit: "%";
+                unit-scale: 100;
+                changed(v) => { root.set(ClipField.stroke-width, v); root.commit(); }
+            }
+            ColourField {
+                label: "Outline Color";
+                value: root.selected.stroke;
+                alpha: true;
+                changed(colour) => {
+                    root.set-colour(ClipTextField.stroke-color, colour);
+                    root.commit();
+                }
+            }
+            SwitchRow {
+                label: I18n.t("textPanel.dropShadow");
+                checked: root.selected.shadow;
+                toggled(on) => { root.set(ClipField.shadow, on ? 1 : 0); root.commit(); }
+            }
+        }
+    }
+
     // ── stroke ───────────────────────────────────────────────────────────
     if !GpuCompatibility.enabled: Section {
         stroke := SectionHeader {

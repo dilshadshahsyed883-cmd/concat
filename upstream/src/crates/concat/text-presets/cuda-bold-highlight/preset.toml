@@ -1,0 +1,16 @@
+id = "cuda-caption.bold-highlight"
+name = "Bold Highlight"
+order = 1020
+language = "Latin"
+sample = "UNBELIEVABLE!"
+offsetY = 0.18
+[style]
+content = "UNBELIEVABLE!"
+fontFamily = "Hanken Grotesk"
+fontSize = 0.085
+fontWeight = 600
+color = "#ffdc27"
+strokeColor = "#000000"
+strokeWidth = 0.007
+shadow = true
+opacity = 1.0

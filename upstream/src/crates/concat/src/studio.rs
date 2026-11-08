@@ -3969,6 +3969,70 @@ impl Studio {
         }
     }
 
+    /// Apply a CUDA caption look to a selection, or to every unlocked title
+    /// in the active timeline. Preserve each caption's words, duration,
+    /// position, keys, and track; one batch is one Undo step.
+    pub fn apply_caption_preset(&mut self, preset: &str, all: bool) {
+        self.flush_commit();
+        let Some(style) = self.text_presets.iter()
+            .find(|held| held.id == preset && held.id.starts_with("cuda-caption."))
+            .map(|found| found.style.clone())
+        else {
+            self.notify("Unknown CUDA caption preset", true);
+            return;
+        };
+        let ids: Vec<String> = if all {
+            // A timeline also contains title cards. "Apply to all captions"
+            // means the active caption lane (or the busiest text lane),
+            // not unrelated title tracks elsewhere in the project.
+            let lane = self.sole_selection()
+                .and_then(|id| self.clip(&id))
+                .filter(|clip| clip.kind == model::ClipKind::Text)
+                .map(|clip| clip.track_id.clone())
+                .or_else(|| concat_project::srt::busiest_title_lane(self.timeline()));
+            self.timeline().clips.iter()
+                .filter(|clip| clip.kind == model::ClipKind::Text
+                    && lane.as_deref() == Some(clip.track_id.as_str())
+                    && !self.locked(&clip.track_id))
+                .map(|clip| clip.id.clone())
+                .collect()
+        } else {
+            self.edit_targets().into_iter()
+                .filter(|id| self.clip(id).is_some_and(|clip|
+                    clip.kind == model::ClipKind::Text && !self.locked(&clip.track_id)))
+                .collect()
+        };
+        if ids.is_empty() {
+            if all {
+                self.notify("No unlocked captions on this timeline", true);
+            } else {
+                // With no caption selected, a card places a new caption at
+                // the playhead just like the existing text preset shelf.
+                self.place_at_playhead(&format!("text:{preset}:Caption"));
+            }
+            return;
+        }
+        let commands: Vec<Command> = ids.into_iter().filter_map(|id| {
+            let clip = self.clip(&id)?;
+            let original = clip.text.as_ref()?;
+            let mut next = style.clone();
+            next.content = original.content.clone();
+            if &next == original {
+                return None;
+            }
+            Some(Command::UpdateClip {
+                clip_id: id,
+                patch: ClipPatch {
+                    text: Some(Some(next)),
+                    ..ClipPatch::default()
+                },
+            })
+        }).collect();
+        if !commands.is_empty() {
+            self.apply(Command::Batch { commands });
+        }
+    }
+
     /// Places a title in the look a preset names - "default" for the plain
     /// title - and, when the preset brings a font, registers the font on
     /// the project in the same step, so the painter finds it the first
@@ -10919,7 +10983,14 @@ impl Studio {
         let latin = |card: &TextPresetData| card.language.eq_ignore_ascii_case("latin");
         sync(
             &models.style_presets,
-            cards.iter().filter(|card| latin(card)).cloned().collect(),
+            cards.iter()
+                .filter(|card| if cfg!(windows) {
+                    card.id.as_str().starts_with("cuda-caption.")
+                } else {
+                    latin(card)
+                })
+                .cloned()
+                .collect(),
         );
         sync(
             &models.language_presets,
