@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! C Builder: persistent, non-destructive media catalogue and native Concat timeline generation.
 //! All expensive probes happen on the caller's background worker, never during timeline generation.
+#![allow(missing_docs, dead_code)]
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
