@@ -2088,6 +2088,8 @@ fn few(names: &[String]) -> String {
 /// What the confirmation sheet can ask about.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Confirm {
+    /// Delete only a compound container; every original source clip stays.
+    RemoveCompound { compound_id: String, name: String },
     /// Deleting a whole track, and every clip on it.
     RemoveTrack { track_id: String },
     /// Exporting over a file that is already at `path`.
@@ -2482,6 +2484,9 @@ impl Studio {
     /// The confirmation sheet's answer: go ahead with what it asked about.
     pub fn confirm_accepted(&mut self) {
         match self.confirm.take() {
+            Some(Confirm::RemoveCompound { compound_id, .. }) => {
+                self.apply(Command::UngroupCompound { compound_id });
+            }
             Some(Confirm::RemoveTrack { track_id }) => {
                 self.apply(Command::RemoveTrack { track_id });
             }
@@ -2511,6 +2516,12 @@ impl Studio {
             return crate::ui::ConfirmData::default();
         };
         match confirm {
+            Confirm::RemoveCompound { name, .. } => crate::ui::ConfirmData {
+                open: true,
+                title: "Delete Compound Clip?".into(),
+                message: format!("Remove grouping for \"{name}\"? Original video, audio, clips, effects, timing and files will all be preserved.").into(),
+                action: "Delete Group".into(),
+            },
             Confirm::RemoveTrack { track_id } => {
                 let clips = self
                     .timeline()
@@ -11410,6 +11421,8 @@ impl Studio {
                 Glyph::None, "", true));
             rows.push(action("compound-rename", "Rename Compound Clip".into(),
                 Glyph::None, "", !locked));
+            rows.push(action("compound-delete", "Delete Compound (keep all media)".into(),
+                Glyph::None, "", !locked));
             rows.push(action("compound-break", "Break Apart Compound".into(),
                 Glyph::Split, "", !locked));
         }
@@ -12214,6 +12227,7 @@ impl Studio {
             "compound-nest" => self.nest_compound_from(id),
             "compound-members" => self.select_compound_members(id),
             "compound-rename" => self.prompt_compound_rename(id),
+            "compound-delete" => self.ask_delete_compound(id),
             "compound-break" => self.break_compound_from(id),
             "copy" => self.copy_clips(Some(id)),
             "duplicate" => self.duplicate_selected(),

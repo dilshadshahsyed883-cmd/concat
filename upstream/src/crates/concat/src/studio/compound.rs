@@ -5,7 +5,7 @@
 //! Clips remain real clips on their original tracks; no proxy with duplicate
 //! audio or unimplemented parent effects is ever sent to Preview/CUDA.
 
-use super::{Command, Studio};
+use super::{Command, Confirm, Studio};
 use concat_project::model::CompoundMember;
 use std::collections::HashSet;
 
@@ -128,6 +128,16 @@ impl Studio {
 
     pub fn compound_rename_dismiss(&mut self) {
         self.compound_rename = None;
+    }
+
+    pub fn ask_delete_compound(&mut self, clicked: &str) {
+        let Some(id) = self.compound_for_clip(clicked) else { return; };
+        let Some(group) = self.timeline().compounds.iter().find(|g| g.id == id) else {
+            return;
+        };
+        self.confirm = Some(Confirm::RemoveCompound {
+            compound_id: id, name: group.name.clone(),
+        });
     }
 
     pub(super) fn break_compound_from(&mut self, clicked: &str) {
