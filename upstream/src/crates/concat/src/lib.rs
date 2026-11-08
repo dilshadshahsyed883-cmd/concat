@@ -1313,6 +1313,12 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             video_clips: bool, selected_only: bool| {
             state.apply_bulk_gpu_motion(mode, images, video_clips, selected_only);
         }));
+        keys.on_apply_bulk_motion_preset(on_lanes!(|state, mode: i32, preset: i32,
+            images: bool, video_clips: bool, selected_only: bool| {
+            state.apply_bulk_gpu_motion_with_preset(
+                mode, preset, images, video_clips, selected_only,
+            );
+        }));
         keys.on_apply_bulk_transform(on_lanes!(|state, mode: i32, images: bool,
             video_clips: bool, selected_only: bool, scale: f32, x: f32, y: f32| {
             state.apply_bulk_gpu_transform(
