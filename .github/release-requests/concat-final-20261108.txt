@@ -1,4 +1,14 @@
-Concat final synchronized Windows EXE + Salad CUDA image release, 2026-11-08.
-All effects catalogue manifests and compiled catalogue Rust tests passed in prior 54ad4e59 build. Windows GUI compiled and concat.exe --smoke passed, portable DLL and project-persistence checks passed.
-The only remaining failure was two stale host integration test Transition struct initializers in tests/export.rs missing a newly optional intensity field. Both fixtures now set intensity: None without changing production behavior.
-Build exactly this new main commit with both workflows. Native Windows release is permitted only after full host test pass and SHA256 packaging; publish a GitHub Release ZIP, and matching GHCR image with immutable source SHA/digest. No VPS or Salad live deployment. No generalized auto build on unrelated pushes.
+Concat final synchronized Windows EXE + Salad CUDA candidate build request — 2026-11-09.
+
+RELEASE SCOPE:
+- Source: current main, including merged PR #40 and standalone layout PR #41.
+- Compound Clips are explicitly DEFERRED / OUT OF SCOPE. PR #35 closed without merge. Preserve its feature branch; DO NOT cherry-pick compound code or block the release on that work.
+- Preserve Media, C Builder, Text, Transitions, Animations, Filters, Templates, Effects; compact 48px full-width timeline; Canvas/Whisper; offline ZIP; GPU manifest and performance fixes.
+
+VERIFICATION GATE:
+- PR #40 and PR #41 Linux worker tests, Rust/Slint typecheck, C Builder contracts and offline ZIP tests completed successfully.
+- Windows workflow must build the native Windows x64 EXE, run smoke test, bundled offline ZIP parity and local queue tests, project/host tests, and publish the release ZIP only if all jobs pass.
+- Salad candidate workflow must build the Docker image and verify Python CUDA worker and manifest validator imports; publish GHCR image tagged with the exact triggering source commit SHA and report digest.
+- The same source commit MUST identify both deliverables. Do not claim NVIDIA hardware acceptance without live RTX GPU verification.
+
+NO VPS OR SALAD DEPLOYMENT. Do not modify production or create general auto-builds for unrelated pushes.
