@@ -610,6 +610,19 @@ impl Studio {
     pub fn apply_bulk_gpu_motion(
         &mut self, mode: i32, images: bool, videos: bool, selected_only: bool,
     ) {
+        self.apply_bulk_gpu_motion_with_preset(mode, 0, images, videos, selected_only);
+    }
+
+    /// For Apply-to-All the caller selects one catalogue animation (0–8);
+    /// random modes ignore the index. Agent 4 can reuse this contract.
+    pub fn apply_bulk_gpu_motion_with_preset(
+        &mut self, mode: i32, preset: i32,
+        images: bool, videos: bool, selected_only: bool,
+    ) {
+        if mode == 0 && !(0..MOTION_PRESETS.len() as i32).contains(&preset) {
+            self.notify("Choose a supported animation preset.", true);
+            return;
+        }
         if !images && !videos {
             self.notify("Choose Images, Video Clips, or both before bulk editing.", true);
             return;
@@ -674,7 +687,9 @@ impl Studio {
             .map(|(_, _, choices, old)| (choices.len(), *old))
             .collect();
         let picks = if mode == 0 {
-            vec![0; plans.len()]
+            // The permitted list preserves MOTION_PRESETS' catalogue order.
+            // The same explicitly selected animation goes to every target.
+            vec![preset as usize; plans.len()]
         } else {
             random_assignment(&options, fresh_draw())
         };
