@@ -1314,6 +1314,23 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         keys.on_apply_random_favourite_motion(on_lanes!(|state| {
             state.apply_random_favourite_gpu_motion();
         }));
+        // Animations tab and inspector call the same owner-scoped backend.
+        keys.on_apply_bulk_motion(on_lanes!(|state, mode: i32, images: bool,
+            video_clips: bool, selected_only: bool| {
+            state.apply_bulk_gpu_motion(mode, images, video_clips, selected_only);
+        }));
+        keys.on_apply_bulk_motion_preset(on_lanes!(|state, mode: i32, preset: i32,
+            images: bool, video_clips: bool, selected_only: bool| {
+            state.apply_bulk_gpu_motion_with_preset(
+                mode, preset, images, video_clips, selected_only,
+            );
+        }));
+        keys.on_apply_bulk_transform(on_lanes!(|state, mode: i32, images: bool,
+            video_clips: bool, selected_only: bool, scale: f32, x: f32, y: f32| {
+            state.apply_bulk_gpu_transform(
+                mode, images, video_clips, selected_only, scale, x, y,
+            );
+        }));
         // The same three verbs for the Adjust panel's knobs, which are
         // named rather than enumerated.
         keys.on_toggle_param(on_lanes!(|state, key: SharedString| {
@@ -2296,6 +2313,43 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                                 }
                             } else {
                                 state.notify("GPU Queue is unavailable", true);
+                            }
+                        }
+                        #[cfg(windows)]
+                        "prepare-zip-only" => {
+                            if cloud_gpu::offline_zip_busy(&app) {
+                                app.global::<CloudGpu>().set_zip_open(true);
+                            } else if let Some(project) = state.save_for_gpu() {
+                                // Reuse precisely the Send to GPU saved-project snapshot.
+                                // The picker runs later with Studio unborrowed.
+                                let label = std::path::Path::new(&project)
+                                    .file_name()
+                                    .and_then(|name| name.to_str())
+                                    .unwrap_or("Concat")
+                                    .to_string();
+                                host::after_dialog(
+                                    move || rfd::FileDialog::new()
+                                        .set_title("Prepare ZIP Only - Offline")
+                                        .add_filter("GPU-ready ZIP", &["zip"])
+                                        .set_file_name(format!("{label}.zip"))
+                                        .save_file(),
+                                    move |studio, app, _, selected| {
+                                        let destination = if selected.extension()
+                                            .is_some_and(|extension| extension.eq_ignore_ascii_case("zip"))
+                                        {
+                                            selected
+                                        } else {
+                                            selected.with_extension("zip")
+                                        };
+                                        // Never overwrite an existing archive.
+                                        if destination.exists() {
+                                            studio.notify("ZIP already exists. Choose a new name.", true);
+                                            return;
+                                        }
+                                        cloud_gpu::prepare_zip_only(app, project, destination);
+                                        studio.notify("Preparing local GPU-ready ZIP (no upload)", false);
+                                    },
+                                );
                             }
                         }
                         #[cfg(windows)]

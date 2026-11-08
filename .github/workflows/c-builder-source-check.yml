@@ -137,3 +137,8 @@ jobs:
       - name: Test image/video selective bulk animation targeting
         working-directory: upstream/src
         run: cargo test -p concat --lib physics_bulk_target_checks_both_media_types_independently --locked -j 2
+      - name: Run native C Builder mixed-media and bulk editor regression tests
+        working-directory: upstream/src
+        run: |
+          cargo test -p concat --lib --locked -j 2 c_builder::tests
+          cargo test -p concat --lib --locked -j 2 studio::bulk_presets::tests

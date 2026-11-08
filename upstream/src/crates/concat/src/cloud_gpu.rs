@@ -43,6 +43,10 @@ pub(crate) fn trigger_abort(handle: &AbortHandle) {
 enum Task {
     Save,
     Test,
+    OfflineBundle {
+        project: String,
+        destination: PathBuf,
+    },
     Queue {
         operation: &'static str,
         job: queue::Job,
@@ -54,6 +58,7 @@ impl Task {
         match self {
             Self::Save => "Save",
             Self::Test => "Test",
+            Self::OfflineBundle { .. } => "OfflineBundle",
             Self::Queue { operation, .. } => operation,
         }
     }
@@ -95,6 +100,65 @@ pub(crate) fn can_submit(app: &App) -> bool {
 
 pub(crate) fn submit(app: &App, path: String) {
     app.global::<CloudGpu>().invoke_queue_add(path.into());
+}
+
+pub(crate) fn offline_zip_busy(app: &App) -> bool {
+    app.global::<CloudGpu>().get_zip_busy()
+}
+
+/// This path deliberately never opens the queue or resolves Salad credentials.
+/// The helper receives only a saved project directory and a user-chosen local
+/// ZIP pathname. It snapshots the saved manifest and calls Concat-Bundle.
+pub(crate) fn prepare_zip_only(app: &App, project: String, destination: PathBuf) {
+    let gpu = app.global::<CloudGpu>();
+    if gpu.get_zip_busy() {
+        gpu.set_zip_open(true);
+        return;
+    }
+    gpu.set_zip_busy(true);
+    gpu.set_zip_open(true);
+    gpu.set_zip_error(false);
+    gpu.set_zip_progress(0);
+    gpu.set_zip_note("Preparing local GPU ZIP (offline)…".into());
+    gpu.set_zip_path(destination.to_string_lossy().to_string().into());
+
+    let weak = app.as_weak();
+    std::thread::spawn(move || {
+        let mut saw_failure = false;
+        let result = run_script(
+            &Task::OfflineBundle { project, destination },
+            None,
+            None,
+            |event| {
+                saw_failure |= event["failed"].as_bool().unwrap_or(false);
+                let _ = weak.upgrade_in_event_loop(move |app| {
+                    let gpu = app.global::<CloudGpu>();
+                    if let Some(progress) = event["progress"].as_i64().filter(|p| *p >= 0) {
+                        gpu.set_zip_progress(progress.clamp(0, 100) as i32);
+                    }
+                    if let Some(message) = event["message"].as_str() {
+                        gpu.set_zip_note(message.into());
+                    }
+                    if event["failed"].as_bool().unwrap_or(false) {
+                        gpu.set_zip_error(true);
+                    }
+                    if let Some(path) = event["location"].as_str().filter(|s| !s.is_empty()) {
+                        gpu.set_zip_path(path.into());
+                    }
+                });
+            },
+        );
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            let gpu = app.global::<CloudGpu>();
+            if let Err(error) = result {
+                gpu.set_zip_error(true);
+                gpu.set_zip_note(error.into());
+            } else if !saw_failure {
+                gpu.set_zip_progress(100);
+            }
+            gpu.set_zip_busy(false);
+        });
+    });
 }
 
 fn run(app: &App, task: Task) {
@@ -198,6 +262,10 @@ fn run_script(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
+    if let Task::OfflineBundle { project, destination } = task {
+        command.arg("-ProjectDir").arg(project);
+        command.arg("-BundlePath").arg(destination);
+    }
     if let Task::Queue { operation, job } = task {
         command.args(["-Job", &job.remote, "-SnapshotID", &job.id]);
         if *operation == "Prepare" {
