@@ -665,6 +665,25 @@ mod tests {
     }
 
     #[test]
+    fn status_checks_digest_once_per_unchanged_file_and_rechecks_after_edit() {
+        let path = std::env::temp_dir().join(format!(
+            "concat-whisper-digest-status-{}", std::process::id()
+        ));
+        let sha_abc = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+        let sha_abcd = "88d4266fd4e6338d13b845fcf289579d209c897823b9217da3e161936f031589";
+        std::fs::write(&path, b"abc").unwrap();
+        assert!(installed_model(&path, sha_abc));
+        assert!(installed_model(&path, sha_abc), "unchanged verified model remains installed");
+        std::fs::write(&path, b"abcd").unwrap();
+        assert!(!installed_model(&path, sha_abc),
+                 "size/mtime changes invalidate the verified status");
+        assert!(installed_model(&path, sha_abcd));
+        std::fs::remove_file(&path).unwrap();
+        assert!(!installed_model(&path, sha_abcd),
+                 "missing model must never be reported as installed");
+    }
+
+    #[test]
     fn status_lists_every_model_undownloaded_in_an_empty_data_dir() {
         let scratch =
             std::env::temp_dir().join(format!("concat-whisper-test-{}", std::process::id()));
