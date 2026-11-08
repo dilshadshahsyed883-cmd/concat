@@ -254,36 +254,30 @@ pub fn lay_out(node: &Dock, (x, y, w, h): (f32, f32, f32, f32), out: &mut DockLa
     }
 }
 
-/// The arrangement the editor opens with: the inspector a column down the
-/// whole right side, and in the rest the library and the monitor across the
-/// top and the timeline under both of them. The inspector is the tallest
-/// thing in the window - a stack of sections that would otherwise scroll -
-/// and the timeline gives up its right end to it, which is the end with
-/// nothing on it yet. About 0.22 of the width to the inspector and 0.25 to
-/// the library, which is 0.32 of what is left once the inspector has had
-/// its share; the timeline takes the lower 0.4 of the height.
+/// Default desktop arrangement: Media, Preview and Inspector share the
+/// upper workspace. The timeline is a full-width bottom row beneath *all*
+/// three seats, including Inspector. The 60/40 vertical split leaves enough
+/// room for five compact tracks, while the dock splitters still resize every
+/// region independently. Compact/phone layouts remain unchanged.
 pub fn default_dock() -> Dock {
     Dock::Split {
-        columns: true,
-        ratio: 0.78,
+        columns: false,
+        ratio: 0.60,
         first: Box::new(Dock::Split {
-            columns: false,
-            ratio: 0.6,
+            columns: true,
+            ratio: 0.78,
             first: Box::new(Dock::Split {
                 columns: true,
                 ratio: 0.32,
                 first: Dock::leaf(PaneKind::Media),
                 second: Dock::leaf(PaneKind::Preview),
             }),
-            // The timeline, whose VU meters are a column at its own right
-            // edge (see vu-meter.slint) rather than a seat of their own.
-            second: Dock::leaf(PaneKind::Timeline),
+            second: Dock::leaf(PaneKind::Inspector),
         }),
-        second: Dock::leaf(PaneKind::Inspector),
+        second: Dock::leaf(PaneKind::Timeline),
     }
 }
 
-/// The top edge of a row, measured down the stack from the first lane.
 /// The dock a narrow window shows: the monitor over the timeline, and
 /// nothing beside either. The library and the inspector are a switch away
 /// on each seat - see `PaneSwitcher` - which on a phone is how they are
@@ -329,4 +323,31 @@ pub fn nearest_row(heights: &[f32], y: f32) -> i32 {
         top += height;
     }
     best
+}
+
+#[cfg(test)]
+mod full_width_timeline_tests {
+    use super::*;
+
+    #[test]
+    fn default_timeline_extends_under_inspector_and_resizes() {
+        for (width, height) in [(1280.0, 900.0), (1920.0, 1080.0), (900.0, 650.0)] {
+            let mut layout = DockLayout::default();
+            lay_out(&default_dock(), (0.0, 0.0, width, height), &mut layout);
+            assert_eq!(layout.seats.len(), 4);
+            let by_kind = |kind| layout.seats.iter().find(|seat| seat.kind == kind).unwrap();
+            let media = by_kind(PaneKind::Media);
+            let preview = by_kind(PaneKind::Preview);
+            let inspector = by_kind(PaneKind::Inspector);
+            let timeline = by_kind(PaneKind::Timeline);
+            assert!(timeline.y >= media.y + media.height);
+            assert!(timeline.y >= preview.y + preview.height);
+            assert!(timeline.y >= inspector.y + inspector.height);
+            assert_eq!(timeline.x, 0.0);
+            assert!((timeline.width - width).abs() < 0.01);
+            assert!(timeline.height > 0.0);
+            assert!(preview.width > 0.0 && inspector.width > 0.0);
+            assert!(layout.dividers.iter().any(|divider| !divider.columns));
+        }
+    }
 }
