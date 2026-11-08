@@ -12,12 +12,12 @@
   {
     "id": "concat.look.8k",
     "name": "8K",
-    "brightness": 0,
-    "contrast": 1.06,
-    "saturation": 1.03,
+    "brightness": 0.005,
+    "contrast": 1.03,
+    "saturation": 1.02,
     "temperature": 0,
     "exposure": 0,
-    "sharpen": 1.5
+    "sharpen": 0.65
   },
   {
     "id": "concat.look.bright-summer",
@@ -183,11 +183,11 @@
     "id": "concat.look.4k",
     "name": "4K",
     "brightness": 0,
-    "contrast": 1.04,
-    "saturation": 1.01,
+    "contrast": 1.02,
+    "saturation": 1,
     "temperature": 0,
     "exposure": 0,
-    "sharpen": 0.8
+    "sharpen": 0.35
   },
   {
     "id": "concat.look.cold-thriller",
@@ -202,11 +202,11 @@
   {
     "id": "concat.look.hdr-look",
     "name": "HDR Look",
-    "brightness": 0.015,
-    "contrast": 1.12,
-    "saturation": 1.08,
-    "temperature": 0.07,
+    "brightness": 0.01,
+    "contrast": 1.08,
+    "saturation": 1.045,
+    "temperature": 0.04,
     "exposure": 0,
-    "sharpen": 0.25
+    "sharpen": 0.15
   }
 ]
