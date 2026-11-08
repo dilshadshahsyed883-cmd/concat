@@ -10,12 +10,18 @@ class PhysicsControlContractTests(unittest.TestCase):
         physics = (ROOT / "upstream/src/crates/concat-project/src/physics_motion.rs").read_text()
         ui = (ROOT / "upstream/src/crates/concat/ui/inspector/clip-inspector.slint").read_text()
         lib = (ROOT / "upstream/src/crates/concat/src/lib.rs").read_text()
+        media_ui = (ROOT / "upstream/src/crates/concat/ui/workspace/media-pane.slint").read_text()
+        timeline_ui = (ROOT / "upstream/src/crates/concat/ui/timeline/model.slint").read_text()
         for control in ("strength", "duration", "speed", "intensity"):
             self.assertIn("pub " + control + ": f64", physics)
-            self.assertIn("root.physics-" + control, ui)
+            # Agent 4 moved preset buttons into the Animations tab while
+            # keeping all four Inspector knobs backed by shared Keyframes state.
+            self.assertIn("Keyframes.physics-" + control, ui)
+            self.assertIn("in-out property <float> physics-" + control, timeline_ui)
         self.assertIn("pub fn command_with(", physics)
         self.assertIn("state.apply_physics_motion(index, strength, duration, speed, intensity)", lib)
-        self.assertEqual(ui.count("Keyframes.apply-physics-motion("), 6)
+        self.assertEqual(media_ui.count("Keyframes.apply-physics-bulk("), 4)
+        self.assertIn("Keyframes.physics-intensity", media_ui)
 
 
 if __name__ == "__main__":

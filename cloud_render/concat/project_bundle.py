@@ -15,6 +15,8 @@ from pathlib import Path
 PROJECT_NAMES = ("concat.json", "wolfcut.json")
 SAFE_MEDIA = re.compile(r"media/[a-f0-9]{32}(?:\.[a-z0-9]{1,12})?")
 LIMIT = 500 * 1024 ** 3
+# A bounded JSON budget permits large timelines without unbounded ZIP expansion.
+MAX_PROJECT_MANIFEST_BYTES = 64 * 1024 * 1024
 
 
 class TransferError(ValueError):
@@ -33,6 +35,9 @@ def _load_project(root: Path):
     for filename in PROJECT_NAMES:
         file = root / filename
         if file.is_file():
+            size = file.stat().st_size
+            if not 0 < size <= MAX_PROJECT_MANIFEST_BYTES:
+                raise TransferError(f"Concat project JSON must be 1-{MAX_PROJECT_MANIFEST_BYTES} bytes (got {size})")
             doc = json.loads(file.read_text(encoding="utf-8-sig"))
             if not isinstance(doc, dict) or not isinstance(doc.get("media", []), list):
                 raise TransferError("Invalid Concat project media list")
@@ -131,6 +136,9 @@ def restore(archive: Path, destination: Path) -> dict:
             original_entry = "project/" + project_name
             if set(names) != {"bundle.json", original_entry, *members}:
                 raise TransferError("Archive has missing or unexpected files")
+            project_bytes = bundle.getinfo(original_entry).file_size
+            if not 0 < project_bytes <= MAX_PROJECT_MANIFEST_BYTES:
+                raise TransferError(f"Packaged Concat project JSON is {project_bytes} bytes; maximum {MAX_PROJECT_MANIFEST_BYTES} bytes")
             original = bundle.read(original_entry)
             project = json.loads(original.decode("utf-8-sig"))
             if not isinstance(project, dict) or not isinstance(project.get("media", []), list):

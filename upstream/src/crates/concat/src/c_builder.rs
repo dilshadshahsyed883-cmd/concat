@@ -389,8 +389,10 @@ pub fn write_native(shots: &[Shot], narration: &Path, duration: f64,
         timeline.name = name.to_owned();
         for (i, shot) in shots.iter().enumerate() {
             let is_image = shot.asset.kind == "image";
+            // The visual track is intentionally shared: the planned image/video
+            // sequence is one contiguous picture lane. Narration stays on T3.
             let mut clip = Clip::blank(format!("c{}", i + 1),
-                if is_image { "T1" } else { "T2" },
+                "T1",
                 if is_image { ClipKind::Image } else { ClipKind::Video },
                 Path::new(&shot.asset.path).file_name().unwrap_or_default().to_string_lossy(),
                 shot.start_us as f64 / 1e6, shot.duration_us as f64 / 1e6);
@@ -492,6 +494,59 @@ mod tests {
         assert!(picture.exists());
         assert!(narration.exists());
         assert!(write_native(&shots, &narration, 17.4, &root, "Demo").is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn mixed_visual_sequence_reopens_on_one_track_with_separate_narration() {
+        let root = std::env::temp_dir().join(format!("c-builder-mixed-test-{}", random_seed()));
+        fs::create_dir(&root).unwrap();
+        let still_path = root.join("Eala.jpg");
+        let video_path = root.join("Eala.mp4");
+        let narration = root.join("voice.wav");
+        fs::write(&still_path, b"original-still").unwrap();
+        fs::write(&video_path, b"original-video").unwrap();
+        fs::write(&narration, b"original-audio").unwrap();
+        let mut still = image("still");
+        still.path = still_path.to_string_lossy().into_owned();
+        let still_meta = fs::metadata(&still_path).unwrap();
+        still.size = still_meta.len();
+        still.modified_ns = stamp(&still_meta);
+        let mut video = image("video");
+        video.path = video_path.to_string_lossy().into_owned();
+        video.kind = "video".into();
+        video.duration = Some(12.0);
+        video.video_codec = Some("h264".into());
+        video.frame_rate = Some(30.0);
+        video.frame_rate_fraction = Some("30/1".into());
+        let video_meta = fs::metadata(&video_path).unwrap();
+        video.size = video_meta.len();
+        video.modified_ns = stamp(&video_meta);
+        let shots = vec![
+            Shot { asset: still.clone(), start_us: 0, duration_us: 3_000_000, trim_us: 0 },
+            Shot { asset: video.clone(), start_us: 3_000_000, duration_us: 3_000_000,
+                trim_us: 500_000 },
+            Shot { asset: still, start_us: 6_000_000, duration_us: 4_000_000, trim_us: 0 },
+        ];
+        let project_dir = write_native(&shots, &narration, 10.0, &root, "Mixed").unwrap();
+        let raw = fs::read_to_string(project_dir.join("concat.json")).unwrap();
+        let saved: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let reopened = doc::from_document(&saved).unwrap();
+        let clips = &reopened.active().clips;
+        assert_eq!(clips.len(), 4);
+        assert_eq!(clips[0].kind, ClipKind::Image);
+        assert_eq!(clips[1].kind, ClipKind::Video);
+        assert_eq!(clips[2].kind, ClipKind::Image);
+        assert!(clips[..3].iter().all(|clip| clip.track_id == "T1"));
+        assert_eq!(clips[3].track_id, "T3");
+        assert_eq!(clips[3].kind, ClipKind::Audio);
+        assert_eq!(clips[1].source_start, 0.5);
+        assert_eq!(clips[1].start, 3.0);
+        assert_eq!(clips[2].start, 6.0);
+        assert_eq!(clips[3].duration, 10.0);
+        assert!(reopened.media.iter().any(|media|
+            media.path == video.path && media.video_codec.as_deref() == Some("h264")
+                && media.frame_rate_fraction.as_deref() == Some("30/1")));
+        assert!(still_path.exists() && video_path.exists() && narration.exists());
         fs::remove_dir_all(root).unwrap();
     }
     #[test]

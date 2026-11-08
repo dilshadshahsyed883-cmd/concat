@@ -23,7 +23,7 @@ import { EffectData } from "demo/effects-panel.slint";
 import { MediaFilter, MediaItemData, MediaKind, SourcePreview, TextPresetData } from "workspace/media-pane.slint";
 import { SoundCardData, Sounds, VoiceCardData } from "workspace/audio-page.slint";
 import { ContextMenu, MenuItemData, MenuRow } from "primitives/context-menu.slint";
-import { CloudGpu, GpuQueueDialog, GpuQueueRow } from "dialogs/cloud-gpu.slint";
+import { CloudGpu, GpuQueueDialog, OfflineZipDialog, GpuQueueRow } from "dialogs/cloud-gpu.slint";
 import { ExportData, ExportDialog, ExportPhase } from "dialogs/export.slint";
 import { ModelData, SettingsData, SettingsDialog, SystemFactData } from "dialogs/settings.slint";
 import { ProjectDialog, ProjectSheetData } from "dialogs/project.slint";
@@ -122,7 +122,7 @@ export component App inherits Window {
     }
     property <bool> sheet-open: root.export.open || root.settings.open
         || root.project-sheet.open || root.captions.open || root.speech.open
-        || root.start.composing || CloudGpu.queue-open;
+        || root.start.composing || CloudGpu.queue-open || CloudGpu.zip-open;
     changed sheet-open => {
         if (!root.sheet-open) {
             keys.focus();
@@ -988,6 +988,15 @@ export component App inherits Window {
         data: root.confirm;
         confirmed => { root.confirm-accepted(); }
         dismissed => { root.confirm-dismissed(); }
+    }
+
+    OfflineZipDialog {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        open: CloudGpu.zip-open;
+        closed => { CloudGpu.zip-open = false; }
     }
 
     GpuQueueDialog {

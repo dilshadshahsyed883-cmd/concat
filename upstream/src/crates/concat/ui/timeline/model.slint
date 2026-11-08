@@ -234,11 +234,28 @@ export global Keyframes {
     /// Apply the inspector's motion preset for this field.
     callback apply-motion-preset(field: ClipField);
     callback apply-random-motion();
+    // Inspector and Animations tab share these live physics settings.
+    in-out property <float> physics-strength: 1;
+    in-out property <float> physics-duration: 1;
+    in-out property <float> physics-speed: 1;
+    in-out property <float> physics-intensity: 1;
     // Physics presets resolve into ordinary GPU-compatible transform keyframes.
     in property <[bool]> physics-favourites;
     callback apply-physics-motion(preset: int, strength: float, duration: float, speed: float, intensity: float);
     callback toggle-physics-favourite(preset: int);
     callback apply-random-favourite-motion();
+    // 0 selected preset, 2 randomized physics, 3 randomized starred physics.
+    callback apply-physics-bulk(preset: int, mode: int, images: bool, videos: bool,
+        selected-only: bool, strength: float, duration: float, speed: float, intensity: float);
+    // Stable interface shared with the Animations-tab agent.
+    // mode: 0 apply one preset to all, 1 random, 2 starred random.
+    callback apply-bulk-motion(mode: int, images: bool, video-clips: bool, selected-only: bool);
+    // Explicit preset index into the 9 GPU-compatible native animations.
+    callback apply-bulk-motion-preset(mode: int, preset: int, images: bool,
+        video-clips: bool, selected-only: bool);
+    // mode: 0 scale, 1 position X/Y; values use native Concat units.
+    callback apply-bulk-transform(mode: int, images: bool, video-clips: bool,
+        selected-only: bool, scale: float, position-x: float, position-y: float);
 
     /// The same three verbs for a knob named rather than enumerated - the
     /// Adjust panel's, whose rows come from the colour package's manifest
