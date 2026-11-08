@@ -43,6 +43,7 @@ use concat_project::model::{
     self, AppliedFilter, Clip, Project, TextAlign, TextStyle, Timeline, Track, Transition,
 };
 use concat_project::motion_preset::{MotionPreset, PresetError};
+use concat_project::physics_motion::PhysicsPreset;
 use concat_project::{Command, PlayheadSide};
 
 mod backdrop;
@@ -9159,6 +9160,12 @@ impl Studio {
         // The keyframe cluster's state, on its own global: every keyable row
         // in the inspector reads it, and none of them is threaded to.
         let keys = app.global::<Keyframes>();
+        let physics_stars: Vec<bool> = PhysicsPreset::ALL
+            .into_iter()
+            .map(|preset| self.prefs.physics_motion_favourites
+                .iter().any(|id| id == preset.id()))
+            .collect();
+        keys.set_physics_favourites(slint::ModelRc::new(VecModel::from(physics_stars)));
         // The Keyframes panel: set whole, since a row holds a model of its
         // keys and cannot be compared for a diff.
         models.key_editor_rows.set_vec(self.key_editor_rows());
@@ -10304,6 +10311,48 @@ impl Studio {
                 self.notify(&t(message), true);
             }
         }
+    }
+
+    /// Adds a simulated physics preset using normal native project keys.
+    /// Manual keyframes are protected by the shared preset validation.
+    pub fn apply_physics_motion(&mut self, index: i32) {
+        let Some(preset) = PhysicsPreset::from_index(index) else { return };
+        self.flush_commit();
+        let Some(clip) = self.sole_selection().and_then(|id| self.clip(&id)) else {
+            self.notify(&t("studio.selectVideoImageClip"), true);
+            return;
+        };
+        if self.locked(&clip.track_id) {
+            self.notify(&t("studio.motionPresetLocked"), true);
+            return;
+        }
+        match preset.command(clip, self.frame_seconds()) {
+            Ok((command, preview)) => {
+                self.apply(command);
+                self.seek(preview as f32);
+            }
+            Err(error) => {
+                let message = match error {
+                    PresetError::NeedsPicture => "studio.selectVideoImageClip",
+                    PresetError::TooShort => "studio.motionPresetTooShort",
+                    PresetError::AlreadyKeyed => "studio.motionPresetAlreadyKeyed",
+                    PresetError::NoChange => "studio.motionPresetNoChange",
+                };
+                self.notify(&t(message), true);
+            }
+        }
+    }
+
+    /// Stars are user settings, not project data, and survive app restarts.
+    pub fn toggle_physics_favourite(&mut self, index: i32) {
+        let Some(preset) = PhysicsPreset::from_index(index) else { return };
+        let id = preset.id();
+        if self.prefs.physics_motion_favourites.iter().any(|entry| entry == id) {
+            self.prefs.physics_motion_favourites.retain(|entry| entry != id);
+        } else {
+            self.prefs.physics_motion_favourites.push(id.to_owned());
+        }
+        self.prefs.save(&self.host.dirs);
     }
 
     /// Takes every key off a field, leaving it its constant.
