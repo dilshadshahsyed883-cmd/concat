@@ -54,5 +54,7 @@ jobs:
       - name: Run offline ZIP parity and isolation regression tests
         shell: pwsh
         run: |
+          # The test itself throws on failure. It intentionally verifies a
+          # rejected overwrite (nonzero child exit), so LASTEXITCODE remains
+          # nonzero even when every assertion passed.
           & ./upstream/src/crates/concat/tests/test_offline_zip_only.ps1
-          if ($LASTEXITCODE -ne 0) { throw "Offline ZIP regression failed" }
