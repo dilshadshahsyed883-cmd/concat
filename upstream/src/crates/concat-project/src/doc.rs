@@ -243,6 +243,7 @@ fn settle_timeline(mut timeline: Timeline, media: &[MediaItem]) -> Option<Timeli
         })
         .map(Arc::new)
         .collect();
+    crate::commands::prune_compounds(&mut timeline);
     Some(timeline)
 }
 
