@@ -92,6 +92,8 @@ export component TimelinePane inherits Rectangle {
     // ── the grid ─────────────────────────────────────────────────────────
     in property <[TrackData]> tracks;
     in property <[ClipData]> clips;
+    in property <string> editing-compound-name;
+    callback compound-edit-exit();
     in property <float> playhead;
     in property <[float]> key-marks;
     in property <float> frame-rate: 30;
@@ -311,6 +313,27 @@ export component TimelinePane inherits Rectangle {
                 removable: root.pane-removable;
                 picked(kind) => { root.pane-picked(kind); }
                 removed => { root.pane-removed(); }
+            }
+        }
+
+        // Only the timeline display is narrowed: Preview and export remain
+        // based on the unchanged source project, with no duplicated audio.
+        if root.editing-compound-name != "": Rectangle {
+            height: 28px;
+            background: Theme.raised;
+            Text {
+                x: 10px;
+                width: parent.width - 20px;
+                height: parent.height;
+                text: "‹ Back to full timeline / Members: " + root.editing-compound-name;
+                color: Theme.fg;
+                font-size: Theme.fs;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.compound-edit-exit(); }
             }
         }
 
