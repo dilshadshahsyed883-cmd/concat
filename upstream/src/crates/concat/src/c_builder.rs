@@ -56,7 +56,7 @@ impl ScanReport {
 fn keyword(path: &Path) -> String {
     let stem = path.file_stem().unwrap_or_default().to_string_lossy();
     let trimmed = stem.trim_end_matches(|c: char| c.is_ascii_digit());
-    let prefix = trimmed.trim_end_matches([' ', '_', '-']);
+    let prefix = trimmed.trim_end_matches(|c: char| c == ' ' || c == '_' || c == '-');
     if prefix.len() < stem.len() && !prefix.is_empty() { prefix.into() } else { stem.into_owned() }
 }
 fn supported(path: &Path) -> bool {
@@ -292,7 +292,7 @@ pub fn plan(assets: &[Asset], seconds: f64, image_weights: &str, video_weights: 
         if let Some((asset, duration, trim)) = videos.get(index) {
             result.push(Shot { asset: asset.clone(), start_us: cursor,
                 duration_us: *duration, trim_us: *trim });
-            cursor += duration;
+            cursor += *duration;
         }
     }
     validate(&result, total)?;
