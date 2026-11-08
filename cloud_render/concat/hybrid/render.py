@@ -14,6 +14,7 @@ from itertools import groupby
 from pathlib import Path
 
 from .animations import apply_transform
+from .cuda_audio import mux_cuda_audio
 from .captions import CaptionRenderer
 from .codec import Nvdec, Nvenc, nv12_from_rgba
 from .compositor import Layer, composite
@@ -194,47 +195,17 @@ def timeline_frames(plan, temporary, log):
         yield canvas
 
 
-def tempo(speed):
-    factors = []
-    while speed < .5:
-        factors.append(.5)
-        speed *= 2
-    while speed > 2:
-        factors.append(2)
-        speed /= 2
-    return ",".join(f"atempo={factor:.9f}" for factor in (*factors, speed))
-
-
 def mux(bitstream, output, sounds, frames):
-    seconds = frames / FPS
-    # Raw H.264 has no packet timestamps; FFmpeg input -r generates exact CFR
-    # PTS. The -framerate option can yield 2700000/89999 instead of 30/1.
-    command = ["ffmpeg", "-hide_banner", "-nostdin", "-v", "error", "-f", "h264",
-               "-r", str(FPS), "-i", str(bitstream)]
-    chains = []
-    for index, sound in enumerate(sounds, 1):
-        command += ["-ss", f"{sound.source_start:.9f}", "-i", str(sound.path)]
-        stream = f"{index}:a:0" if sound.stream is None else f"{index}:{int(sound.stream)}"
-        filters = [f"atrim=duration={sound.seconds * sound.speed:.9f}", "asetpts=PTS-STARTPTS",
-                   tempo(sound.speed), "aresample=48000",
-                   "aformat=sample_fmts=fltp:channel_layouts=stereo", f"volume={sound.volume:.9f}"]
-        if sound.fade_in:
-            filters.append(f"afade=t=in:st=0:d={min(sound.fade_in,sound.seconds):.9f}")
-        if sound.fade_out:
-            fade = min(sound.fade_out, sound.seconds)
-            filters.append(f"afade=t=out:st={sound.seconds-fade:.9f}:d={fade:.9f}")
-        filters.append(f"adelay={sound.start * 1600}S:all=1")
-        chains.append(f"[{stream}]{','.join(filters)}[a{index}]")
+    # Raw H.264 requires input -r for exact CFR PTS; -framerate drifts.
     if sounds:
-        inputs = "".join(f"[a{index}]" for index in range(1, len(sounds)+1))
-        chains.append(f"{inputs}amix=inputs={len(sounds)}:normalize=0,alimiter=latency=1,"
-                      f"apad,atrim=duration={seconds:.9f}[audio]")
-        command += ["-filter_complex", ";".join(chains), "-map", "0:v:0", "-map", "[audio]",
-                    "-c:a", "aac", "-b:a", "192k"]
-    else:
-        command += ["-map", "0:v:0"]
-    command += ["-c:v", "copy", "-video_track_timescale", "90000", "-movflags", "+faststart",
-                "-n", str(output)]
+        # NVENC cannot encode audio. FFmpeg decodes/retimes PCM, CUDA sums
+        # the audio stems, and FFmpeg encodes the final AAC soundtrack.
+        return mux_cuda_audio(bitstream, output, sounds, frames)
+    command = ["ffmpeg", "-hide_banner", "-nostdin", "-v", "error",
+               "-f", "h264", "-r", str(FPS), "-i", str(bitstream),
+               "-map", "0:v:0", "-c:v", "copy",
+               "-video_track_timescale", "90000", "-movflags", "+faststart",
+               "-n", str(output)]
     invoke(command)
 
 
@@ -301,7 +272,7 @@ def render_project(project, output, log=lambda message: print(message, file=sys.
     if output.suffix.lower() != ".mp4" or os.path.lexists(output):
         raise ValueError("The output must be a new MP4 path")
     cuda()
-    log("Using NVDEC, CUDA effects and NVENC H.264. No software video fallback.")
+    log("Using NVDEC, CUDA effects, NVENC H.264 and CUDA audio mixing; FFmpeg handles audio decode/AAC.")
     with tempfile.TemporaryDirectory(prefix=".concat-hybrid-", dir=output.parent) as temporary:
         temporary = Path(temporary)
         raw, result = temporary/"video.h264", temporary/"video.mp4"
