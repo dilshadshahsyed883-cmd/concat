@@ -2293,6 +2293,43 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                             }
                         }
                         #[cfg(windows)]
+                        "prepare-zip-only" => {
+                            if cloud_gpu::offline_zip_busy(&app) {
+                                app.global::<CloudGpu>().set_zip_open(true);
+                            } else if let Some(project) = state.save_for_gpu() {
+                                // Reuse precisely the Send to GPU saved-project snapshot.
+                                // The picker runs later with Studio unborrowed.
+                                let label = std::path::Path::new(&project)
+                                    .file_name()
+                                    .and_then(|name| name.to_str())
+                                    .unwrap_or("Concat")
+                                    .to_string();
+                                host::after_dialog(
+                                    move || rfd::FileDialog::new()
+                                        .set_title("Prepare ZIP Only - Offline")
+                                        .add_filter("GPU-ready ZIP", &["zip"])
+                                        .set_file_name(format!("{label}.zip"))
+                                        .save_file(),
+                                    move |studio, app, _, selected| {
+                                        let destination = if selected.extension()
+                                            .is_some_and(|extension| extension.eq_ignore_ascii_case("zip"))
+                                        {
+                                            selected
+                                        } else {
+                                            selected.with_extension("zip")
+                                        };
+                                        // Never overwrite an existing archive.
+                                        if destination.exists() {
+                                            studio.notify("ZIP already exists. Choose a new name.", true);
+                                            return;
+                                        }
+                                        cloud_gpu::prepare_zip_only(app, project, destination);
+                                        studio.notify("Preparing local GPU-ready ZIP (no upload)", false);
+                                    },
+                                );
+                            }
+                        }
+                        #[cfg(windows)]
                         "gpu-config" => {
                             state.handle(Msg::Settings(SettingsMsg::Open));
                             state.handle(Msg::Settings(SettingsMsg::PageChanged(cloud_gpu::SETTINGS_PAGE)));
