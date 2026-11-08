@@ -33,3 +33,8 @@ jobs:
       - name: Run project save/reopen and native model regression suite
         working-directory: upstream/src
         run: cargo test --locked -p concat-project --lib
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify CUDA structural compound equivalence and fail-closed validation
+        run: python -m unittest -v cloud_render.concat.tests.test_compound_graph
