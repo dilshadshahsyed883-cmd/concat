@@ -1,7 +1,9 @@
-Concat coordinated final build request — 2026-11-08
+Concat coordinated final build retry — 2026-11-08
 
-Source: GitHub main commit created by this release-request update.
-Windows: native executable build, smoke tests and SHA-256 verified release.
-Salad: CUDA hybrid GPU image build, import smoke test and GHCR digest.
-Both outputs must be pinned to the same source SHA. This event is intentionally path-gated and does not enable automatic builds on ordinary pushes.
-Acceptance limitation: CI does not substitute for a live NVIDIA Salad render.
+Reason: initial 8d54ca387be9 build compiled GUI but smoke panicked because 20 built-in procedural transitions declare intensity.
+Fix: manifest validator allows explicit intensity for two-input transition shaders, while retaining the implicit filter mix restriction. Original project parameters and GPU worker code preserved.
+Source: GitHub main revision containing the dedicated validator regression test.
+Windows: native build, smoke startup and integrity verification, project tests, release ZIP and checksum.
+Salad: GHCR image build, import smoke test, immutable SHA tag and digest.
+Both outputs must be pinned to the same new request commit.
+Do not enable general automatic releases or deploy to VPS/Salad.
