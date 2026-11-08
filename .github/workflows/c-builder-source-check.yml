@@ -1,0 +1,75 @@
+name: C Builder source verification (no EXE)
+
+on:
+  push:
+    branches:
+      - feature/c-builder-native-library-timeline-20261108
+    paths:
+      - 'upstream/src/crates/concat/src/c_builder.rs'
+      - 'upstream/src/crates/concat/src/lib.rs'
+      - 'upstream/src/crates/concat/src/studio.rs'
+      - 'upstream/src/crates/concat/ui/**'
+      - '.github/workflows/c-builder-source-check.yml'
+  pull_request:
+    paths:
+      - 'upstream/src/crates/concat/src/c_builder.rs'
+      - 'upstream/src/crates/concat/src/lib.rs'
+      - 'upstream/src/crates/concat/src/studio.rs'
+      - 'upstream/src/crates/concat/ui/**'
+      - '.github/workflows/c-builder-source-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  syntax-and-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
+        with:
+          toolchain: '1.93.0'
+          components: rustfmt
+      - name: Parse Rust source (no compile, no executable)
+        shell: bash
+        run: |
+          rustfmt --edition 2024 --emit stdout upstream/src/crates/concat/src/c_builder.rs > /dev/null
+          rustfmt --edition 2024 --emit stdout upstream/src/crates/concat/src/lib.rs > /dev/null
+          rustfmt --edition 2024 --emit stdout upstream/src/crates/concat/src/studio.rs > /dev/null
+      - name: Verify embedded app wiring, source safety and persistent caching
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('upstream/src/crates/concat')
+          engine = (root/'src/c_builder.rs').read_text()
+          lib = (root/'src/lib.rs').read_text()
+          studio = (root/'src/studio.rs').read_text()
+          ui = (root/'ui/workspace/c-builder.slint').read_text()
+          media = (root/'ui/workspace/media-pane.slint').read_text()
+          editor = (root/'ui/editor.slint').read_text()
+          seat = (root/'ui/workspace/seat.slint').read_text()
+          required = {
+            engine: ['fn scan(', 'fn plan(', 'fn validate(', 'fn write_native(', 'modified_ns',
+                     'read_cache(', 'save_cache(', 'doc::to_document(', 'doc::from_document(',
+                     'native_project_reopens_and_original_media_is_not_moved'],
+            lib: ['mod c_builder;', 'editor.on_cb_import_folder', 'editor.on_cb_refresh_folder',
+                  'editor.on_cb_choose_narration', 'editor.on_cb_generate_project', 'c_builder_scan'],
+            studio: ['pub c_builder:', 'set_cb_media_folder(', 'set_cb_scan_done('],
+            ui: ['Media Library', 'Timeline Builder', 'Generate Native Concat Timeline'],
+            media: ['CBuilderPane', 'cb-import-folder =>', 'cb-generate-project('],
+            editor: ['callback cb-import-folder()', 'callback cb-generate-project('],
+            seat: ['Editor.cb-import-folder()', 'Editor.cb-generate-project('],
+          }
+          for content, needles in required.items():
+              for needle in needles:
+                  assert needle in content, f'Missing C Builder integration {needle}'
+          assert 'fs::remove_file(source)' not in engine
+          assert 'os.link(' not in engine
+          assert 'std::process::Command' not in engine
+          print('C Builder source contracts PASS — no Windows executable built')
+          PY
