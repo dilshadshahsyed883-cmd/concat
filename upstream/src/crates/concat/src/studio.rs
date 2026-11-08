@@ -893,6 +893,8 @@ pub struct Studio {
     pub toast: ToastState,
     /// Transient modal state; never persisted into the timeline.
     pub compound_rename: Option<(String, String)>,
+    /// Temporary member-only timeline view; never serialized into projects.
+    pub compound_edit: Option<String>,
 
     // ── the launch screen ──
     pub on_start: bool,
@@ -2339,6 +2341,7 @@ impl Studio {
             activity_burst: None,
             toast: ToastState::default(),
             compound_rename: None,
+            compound_edit: None,
             on_start: true,
             start,
             recents,
@@ -9059,6 +9062,8 @@ impl Studio {
         );
 
         let timeline = self.timeline();
+        editor.set_editing_compound_name(self.editing_compound_label().into());
+        let scoped_clips = self.visible_compound_clips();
         let mut top = 0.0;
         sync(
             &models.tracks,
@@ -9099,6 +9104,7 @@ impl Studio {
             timeline
                 .clips
                 .iter()
+                .filter(|clip| scoped_clips.as_ref().map_or(true, |set| set.contains(&clip.id)))
                 .filter(|clip| {
                     crate::panes::timeline::TimelinePane::shows(
                         span,
@@ -11419,6 +11425,8 @@ impl Studio {
                 Glyph::Merge, "", !locked));
             rows.push(action("compound-members", "Select Compound Members".into(),
                 Glyph::None, "", true));
+            rows.push(action("compound-open", "Open / Edit Compound Members".into(),
+                Glyph::None, "", true));
             rows.push(action("compound-rename", "Rename Compound Clip".into(),
                 Glyph::None, "", !locked));
             rows.push(action("compound-delete", "Delete Compound (keep all media)".into(),
@@ -12234,6 +12242,7 @@ impl Studio {
             "compound-span" => self.compound_selection_span(id),
             "compound-nest" => self.nest_compound_from(id),
             "compound-members" => self.select_compound_members(id),
+            "compound-open" => self.open_compound_from(id),
             "compound-rename" => self.prompt_compound_rename(id),
             "compound-delete" => self.ask_delete_compound(id),
             "compound-break" => self.break_compound_from(id),
