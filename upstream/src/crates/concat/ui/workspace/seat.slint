@@ -105,6 +105,25 @@ export component Seat inherits Rectangle {
             filter: Editor.media-filter;
             jump-token: Editor.media-jump-token;
 
+            cb-media-folder: Editor.cb-media-folder;
+            cb-narration: Editor.cb-narration;
+            cb-duration: Editor.cb-duration;
+            cb-status: Editor.cb-status;
+            cb-keywords: Editor.cb-keywords;
+            cb-image-count: Editor.cb-image-count;
+            cb-video-count: Editor.cb-video-count;
+            cb-probed: Editor.cb-probed;
+            cb-reused: Editor.cb-reused;
+            cb-scan-done: Editor.cb-scan-done;
+            cb-scan-total: Editor.cb-scan-total;
+            cb-busy: Editor.cb-busy;
+            cb-import-folder => { Editor.cb-import-folder(); }
+            cb-refresh-folder => { Editor.cb-refresh-folder(); }
+            cb-choose-narration => { Editor.cb-choose-narration(); }
+            cb-generate-project(name, images, videos, coverage) => {
+                Editor.cb-generate-project(name, images, videos, coverage);
+            }
+
             import-media => { Editor.import-media(); }
             filter-changed(filter) => { Editor.media-filter-changed(filter); }
             sort-changed(index) => { Editor.media-sort-changed(index); }

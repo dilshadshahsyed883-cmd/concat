@@ -16,6 +16,7 @@ import { Wave } from "../primitives/wave.slint";
 import { ContextMenu, MenuItemData } from "../primitives/context-menu.slint";
 import { SourcePreview } from "source-preview.slint";
 import { Sounds, SoundList, VoiceList } from "audio-page.slint";
+import { CBuilderPane } from "c-builder.slint";
 
 export { SourcePreview }
 
@@ -1730,6 +1731,24 @@ export component MediaPane inherits Rectangle {
     in property <int> jump-token;
     changed jump-token => { root.tab = 0; }
 
+    // Embedded C Builder (media cache and native timeline generation).
+    in property <string> cb-media-folder;
+    in property <string> cb-narration;
+    in property <float> cb-duration;
+    in property <string> cb-status;
+    in property <string> cb-keywords;
+    in property <int> cb-image-count;
+    in property <int> cb-video-count;
+    in property <int> cb-probed;
+    in property <int> cb-reused;
+    in property <int> cb-scan-done;
+    in property <int> cb-scan-total;
+    in property <bool> cb-busy;
+    callback cb-import-folder();
+    callback cb-refresh-folder();
+    callback cb-choose-narration();
+    callback cb-generate-project(name: string, images: string, videos: string, coverage: int);
+
     callback import-media();
     callback filter-changed(filter: MediaFilter);
     /// The sort dropdown beside the import button picked a new order.
@@ -1861,7 +1880,7 @@ export component MediaPane inherits Rectangle {
     /// pane, which has the same problem for the same reason. A library
     /// dropped into a narrow seat would otherwise hand the card grid a
     /// negative width.
-    property <length> sidebar: Math.max(0px,
+    property <length> sidebar: root.tab == 9 ? 0px : Math.max(0px,
         Math.min(root.sidebar-w, root.width / 2));
 
     // The catalogues. The ids are written into project files, so they are
@@ -1948,6 +1967,12 @@ export component MediaPane inherits Rectangle {
                             label: I18n.t("common.media");
                             current: root.tab == 0;
                             clicked => { root.tab = 0; }
+                        }
+                        LibraryTab {
+                            glyph: Glyph.film;
+                            label: "C Builder";
+                            current: root.tab == 9;
+                            clicked => { root.tab = 9; }
                         }
                         // Beside Media, where CapCut keeps it: the page
                         // number is the last one handed out, not the place.
@@ -2056,7 +2081,7 @@ export component MediaPane inherits Rectangle {
             // one carrying the longest labels — "Transitions", a category
             // name — so it was also the one most likely to be wrong for a
             // given page at a given window width.
-            HairlineSplitter {
+            if root.tab != 9: HairlineSplitter {
                 x: root.sidebar;
                 y: 0;
                 height: parent.height;
@@ -2401,6 +2426,27 @@ export component MediaPane inherits Rectangle {
                 x: root.sidebar + 1px;
                 width: Math.max(0px, parent.width - root.sidebar - 1px);
                 height: parent.height;
+
+                if root.tab == 9: CBuilderPane {
+                    media-folder: root.cb-media-folder;
+                    narration: root.cb-narration;
+                    narration-duration: root.cb-duration;
+                    status: root.cb-status;
+                    keywords: root.cb-keywords;
+                    image-count: root.cb-image-count;
+                    video-count: root.cb-video-count;
+                    cache-probed: root.cb-probed;
+                    cache-reused: root.cb-reused;
+                    scan-done: root.cb-scan-done;
+                    scan-total: root.cb-scan-total;
+                    busy: root.cb-busy;
+                    import-folder => { root.cb-import-folder(); }
+                    refresh-folder => { root.cb-refresh-folder(); }
+                    choose-narration => { root.cb-choose-narration(); }
+                    generate-project(name, images, videos, coverage) => {
+                        root.cb-generate-project(name, images, videos, coverage);
+                    }
+                }
 
                 if root.tab == 0: HorizontalLayout {
                     padding: 8px;
