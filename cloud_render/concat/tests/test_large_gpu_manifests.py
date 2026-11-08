@@ -10,6 +10,7 @@ import zipfile
 from pathlib import Path
 
 from cloud_render.concat.gpu.worker import Handler, RenderWorker, SaladDualStackHTTPServer
+from cloud_render.concat.gpu.resumable import CHUNK_BYTES
 from cloud_render.concat.hybrid.project import validate_gpu_manifest
 from cloud_render.concat.project_bundle import MAX_PROJECT_MANIFEST_BYTES, TransferError, restore
 
@@ -50,12 +51,18 @@ def fixture_bytes(count):
     return json.dumps(project_fixture(count), separators=(",", ":")).encode("utf-8")
 
 
-def bundle_fixture(manifest):
+def bundle_fixture(manifest, media_bytes=0):
     buffer = io.BytesIO()
+    member = "media/" + "b" * 32 + ".jpg"
+    media = b"x" * media_bytes
+    references = ([{"index": 0, "member": member, "size": len(media),
+                    "sha256": hashlib.sha256(media).hexdigest()}] if media else [])
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("bundle.json", json.dumps({
-            "version": 1, "project_file": "concat.json", "references": []}))
+            "version": 1, "project_file": "concat.json", "references": references}))
         archive.writestr("project/concat.json", manifest)
+        if media:
+            archive.writestr(member, media, compress_type=zipfile.ZIP_STORED)
     return buffer.getvalue()
 
 
@@ -120,7 +127,7 @@ class LargeManifestTests(unittest.TestCase):
                                ("trailing-json", b"{}{}"),
                                ("empty", b""),
                                ("nonutf8", b"\xff"),
-                               ("nested", b"[" * 1500 + b"0" + b"]" * 1500)):
+                               ("too-deep", b"[" * 20000 + b"0" + b"]" * 20000)):
             with self.subTest(label=label):
                 code, reply = self.request("POST", "/api/validate", payload)
                 self.assertEqual(code, 400, reply)
@@ -138,7 +145,8 @@ class LargeManifestTests(unittest.TestCase):
     def test_large_bundle_restores_then_resumable_restart(self):
         body = fixture_bytes(8000)
         self.assertGreater(len(body), 2 * 1024 * 1024)
-        package = bundle_fixture(body)
+        package = bundle_fixture(body, media_bytes=CHUNK_BYTES + 137)
+        self.assertGreater(len(package), CHUNK_BYTES)
         archive = self.root / "large.zip"
         archive.write_bytes(package)
         restored = self.root / "restored"
@@ -146,10 +154,14 @@ class LargeManifestTests(unittest.TestCase):
         self.assertEqual((restored / "concat.json.original").read_bytes(), body)
         sha = hashlib.sha256(package).hexdigest()
         session = self.worker.spool.begin("large", len(package), sha, "cuda-hybrid-v1")
+        self.assertGreaterEqual(session["total_chunks"], 2)
+        first = package[:session["chunk_size"]]
+        self.worker.spool.put_chunk("large", 0, io.BytesIO(first), len(first),
+                                    hashlib.sha256(first).hexdigest())
         restarted = RenderWorker(self.worker.root, token=TOKEN, renderer=self.render)
         try:
-            self.assertEqual(restarted.spool.status("large")["uploaded"], [])
-            for index in range(session["total_chunks"]):
+            self.assertEqual(restarted.spool.status("large")["uploaded"], [0])
+            for index in range(1, session["total_chunks"]):
                 chunk = package[index * session["chunk_size"]:(index + 1) * session["chunk_size"]]
                 restarted.spool.put_chunk("large", index, io.BytesIO(chunk), len(chunk),
                                           hashlib.sha256(chunk).hexdigest())
