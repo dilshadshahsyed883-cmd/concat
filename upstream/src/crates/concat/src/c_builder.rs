@@ -362,8 +362,11 @@ pub fn write_native(shots: &[Shot], narration: &Path, duration: f64,
         let mut project = Project::new();
         let mut media_ids: HashMap<String, String> = HashMap::new();
         for shot in shots {
-            if !Path::new(&shot.asset.path).is_file() {
-                return Err(format!("Missing source: {}", shot.asset.path));
+            let source = Path::new(&shot.asset.path);
+            let metadata = fs::metadata(source)
+                .map_err(|_| format!("Missing source: {}", shot.asset.path))?;
+            if metadata.len() != shot.asset.size || stamp(&metadata) != shot.asset.modified_ns {
+                return Err(format!("Media changed since scanning; refresh library: {}", shot.asset.path));
             }
             if !media_ids.contains_key(&shot.asset.path) {
                 let id = format!("m{}", project.media.len() + 1);
@@ -451,6 +454,44 @@ mod tests {
         let shots = plan(&pool, 160.0, "", "", 20, 31).unwrap();
         validate(&shots, 160_000_000).unwrap();
         assert!(shots.iter().any(|s| s.asset.kind == "video"));
+    }
+    #[test]
+    fn persistent_cache_roundtrip_preserves_usage() {
+        let root = std::env::temp_dir().join(format!("c-builder-cache-test-{}", random_seed()));
+        fs::create_dir(&root).unwrap();
+        let path = root.join("catalog.json");
+        let mut cache = Cache::default();
+        let mut asset = image("one");
+        asset.used_count = 4;
+        cache.entries.insert(asset.path.clone(), asset);
+        save_cache(&path, &cache).unwrap();
+        let loaded = read_cache(&path).unwrap();
+        assert_eq!(loaded.entries["/fake/one.jpg"].used_count, 4);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn native_project_reopens_and_original_media_is_not_moved() {
+        let root = std::env::temp_dir().join(format!("c-builder-native-test-{}", random_seed()));
+        fs::create_dir(&root).unwrap();
+        let picture = root.join("Eala 001.jpg");
+        let narration = root.join("voice.wav");
+        fs::write(&picture, b"fixture-image").unwrap();
+        fs::write(&narration, b"fixture-audio").unwrap();
+        let meta = fs::metadata(&picture).unwrap();
+        let mut asset = image("one");
+        asset.path = picture.to_string_lossy().into_owned();
+        asset.size = meta.len();
+        asset.modified_ns = stamp(&meta);
+        let shots = plan(&[asset], 17.4, "", "", 0, 21).unwrap();
+        let project_dir = write_native(&shots, &narration, 17.4, &root, "Demo").unwrap();
+        let raw = fs::read_to_string(project_dir.join("concat.json")).unwrap();
+        let document: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let reopened = doc::from_document(&document).unwrap();
+        assert_eq!(reopened.active().clips.len(), shots.len() + 1);
+        assert!(picture.exists());
+        assert!(narration.exists());
+        assert!(write_native(&shots, &narration, 17.4, &root, "Demo").is_err());
+        fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn validates_gaps() {
