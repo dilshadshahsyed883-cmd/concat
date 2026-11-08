@@ -350,6 +350,28 @@ pub(super) fn apply(
         }
 
         Command::SplitClips { clip_ids, time } => {
+            // The legacy split path flattens a source-speed curve to its
+            // mean. That would silently alter a compound's nested playback,
+            // so refuse it atomically until curved source-time splitting is
+            // supported by both renderers.
+            let timeline = project.active();
+            for id in &clip_ids {
+                let Some(clip) = timeline.clips.iter().find(|c| &c.id == id) else {
+                    continue;
+                };
+                let offset = time - clip.start;
+                if clip.speed_curve.is_some()
+                    && offset > MIN_CLIP_DURATION
+                    && offset < clip.duration - MIN_CLIP_DURATION
+                    && timeline.compounds.iter().any(|group| group.members.iter().any(
+                        |member| matches!(member, crate::model::CompoundMember::Clip(held) if held == id)
+                    ))
+                {
+                    return Err(CommandError::InvalidCompound {
+                        reason: "Split of compound media with speed curves is not yet lossless.".into(),
+                    });
+                }
+            }
             let timeline = project.active_mut();
             let mut created = None;
             for clip_id in clip_ids {
