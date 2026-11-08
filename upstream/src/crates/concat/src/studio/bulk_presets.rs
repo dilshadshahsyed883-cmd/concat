@@ -684,7 +684,7 @@ mod tests {
         let (choices, old) = motion_choices(&clip, 1.0 / 30.0, &[], &MOTION_PRESETS).unwrap();
         assert_eq!(choices.len(), 9);
         assert_eq!(old, None);
-        let generated = choices[0];
+        let generated = choices[0].clone();
         clip.keys = generated.keys.clone();
         assert!(motion_choices(&clip, 1.0 / 30.0, &[], &MOTION_PRESETS).is_none());
         assert_eq!(
