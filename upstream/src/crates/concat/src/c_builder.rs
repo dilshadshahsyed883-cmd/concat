@@ -373,14 +373,12 @@ pub fn write_native(shots: &[Shot], narration: &Path, duration: f64,
         }
         let audio_path = narration.canonicalize().map_err(|e| e.to_string())?;
         let audio_name = audio_path.to_string_lossy().into_owned();
-        let audio_summary = media::probe(&audio_name)?;
-        if audio_summary.kind != MediaKind::Audio { return Err("Narration is not audio".into()); }
         let audio_id = format!("m{}", project.media.len() + 1);
         project.media.push(MediaItem {
             id: audio_id.clone(), path: audio_name.clone(),
             name: audio_path.file_name().unwrap_or_default().to_string_lossy().into_owned(),
             duration: Some(duration), kind: MediaKind::Audio,
-            audio_codec: audio_summary.audio.as_ref().map(|a| a.codec.clone()),
+            audio_codec: None,
             has_audio: true, ..MediaItem::default()
         });
         let timeline = project.active_mut();
@@ -458,5 +456,34 @@ mod tests {
     fn validates_gaps() {
         let bad = vec![Shot { asset: image("one"), start_us: 2, duration_us: 1_000_000, trim_us: 0 }];
         assert!(validate(&bad, 1_000_002).is_err());
+    }
+}
+
+/// Live desktop panel view; the cache itself is kept outside project files.
+#[derive(Default)]
+pub struct State {
+    pub folder: String,
+    pub assets: Vec<Asset>,
+    pub narration: String,
+    pub duration: Option<f64>,
+    pub status: String,
+    pub scanning: bool,
+    pub scan_done: usize,
+    pub scan_total: usize,
+    pub probed: usize,
+    pub reused: usize,
+    pub removed: usize,
+}
+impl State {
+    pub fn images(&self) -> usize { self.assets.iter().filter(|a| a.kind == "image").count() }
+    pub fn videos(&self) -> usize { self.assets.iter().filter(|a| a.kind == "video").count() }
+    pub fn keywords(&self) -> String {
+        let mut totals: BTreeMap<String, (usize, usize)> = BTreeMap::new();
+        for a in &self.assets {
+            let count = totals.entry(a.keyword.clone()).or_default();
+            if a.kind == "image" { count.0 += 1; } else { count.1 += 1; }
+        }
+        totals.into_iter().map(|(k, (i, v))| format!("{k}: {i} images, {v} videos"))
+            .collect::<Vec<_>>().join("\n")
     }
 }
