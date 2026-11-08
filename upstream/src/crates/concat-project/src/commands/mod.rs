@@ -21,6 +21,7 @@ use crate::model::{
 
 mod audio;
 mod clips;
+mod compound;
 pub use clips::{PlayheadSide, consolidation_clips, delete_to_playhead, why_not_merge};
 mod media;
 mod properties;
@@ -633,6 +634,22 @@ pub enum Command {
         /// The completed, probed render stored in the project media folder.
         item: NewMedia,
     },
+    /// Non-destructive compound of selected clips and/or root compounds.
+    /// Each source is referenced once; no media, sound or effects are baked.
+    CreateCompound {
+        clip_ids: Vec<String>,
+        compound_ids: Vec<String>,
+        name: String,
+    },
+    /// Put every ungrouped clip and every top-level compound into one node.
+    CreateCompoundAll { name: String },
+    /// Group whole items in a range; refuses a boundary crossing a clip.
+    CreateCompoundRange { start: f64, end: f64, name: String },
+    /// Remove only the container, retaining every original clip, track
+    /// and subcompound. In a parent node, children replace the reference.
+    UngroupCompound { compound_id: String },
+    /// Rename a container without changing any render source.
+    RenameCompound { compound_id: String, name: String },
     /// Deletes clips from the active timeline. Unknown ids are ignored.
     RemoveClips {
         /// The clips to delete.
@@ -877,6 +894,10 @@ pub enum CommandError {
     /// [`Command::RemoveTimeline`] would have deleted the last timeline.
     #[error("A project needs at least one timeline.")]
     LastTimeline,
+    /// A compound command would lose membership, duplicate a source, or
+    /// use a time range that cuts through media.
+    #[error("{reason}")]
+    InvalidCompound { reason: String },
     /// A number in the command is NaN or infinite. No edit means one, and
     /// one stored would poison every duration and key that touched it.
     #[error("A number in that edit is not finite.")]
@@ -927,6 +948,9 @@ impl IdMint {
             }
             for clip in &timeline.clips {
                 self.adopt(&clip.id);
+            }
+            for group in &timeline.compounds {
+                self.adopt(&group.id);
             }
         }
     }
@@ -1061,6 +1085,7 @@ impl Command {
                 .is_some_and(|stabilize| bad([stabilize.smoothness, stabilize.max_zoom])),
             Command::MoveClips { moves } => bad(moves.iter().map(|wanted| wanted.start)),
             Command::TrimClip { delta, .. } => bad([*delta]),
+            Command::CreateCompoundRange { start, end, .. } => bad([*start, *end]),
             Command::SplitClips { time, .. } => bad([*time]),
             Command::FreezeFrame { time, duration, .. } => bad([*time]) || bad(*duration),
             Command::ReplaceClipMedia {
@@ -1181,6 +1206,11 @@ pub fn apply(
             })
         }
 
+        command @ (Command::CreateCompound { .. }
+        | Command::CreateCompoundAll { .. }
+        | Command::CreateCompoundRange { .. }
+        | Command::UngroupCompound { .. }
+        | Command::RenameCompound { .. }) => compound::apply(project, mint, command),
         command @ (Command::AddMedia { .. }
         | Command::SetMediaPlaceholder { .. }
         | Command::FillSlot { .. }
