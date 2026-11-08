@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
 
+import { GpuCompatibility } from "../gpu-compatibility.slint";
 import { I18n } from "../i18n.slint";
 import { Theme } from "../theme/theme.slint";
 import { Glyph, Icon } from "../icons.slint";
@@ -1233,7 +1234,15 @@ export component VideoPanel inherits VerticalLayout {
                 changed(v) => { root.set(ClipField.rotation, v); root.commit(); }
             }
 
-            Param {
+            if GpuCompatibility.enabled && (root.stretch-x != 1 || root.stretch-y != 1): Button {
+                label: I18n.t("clipInspector.resetGpuStretch");
+                clicked => {
+                    root.set(ClipField.stretch-x, 1);
+                    root.set(ClipField.stretch-y, 1);
+                    root.commit();
+                }
+            }
+            if !GpuCompatibility.enabled: Param {
                 label: I18n.t("common.width");
                 value <=> root.stretch-x;
                 minimum: 0.1;
@@ -1246,7 +1255,7 @@ export component VideoPanel inherits VerticalLayout {
                 changed(v) => { root.set(ClipField.stretch-x, v); root.commit(); }
             }
 
-            Param {
+            if !GpuCompatibility.enabled: Param {
                 label: I18n.t("common.height");
                 value <=> root.stretch-y;
                 minimum: 0.1;
@@ -1314,7 +1323,11 @@ export component VideoPanel inherits VerticalLayout {
     // What fills the frame where this picture does not reach: the
     // timeline's background, or one of the clip's own. Only on the lowest
     // picture lane, which is where a background is drawn.
-    if root.canvas && Backdrop.clip-has: Section {
+    if GpuCompatibility.enabled && root.canvas && Backdrop.clip-has && Backdrop.clip.mode > 0: Button {
+        label: I18n.t("project.clearGpuBackground");
+        clicked => { Backdrop.set-mode(true, -1); }
+    }
+    if !GpuCompatibility.enabled && root.canvas && Backdrop.clip-has: Section {
         canvas := SectionHeader {
             title: I18n.t("phone.canvas");
             collapsible: true;
@@ -1341,8 +1354,8 @@ export component VideoPanel inherits VerticalLayout {
         blend := SectionHeader {
             title: I18n.t("clipInspector.blend");
             collapsible: true;
-            summary: "\{Math.round(root.alpha * 100)}% · "
-                + root.blends[Math.max(0, Math.min(root.selected.blend, root.blends.length - 1))];
+            summary: GpuCompatibility.enabled ? "\{Math.round(root.alpha * 100)}%"
+                : "\{Math.round(root.alpha * 100)}% · " + root.blends[Math.max(0, Math.min(root.selected.blend, root.blends.length - 1))];
         }
 
         if blend.open: SectionBody {
@@ -1361,7 +1374,11 @@ export component VideoPanel inherits VerticalLayout {
                 changed(v) => { root.set(ClipField.opacity, v); root.commit(); }
             }
 
-            Row {
+            if GpuCompatibility.enabled && root.selected.blend != 0: Button {
+                label: I18n.t("clipInspector.resetGpuBlend");
+                clicked => { root.set(ClipField.blend, 0); root.commit(); }
+            }
+            if !GpuCompatibility.enabled: Row {
                 label: I18n.t("common.mode");
                 Select {
                     options: root.blends;
@@ -1387,7 +1404,7 @@ export component VideoPanel inherits VerticalLayout {
     // The camera's shake taken out: the media's movement is measured once
     // in the background, and the correction is worked out from it live, so
     // the sliders answer at once. Footage only.
-    if false && root.selected.kind == ClipKind.video: Section {
+    if !GpuCompatibility.enabled && root.selected.kind == ClipKind.video: Section {
         stabilize := SectionHeader {
             title: I18n.t("clipInspector.stabilize");
             collapsible: true;
@@ -1460,7 +1477,7 @@ export component VideoPanel inherits VerticalLayout {
     // monitor over it - and chroma key drops a colour. A key is the chroma
     // package on the chain, which is why its knobs read from the chain's
     // own rows. One at a time: ticking a block unticks the others.
-    if false && !root.figure: Section {
+    if !GpuCompatibility.enabled && !root.figure: Section {
         cutout := SectionHeader {
             title: I18n.t("clipInspector.removeBackground");
             collapsible: true;
@@ -1674,7 +1691,7 @@ export component VideoPanel inherits VerticalLayout {
     // the numbers below place, size, turn and soften it, each keyable.
     // Drawn on the picture as it is seen, so it moves with the clip; the
     // monitor shows its outline with grips to drag while this is open.
-    if false && root.mask-section
+    if !GpuCompatibility.enabled && root.mask-section
         && (root.selected.kind == ClipKind.video || root.selected.kind == ClipKind.image): Section {
         mask-header := SectionHeader {
             title: I18n.t("mask.title");
@@ -1848,7 +1865,7 @@ export component VideoPanel inherits VerticalLayout {
 
     // What is cut off the source before it is fitted. Fractions of the
     // source's own edges, so a crop survives a change of output size.
-    if false && !root.figure: Section {
+    if !GpuCompatibility.enabled && !root.figure: Section {
         crop := SectionHeader {
             title: I18n.t("clipInspector.crop");
             collapsible: true;
@@ -1962,7 +1979,7 @@ component PreviewHalf inherits VerticalLayout {
 /// the waxen, "plastic" faces a full-strength enhancer is known for: it
 /// blends the model's answer back towards the original.
 export component EnhancePanel inherits VerticalLayout {
-    visible: false; // Preserve original tool source but hide unsupported GPU enhancement.
+    visible: !GpuCompatibility.enabled;
     in property <SelectedClipData> selected;
 
     /// The tick: the section on or off, and the copy shown or not.
@@ -2259,7 +2276,7 @@ export component AudioPanel inherits VerticalLayout {
         if volume.open: SectionBody {
             Param {
                 label: I18n.t("common.level");
-                keyable: !root.selected.batch-volume;
+                keyable: !GpuCompatibility.enabled && !root.selected.batch-volume;
                 field: ClipField.volume;
                 rail: true;
                 value <=> root.level;
@@ -2328,7 +2345,7 @@ export component AudioPanel inherits VerticalLayout {
     // Whether the voice keeps its pitch when the rate is not 1. Here and
     // not on the Speed tab: the rate is the clip's, but what it does to the
     // sound is the sound's business, beside the level it is mixed at.
-    if false && !root.selected.batch-volume: Section {
+    if !GpuCompatibility.enabled && !root.selected.batch-volume: Section {
         SectionHeader {
             title: I18n.t("clipInspector.pitch");
         }
@@ -2404,7 +2421,7 @@ export component SpeedPanel inherits VerticalLayout {
 /// package's defaults, which are the picture as shot. The rows come from the
 /// manifest, so a knob added there appears here without a line of UI.
 export component AdjustPanel inherits VerticalLayout {
-    visible: false; // Native CPU grading has no CUDA project adapter.
+    visible: !GpuCompatibility.enabled;
     in property <[AppliedParamData]> params;
     in property <[WheelData]> wheels;
     in property <[CurveData]> curves;
@@ -2582,8 +2599,7 @@ export component FilterPanel inherits VerticalLayout {
         }
     }
 
-    Section {
-        visible: false; // Unsupported GPU speed curve; keep saved project data.
+    if !GpuCompatibility.enabled: Section {
         ramps := SectionHeader {
             title: I18n.t("clipInspector.ramps");
             collapsible: true;

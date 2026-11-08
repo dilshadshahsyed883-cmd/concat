@@ -1132,13 +1132,22 @@ fn align_of(align: TextAlign) -> TextAlignment {
 fn new_title_style(prefs: &crate::prefs::Preferences) -> TextStyle {
     // The look a title was kept as, when one was (see
     // `Studio::use_title_style_for_new`); the bundled face otherwise.
-    let base = prefs.title_style.clone().unwrap_or_else(|| TextStyle {
-        font_family: "Hanken Grotesk".to_owned(),
-        font_weight: 600.0,
-        ..TextStyle::default()
-    });
+    let base = prefs
+        .title_style
+        .as_ref()
+        .filter(|_| !cfg!(windows))
+        .cloned()
+        .unwrap_or_else(|| TextStyle {
+            font_family: "Hanken Grotesk".to_owned(),
+            font_weight: 600.0,
+            ..TextStyle::default()
+        });
     TextStyle {
-        content: "New title".to_owned(),
+        content: if cfg!(windows) {
+            t("captions.newCaption")
+        } else {
+            "New title".to_owned()
+        },
         ..base
     }
 }
@@ -1174,6 +1183,24 @@ fn package_art(
 /// the Filters page does not.
 fn is_lut(package: &concat_effects::catalogue::Package) -> bool {
     package.kind() == PackageKind::Filter && package.lut().is_some()
+}
+
+/// The native packages with equivalent implementations in the hybrid worker.
+fn gpu_catalogue_ids(category: &str) -> &[serde_json::Value] {
+    static PROFILE: std::sync::OnceLock<serde_json::Value> = std::sync::OnceLock::new();
+    let profile = PROFILE.get_or_init(|| {
+        serde_json::from_str(include_str!(
+            "../../../../../cloud_render/concat/hybrid/gpu_ui_capabilities.json"
+        ))
+        .expect("GPU compatibility catalogue must be valid JSON")
+    });
+    profile[category].as_array().map_or(&[], Vec::as_slice)
+}
+
+fn gpu_catalogue_has(category: &str, id: &str) -> bool {
+    gpu_catalogue_ids(category)
+        .iter()
+        .any(|item| item.as_str() == Some(id))
 }
 
 /// One kind's shelves for the inspector: the shelf labels, in catalogue
@@ -1776,7 +1803,9 @@ fn chain_rows(chain: &[AppliedFilter]) -> (Vec<AppliedEntryData>, Vec<AppliedPar
         let Some(package) = package else { continue };
         // The adjust link shows as a link - it can be bypassed or removed
         // here - but its knobs are the Adjust tab's, not the chain's.
-        if package.id() == ADJUST_ID {
+        if package.id() == ADJUST_ID
+            || (cfg!(windows) && !gpu_catalogue_has("video_effects", &entry.id))
+        {
             continue;
         }
         // Every filter has an intensity whether or not it says so: the one
@@ -3761,7 +3790,7 @@ impl Studio {
             }
             // A title: the preset's id rides where a file's media id would,
             // "default" for the plain one.
-            "text" => Some(DropPlan {
+            "text" if !cfg!(windows) || id == "default" => Some(DropPlan {
                 kind: ClipKind::Text,
                 label: label.to_owned(),
                 media: id.to_owned(),
@@ -3772,7 +3801,7 @@ impl Studio {
             // A figure from the Stickers page: the shape's name rides
             // where a file's media id would, and the label is what the
             // lane will call it.
-            "shape" => Some(DropPlan {
+            "shape" if !cfg!(windows) => Some(DropPlan {
                 kind: ClipKind::Shape,
                 label: label.to_owned(),
                 media: model::ShapeKind::parse(id)?.id().to_owned(),
@@ -3795,7 +3824,7 @@ impl Studio {
             }
             // A look dragged from the Filters page: a layer over a span.
             // The package id rides in `media`, there being no file.
-            "filter" => Some(DropPlan {
+            "filter" if !cfg!(windows) => Some(DropPlan {
                 kind: ClipKind::Filter,
                 label: label.to_owned(),
                 media: id.to_owned(),
@@ -4088,6 +4117,17 @@ impl Studio {
         let Some(clip) = self.clip(&clip_id).cloned() else {
             return;
         };
+        if cfg!(windows)
+            && (!video
+                || !gpu_catalogue_has("video_effects", id)
+                || !matches!(
+                    clip.kind,
+                    model::ClipKind::Video | model::ClipKind::Image | model::ClipKind::Layer
+                ))
+        {
+            self.notify(&t("studio.unsupportedGpuControl"), true);
+            return;
+        }
         if video
             && !(graded(clip.kind)
                 || matches!(clip.kind, model::ClipKind::Text | model::ClipKind::Shape))
@@ -4200,6 +4240,10 @@ impl Studio {
     /// Puts the catalogue transition `id` on the cut the selection names;
     /// see [`Studio::transition_cut`].
     pub fn apply_transition(&mut self, id: &str) {
+        if cfg!(windows) && !gpu_catalogue_has("transitions", id) {
+            self.notify(&t("studio.unsupportedGpuControl"), true);
+            return;
+        }
         let clip_id = match self.transition_cut() {
             Ok(clip_id) => clip_id,
             Err(why) => {
@@ -9151,8 +9195,8 @@ impl Studio {
         sync(
             &models.visual_colours,
             match self.sole_selection().and_then(|id| self.clip(&id)) {
-                Some(clip) => chain_colours(&clip.video_effects),
-                None => Vec::new(),
+                Some(clip) if !cfg!(windows) => chain_colours(&clip.video_effects),
+                _ => Vec::new(),
             },
         );
         sync(&models.applied_audio, sound);
@@ -9171,8 +9215,11 @@ impl Studio {
         // keyable at the playhead. Each curve's points go into the model
         // kept for it.
         let clip = self.sole_selection().and_then(|id| self.clip(&id));
-        let (visual_wheels, visual_curves) =
-            clip.map_or_else(Default::default, |clip| chain_grading(&clip.video_effects));
+        let (visual_wheels, visual_curves) = if cfg!(windows) {
+            Default::default()
+        } else {
+            clip.map_or_else(Default::default, |clip| chain_grading(&clip.video_effects))
+        };
         let (adjust_wheels, adjust_curves) = match (clip, Catalogue::builtin().get(ADJUST_ID)) {
             (Some(clip), Some(package)) if graded(clip.kind) => grading_rows(
                 package,
@@ -9447,6 +9494,16 @@ impl Studio {
         };
         let mut rows = Vec::new();
         for property in model::KeyProperty::ALL {
+            if cfg!(windows)
+                && (property.is_mask()
+                    || property == model::KeyProperty::Volume
+                    || !matches!(
+                        clip.kind,
+                        model::ClipKind::Video | model::ClipKind::Image | model::ClipKind::Layer
+                    ))
+            {
+                continue;
+            }
             // The mask's numbers are rows only while there is a mask, or
             // keys left from one: seven rows of nothing otherwise.
             if property.is_mask() && clip.mask.is_none() && !clip.is_keyed(property) {
@@ -9619,10 +9676,11 @@ impl Studio {
                 ease_index,
             });
         }
-        if let Some(link) = clip
-            .video_effects
-            .iter()
-            .find(|entry| entry.id == ADJUST_ID)
+        if !cfg!(windows)
+            && let Some(link) = clip
+                .video_effects
+                .iter()
+                .find(|entry| entry.id == ADJUST_ID)
         {
             let inside = self.key_point().map(|(_, at)| at);
             for row in adjust_rows(&clip.video_effects, inside) {
@@ -10636,6 +10694,12 @@ impl Studio {
     /// The menus, the dialogs, the bin and the engine lists.
     pub fn publish_chrome(&self, app: &App, models: &Models) {
         let editor = app.global::<Editor>();
+        #[cfg(windows)]
+        {
+            let profile = app.global::<crate::ui::GpuCompatibility>();
+            profile.set_video_effects(!gpu_catalogue_ids("video_effects").is_empty());
+            profile.set_transitions(!gpu_catalogue_ids("transitions").is_empty());
+        }
 
         // The language, when it changed: one property the whole tree
         // reads, written only when it differs so nothing re-evaluates
@@ -10678,7 +10742,7 @@ impl Studio {
                 starred,
                 &self.look_art,
                 &self.card_paths,
-                |_| false, // Legacy filter shelf is not supported by CUDA hybrid.
+                |package| !cfg!(windows) && !is_lut(package),
             );
             sync(&models.filter_groups, groups);
             sync(&models.catalogue_filters, entries);
@@ -10694,7 +10758,7 @@ impl Studio {
                 starred,
                 &self.look_art,
                 &self.card_paths,
-                |_| false, // LUT files have no native project adapter yet.
+                |package| !cfg!(windows) && is_lut(package),
             );
             sync(&models.catalogue_luts, entries);
             app.global::<Editor>().set_adjustment_art(
@@ -10709,10 +10773,7 @@ impl Studio {
                 starred,
                 &self.look_art,
                 &self.card_paths,
-                |package| matches!(
-                    package.manifest.effect.id.as_str(),
-                    "concat.contrast" | "concat.saturation" | "concat.sharpen"
-                ),
+                |package| !cfg!(windows) || gpu_catalogue_has("video_effects", package.id()),
             );
             sync(&models.effect_groups, groups);
             sync(&models.catalogue_effects, entries);
@@ -10722,7 +10783,7 @@ impl Studio {
                 starred,
                 &self.look_art,
                 &self.card_paths,
-                |_| false, // CUDA audio has basic volume/fades, not plugin effects.
+                |_| !cfg!(windows),
             );
             sync(&models.audio_groups, groups);
             sync(&models.catalogue_audio, entries);
@@ -10732,10 +10793,7 @@ impl Studio {
                 starred,
                 &self.look_art,
                 &self.card_paths,
-                |package| matches!(
-                    package.manifest.effect.id.as_str(),
-                    "concat.dissolve" | "concat.fade-black" | "concat.push" | "concat.zoom-transition"
-                ),
+                |package| !cfg!(windows) || gpu_catalogue_has("transitions", package.id()),
             );
             sync(&models.transition_groups, groups);
             sync(&models.catalogue_transitions, entries);
@@ -11129,18 +11187,19 @@ impl Studio {
                     && !locked
                     && (clip.kind == model::ClipKind::Video || clip.kind == model::ClipKind::Image),
             ),
-            // The picture restored and enlarged by the model: the row opens
-            // the clip's Enhance in the inspector, whose switch runs it.
-            action(
+        ];
+        if !cfg!(windows) {
+            // The row opens the clip's local Enhance model in the inspector.
+            rows.push(action(
                 "enhance",
                 t("common.enhance"),
                 Glyph::Sparkle,
                 "",
                 !locked
                     && (clip.kind == model::ClipKind::Video || clip.kind == model::ClipKind::Image),
-            ),
-            rule(),
-        ];
+            ));
+        }
+        rows.push(rule());
         // The picture sized to the frame, whole or covering it: beside the
         // inspector's two buttons, where a vertical cut is assembled clip
         // by clip.
@@ -11297,7 +11356,9 @@ impl Studio {
             action("add", t("studio.addAtPlayhead"), Glyph::Plus, false),
             rule(),
         ];
-        if item.kind != model::MediaKind::Audio {
+        if item.kind != model::MediaKind::Audio
+            && (!cfg!(windows) || item.color_range.is_some())
+        {
             let range = item.color_range;
             rows.push(MenuItemData {
                 label: t("common.colourRange").to_uppercase().into(),
@@ -11305,18 +11366,20 @@ impl Studio {
                 ..Default::default()
             });
             rows.push(check("range-auto", t("common.auto"), "", range.is_none()));
-            rows.push(check(
-                "range-limited",
-                t("common.limited"),
-                "16-235",
-                range == Some(model::ColorRange::Limited),
-            ));
-            rows.push(check(
-                "range-full",
-                t("common.full"),
-                "0-255",
-                range == Some(model::ColorRange::Full),
-            ));
+            if !cfg!(windows) {
+                rows.push(check(
+                    "range-limited",
+                    t("common.limited"),
+                    "16-235",
+                    range == Some(model::ColorRange::Limited),
+                ));
+                rows.push(check(
+                    "range-full",
+                    t("common.full"),
+                    "0-255",
+                    range == Some(model::ColorRange::Full),
+                ));
+            }
             rows.push(rule());
         }
         rows.push(action("remove", t("common.remove"), Glyph::Trash, true));

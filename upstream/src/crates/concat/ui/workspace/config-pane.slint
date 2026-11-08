@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
 
+import { GpuCompatibility } from "../gpu-compatibility.slint";
 import { I18n } from "../i18n.slint";
-import { Theme, SegmentedControl } from "../primitives/primitives.slint";
+import { Button, Theme, SegmentedControl } from "../primitives/primitives.slint";
 import { Select } from "../primitives/select.slint";
 import { Pane, PaneBody, PaneScroll } from "pane.slint";
 import { PaneKind, PaneSwitcher } from "pane-switcher.slint";
@@ -17,7 +18,7 @@ import {
 } from "../inspector/grading.slint";
 import { TextPanel } from "../inspector/text-panel.slint";
 import {
-    ClipField, ClipKind, ClipTextField, SelectedClipData, SelectedTransitionData,
+    Backdrop, ClipField, ClipKind, ClipTextField, SelectedClipData, SelectedTransitionData,
 } from "../timeline/model.slint";
 
 // The inspector column, in its two states:
@@ -235,23 +236,28 @@ export component ConfigPane inherits Rectangle {
     /// panel it grades everything beneath it with, and its chain - are the
     /// tab's sections, so an adjustment layer is graded the way a clip is.
     property <bool> is-layer: root.selected.kind == ClipKind.filter;
-    property <[string]> tabs: root.selected.batch-volume ? ["Audio"] : root.is-text ? ["Text"]
+    property <[string]> tabs: root.selected.batch-volume ? ["Audio"]
+        : root.is-text ? (root.has-legacy-visual-effects ? ["Text", "Effects"] : ["Text"])
         : root.is-layer ? ["Filter"]
         : root.is-shape ? ["Video"]
-        : root.is-image ? ["Video", "Effects"]
+        : root.is-image ? (root.has-visual-effects ? ["Video", "Effects"] : ["Video"])
         : root.is-audio ? ["Audio"]
-        : ["Video", "Audio", "Effects"];
+        : root.has-visual-effects ? ["Video", "Audio", "Effects"] : ["Video", "Audio"];
     /// The same tabs in the interface's language. `tabs` stays English,
     /// because the panels are picked by comparing against it.
-    property <[string]> tabs-shown: root.selected.batch-volume ? [I18n.t("common.audio")] : root.is-text ? [I18n.t("common.text")]
+    property <[string]> tabs-shown: root.selected.batch-volume ? [I18n.t("common.audio")]
+        : root.is-text ? (root.has-legacy-visual-effects ? [I18n.t("common.text"), I18n.t("common.effects")] : [I18n.t("common.text")])
         : root.is-layer ? [I18n.t("configPane.filter")]
         : root.is-shape ? [I18n.t("configPane.vectorImage")]
-        : root.is-image ? [I18n.t("common.video"), I18n.t("common.effects")]
+        : root.is-image ? (root.has-visual-effects ? [I18n.t("common.video"), I18n.t("common.effects")] : [I18n.t("common.video")])
         : root.is-audio ? [I18n.t("common.audio")]
-        : [I18n.t("common.video"), I18n.t("common.audio"), I18n.t("common.effects")];
+        : root.has-visual-effects ? [I18n.t("common.video"), I18n.t("common.audio"), I18n.t("common.effects")]
+        : [I18n.t("common.video"), I18n.t("common.audio")];
     /// A one-segment segmented control is a label wearing a costume, so a lone
     /// tab renders as the panel's plain heading instead.
     property <bool> single: root.tabs.length < 2;
+    property <bool> has-legacy-visual-effects: GpuCompatibility.enabled && root.applied-visual.length > 0;
+    property <bool> has-visual-effects: GpuCompatibility.video-effects || root.has-legacy-visual-effects;
 
     // The segmented control owns this: it writes to `current`, which would
     // drop any binding declared here, so it is assigned and never bound.
@@ -276,26 +282,30 @@ export component ConfigPane inherits Rectangle {
 
     /// The sections of the current tab, as the dropdown lists them.
     property <[string]> sections: root.heading == "Video"
-            ? (root.is-shape ? ["Basic"] : ["Basic", "Enhance", "Adjust"])
+            ? (GpuCompatibility.enabled || root.is-shape ? ["Basic"] : ["Basic", "Enhance", "Adjust"])
         // Audio's chain library is a page of its own, beside the level,
         // fades and treatments rather than under them, the way Video's
         // Adjust sits beside its Basic. Named apart from Video's "Basic"
         // and the Effects tab's "Effects", since `showing` picks the panel
         // by this name alone.
         : root.heading == "Audio"
-            ? (root.selected.batch-volume ? ["Sound"] : ["Sound", "AudioEffects"])
+            ? (root.selected.batch-volume || (GpuCompatibility.enabled && root.applied-audio.length == 0)
+                ? ["Sound"] : ["Sound", "AudioEffects"])
         : root.heading == "Effects" ? ["Effects"]
         : root.heading == "Text" ? ["Text"]
+        : GpuCompatibility.enabled ? (root.has-visual-effects ? ["Layer", "Effects"] : ["Layer"])
         : ["Layer", "Adjust", "Effects"];
     /// The sections as the dropdown shows them; see `tabs-shown`.
     property <[string]> sections-shown: root.heading == "Video"
-            ? (root.is-shape ? [I18n.t("configPane.basic")]
+            ? (GpuCompatibility.enabled || root.is-shape ? [I18n.t("configPane.basic")]
                 : [I18n.t("configPane.basic"), I18n.t("common.enhance"), I18n.t("common.adjust")])
         : root.heading == "Audio"
-            ? (root.selected.batch-volume ? [I18n.t("configPane.basic")]
+            ? (root.selected.batch-volume || (GpuCompatibility.enabled && root.applied-audio.length == 0)
+                ? [I18n.t("configPane.basic")]
                 : [I18n.t("configPane.basic"), I18n.t("configPane.audioEffects")])
         : root.heading == "Effects" ? [I18n.t("common.effects")]
         : root.heading == "Text" ? [I18n.t("common.text")]
+        : GpuCompatibility.enabled ? (root.has-visual-effects ? [I18n.t("common.layer"), I18n.t("common.effects")] : [I18n.t("common.layer")])
         : [I18n.t("common.layer"), I18n.t("common.adjust"), I18n.t("common.effects")];
 
     // Each tab remembers its own section, so flipping to Audio and back
@@ -334,8 +344,8 @@ export component ConfigPane inherits Rectangle {
         // for a fresh adjustment layer, Effects for a look put on its chain.
         if (root.is-layer) {
             root.tab = 0;
-            root.section-layer = root.jump-section == "Adjust" ? 1
-                : root.jump-section == "Effects" ? 2 : 0;
+            root.section-layer = root.jump-section == "Effects" ? (GpuCompatibility.enabled ? 1 : 2)
+                : !GpuCompatibility.enabled && root.jump-section == "Adjust" ? 1 : 0;
             return;
         }
         if (root.jump-tab == "Video") { root.tab = 0; }
@@ -422,6 +432,10 @@ export component ConfigPane inherits Rectangle {
                     FactRow { label: I18n.t("common.frame"); value: root.project-output; }
                     FactRow { label: I18n.t("common.rate"); value: root.project-rate; }
                     FactRow { label: I18n.t("common.duration"); value: root.project-duration; }
+                    if GpuCompatibility.enabled && Backdrop.timeline.mode > 0: Button {
+                        label: I18n.t("project.clearGpuBackground");
+                        clicked => { Backdrop.set-mode(false, 0); }
+                    }
 
                     FactHeading { title: I18n.t("configPane.contents"); }
                     FactRow { label: I18n.t("common.media"); value: "\{root.count-media}"; }
@@ -634,7 +648,7 @@ export component ConfigPane inherits Rectangle {
             PaneScroll {
                 // Basic, with the clip's speed under it: one knob is not a
                 // page of its own.
-                if root.showing == "Basic": VerticalLayout {
+                if root.showing == "Basic" && (!GpuCompatibility.enabled || !root.is-shape): VerticalLayout {
                     VideoPanel {
                         selected: root.selected;
                         applied: root.applied-visual;
@@ -727,7 +741,7 @@ export component ConfigPane inherits Rectangle {
                     // they are chain links like any other, but they are the
                     // ones a sound clip usually needs, so they get a switch
                     // rather than a search.
-                    if !root.selected.batch-volume: ProcessorRows {
+                    if !GpuCompatibility.enabled && !root.selected.batch-volume: ProcessorRows {
                         applied: root.applied-audio;
                         params: root.audio-params;
                         add(id) => { root.chain-add(true, id); }
@@ -747,11 +761,12 @@ export component ConfigPane inherits Rectangle {
                         noun: I18n.t("common.audioEffect");
                         library-title: I18n.t("configPane.audioEffects");
                         shelf: 2;
-                        hidden: ["concat.loudness", "concat.denoise", "concat.enhance-voice"];
+                        library: !GpuCompatibility.enabled;
+                        hidden: GpuCompatibility.enabled ? [] : ["concat.loudness", "concat.denoise", "concat.enhance-voice"];
                         group-labels: root.audio-groups;
                         catalogue: root.catalogue-audio;
                         applied: root.applied-audio;
-                        params: root.audio-params;
+                        params: GpuCompatibility.enabled ? [] : root.audio-params;
 
                         add(id) => { root.chain-add(true, id); }
                         toggle(index) => { root.chain-toggle(true, index); }

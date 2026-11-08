@@ -748,7 +748,7 @@ fn caption_clip(
     // The kept look where there is one - family, weight, colours, stroke,
     // shadow, background - at the caption's own size and place; the
     // bundled face otherwise.
-    let style = match base {
+    let style = match base.filter(|_| !cfg!(windows)) {
         Some(base) => TextStyle {
             content: text,
             font_size,

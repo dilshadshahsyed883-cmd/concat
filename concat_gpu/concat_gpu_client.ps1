@@ -96,6 +96,9 @@ function Submit-Zip([string]$zip,[string]$job,[string]$domain,$headers) {
         if (-not $response -or [int]$response.StatusCode -ne 404) {throw}
     }
     if ($existing) {
+        if ($existing.sha256 -ne $sha -or [long]$existing.size -ne $size) {
+            throw "Existing worker job does not match the saved snapshot."
+        }
         Report "Resuming job $job ($($existing.state))." 100
         return
     }
@@ -437,12 +440,23 @@ try {
     if ($Operation -in "Upload","Status") {
         if ($config.domain -ne $JobDomain) {throw "Restore the saved worker address for this job before resuming."}
         if ($Operation -eq "Upload") {
-            Report "Checking the worker before uploading." 0
-            Test-Worker $config.domain $headers
-            Validate-WorkerProject (Join-Path (Join-Path $queueDir $SnapshotID) "concat.json") $config.domain $headers
-            Report "Uploading the saved snapshot." 0 "" $false "attempted"
-            Submit-Zip $zip $Job $config.domain $headers
-            Report "Upload verified. Waiting for GPU rendering." 100 "" $false "uploaded"
+            try {
+                # A helper can outlive the editor. Its lease prevents the
+                # restarted editor from opening a second upload session.
+                $lease=[IO.File]::Open((Join-Path $queueDir "upload.lock"),
+                    [IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+            } catch [IO.IOException] {
+                Report "The previous upload is still active. Click Start Queue again after it stops." -1 "" $true "offline"
+                return
+            }
+            try {
+                Report "Checking the worker before uploading." 0
+                Test-Worker $config.domain $headers
+                Validate-WorkerProject (Join-Path (Join-Path $queueDir $SnapshotID) "concat.json") $config.domain $headers
+                Report "Uploading the saved snapshot." 0 "" $false "attempted"
+                Submit-Zip $zip $Job $config.domain $headers
+                Report "Upload verified. Waiting for GPU rendering." 100 "" $false "uploaded"
+            } finally {$lease.Dispose()}
         } else {
             Queue-Status $Job $config.domain $headers $gpuDataDir
         }

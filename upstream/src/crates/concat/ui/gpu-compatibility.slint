@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
+
+/// The Windows candidate uses the native CUDA worker's authoring profile.
+/// Existing project fields are preserved and checked separately before upload.
+export global GpuCompatibility {
+    in property <bool> enabled: false;
+    in property <bool> video-effects: true;
+    in property <bool> transitions: true;
+}

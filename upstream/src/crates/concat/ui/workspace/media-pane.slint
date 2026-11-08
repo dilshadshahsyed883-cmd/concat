@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
 
+import { GpuCompatibility } from "../gpu-compatibility.slint";
 import { Button } from "../primitives/modal.slint";
 import { I18n } from "../i18n.slint";
 import { Theme, Fmt, Glyph, Icon, Payload, Tip } from "../primitives/primitives.slint";
@@ -1162,7 +1163,7 @@ component TextPage inherits Rectangle {
                 y: tile.height + 4px;
                 width: root.card-w;
                 height: 14px;
-                text: I18n.t("mediaPane.defaultTitle");
+                text: I18n.t(GpuCompatibility.enabled ? "captions.newCaption" : "mediaPane.defaultTitle");
                 color: Theme.fg-muted;
                 font-size: Theme.fs-sm;
                 vertical-alignment: center;
@@ -1958,25 +1959,25 @@ export component MediaPane inherits Rectangle {
                             current: root.tab == 1;
                             clicked => { root.tab = 1; }
                         }
-                        LibraryTab {
+                        if !GpuCompatibility.enabled: LibraryTab {
                             glyph: Glyph.sticker;
                             label: I18n.t("mediaPane.stickers");
                             current: root.tab == 2;
                             clicked => { root.tab = 2; }
                         }
-                        LibraryTab {
+                        if GpuCompatibility.transitions: LibraryTab {
                             glyph: Glyph.transition;
                             label: I18n.t("mediaPane.transitions");
                             current: root.tab == 3;
                             clicked => { root.tab = 3; }
                         }
-                        LibraryTab {
+                        if GpuCompatibility.video-effects: LibraryTab {
                             glyph: Glyph.sparkle;
                             label: I18n.t("common.effects");
                             current: root.tab == 4;
                             clicked => { root.tab = 4; }
                         }
-                        LibraryTab {
+                        if !GpuCompatibility.enabled: LibraryTab {
                             glyph: Glyph.filter;
                             label: I18n.t("mediaPane.filters");
                             current: root.tab == 5;
@@ -1984,7 +1985,7 @@ export component MediaPane inherits Rectangle {
                         }
                         // Beside Filters, where CapCut keeps it: the page
                         // number is the last one handed out, not the place.
-                        LibraryTab {
+                        if !GpuCompatibility.enabled: LibraryTab {
                             glyph: Glyph.sun;
                             label: I18n.t("mediaPane.adjustments");
                             current: root.tab == 7;
@@ -2230,18 +2231,18 @@ export component MediaPane inherits Rectangle {
                         }
                         if root.text-open: CategoryRow {
                             height: 24px;
-                            label: I18n.t("mediaPane.titles");
+                            label: I18n.t(GpuCompatibility.enabled ? "captions.captions" : "mediaPane.titles");
                             current: root.text-category == 0;
                             clicked => { root.text-category = 0; }
                         }
-                        if root.text-open: CategoryRow {
+                        if !GpuCompatibility.enabled && root.text-open: CategoryRow {
                             height: 24px;
                             label: I18n.t("mediaPane.styles");
                             current: root.text-category == 1;
                             clicked => { root.text-category = 1; }
                         }
                         // Beside Styles: the looks for other writing.
-                        if root.text-open: CategoryRow {
+                        if !GpuCompatibility.enabled && root.text-open: CategoryRow {
                             height: 24px;
                             label: I18n.t("mediaPane.languages");
                             current: root.text-category == 2;
@@ -2308,13 +2309,13 @@ export component MediaPane inherits Rectangle {
                                 }
                             }
                         }
-                        CategoryHeading {
+                        if !GpuCompatibility.enabled: CategoryHeading {
                             height: 26px;
                             title: I18n.t("mediaPane.audioEffects");
                             open: root.audio-open;
                             toggled => { root.audio-open = !root.audio-open; }
                         }
-                        if root.audio-open: VerticalLayout {
+                        if !GpuCompatibility.enabled && root.audio-open: VerticalLayout {
                             spacing: 1px;
                             for label[index] in root.audio-groups: CategoryRow {
                                 height: 24px;
@@ -2664,7 +2665,7 @@ export component MediaPane inherits Rectangle {
                 // The looks. Each card is a title in that look, placed at
                 // the playhead on a click or dragged onto a lane; a preset
                 // that brings a font installs it on the way.
-                if root.tab == 1 && root.text-category >= 1: HorizontalLayout {
+                if !GpuCompatibility.enabled && root.tab == 1 && root.text-category >= 1: HorizontalLayout {
                     padding: 8px;
 
                     PresetGrid {

@@ -9,6 +9,7 @@
 // it. The files live with the title painter (concat-text/fonts), which
 // embeds the same five so a title is set in the face the interface is.
 // Licensed under the SIL Open Font License; see LICENSE-HankenGrotesk.txt.
+import { GpuCompatibility } from "gpu-compatibility.slint";
 import { I18n } from "i18n.slint";
 import "../../concat-text/fonts/HankenGrotesk-Regular.ttf";
 import "../../concat-text/fonts/HankenGrotesk-Medium.ttf";
@@ -57,7 +58,7 @@ import {
 import { KeyEditor, KeyMarkData, KeyRowData } from "workspace/keyframes-pane.slint";
 
 export {
-    Curves, Fmt, Focus, Payload, Theme, Bezier, Editor, I18n, CloudGpu, GpuQueueRow,
+    Curves, Fmt, Focus, Payload, Theme, Bezier, Editor, I18n, CloudGpu, GpuQueueRow, GpuCompatibility,
     AppliedEntryData, AppliedParamData, CatalogueEntryData, Library, LibraryViewData, ParamFormat,
     DockDivider, DockSide, PaneKind, SeatBox,
     EffectData, FontSearch, Meters, MediaFilter, MediaItemData, MediaKind, SourcePreview, TextPresetData,

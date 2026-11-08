@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
 
+import { GpuCompatibility } from "../gpu-compatibility.slint";
 import { I18n } from "../i18n.slint";
 import { Theme } from "../theme/theme.slint";
 import { Glyph } from "../icons.slint";
@@ -82,10 +83,23 @@ export component ProjectDialog inherits Modal {
             // a second cut keeps its own frame whatever is picked here.
             title: I18n.t1("project.output", root.data.timeline);
 
+            if GpuCompatibility.enabled: DialogRow {
+                label: "1920 × 1080 · 30 fps · SDR";
+                Button {
+                    label: I18n.t("project.useGpuFormat");
+                    enabled: root.data.size != 0 || root.data.rate != 6 || root.data.color-space != 0;
+                    clicked => {
+                        root.size-changed(0);
+                        root.rate-changed(6);
+                        root.color-space-changed(0);
+                    }
+                }
+            }
+
             // The same six frames the monitor's picker offers, in the same
             // order, so the two controls can never disagree about what a
             // row means; then Custom, for any frame at all.
-            DialogRow {
+            if !GpuCompatibility.enabled: DialogRow {
                 label: I18n.t("common.frame");
                 Select {
                     current: root.data.size;
@@ -98,7 +112,7 @@ export component ProjectDialog inherits Modal {
 
             // Each side even and within 16 to 8192: Rust rounds what is
             // typed to the nearest frame the project can hold.
-            if root.data.size == 6: DialogRow {
+            if !GpuCompatibility.enabled && root.data.size == 6: DialogRow {
                 HorizontalLayout {
                     spacing: 8px;
 
@@ -128,7 +142,7 @@ export component ProjectDialog inherits Modal {
                 }
             }
 
-            DialogRow {
+            if !GpuCompatibility.enabled: DialogRow {
                 label: I18n.t("common.frameRate");
                 Select {
                     current: root.data.rate;
@@ -143,7 +157,7 @@ export component ProjectDialog inherits Modal {
 
             // From 1 to 240, kept as the exact fraction beside it: 23.976
             // is 24000/1001, as a camera records it.
-            if root.data.rate == 11: DialogRow {
+            if !GpuCompatibility.enabled && root.data.rate == 11: DialogRow {
                 HorizontalLayout {
                     spacing: 10px;
 
@@ -170,7 +184,7 @@ export component ProjectDialog inherits Modal {
 
             // What the timeline is output in. A timeline turns HDR (HLG) on
             // its first HDR clip; this is where it is set back, or to PQ.
-            DialogRow {
+            if !GpuCompatibility.enabled: DialogRow {
                 label: I18n.t("common.color");
                 Select {
                     current: root.data.color-space;
@@ -180,7 +194,7 @@ export component ProjectDialog inherits Modal {
                 }
             }
 
-            if root.data.color-space > 0: Text {
+            if !GpuCompatibility.enabled && root.data.color-space > 0: Text {
                 text: I18n.t("project.hdrMonitorNote");
                 color: Theme.fg-dim;
                 font-size: Theme.fs-sm;

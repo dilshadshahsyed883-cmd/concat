@@ -28,6 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
@@ -52,6 +53,27 @@ jobs:
           python -c "import json,zipfile,hashlib; z=zipfile.ZipFile('fixture/bundle.zip'); x=json.loads(z.read('bundle.json')); r=x['references'][0]; assert x['version']==1 and x['project_file']=='concat.json'; assert hashlib.sha256(z.read(r['member'])).hexdigest()==r['sha256']; assert z.read('project/concat.json')"
           if ($LASTEXITCODE -ne 0) { throw "Generated Concat ZIP contract rejected" }
           Write-Host "Native Concat ZIP integrity PASS"
+          $originalLocalData = $env:LOCALAPPDATA
+          try {
+            $env:LOCALAPPDATA = Join-Path $pwd "fixture\local-data"
+            $job = "concat-cuda-1234567890abcdef"
+            $queue = Join-Path $env:LOCALAPPDATA "Concat\GPU\Queue"
+            $snapshot = Join-Path $queue $job
+            New-Item -ItemType Directory -Force -Path $snapshot | Out-Null
+            Copy-Item -LiteralPath "fixture\concat.json" -Destination (Join-Path $snapshot "concat.json")
+            '{"media":[]}' | Set-Content -LiteralPath "fixture\concat.json" -Encoding UTF8
+            powershell.exe -NoProfile -ExecutionPolicy Bypass -File $client -Operation Prepare -ProjectDir fixture -Job $job -SnapshotID $job
+            if ($LASTEXITCODE -ne 0) { throw "Offline queue snapshot failed" }
+            $archive = Join-Path $queue "$job.zip"
+            python -c "import json,sys,zipfile; z=zipfile.ZipFile(sys.argv[1]); assert json.loads(z.read('project/concat.json').decode('utf-8-sig'))['media'][0]['id']=='m1'" $archive
+            if ($LASTEXITCODE -ne 0) { throw "Queue used the edited project instead of its saved snapshot" }
+            $hash = (Get-FileHash -LiteralPath $archive).Hash
+            powershell.exe -NoProfile -ExecutionPolicy Bypass -File $client -Operation Prepare -ProjectDir fixture -Job $job -SnapshotID $job
+            if ($LASTEXITCODE -ne 0 -or (Get-FileHash -LiteralPath $archive).Hash -ne $hash) {
+              throw "Queue preparation did not reuse the existing snapshot"
+            }
+            Write-Host "Offline queue snapshot and retry PASS"
+          } finally { $env:LOCALAPPDATA = $originalLocalData }
       - name: Exact Rust 1.93 toolchain
         uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
         with:

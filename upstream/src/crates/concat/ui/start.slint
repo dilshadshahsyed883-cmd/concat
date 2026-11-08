@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
 
+import { GpuCompatibility } from "gpu-compatibility.slint";
 import { I18n } from "i18n.slint";
 import { Theme } from "theme/theme.slint";
 import { CopyChip, Modal } from "primitives/modal.slint";
@@ -2287,7 +2288,7 @@ export component NewProjectDialog inherits Modal {
             }
         }
 
-        FormRow {
+        if !GpuCompatibility.enabled: FormRow {
             label: I18n.upper("start.shape");
             stacked: root.narrow;
 
@@ -2318,7 +2319,7 @@ export component NewProjectDialog inherits Modal {
             }
         }
 
-        FormRow {
+        if !GpuCompatibility.enabled: FormRow {
             label: I18n.upper("common.size");
             stacked: root.narrow;
 
@@ -2392,7 +2393,7 @@ export component NewProjectDialog inherits Modal {
             }
         }
 
-        FormRow {
+        if !GpuCompatibility.enabled: FormRow {
             label: I18n.upper("common.frameRate");
             last: true;
             stacked: root.narrow;
@@ -2445,6 +2446,18 @@ export component NewProjectDialog inherits Modal {
                         changed(value) => { root.custom-fps-edited(value); }
                     }
                 }
+            }
+        }
+
+        if GpuCompatibility.enabled: FormRow {
+            label: I18n.upper("project.gpuFormat");
+            last: true;
+            stacked: root.narrow;
+            Text {
+                text: "1920 × 1080 · 30 fps · SDR";
+                color: Theme.fg-dim;
+                font-family: Theme.font-technical;
+                font-size: Theme.fs-sm;
             }
         }
 

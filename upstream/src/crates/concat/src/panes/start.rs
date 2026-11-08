@@ -156,7 +156,7 @@ impl Default for StartPane {
             // 1080p, not the first of the three. The size everything else
             // in the app assumes, and the one a phone and a desk agree on.
             size: 1,
-            rate: 3,
+            rate: if cfg!(windows) { 6 } else { 3 },
             custom_size: (1920, 1080),
             custom_rate: (30, 1),
             busy: false,

@@ -1,6 +1,6 @@
 """GPU/desktop compatibility: reject unsupported edits before any media upload."""
-import copy
 import http.client
+import importlib.util
 import json
 import tempfile
 import threading
@@ -9,6 +9,8 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 from cloud_render.concat.gpu.worker import Handler, RenderWorker
+from cloud_render.concat.hybrid.captions import CaptionRenderer, _glyph_texture, _tile_region
+from cloud_render.concat.hybrid.contract import FrameRate
 from cloud_render.concat.hybrid.project import load_project, validate_gpu_manifest
 
 
@@ -27,11 +29,42 @@ def minimal_project():
     }
 
 
+def native_caption(document, **style):
+    timeline = document["timelines"][0]
+    timeline["tracks"].append({"id": "caption", "visible": True, "muted": False})
+    caption = {
+        "id": "caption1", "kind": "text", "trackId": "caption", "mediaId": "",
+        "name": "Hello", "start": 2 / 30, "duration": 4 / 30,
+        "sourceStart": 0, "speed": 1, "volume": 1, "opacity": 1,
+        "fadeIn": 0, "fadeOut": 0, "offsetX": -.1, "offsetY": .35,
+        "rotation": 0, "scale": 1, "preservePitch": True, "filters": [], "videoEffects": [],
+        # Every field written by concat_project::model::TextStyle's serializer.
+        "text": {
+            "content": "Hello world", "fontFamily": "Hanken Grotesk", "fontSize": .04,
+            "fontWeight": 600, "italic": False, "color": "#ffffff", "align": "center",
+            "opacity": 1, "strokeWidth": 0, "strokeColor": "#000000", "shadow": True,
+            "background": "", "backgroundRadius": .0135, "backgroundPaddingX": .0315,
+            "backgroundPaddingY": .018, "lineHeight": 1.2, "tracking": 0,
+            "maxWidth": 0, "maxHeight": 0, **style,
+        },
+    }
+    timeline["clips"].append(caption)
+    return caption
+
+
+def load_fixture(document):
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        (root / "concat.json").write_text(json.dumps(document))
+        (root / "photo.jpg").write_bytes(b"dummy jpeg")
+        return load_project(root, lambda _: None)
+
+
 class GpuManifestValidationTests(unittest.TestCase):
     def test_accepts_supported_basic_edit_and_filter(self):
         document = minimal_project()
         document["timelines"][0]["clips"][0]["videoEffects"] = [
-            {"id": "concat.contrast", "params": {"amount": 10}}]
+            {"id": "concat.box-blur", "params": {"radius": 4}}]
         self.assertEqual(validate_gpu_manifest(document)["id"], "timeline")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -67,16 +100,14 @@ class GpuManifestValidationTests(unittest.TestCase):
                     validate_gpu_manifest(document)
 
 
-    def test_native_catalogue_transitions_match_gpu_worker(self):
-        # These are the IDs emitted by the actual Concat catalogue, not UI aliases.
-        for native_id in ("concat.dissolve", "concat.fade-black",
-                          "concat.push", "concat.zoom-transition"):
-            with self.subTest(transition=native_id):
+    def test_supported_legacy_worker_transitions_still_render(self):
+        for transition_id in ("cross-fade", "fade-black", "push", "zoom", "wipe-left", "wipe-right"):
+            with self.subTest(transition=transition_id):
                 document = minimal_project()
                 document["timelines"][0]["clips"].append({
                     "id": "photo2", "kind": "image", "trackId": "video",
                     "mediaId": "photo", "start": 1.0, "duration": 1.0,
-                    "transitionIn": {"id": native_id, "duration": 0.4},
+                    "transitionIn": {"id": transition_id, "duration": 0.4},
                 })
                 validate_gpu_manifest(document)
                 with tempfile.TemporaryDirectory() as directory:
@@ -99,36 +130,128 @@ class GpuManifestValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "preserved audio pitch"):
             validate_gpu_manifest(document)
 
+    def test_native_trimmed_jpeg_keeps_timeline_span(self):
+        document = minimal_project()
+        document["timelines"][0]["clips"][0].update(start=.5, duration=1.5, sourceStart=.75)
+        validate_gpu_manifest(document)
+        project = load_fixture(document)
+        picture = project.lanes[0][0]
+        self.assertEqual((picture.span.start, picture.span.end, project.frames), (15, 60, 60))
+        self.assertEqual(picture.source_start, .75)
+        document["timelines"][0]["clips"][0]["sourceStart"] = -.75
+        with self.assertRaisesRegex(ValueError, "source start"):
+            validate_gpu_manifest(document)
+
     def test_denies_non_jpeg_image_before_upload(self):
         document = minimal_project()
         document["media"][0]["path"] = "picture.png"
         with self.assertRaisesRegex(ValueError, "JPEG"):
             validate_gpu_manifest(document)
 
-    def test_existing_custom_caption_style_is_not_silently_dropped(self):
+    def test_native_caption_preserves_font_position_shadow_and_frame_boundaries(self):
         document = minimal_project()
-        document["timelines"][0]["clips"].append({
-            "id": "caption1", "kind": "text", "trackId": "video",
-            "start": 0, "duration": 1,
-            "text": {"content": "Hello", "fontFamily": "Unsupported family"}
+        native_caption(document, opacity=.6)
+        validate_gpu_manifest(document)
+        cue, style = load_fixture(document).captions[0]
+        self.assertTrue(Path(style.font).is_file())
+        self.assertEqual(Path(style.font).name, "HankenGrotesk-SemiBold.ttf")
+        self.assertEqual(style.anchor, (.4, .85))
+        self.assertTrue(style.shadow)
+        self.assertEqual(style.opacity, .6)
+        renderer = CaptionRenderer([cue], style)
+        rate = FrameRate(30, 1)
+        self.assertEqual([bool(renderer.active(index, rate)) for index in range(7)],
+                         [False, False, True, True, True, True, False])
+
+    @unittest.skipUnless(importlib.util.find_spec("PIL"), "caption glyph dependency unavailable")
+    def test_caption_glyphs_use_native_anchor_and_shadow(self):
+        document = minimal_project()
+        native_caption(document, content="First line\n\nSecond line")
+        cue, style = load_fixture(document).captions[0]
+        tile = _glyph_texture(cue, None, style, 1920, 1080)
+        top, left, visible_top, visible_bottom, visible_left, visible_right = _tile_region(
+            (1080, 1920, 4), (tile.height, tile.width, 4), style, 0)
+        self.assertAlmostEqual(top + tile.height / 2, 1080 * .85, delta=1)
+        self.assertAlmostEqual(left + tile.width / 2, 1920 * .4, delta=1)
+        self.assertEqual((visible_top, visible_bottom, visible_left, visible_right),
+                         (top, top + tile.height, left, left + tile.width))
+        self.assertTrue(any(alpha and red == green == blue == 0
+                            for red, green, blue, alpha in tile.get_flattened_data()))
+
+    def test_existing_custom_caption_style_is_not_silently_dropped(self):
+        for field, value in (("fontFamily", "Unsupported family"), ("fontWeight", 700),
+                             ("tracking", .01), ("background", "#111111"), ("align", "left")):
+            with self.subTest(field=field):
+                document = minimal_project()
+                native_caption(document, **{field: value})
+                with self.assertRaisesRegex(ValueError, rf"caption styling.*{field}.*caption1"):
+                    validate_gpu_manifest(document)
+                with self.assertRaisesRegex(ValueError, rf"caption styling.*{field}.*caption1"):
+                    load_fixture(document)
+
+    def test_track_order_and_caption_stacking_are_native(self):
+        document = minimal_project()
+        caption = native_caption(document)
+        timeline = document["timelines"][0]
+        timeline["tracks"].insert(1, {"id": "overlay", "visible": True})
+        timeline["clips"].append({
+            "id": "overlay1", "kind": "image", "trackId": "overlay",
+            "mediaId": "photo", "start": 0, "duration": 1,
         })
-        with self.assertRaisesRegex(ValueError, "caption styling"):
+        validate_gpu_manifest(document)
+        self.assertEqual([[clip.id for clip in lane] for lane in load_fixture(document).lanes],
+                         [["photo1"], ["overlay1"], []])
+        caption["trackId"] = "video"
+        with self.assertRaisesRegex(ValueError, "caption1.*higher track"):
             validate_gpu_manifest(document)
 
-    def test_rejects_unaligned_transition_in_renderer(self):
+    def test_rejects_unaligned_transition_in_preflight_and_renderer(self):
         document = minimal_project()
         document["timelines"][0]["clips"].append({
             "id": "photo2", "kind": "image", "trackId": "video", "mediaId": "photo",
             "start": 1.5, "duration": 1.0,
             "transitionIn": {"id": "cross-fade", "duration": 0.5}
         })
-        validate_gpu_manifest(document)
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / "concat.json").write_text(json.dumps(document))
-            (root / "photo.jpg").write_bytes(b"dummy jpeg")
-            with self.assertRaisesRegex(ValueError, "unaligned"):
-                load_project(root, lambda _: None)
+        for operation in (validate_gpu_manifest, load_fixture):
+            with self.assertRaisesRegex(ValueError, "unaligned.*photo2"):
+                operation(document)
+
+    def test_rejects_inexact_packaged_transitions_in_preflight(self):
+        capabilities = json.loads((Path(__file__).parents[1] / "hybrid"
+                                   / "gpu_ui_capabilities.json").read_text())
+        self.assertEqual(capabilities["transitions"], [])
+        for native_id in ("concat.dissolve", "concat.fade-black", "concat.push", "concat.zoom-transition"):
+            with self.subTest(transition=native_id):
+                document = minimal_project()
+                document["timelines"][0]["clips"].append({
+                    "id": "photo2", "kind": "image", "trackId": "video", "mediaId": "photo",
+                    "start": 1, "duration": 1,
+                    "transitionIn": {"id": native_id, "duration": .4},
+                })
+                with self.assertRaisesRegex(ValueError, rf"{native_id}.*photo2"):
+                    validate_gpu_manifest(document)
+
+    def test_rejects_inexact_packaged_filters_in_preflight(self):
+        capabilities = json.loads((Path(__file__).parents[1] / "hybrid"
+                                   / "gpu_ui_capabilities.json").read_text())
+        self.assertEqual(capabilities["video_effects"], [])
+        for effect_id in ("concat.contrast", "concat.saturation", "concat.sharpen"):
+            with self.subTest(effect=effect_id):
+                document = minimal_project()
+                document["timelines"][0]["clips"][0]["videoEffects"] = [{"id": effect_id}]
+                with self.assertRaisesRegex(ValueError, rf"{effect_id}.*photo1"):
+                    validate_gpu_manifest(document)
+
+    def test_preflight_validates_timing_and_filter_parameters(self):
+        for update, error in (({"duration": .001}, "sub-frame duration"),
+                              ({"videoEffects": [{"id": "concat.box-blur",
+                                                 "params": {"unknown": 12}}]},
+                               "unknown effect parameters")):
+            with self.subTest(update=update):
+                document = minimal_project()
+                document["timelines"][0]["clips"][0].update(update)
+                with self.assertRaisesRegex(ValueError, error):
+                    validate_gpu_manifest(document)
 
 
 class WorkerPreflightTests(unittest.TestCase):
@@ -143,7 +266,9 @@ class WorkerPreflightTests(unittest.TestCase):
                 try:
                     client = http.client.HTTPConnection(*server.server_address, timeout=5)
                     try:
-                        payload = json.dumps(minimal_project()).encode("utf-8")
+                        document = minimal_project()
+                        native_caption(document)
+                        payload = json.dumps(document).encode("utf-8")
                         client.request("POST", "/api/validate", body=payload,
                                        headers={"Content-Type": "application/json"})
                         unauthorized = client.getresponse()

@@ -10,6 +10,7 @@ from collections import OrderedDict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from fractions import Fraction
+from math import isfinite
 import re
 import unicodedata
 
@@ -117,6 +118,13 @@ class CaptionStyle:
     padding: int = 10
     margin: int = 24
     placement: str = "bottom"
+    # Native Concat captions are placed by the center of their text block.
+    # An unset anchor preserves the SRT renderer's edge placement/stacking.
+    anchor: tuple[float, float] | None = None
+    shadow: bool = False
+    opacity: float = 1.0
+    # Keep equal styles on different tracks in separate renderer batches.
+    track_rank: int = 0
 
     def __post_init__(self):
         for color in (self.fill, self.highlight, self.outline, self.background):
@@ -124,12 +132,18 @@ class CaptionStyle:
                     or any(type(c) is not int or not 0 <= c <= 255 for c in color)):
                 raise ValueError("Caption colors must be 8-bit RGBA tuples")
         sizes = (self.font_size, self.outline_width, self.padding, self.margin)
-        limits = ((8, 512), (0, 32), (0, 128), (0, 512))
+        limits = ((8, 540 if self.anchor is not None else 512), (0, 32), (0, 128), (0, 512))
         if any(type(size) is not int or not low <= size <= high
                for size, (low, high) in zip(sizes, limits)):
             raise ValueError("Caption font size, outline, padding, or margin is out of range")
         if self.placement not in ("top", "bottom"):
             raise ValueError("Caption placement must be top or bottom")
+        if self.anchor is not None and (not isinstance(self.anchor, tuple) or len(self.anchor) != 2
+                                        or any(type(value) not in (int, float) or not 0 <= value <= 1
+                                               for value in self.anchor)):
+            raise ValueError("Caption anchor must be a pair of fractions in the frame")
+        if type(self.shadow) is not bool or not isfinite(self.opacity) or not 0 <= self.opacity <= 1:
+            raise ValueError("Invalid caption shadow or opacity")
 
 
 def _direction(text: str) -> str | None:
@@ -142,11 +156,17 @@ def _direction(text: str) -> str | None:
     return None
 
 
-def _wrapped_lines(text, font, available):
+def _wrapped_lines(text, font, available, native=False):
     """Wrap at word boundaries and retain each line's first logical word."""
     index = 0
     lines = []
     for paragraph in text.splitlines():
+        if native and font.getlength(paragraph) <= available:
+            # Retain empty native lines and spacing between their words.
+            count = len(paragraph.split())
+            lines.append((paragraph.strip(), index, count))
+            index += count
+            continue
         line = []
         first = index
         for word in paragraph.split():
@@ -165,22 +185,33 @@ def _wrapped_lines(text, font, available):
 
 def _glyph_texture(cue: Cue, active: int | None, style: CaptionStyle,
                    frame_width: int, frame_height: int):
-    from PIL import Image, ImageDraw, ImageFont
+    from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
     font = (ImageFont.truetype(style.font, style.font_size) if style.font
             else ImageFont.load_default(size=style.font_size))
     available = frame_width - 2 * (style.margin + style.padding + style.outline_width)
     if available < 1:
         raise ValueError("Frame too narrow for the caption style")
-    lines = _wrapped_lines(cue.text, font, available)
+    lines = _wrapped_lines(cue.text, font, available, native=style.anchor is not None)
     boxes = [font.getbbox(line, anchor="ls", stroke_width=style.outline_width)
              for line, _, _ in lines]
-    width = max(right - left for left, _, right, _ in boxes) + 2 * style.padding
-    ascent = max(-top for _, top, _, _ in boxes)
-    descent = max(bottom for _, _, _, bottom in boxes)
-    line_height = ascent + descent + max(1, style.font_size // 6)
-    height = (len(lines) - 1) * line_height + ascent + descent + 2 * style.padding
-    if width > frame_width - 2 * style.margin or height > frame_height - 2 * style.margin:
+    shadow_radius = max(1, round(style.font_size * .04)) if style.shadow else 0
+    shadow_offset = (round(style.font_size * .05), round(style.font_size * .07))
+    # Symmetric padding keeps the text center fixed when the shadow is enabled.
+    pad = style.padding + (max(shadow_offset) + 3 * shadow_radius if style.shadow else 0)
+    width = max(right - left for left, _, right, _ in boxes) + 2 * pad
+    if style.anchor is None:
+        ascent = max(-top for _, top, _, _ in boxes)
+        descent = max(bottom for _, _, _, bottom in boxes)
+        line_height = ascent + descent + max(1, style.font_size // 6)
+    else:
+        ascent, descent = font.getmetrics()
+        ascent = max(ascent, *(-top for _, top, _, _ in boxes))
+        descent = max(descent, *(bottom for _, _, _, bottom in boxes))
+        line_height = round(style.font_size * 1.2)
+    height = (len(lines) - 1) * line_height + ascent + descent + 2 * pad
+    if (width - 2 * (pad - style.padding) > frame_width - 2 * style.margin
+            or height - 2 * (pad - style.padding) > frame_height - 2 * style.margin):
         raise ValueError("Caption exceeds the available frame area")
 
     texture = Image.new("RGBA", (width, height), style.background)
@@ -190,7 +221,7 @@ def _glyph_texture(cue: Cue, active: int | None, style: CaptionStyle,
     outline_draw, fill_draw = ImageDraw.Draw(outline_mask), ImageDraw.Draw(fill_mask)
     for row, ((line, first, count), (left, _, right, _)) in enumerate(zip(lines, boxes)):
         x = (width - (right - left)) // 2 - left
-        y = style.padding + ascent + row * line_height
+        y = pad + ascent + row * line_height
         outline_draw.text((x, y), line, fill=255, stroke_fill=255,
                           stroke_width=style.outline_width, font=font, anchor="ls")
         fill_draw.text((x, y), line, fill=255, font=font, anchor="ls")
@@ -214,6 +245,11 @@ def _glyph_texture(cue: Cue, active: int | None, style: CaptionStyle,
         layer.putalpha(mask.point(lambda value: value * color[3] // 255))
         return layer
 
+    if style.shadow:
+        shade = Image.new("L", texture.size)
+        shade.paste(fill_mask, shadow_offset)
+        shade = shade.filter(ImageFilter.GaussianBlur(radius=shadow_radius))
+        texture.alpha_composite(color_layer((0, 0, 0, 150), shade))
     if style.outline_width:
         texture.alpha_composite(color_layer(style.outline, outline_mask))
     if highlight_box is not None:
@@ -222,7 +258,22 @@ def _glyph_texture(cue: Cue, active: int | None, style: CaptionStyle,
         fill_mask.paste(0, highlight_box)
         texture.alpha_composite(color_layer(style.highlight, accent_mask))
     texture.alpha_composite(color_layer(style.fill, fill_mask))
+    if style.opacity != 1:
+        texture.putalpha(texture.getchannel("A").point(lambda value: round(value * style.opacity)))
     return texture
+
+
+def _tile_region(frame_shape, tile_shape, style, offset):
+    height, width = frame_shape[:2]
+    rows, cols = tile_shape[:2]
+    if style.anchor is None:
+        top = height - offset - rows if style.placement == "bottom" else offset
+        left = (width - cols) // 2
+    else:
+        x, y = style.anchor
+        top = round(height * y - rows / 2)
+        left = round(width * x - cols / 2)
+    return top, left, max(0, top), min(height, top + rows), max(0, left), min(width, left + cols)
 
 
 class CaptionRenderer:
@@ -285,17 +336,17 @@ class CaptionRenderer:
         result = frame.copy()
         height, width = result.shape[:2]
         offset = self.style.margin
-        for cue, word in reversed(active) if self.style.placement == "bottom" else active:
+        stacked_bottom = self.style.anchor is None and self.style.placement == "bottom"
+        for cue, word in reversed(active) if stacked_bottom else active:
             tile = self._texture(cp, cue, word, width, height)
-            rows, cols = tile.shape[:2]
-            top = height - offset - rows if self.style.placement == "bottom" else offset
-            offset += rows + self.style.padding
-            if top >= height or top + rows <= 0:
-                break
-            left = (width - cols) // 2
-            visible_top, visible_bottom = max(0, top), min(height, top + rows)
-            foreground = tile[visible_top - top:visible_bottom - top].astype(cp.float32) / 255
-            target = result[visible_top:visible_bottom, left:left + cols]
+            top, left, visible_top, visible_bottom, visible_left, visible_right = _tile_region(
+                result.shape, tile.shape, self.style, offset)
+            offset += tile.shape[0] + self.style.padding
+            if visible_top >= visible_bottom or visible_left >= visible_right:
+                continue
+            foreground = tile[visible_top - top:visible_bottom - top,
+                              visible_left - left:visible_right - left].astype(cp.float32) / 255
+            target = result[visible_top:visible_bottom, visible_left:visible_right]
             src_alpha = foreground[..., 3:4]
             dst_alpha = target[..., 3:4] * (1 - src_alpha)
             alpha = src_alpha + dst_alpha

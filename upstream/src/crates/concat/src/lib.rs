@@ -1728,7 +1728,10 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     }));
 
     #[cfg(windows)]
-    let _gpu_queue_timer = cloud_gpu::wire(&app);
+    let _gpu_queue_timer = {
+        app.global::<GpuCompatibility>().set_enabled(true);
+        cloud_gpu::wire(&app)
+    };
 
     // ── the dialogs ──
     app.on_export_clicked(on_window!(|state| {

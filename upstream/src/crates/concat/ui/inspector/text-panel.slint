@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
 
+import { GpuCompatibility } from "../gpu-compatibility.slint";
 import { I18n } from "../i18n.slint";
 import { Theme } from "../theme/theme.slint";
 import { Glyph } from "../icons.slint";
@@ -154,7 +155,7 @@ export component TextPanel inherits VerticalLayout {
     }
 
     // ── a batch ──────────────────────────────────────────────────────────
-    if root.batch: SectionBody {
+    if !GpuCompatibility.enabled && root.batch: SectionBody {
         padding-left: Theme.pad;
         padding-right: Theme.pad;
         padding-top: 10px;
@@ -272,7 +273,7 @@ export component TextPanel inherits VerticalLayout {
     // The face, its weight and size, and its colour: one drawer, because
     // they are one decision. A colour drawer apart from the font it colours
     // was two places to look for how the words look.
-    Section {
+    if !GpuCompatibility.enabled: Section {
         typography := SectionHeader {
             title: I18n.t("textPanel.typography");
             collapsible: true;
@@ -485,7 +486,7 @@ export component TextPanel inherits VerticalLayout {
     }
 
     // ── stroke ───────────────────────────────────────────────────────────
-    Section {
+    if !GpuCompatibility.enabled: Section {
         stroke := SectionHeader {
             title: I18n.t("textPanel.stroke");
             collapsible: true;
@@ -539,7 +540,7 @@ export component TextPanel inherits VerticalLayout {
 
     // ── layout ───────────────────────────────────────────────────────────
     // How the words fill their box, and how big the box is.
-    Section {
+    if !GpuCompatibility.enabled: Section {
         layout := SectionHeader {
             title: I18n.t("textPanel.layout");
             collapsible: true;
@@ -658,6 +659,18 @@ export component TextPanel inherits VerticalLayout {
         }
 
         if position.open: SectionBody {
+        if GpuCompatibility.enabled: Param {
+            label: I18n.t("common.size");
+            value <=> root.size;
+            minimum: 0.01;
+            maximum: 0.5;
+            step: 0.005;
+            default-value: 0.09;
+            fmt: ParamFormat.height;
+            unit: "%";
+            unit-scale: 100;
+            changed(v) => { root.set(ClipField.font-size, v); root.commit(); }
+        }
         Param {
             label: I18n.t("textPanel.horizontal");
             value <=> root.offset-x;

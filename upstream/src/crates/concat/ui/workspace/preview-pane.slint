@@ -11,6 +11,7 @@ import { NumberField } from "../primitives/number-field.slint";
 import { Select } from "../primitives/select.slint";
 import { Pane, PaneHeader } from "pane.slint";
 import { PaneKind, PaneSwitcher } from "pane-switcher.slint";
+import { GpuCompatibility } from "../gpu-compatibility.slint";
 import { ClipKind, StageGuideData, StageItemData } from "../timeline/model.slint";
 import { ContextMenu, MenuMetrics, MenuRow } from "../primitives/context-menu.slint";
 
@@ -328,6 +329,8 @@ component StageItem inherits Rectangle {
 
     background: transparent;
 
+    property <bool> transformable: !GpuCompatibility.enabled || root.item.kind != ClipKind.text;
+
     // The outline.
     Rectangle {
         x: root.cx - self.width / 2;
@@ -341,7 +344,7 @@ component StageItem inherits Rectangle {
     }
 
     // The stem the rotation handle hangs off, from the top edge's midpoint.
-    Rectangle {
+    if root.transformable: Rectangle {
         x: root.px(0px, -root.bh / 2 - root.stem / 2) - self.width / 2;
         y: root.py(0px, -root.bh / 2 - root.stem / 2) - self.height / 2;
         width: 1.5px;
@@ -351,7 +354,7 @@ component StageItem inherits Rectangle {
     }
 
     // The readout, clear of the box on whichever side is down.
-    Rectangle {
+    if root.transformable: Rectangle {
         x: root.cx - self.width / 2;
         y: root.cy + root.below + 8px;
         width: readout.preferred-width + 12px;
@@ -372,7 +375,7 @@ component StageItem inherits Rectangle {
     }
 
     // The corners, clockwise from top-left, as Rust numbers them.
-    Grip {
+    if root.transformable: Grip {
         at-x: root.px(-root.bw / 2, -root.bh / 2);
         at-y: root.py(-root.bw / 2, -root.bh / 2);
         stage-w: root.width; stage-h: root.height;
@@ -381,7 +384,7 @@ component StageItem inherits Rectangle {
         dragged(x, y, snap) => { root.dragged(x, y, snap); }
         released => { root.released(); }
     }
-    Grip {
+    if root.transformable: Grip {
         at-x: root.px(root.bw / 2, -root.bh / 2);
         at-y: root.py(root.bw / 2, -root.bh / 2);
         stage-w: root.width; stage-h: root.height;
@@ -390,7 +393,7 @@ component StageItem inherits Rectangle {
         dragged(x, y, snap) => { root.dragged(x, y, snap); }
         released => { root.released(); }
     }
-    Grip {
+    if root.transformable: Grip {
         at-x: root.px(root.bw / 2, root.bh / 2);
         at-y: root.py(root.bw / 2, root.bh / 2);
         stage-w: root.width; stage-h: root.height;
@@ -399,7 +402,7 @@ component StageItem inherits Rectangle {
         dragged(x, y, snap) => { root.dragged(x, y, snap); }
         released => { root.released(); }
     }
-    Grip {
+    if root.transformable: Grip {
         at-x: root.px(-root.bw / 2, root.bh / 2);
         at-y: root.py(-root.bw / 2, root.bh / 2);
         stage-w: root.width; stage-h: root.height;
@@ -411,7 +414,7 @@ component StageItem inherits Rectangle {
 
     // The edges' midpoints, top, right, bottom, left as Rust numbers them:
     // a pull on one stretches that axis alone.
-    Grip {
+    if !GpuCompatibility.enabled: Grip {
         at-x: root.px(0px, -root.bh / 2);
         at-y: root.py(0px, -root.bh / 2);
         stage-w: root.width; stage-h: root.height;
@@ -420,7 +423,7 @@ component StageItem inherits Rectangle {
         dragged(x, y, snap) => { root.dragged(x, y, snap); }
         released => { root.released(); }
     }
-    Grip {
+    if !GpuCompatibility.enabled: Grip {
         at-x: root.px(root.bw / 2, 0px);
         at-y: root.py(root.bw / 2, 0px);
         stage-w: root.width; stage-h: root.height;
@@ -429,7 +432,7 @@ component StageItem inherits Rectangle {
         dragged(x, y, snap) => { root.dragged(x, y, snap); }
         released => { root.released(); }
     }
-    Grip {
+    if !GpuCompatibility.enabled: Grip {
         at-x: root.px(0px, root.bh / 2);
         at-y: root.py(0px, root.bh / 2);
         stage-w: root.width; stage-h: root.height;
@@ -438,7 +441,7 @@ component StageItem inherits Rectangle {
         dragged(x, y, snap) => { root.dragged(x, y, snap); }
         released => { root.released(); }
     }
-    Grip {
+    if !GpuCompatibility.enabled: Grip {
         at-x: root.px(-root.bw / 2, 0px);
         at-y: root.py(-root.bw / 2, 0px);
         stage-w: root.width; stage-h: root.height;
@@ -449,7 +452,7 @@ component StageItem inherits Rectangle {
     }
 
     // The rotation handle, above the top edge.
-    Grip {
+    if root.transformable: Grip {
         turn: true;
         at-x: root.px(0px, -root.bh / 2 - root.stem);
         at-y: root.py(0px, -root.bh / 2 - root.stem);
@@ -703,7 +706,7 @@ component StageOverlay inherits Rectangle {
         y: 0;
         width: root.width;
         height: root.height;
-        if entry.selected: StageItem {
+        if entry.selected && (!GpuCompatibility.enabled || entry.kind != ClipKind.shape): StageItem {
             x: 0;
             y: 0;
             width: parent.width;
@@ -714,7 +717,7 @@ component StageOverlay inherits Rectangle {
             released => { root.released(); }
         }
         // Over the clip's own box, so a mask grip on its edge wins.
-        if entry.selected && entry.mask >= 0 && !root.painting: MaskItem {
+        if !GpuCompatibility.enabled && entry.selected && entry.mask >= 0 && !root.painting: MaskItem {
             x: 0;
             y: 0;
             width: parent.width;
