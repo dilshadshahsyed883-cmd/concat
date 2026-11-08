@@ -75,6 +75,26 @@ class CanvasValidationTests(unittest.TestCase):
         b.background = a.background
         self.assertEqual(a.background, b.background)
 
+    def test_blur_is_applied_to_background_copy_not_keyframed_foreground(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock, patch
+        from cloud_render.concat.hybrid.render import picture
+
+        bg = CanvasBackground("blur", .4)
+        animated = object()  # Represents an evaluated frame-specific transform.
+        clip = SimpleNamespace(kind="image", path="photo.jpg", flip_h=False, flip_v=False,
+                               background=bg, filters=(),
+                               transform=lambda index: animated)
+        sources = SimpleNamespace(image=Mock(return_value="original-frame"),
+                                  backdrop=Mock(return_value="blurred-background"))
+        with patch("cloud_render.concat.hybrid.render.apply_transform",
+                   return_value="sharp-animated-foreground") as transform:
+            foreground, background = picture(sources, clip, 21, return_background=True)
+        sources.backdrop.assert_called_once_with(clip, "original-frame")
+        transform.assert_called_once_with("original-frame", animated)
+        self.assertEqual(foreground, "sharp-animated-foreground")
+        self.assertEqual(background, "blurred-background")
+
     def test_contain_geometry_for_landscape_portrait_and_square(self):
         self.assertEqual(fitted_rect(1920, 1080, 1920, 1080), (0, 0, 1920, 1080))
         self.assertEqual(fitted_rect(1080, 1920, 1920, 1080), (656, 0, 608, 1080))
