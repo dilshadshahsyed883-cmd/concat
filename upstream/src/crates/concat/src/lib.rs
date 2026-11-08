@@ -815,7 +815,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     editor.on_cb_refresh_folder(on_window!(|studio| {
         if !studio.c_builder.folder.is_empty() && !studio.c_builder.scanning {
             let folder = std::path::PathBuf::from(studio.c_builder.folder.clone());
-            c_builder_scan(studio, folder);
+            c_builder_scan(&mut studio, folder);
         }
     }));
     editor.on_cb_choose_narration(|| {
