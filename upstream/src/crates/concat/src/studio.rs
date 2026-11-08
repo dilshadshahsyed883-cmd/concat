@@ -11398,6 +11398,8 @@ impl Studio {
         rows.push(action("compound-span", "Compound Selected Time Span".into(),
             Glyph::Merge, "", !self.selection.is_empty()));
         if self.compound_for_clip(&clip.id).is_some() {
+            rows.push(action("compound-nest", "Nest Compound".into(),
+                Glyph::Merge, "", !locked));
             rows.push(action("compound-members", "Select Compound Members".into(),
                 Glyph::None, "", true));
             rows.push(action("compound-break", "Break Apart Compound".into(),
@@ -12201,6 +12203,7 @@ impl Studio {
             "compound-selected" => self.compound_selected_from(id),
             "compound-all" => self.compound_all_layers(),
             "compound-span" => self.compound_selection_span(id),
+            "compound-nest" => self.nest_compound_from(id),
             "compound-members" => self.select_compound_members(id),
             "compound-break" => self.break_compound_from(id),
             "copy" => self.copy_clips(Some(id)),
