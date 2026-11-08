@@ -41,6 +41,10 @@ function Concat-Bundle([string]$dir,[string]$zip,[string]$snapshot="") {
     if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { $manifest=Join-Path $dir "wolfcut.json" }
     if ($snapshot) {$manifest=$snapshot}
     if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { throw "No saved Concat project (concat.json)" }
+    $manifestSize=(Get-Item -LiteralPath $manifest).Length
+    if ($manifestSize -le 0 -or $manifestSize -gt 64MB) {
+        throw "GPU project JSON is $(Format-ByteSize $manifestSize); permitted size is 1 byte to 64 MiB."
+    }
     $project=Get-Content -LiteralPath $manifest -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($null -eq $project.media) { throw "Concat document has no media table" }
     $media=@($project.media)
@@ -303,24 +307,46 @@ function Test-Worker([string]$domain,$headers) {
         $capabilities.validation_version -ne 1) {
         throw "The Salad worker image does not match this Concat GPU build."
     }
+    return $capabilities
 }
 
 
-function Validate-WorkerProject([string]$manifest,[string]$domain,$headers) {
+function Validate-WorkerProject([string]$manifest,[string]$domain,$headers,$capabilities) {
     if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) {
         throw "GPU project manifest missing; save the project again."
     }
-    $payload=[IO.File]::ReadAllBytes($manifest)
-    if (!$payload.Length -or $payload.Length -gt 2MB) {
-        throw "GPU project manifest is empty or exceeds the 2 MiB compatibility limit."
+    [long]$size=(Get-Item -LiteralPath $manifest).Length
+    [long]$maxBytes=64MB
+    if ($null -ne $capabilities.max_project_manifest_bytes) {
+        [long]$serverLimit=$capabilities.max_project_manifest_bytes
+        if ($serverLimit -le 0) {throw "Salad worker advertises an invalid project manifest limit."}
+        $maxBytes=[Math]::Min($maxBytes,$serverLimit)
     }
-    $result=Invoke-RestMethod -MaximumRedirection 0 -Method Post -Uri "$domain/api/validate" -Headers $headers -ContentType "application/json" -Body $payload -TimeoutSec 45
+    Report "Validating GPU project JSON ($(Format-ByteSize $size); maximum $(Format-ByteSize $maxBytes))." 0
+    if ($size -le 0) {throw "GPU project JSON is empty. Save the project again."}
+    if ($size -gt $maxBytes) {
+        throw "GPU project JSON is $(Format-ByteSize $size), above worker limit $(Format-ByteSize $maxBytes). Reduce the project or update the Salad worker image."
+    }
+    $payload=[IO.File]::ReadAllBytes($manifest)
+    try {
+        $result=Invoke-RestMethod -MaximumRedirection 0 -Method Post -Uri "$domain/api/validate" -Headers $headers -ContentType "application/json" -Body $payload -TimeoutSec 150
+    } catch {
+        $response=$_.Exception.Response
+        if ($response) {
+            switch ([int]$response.StatusCode) {
+                400 {throw "Salad worker rejected invalid project JSON ($(Format-ByteSize $size)). Check the saved project file."}
+                413 {throw "Salad worker rejected the $(Format-ByteSize $size) project JSON as too large. The running worker image may be outdated."}
+                415 {throw "Salad worker expects application/json for project validation."}
+            }
+        }
+        throw
+    }
     if ($result.ok -ne $true) {
         $reason=@($result.errors) -join "; "
         if (!$reason) {$reason="Unknown unsupported project feature"}
-        throw "GPU project compatibility failed: $reason"
+        throw "GPU project compatibility failed ($(Format-ByteSize $size)): $reason"
     }
-    Report "GPU compatibility verified before media upload." 0
+    Report "GPU compatibility verified ($(Format-ByteSize $size)) before media upload." 0
 }
 
 function Get-Output([string]$domain,[string]$job,$status,$headers,[string]$outputs) {
@@ -344,11 +370,11 @@ function Get-Output([string]$domain,[string]$job,$status,$headers,[string]$outpu
     }
 }
 
-function Send-Project([string]$root,[string]$gpuDataDir,[string]$domain,$headers) {
+function Send-Project([string]$root,[string]$gpuDataDir,[string]$domain,$headers,$capabilities) {
     $projectManifest=Join-Path $root "concat.json"
     if (!(Test-Path -LiteralPath $projectManifest -PathType Leaf)) {$projectManifest=Join-Path $root "wolfcut.json"}
     if (!(Test-Path -LiteralPath $projectManifest -PathType Leaf)) {throw "Save a Concat project before sending it."}
-    Validate-WorkerProject $projectManifest $domain $headers
+    Validate-WorkerProject $projectManifest $domain $headers $capabilities
     $jobs=Join-Path $gpuDataDir "Jobs"
     New-Item -ItemType Directory -Force -Path $jobs | Out-Null
     $stateFile=Join-Path $gpuDataDir ("upload-"+(SHA-Bytes ([Text.Encoding]::UTF8.GetBytes($root))).Substring(0,24)+".json")
@@ -495,8 +521,8 @@ try {
             }
             try {
                 Report "Checking the worker before uploading." 0
-                Test-Worker $config.domain $headers
-                Validate-WorkerProject (Join-Path (Join-Path $queueDir $SnapshotID) "concat.json") $config.domain $headers
+                $capabilities=Test-Worker $config.domain $headers
+                Validate-WorkerProject (Join-Path (Join-Path $queueDir $SnapshotID) "concat.json") $config.domain $headers $capabilities
                 Report "Uploading the saved snapshot." 0 "" $false "attempted"
                 Submit-Zip $zip $Job $config.domain $headers
                 $zipSize = (Get-Item -LiteralPath $zip).Length
@@ -514,9 +540,9 @@ try {
         Report "GPU settings saved for this Windows user." -1 $config.domain
     } else {
         Report "Checking Salad gateway and renderer authentication."
-        Test-Worker $config.domain $headers
+        $capabilities=Test-Worker $config.domain $headers
         if ($Operation -eq "Test") {Report "Connected. The authenticated CUDA worker is ready."}
-        else {Send-Project (Resolve-Path -LiteralPath $ProjectDir).ProviderPath $gpuDataDir $config.domain $headers}
+        else {Send-Project (Resolve-Path -LiteralPath $ProjectDir).ProviderPath $gpuDataDir $config.domain $headers $capabilities}
     }
 } catch {
     $message=$_.Exception.Message
