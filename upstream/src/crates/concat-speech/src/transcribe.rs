@@ -330,7 +330,11 @@ impl Transcriber {
                     blurb: model.blurb.to_owned(),
                     english_only: model.english_only,
                     size_bytes: model.approx_bytes,
-                    downloaded: dir.join(format!("ggml-{}.bin", model.id)).is_file(),
+                    // A stale/truncated .bin must never be presented as
+                    // installed. In particular, keep valid old files untouched.
+                    downloaded: concat_host::models::verify(
+                        &dir.join(format!("ggml-{}.bin", model.id)), model.sha256
+                    ).is_ok(),
                 })
                 .collect(),
         })
@@ -350,10 +354,19 @@ impl Transcriber {
     ) -> Result<(), String> {
         let job = self.downloads.begin("model download")?;
         let destination = model_file(dirs, id)?;
+        let definition = known(id).ok_or_else(|| format!("unknown model {id:?}"))?;
         if destination.is_file() {
-            return Ok(());
+            if concat_host::models::verify(&destination, definition.sha256).is_ok() {
+                return Ok(());
+            }
+            // Only an invalid destination is moved aside. Do not overwrite
+            // or delete a valid Whisper model on a retry.
+            let invalid = destination.with_extension("bin.invalid");
+            std::fs::rename(&destination, &invalid)
+                .map_err(|error| format!("could not isolate damaged model {}: {error}",
+                                        destination.display()))?;
         }
-        let estimate = known(id).map(|model| model.approx_bytes).unwrap_or(0);
+        let estimate = definition.approx_bytes;
         let partial = destination.with_extension("bin.part");
         let (received, total) = crate::fetch_model(
             &model_archive(id),
@@ -365,6 +378,12 @@ impl Transcriber {
             job.cancel_flag(),
             &mut progress,
         )?;
+        if job.cancel_flag().load(Ordering::Relaxed) {
+            return Err("download cancelled".to_owned());
+        }
+        // fetch_model already checks the digest, but verify again at the
+        // atomic install boundary: never publish an incomplete model.
+        concat_host::models::verify(&partial, definition.sha256)?;
         std::fs::rename(&partial, &destination)
             .map_err(|error| format!("could not finish {}: {error}", destination.display()))?;
         progress(DownloadProgress {
