@@ -1,0 +1,7 @@
+Concat coordinated final build request — 2026-11-08
+
+Source: GitHub main commit created by this release-request update.
+Windows: native executable build, smoke tests and SHA-256 verified release.
+Salad: CUDA hybrid GPU image build, import smoke test and GHCR digest.
+Both outputs must be pinned to the same source SHA. This event is intentionally path-gated and does not enable automatic builds on ordinary pushes.
+Acceptance limitation: CI does not substitute for a live NVIDIA Salad render.
