@@ -1,0 +1,202 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// C Builder lives inside Concat. It is not a second executable.
+import { Theme } from "../theme/theme.slint";
+import { Button } from "../primitives/modal.slint";
+import { Select } from "../primitives/select.slint";
+
+component CField inherits Rectangle {
+    in property <string> placeholder;
+    in-out property <string> value;
+    height: 32px;
+    border-radius: Theme.r;
+    border-width: 1px;
+    border-color: Theme.line;
+    background: Theme.field;
+    input := TextInput {
+        x: 8px;
+        y: (parent.height - self.height) / 2;
+        width: parent.width - 16px;
+        height: self.preferred-height;
+        single-line: true;
+        color: Theme.fg;
+        font-size: Theme.fs;
+        text <=> root.value;
+    }
+    if root.value == "" && !input.has-focus: Text {
+        x: 8px;
+        y: (parent.height - self.height) / 2;
+        text: root.placeholder;
+        color: Theme.fg-muted;
+        font-size: Theme.fs;
+    }
+}
+
+export component CBuilderPane inherits VerticalLayout {
+    in property <string> media-folder;
+    in property <string> narration;
+    in property <string> status;
+    in property <string> keywords;
+    in property <int> image-count;
+    in property <int> video-count;
+    in property <int> cache-reused;
+    in property <int> cache-probed;
+    in property <int> scan-done;
+    in property <int> scan-total;
+    in property <bool> busy;
+    in property <float> narration-duration;
+
+    callback import-folder();
+    callback refresh-folder();
+    callback choose-narration();
+    callback generate-project(name: string, image-weights: string, video-weights: string, coverage: int);
+
+    property <int> page: 0;
+    property <string> project-name: "New Timeline";
+    property <string> images-weights: "";
+    property <string> videos-weights: "";
+    property <int> video-coverage: 20;
+
+    padding: 10px;
+    spacing: 12px;
+
+    Text { text: "C BUILDER"; color: Theme.fg; font-size: Theme.fs-lg; font-weight: Theme.weight-title; }
+    HorizontalLayout {
+        spacing: 6px;
+        Button {
+            label: "Media Library";
+            primary: root.page == 0;
+            clicked => { root.page = 0; }
+        }
+        Button {
+            label: "Timeline Builder";
+            primary: root.page == 1;
+            clicked => { root.page = 1; }
+        }
+    }
+    if root.page == 0: VerticalLayout {
+        spacing: 10px;
+        HorizontalLayout {
+            spacing: 6px;
+            Button {
+                label: "Import Folder";
+                enabled: !root.busy;
+                clicked => { root.import-folder(); }
+            }
+            Button {
+                label: "Refresh";
+                enabled: !root.busy && root.media-folder != "";
+                clicked => { root.refresh-folder(); }
+            }
+        }
+        Text {
+            text: root.media-folder == "" ? "Choose a media folder. Originals are never moved or deleted."
+                : root.media-folder;
+            color: Theme.fg-muted;
+            font-size: Theme.fs-sm;
+            wrap: word-wrap;
+        }
+        Text {
+            text: "Images: \{root.image-count}     Videos: \{root.video-count}";
+            color: Theme.fg;
+            font-size: Theme.fs;
+        }
+        Text {
+            text: "New/changed probed: \{root.cache-probed}     Reused from cache: \{root.cache-reused}";
+            color: Theme.fg-muted;
+            font-size: Theme.fs-sm;
+        }
+        Rectangle {
+            height: 8px;
+            border-radius: 4px;
+            background: Theme.field;
+            Rectangle {
+                width: parent.width * (root.scan-total > 0
+                    ? Math.min(1.0, root.scan-done * 1.0 / root.scan-total)
+                    : 0.0);
+                height: parent.height;
+                border-radius: 4px;
+                background: Theme.accent;
+            }
+        }
+        Text {
+            text: root.busy ? "Scanning media: \{root.scan-done} / \{root.scan-total}"
+                : root.status;
+            color: Theme.fg-muted;
+            font-size: Theme.fs-sm;
+            wrap: word-wrap;
+        }
+        Text { text: "Keyword groups"; color: Theme.fg; font-weight: Theme.weight-title; }
+        Text {
+            text: root.keywords == "" ? "Import a folder to view image/video groups." : root.keywords;
+            color: Theme.fg-muted;
+            font-size: Theme.fs-sm;
+            wrap: word-wrap;
+        }
+        Text {
+            text: "Media previews remain available in Concat's existing Media tab.";
+            color: Theme.fg-dim;
+            font-size: Theme.fs-xs;
+            wrap: word-wrap;
+        }
+    }
+    if root.page == 1: VerticalLayout {
+        spacing: 10px;
+        Text { text: "Narration"; color: Theme.fg; font-weight: Theme.weight-title; }
+        Button {
+            label: "Select Audio";
+            enabled: !root.busy;
+            clicked => { root.choose-narration(); }
+        }
+        Text {
+            text: root.narration == "" ? "Select an MP3/WAV narration." : root.narration;
+            color: Theme.fg-muted;
+            font-size: Theme.fs-sm;
+            wrap: word-wrap;
+        }
+        Text {
+            text: "Narration duration: \{Math.round(root.narration-duration * 100) / 100} seconds";
+            color: Theme.fg-muted;
+            font-size: Theme.fs-sm;
+        }
+        Text { text: "New Concat project name"; color: Theme.fg; }
+        CField { value <=> root.project-name; placeholder: "Project name"; }
+        Text { text: "Image keyword strengths (optional)"; color: Theme.fg; }
+        CField { value <=> root.images-weights; placeholder: "Alex Eala=70, Interview=30"; }
+        Text { text: "Video keyword strengths (optional)"; color: Theme.fg; }
+        CField { value <=> root.videos-weights; placeholder: "Match=60, Interview=40"; }
+        Text { text: "Target video coverage"; color: Theme.fg; }
+        Select {
+            options: ["0% (images only)", "10%", "15%", "20%", "25%", "30%", "35%", "40%"];
+            current: root.video-coverage == 0 ? 0 : root.video-coverage == 10 ? 1
+                : root.video-coverage == 15 ? 2 : root.video-coverage == 20 ? 3
+                : root.video-coverage == 25 ? 4 : root.video-coverage == 30 ? 5
+                : root.video-coverage == 35 ? 6 : 7;
+            changed(index) => {
+                root.video-coverage = index == 0 ? 0 : index == 1 ? 10
+                    : index == 2 ? 15 : index == 3 ? 20 : index == 4 ? 25
+                    : index == 5 ? 30 : index == 6 ? 35 : 40;
+            }
+        }
+        Text {
+            text: "Images 3–5s; videos 2.5–4s muted. No source moves. Keywords are auto-balanced if left blank.";
+            color: Theme.fg-muted;
+            font-size: Theme.fs-sm;
+            wrap: word-wrap;
+        }
+        Button {
+            label: "Generate Native Concat Timeline";
+            primary: true;
+            enabled: !root.busy && root.image-count > 0 && root.narration != "";
+            clicked => {
+                root.generate-project(root.project-name, root.images-weights,
+                    root.videos-weights, root.video-coverage);
+            }
+        }
+        Text {
+            text: root.status;
+            color: Theme.fg-muted;
+            font-size: Theme.fs-sm;
+            wrap: word-wrap;
+        }
+    }
+}
