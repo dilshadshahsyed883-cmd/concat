@@ -6,14 +6,33 @@
 //! audio or unimplemented parent effects is ever sent to Preview/CUDA.
 
 use super::{Command, Confirm, Studio};
-use concat_project::model::CompoundMember;
+use concat_project::model::{Compound, CompoundMember};
 use std::collections::HashSet;
+
+/// Resolve a clip to its outermost visible compound. A clip can be directly
+/// owned by an inner compound, which is itself a member of another compound.
+/// Context-menu operations must target the same outermost container the user
+/// sees, not accidentally edit/delete only its hidden inner membership.
+/// Damaged or cyclic graphs fail closed without touching source clips.
+fn root_compound_for_clip(groups: &[Compound], clip_id: &str) -> Option<String> {
+    let mut current = groups.iter().find(|g| g.members.iter().any(|m| {
+        matches!(m, CompoundMember::Clip(id) if id == clip_id)
+    }))?.id.clone();
+    let mut visited = HashSet::new();
+    while visited.insert(current.clone()) {
+        match groups.iter().find(|g| g.members.iter().any(|m| {
+            matches!(m, CompoundMember::Compound(id) if id == &current)
+        })) {
+            Some(parent) => current = parent.id.clone(),
+            None => return Some(current),
+        }
+    }
+    None
+}
 
 impl Studio {
     pub(super) fn compound_for_clip(&self, clip_id: &str) -> Option<String> {
-        self.timeline().compounds.iter().find(|g| g.members.iter().any(|m| {
-            matches!(m, CompoundMember::Clip(id) if id == clip_id)
-        })).map(|g| g.id.clone())
+        root_compound_for_clip(&self.timeline().compounds, clip_id)
     }
 
     pub(super) fn compound_selected_from(&mut self, clicked: &str) {
@@ -144,5 +163,57 @@ impl Studio {
         if let Some(compound_id) = self.compound_for_clip(clicked) {
             self.apply(Command::UngroupCompound { compound_id });
         }
+    }
+}
+
+#[cfg(test)]
+mod nested_lookup_tests {
+    use super::*;
+
+    fn group(id: &str, members: Vec<CompoundMember>) -> Compound {
+        Compound {
+            id: id.into(),
+            name: id.into(),
+            members,
+            extra: Default::default(),
+        }
+    }
+
+    #[test]
+    fn nested_clip_actions_target_outermost_compound() {
+        let groups = vec![
+            group("inner", vec![CompoundMember::Clip("video".into())]),
+            group("middle", vec![CompoundMember::Compound("inner".into())]),
+            group("outer", vec![
+                CompoundMember::Compound("middle".into()),
+                CompoundMember::Clip("voice".into()),
+            ]),
+        ];
+        assert_eq!(root_compound_for_clip(&groups, "video").as_deref(), Some("outer"));
+        assert_eq!(root_compound_for_clip(&groups, "voice").as_deref(), Some("outer"));
+        assert_eq!(root_compound_for_clip(&groups, "missing"), None);
+    }
+
+    #[test]
+    fn independent_compounds_remain_independent() {
+        let groups = vec![
+            group("one", vec![CompoundMember::Clip("a".into())]),
+            group("two", vec![CompoundMember::Clip("b".into())]),
+        ];
+        assert_eq!(root_compound_for_clip(&groups, "a").as_deref(), Some("one"));
+        assert_eq!(root_compound_for_clip(&groups, "b").as_deref(), Some("two"));
+    }
+
+    #[test]
+    fn cyclic_hand_edited_graph_never_loops_or_mutates_media() {
+        let groups = vec![
+            group("one", vec![
+                CompoundMember::Clip("a".into()),
+                CompoundMember::Compound("two".into()),
+            ]),
+            group("two", vec![CompoundMember::Compound("one".into())]),
+        ];
+        assert_eq!(root_compound_for_clip(&groups, "a"), None);
+        assert_eq!(groups[0].members.len(), 2);
     }
 }
