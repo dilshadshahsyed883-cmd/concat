@@ -2740,12 +2740,13 @@ export component NewProjectDialog inherits Modal {
 // The dialog to prompt for renaming a recent project.
 export component RenameDialog inherits Modal {
     in property <string> name;
+    in property <string> heading: I18n.t("start.renameProject");
 
     callback name-edited(name: string);
     callback renamed();
     callback dismissed();
 
-    title: I18n.t("start.renameProject");
+    title: root.heading;
     glyph: Glyph.text-mark;
     surface-width: 400px;
 

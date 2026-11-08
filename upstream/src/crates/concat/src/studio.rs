@@ -891,6 +891,8 @@ pub struct Studio {
     /// line of the activity trail; see `note_activity`.
     activity_burst: Option<crate::panes::Burst>,
     pub toast: ToastState,
+    /// Transient modal state; never persisted into the timeline.
+    pub compound_rename: Option<(String, String)>,
 
     // ── the launch screen ──
     pub on_start: bool,
@@ -2334,6 +2336,7 @@ impl Studio {
             menu_token: 0,
             activity_burst: None,
             toast: ToastState::default(),
+            compound_rename: None,
             on_start: true,
             start,
             recents,
@@ -8936,6 +8939,9 @@ impl Studio {
             }
         };
         let editor = app.global::<Editor>();
+        app.set_compound_rename_open(self.compound_rename.is_some());
+        app.set_compound_rename_name(self.compound_rename.as_ref()
+            .map(|(_, name)| name.as_str()).unwrap_or_default().into());
         editor.set_cb_media_folder(self.c_builder.folder.clone().into());
         editor.set_cb_narration(self.c_builder.narration.clone().into());
         editor.set_cb_duration(self.c_builder.duration.unwrap_or_default() as f32);
@@ -11402,6 +11408,8 @@ impl Studio {
                 Glyph::Merge, "", !locked));
             rows.push(action("compound-members", "Select Compound Members".into(),
                 Glyph::None, "", true));
+            rows.push(action("compound-rename", "Rename Compound Clip".into(),
+                Glyph::None, "", !locked));
             rows.push(action("compound-break", "Break Apart Compound".into(),
                 Glyph::Split, "", !locked));
         }
@@ -12205,6 +12213,7 @@ impl Studio {
             "compound-span" => self.compound_selection_span(id),
             "compound-nest" => self.nest_compound_from(id),
             "compound-members" => self.select_compound_members(id),
+            "compound-rename" => self.prompt_compound_rename(id),
             "compound-break" => self.break_compound_from(id),
             "copy" => self.copy_clips(Some(id)),
             "duplicate" => self.duplicate_selected(),

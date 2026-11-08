@@ -308,6 +308,29 @@ mod tests {
         assert_eq!(e.project().active().clips.len(), 3);
     }
     #[test]
+    fn rename_compound_undo_redo_preserves_source_clips() {
+        let mut e = editor();
+        let originals = e.project().active().clips.clone();
+        let id = e.apply(Command::CreateCompound {
+            clip_ids: vec!["c1".into(), "c2".into()],
+            compound_ids: vec![], name: "Old scene".into(),
+        }).unwrap().created_id.unwrap();
+        assert!(e.apply(Command::RenameCompound {
+            compound_id: id.clone(), name: " New scene ".into(),
+        }).unwrap().applied);
+        assert_eq!(e.project().active().compounds[0].name, "New scene");
+        assert_eq!(e.project().active().clips, originals);
+        assert!(e.undo());
+        assert_eq!(e.project().active().compounds[0].name, "Old scene");
+        assert!(e.redo());
+        assert_eq!(e.project().active().compounds[0].name, "New scene");
+        assert!(e.apply(Command::RenameCompound {
+            compound_id: id, name: "  ".into(),
+        }).is_err());
+        assert_eq!(e.project().active().compounds[0].name, "New scene");
+    }
+
+    #[test]
     fn range_auto_splits_crossing_clips_and_undoes_as_one_edit() {
         let mut e = editor();
         let originals = e.project().active().clips.clone();

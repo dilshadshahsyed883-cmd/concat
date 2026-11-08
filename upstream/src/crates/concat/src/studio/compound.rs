@@ -99,6 +99,37 @@ impl Studio {
         self.selection = ids;
     }
 
+    pub fn prompt_compound_rename(&mut self, clicked: &str) {
+        let Some(id) = self.compound_for_clip(clicked) else { return; };
+        let Some(group) = self.timeline().compounds.iter().find(|g| g.id == id) else {
+            return;
+        };
+        self.compound_rename = Some((id, group.name.clone()));
+    }
+
+    pub fn compound_rename_edit(&mut self, text: String) {
+        if let Some((_, name)) = self.compound_rename.as_mut() {
+            *name = text;
+        }
+    }
+
+    pub fn compound_rename_apply(&mut self) {
+        let Some((id, name)) = self.compound_rename.clone() else { return; };
+        let name = name.trim();
+        if name.is_empty() {
+            self.notify("Compound Clip name cannot be blank.", true);
+            return;
+        }
+        self.compound_rename = None;
+        self.apply(Command::RenameCompound {
+            compound_id: id, name: name.to_owned(),
+        });
+    }
+
+    pub fn compound_rename_dismiss(&mut self) {
+        self.compound_rename = None;
+    }
+
     pub(super) fn break_compound_from(&mut self, clicked: &str) {
         if let Some(compound_id) = self.compound_for_clip(clicked) {
             self.apply(Command::UngroupCompound { compound_id });
