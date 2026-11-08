@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import cache
+from math import isfinite
 
 from .contract import FrameSpan, cuda, rgba
 from .capcut_transitions import CAPCUT_IDS, CAPCUT_KINDS, render_capcut_transition
@@ -24,6 +25,7 @@ class Transition:
     kind: str
     span: FrameSpan
     direction: str = "left"
+    intensity: float | None = None
 
     def __post_init__(self) -> None:
         if type(self.kind) is not str or self.kind not in _KINDS:
@@ -32,6 +34,10 @@ class Transition:
             raise TypeError("Expected a FrameSpan")
         if type(self.direction) is not str or self.direction not in _DIRECTIONS:
             raise ValueError("Unknown transition direction")
+        if self.intensity is not None and (
+                type(self.intensity) not in (float, int) or
+                not isfinite(self.intensity) or not 0 <= self.intensity <= 1):
+            raise ValueError("Transition intensity must be finite and in [0, 1]")
 
     def progress(self, frame_index: int) -> float:
         """Native packages divide elapsed frames by their full half-open span."""
@@ -73,7 +79,7 @@ __device__ __forceinline__ float4 sample_zoom(
 
 extern "C" __global__ void transition_rgba(
     const float4* outgoing, const float4* incoming, float4* output,
-    int width, int height, int kind, int direction, float progress
+    int width, int height, int kind, int direction, float progress, float intensity
 ) {
     const long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= (long long)width * height) return;
@@ -108,7 +114,7 @@ extern "C" __global__ void transition_rgba(
         // The packaged WGSL fades in display encoding, which is also the
         // worker surface encoding. Preserve alpha from the selected stage.
         const float4 base = progress < 0.5f ? outgoing[i] : incoming[i];
-        const float amount = 1.0f - fabsf(2.0f * progress - 1.0f);
+        const float amount = (1.0f - fabsf(2.0f * progress - 1.0f)) * intensity;
         const float target = kind == 5 ? 0.0f : 1.0f;
         output[i] = make_float4(base.x + (target - base.x) * amount,
                                 base.y + (target - base.y) * amount,
@@ -142,7 +148,10 @@ def render_transition(outgoing, incoming, transition: Transition, frame_index: i
         return destination
 
     if transition.kind in CAPCUT_KINDS:
-        return render_capcut_transition(source, destination, transition.kind, progress)
+        if transition.intensity is None:
+            return render_capcut_transition(source, destination, transition.kind, progress)
+        return render_capcut_transition(source, destination, transition.kind, progress,
+                                        transition.intensity)
 
     cp = cuda()
     height, width, _ = source.shape
@@ -154,6 +163,7 @@ def render_transition(outgoing, incoming, transition: Transition, frame_index: i
             cp.ascontiguousarray(source), cp.ascontiguousarray(destination),
             output, cp.int32(width), cp.int32(height), cp.int32(_KINDS[transition.kind]),
             cp.int32(_DIRECTIONS[transition.direction]), cp.float32(progress),
+            cp.float32(transition.intensity if transition.intensity is not None else 1.0),
         ),
     )
     return output
