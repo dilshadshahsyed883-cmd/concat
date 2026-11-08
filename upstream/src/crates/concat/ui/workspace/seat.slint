@@ -396,6 +396,8 @@ export component Seat inherits Rectangle {
             current-tab: Editor.timeline-current-tab;
             tracks: Editor.tracks;
             clips: Editor.clips;
+            editing-compound-name: Editor.editing-compound-name;
+            compound-edit-exit => { Editor.compound-edit-exit(); }
             key-marks: Editor.key-marks;
             tool: Editor.tool;
             snap: Editor.snap;
