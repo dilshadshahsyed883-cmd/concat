@@ -224,7 +224,7 @@ pub fn cpu_backend() -> Result<String, String> {
 /// and last-modified time. Settings refresh runs on the UI thread, so
 /// rehashing six ~75–490 MB models on every refresh would freeze the editor.
 /// The first discovery and any changed file still require a real SHA-256.
-static VERIFIED_MODELS: OnceLock<Mutex<HashMap<PathBuf, (u64, Option<SystemTime>, bool)>>> =
+static VERIFIED_MODELS: OnceLock<Mutex<HashMap<PathBuf, (u64, Option<SystemTime>, String, bool)>>> =
     OnceLock::new();
 
 fn installed_model(path: &Path, digest: &str) -> bool {
@@ -237,15 +237,15 @@ fn installed_model(path: &Path, digest: &str) -> bool {
     let signature = (metadata.len(), metadata.modified().ok());
     let cache = VERIFIED_MODELS.get_or_init(|| Mutex::new(HashMap::new()));
     if let Ok(locked) = cache.lock() {
-        if let Some((length, modified, valid)) = locked.get(path) {
-            if (*length, *modified) == signature {
+        if let Some((length, modified, expected, valid)) = locked.get(path) {
+            if (*length, *modified) == signature && expected == digest {
                 return *valid;
             }
         }
     }
     let valid = concat_host::models::verify(path, digest).is_ok();
     if let Ok(mut locked) = cache.lock() {
-        locked.insert(path.to_path_buf(), (signature.0, signature.1, valid));
+        locked.insert(path.to_path_buf(), (signature.0, signature.1, digest.to_owned(), valid));
     }
     valid
 }
