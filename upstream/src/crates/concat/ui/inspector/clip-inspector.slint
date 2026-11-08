@@ -954,7 +954,13 @@ export component BackgroundRows inherits VerticalLayout {
     init => { root.amount = root.data.amount; }
     changed data => { root.amount = root.data.amount; }
 
-    property <[string]> kinds: [
+    // CUDA supports the same native Blur and Color styles; image-backed
+    // backgrounds remain hidden until parity exists in the worker.
+    property <[string]> kinds: GpuCompatibility.enabled ? [
+        I18n.t("clipInspector.backgroundNone"),
+        I18n.t("clipInspector.backgroundBlur"),
+        I18n.t("common.color"),
+    ] : [
         I18n.t("clipInspector.backgroundNone"),
         I18n.t("clipInspector.backgroundBlur"),
         I18n.t("common.color"),
@@ -1384,7 +1390,7 @@ export component VideoPanel inherits VerticalLayout {
         label: I18n.t("project.clearGpuBackground");
         clicked => { Backdrop.set-mode(true, -1); }
     }
-    if !GpuCompatibility.enabled && root.canvas && Backdrop.clip-has: Section {
+    if root.canvas && Backdrop.clip-has: Section {
         canvas := SectionHeader {
             title: I18n.t("phone.canvas");
             collapsible: true;
@@ -1394,6 +1400,8 @@ export component VideoPanel inherits VerticalLayout {
         }
 
         if canvas.open: SectionBody {
+            // Changes in these rows apply immediately to this selected clip
+            // as one native, undoable project command.
             BackgroundRows {
                 own: true;
             }
