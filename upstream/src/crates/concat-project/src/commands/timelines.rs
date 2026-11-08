@@ -46,6 +46,7 @@ pub(super) fn apply(
                 background,
                 tracks,
                 clips: Vec::new(),
+                compounds: Vec::new(),
                 extra: Default::default(),
             }));
             project.active_timeline_id = id.clone();
