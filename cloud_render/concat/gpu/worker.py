@@ -211,7 +211,12 @@ class RenderWorker:
         self.renderer = renderer
         self.deliver = deliver or self._deliver
         self.lock = threading.RLock()
-        self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="concat-export")
+        # Two executor slots; the runtime setting controls how many renders start.
+        self.pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="concat-export")
+        self.slots = threading.Condition(self.lock)
+        self.active_renders = 0
+        self.concurrency = 1
+        self.concurrency_path = self.root / "render-concurrency.json"
         self.state = self.root / "state"
         self.inputs = self.root / "jobs"
         self.outputs = self.root / "outputs"
@@ -220,6 +225,13 @@ class RenderWorker:
                 raise RuntimeError("Worker folders must not be symlinks")
             folder.mkdir(parents=True, exist_ok=True)
             folder.chmod(0o700)
+        if self.concurrency_path.is_file() and not self.concurrency_path.is_symlink():
+            try:
+                saved = json.loads(self.concurrency_path.read_text(encoding="utf-8"))
+                if type(saved.get("concurrency")) is int and saved["concurrency"] in (1, 2):
+                    self.concurrency = saved["concurrency"]
+            except (OSError, ValueError, AttributeError):
+                pass
         self.spool = ResumableUpload(self)
         # Do not pretend a stopped or interrupted render succeeded.
         for path in self.state.glob("*.json"):
@@ -232,6 +244,22 @@ class RenderWorker:
                         "error": "Interrupted by worker restart; source bundle retained"})
             except (OSError, ValueError):
                 continue
+
+    def concurrency_status(self) -> dict:
+        with self.slots:
+            return {"concurrency": self.concurrency, "max_concurrency": 2,
+                    "active_renders": self.active_renders}
+
+    def set_concurrency(self, value: int) -> dict:
+        if type(value) is not int or value not in (1, 2):
+            raise WorkerError(400, "Render concurrency must be exactly 1 or 2")
+        with self.slots:
+            temp = self.concurrency_path.with_suffix(".tmp")
+            temp.write_text(json.dumps({"concurrency": value}), encoding="utf-8")
+            os.replace(temp, self.concurrency_path)
+            self.concurrency = value
+            self.slots.notify_all()
+            return self.concurrency_status()
 
     def _path(self, job: str) -> Path:
         return self.state / (check_id(job) + ".json")
@@ -335,6 +363,20 @@ class RenderWorker:
         }
 
     def _process(self, job: str):
+        # A queued task may occupy a thread, but cannot enter the renderer
+        # until a slot is available. Lowering 2 -> 1 never kills an active job.
+        with self.slots:
+            while self.active_renders >= self.concurrency:
+                self.slots.wait()
+            self.active_renders += 1
+        try:
+            self._process_active(job)
+        finally:
+            with self.slots:
+                self.active_renders -= 1
+                self.slots.notify_all()
+
+    def _process_active(self, job: str):
         directory = self.inputs / job
         output = self.outputs / (job + ".mp4")
         try:
@@ -516,6 +558,26 @@ class Handler(BaseHTTPRequestHandler):
                                     "render_modes": list(RENDER_MODES),
                                     "validation_version": 1,
                                     "max_project_manifest_bytes": MAX_PROJECT_MANIFEST_BYTES})
+        if path == "/api/config/concurrency":
+            if action == "GET":
+                return self._json(200, self.worker.concurrency_status())
+            if action != "POST":
+                raise WorkerError(405, "Method not allowed")
+            if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
+                raise WorkerError(415, "Concurrency setting requires JSON")
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                raise WorkerError(400, "Invalid concurrency Content-Length") from None
+            if not 0 < length <= 100:
+                raise WorkerError(400, "Invalid concurrency request")
+            try:
+                data = json.loads(self.rfile.read(length))
+            except (ValueError, UnicodeDecodeError):
+                raise WorkerError(400, "Invalid concurrency JSON") from None
+            if not isinstance(data, dict) or set(data) != {"concurrency"}:
+                raise WorkerError(400, "Concurrency requires exactly one setting")
+            return self._json(200, self.worker.set_concurrency(data["concurrency"]))
         if action == "POST" and path == "/api/validate":
             # Read only the manifest, never accept media before validation.
             if self.headers.get("Content-Type", "").split(";")[0] != "application/json":

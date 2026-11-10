@@ -1,0 +1,54 @@
+name: Salad CUDA worker — candidate image
+
+on:
+  pull_request:
+    paths:
+      - 'cloud_render/concat/gpu/**'
+      - 'cloud_render/concat/hybrid/**'
+      - 'cloud_render/concat/project_bundle.py'
+      - '.github/workflows/concat-salad-cuda-image.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'cloud_render/concat/gpu/**'
+      - 'cloud_render/concat/hybrid/**'
+      - 'cloud_render/concat/project_bundle.py'
+      - '.github/workflows/concat-salad-cuda-image.yml'
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: concat-salad-cuda-candidate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build CUDA/NVENC Salad candidate
+        run: docker build -f cloud_render/concat/gpu/Dockerfile -t concat-salad-cuda:ci .
+      - name: Smoke worker import without NVIDIA GPU
+        run: |
+          docker run --rm --entrypoint python3 concat-salad-cuda:ci -c \
+            'from cloud_render.concat.gpu.worker import RenderWorker; print("Salad worker import PASS")'
+      - name: Authenticate to GitHub Packages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Publish immutable candidate (not a Salad deployment)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          OWNER: ${{ github.repository_owner }}
+          SHA: ${{ github.sha }}
+        run: |
+          IMAGE="ghcr.io/${OWNER,,}/concat-salad-cuda:candidate-${SHA}"
+          docker tag concat-salad-cuda:ci "$IMAGE"
+          docker push "$IMAGE"
+          echo "Published $IMAGE (candidate only; no Salad redeployment)" >> "$GITHUB_STEP_SUMMARY"
