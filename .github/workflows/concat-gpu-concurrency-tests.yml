@@ -1,0 +1,27 @@
+name: Concat Salad single-replica concurrency tests
+
+on:
+  pull_request:
+    paths:
+      - 'cloud_render/concat/gpu/worker.py'
+      - 'cloud_render/concat/tests/test_gpu_render_concurrency.py'
+      - 'cloud_render/concat/tests/test_gpu_worker.py'
+      - '.github/workflows/concat-gpu-concurrency-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  concurrency:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check Python syntax
+        run: python -m py_compile cloud_render/concat/gpu/worker.py cloud_render/concat/tests/test_gpu_render_concurrency.py
+      - name: Run serial and parallel worker regressions
+        run: python -m unittest cloud_render.concat.tests.test_gpu_render_concurrency cloud_render.concat.tests.test_gpu_worker -v
