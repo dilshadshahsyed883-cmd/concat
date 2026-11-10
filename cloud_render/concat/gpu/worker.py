@@ -557,8 +557,7 @@ class Handler(BaseHTTPRequestHandler):
                                     "bundle_versions": [BUNDLE_VERSION],
                                     "render_modes": list(RENDER_MODES),
                                     "validation_version": 1,
-                                    "max_project_manifest_bytes": MAX_PROJECT_MANIFEST_BYTES,
-                                    "max_render_concurrency": 2})
+                                    "max_project_manifest_bytes": MAX_PROJECT_MANIFEST_BYTES})
         if path == "/api/config/concurrency":
             if action == "GET":
                 return self._json(200, self.worker.concurrency_status())
