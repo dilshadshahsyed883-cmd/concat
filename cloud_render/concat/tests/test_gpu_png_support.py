@@ -166,12 +166,14 @@ class ZipParityTests(unittest.TestCase):
                 self.assertEqual(plan.frames, 60)
                 self.assertEqual([clip.id for lane in plan.lanes for clip in lane],
                                  ["c100", "c200", "c300"])
+                expected_by_id = {
+                    "jpeg": originals["background.jpg"],
+                    "png": originals["cutout.png"],
+                    "moving": originals["clip.mp4"],
+                }
                 for media in restored_doc["media"]:
                     self.assertEqual(sha256(Path(media["path"])),
-                                     originals[media["path"].split("/")[-1]]
-                                     if "/" not in media["path"] else
-                                     originals[Path(media["path"]).suffix_to_name]
-                                     )
+                                     expected_by_id[media["id"]])
             self.assertEqual({p.name: sha256(p) for p in source.iterdir()}, originals)
 
     def test_manifest_rejects_unsupported_extension_with_clip_id(self):
