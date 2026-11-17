@@ -23,7 +23,7 @@ export global CaptionPresetPreview {
 export component CaptionPresetPreviewPanel inherits VerticalLayout {
     spacing: 8px;
     Text {
-        text: CaptionPresetPreview.chosen == "" ? "Click a look to preview it on the current canvas. Apply when ready."
+        text: CaptionPresetPreview.chosen == "" ? "Choose a look to preview it over the current image or video. The project stays unchanged until Apply."
             : CaptionPresetPreview.status;
         color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
     }
@@ -37,11 +37,16 @@ export component CaptionPresetPreviewPanel inherits VerticalLayout {
             clicked => { CaptionPresetPreview.demo-toggle(); } }
         Button { label: "Cancel Preview"; clicked => { CaptionPresetPreview.cancel(); } }
     }
+    if CaptionPresetPreview.cards.length == 0: Text {
+        text: "No caption presets loaded. Preset browsing does not require a selected caption. Reopen this shelf after the preset library is ready.";
+        color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
+    }
     Rectangle {
         property <length> gap: 8px;
-        property <int> cols: Math.max(1, Math.floor((self.width + self.gap) / (120px + self.gap)));
+        property <length> min-card: 144px;
+        property <int> cols: Math.max(1, Math.floor((self.width + self.gap) / (self.min-card + self.gap)));
         property <length> card-w: (self.width - (self.cols - 1) * self.gap) / self.cols;
-        property <length> card-h: self.card-w * 9 / 16 + 50px;
+        property <length> card-h: self.card-w * 9 / 16 + 56px;
         height: Math.ceil(CaptionPresetPreview.cards.length / self.cols) * (self.card-h + self.gap);
         for card[index] in CaptionPresetPreview.cards: Rectangle {
             x: Math.mod(index, parent.cols) * (parent.card-w + parent.gap);
@@ -57,7 +62,7 @@ export component CaptionPresetPreviewPanel inherits VerticalLayout {
             }
             Text {
                 x: 6px; y: parent.width * 9 / 16 + 2px;
-                width: parent.width - 12px; height: 46px;
+                width: parent.width - 12px; height: 52px;
                 text: card.name; color: Theme.fg; font-size: Theme.fs-sm;
                 wrap: word-wrap; horizontal-alignment: center; vertical-alignment: center;
             }
