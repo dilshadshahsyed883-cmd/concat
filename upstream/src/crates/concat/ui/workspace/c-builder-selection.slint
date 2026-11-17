@@ -1,0 +1,85 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+import { Theme } from "../theme/theme.slint";
+import { Check, Param, ParamFormat } from "../inspector/controls.slint";
+import { Button } from "../primitives/modal.slint";
+
+export struct CBuilderKeywordData {
+    keyword: string, available: int, selected: bool, weight: float,
+}
+
+// Stable keyword identity is supplied by the backend's alphabetically ordered
+// VecModel; only this row owns its transient rail value during pointer drag.
+component KeywordRow inherits VerticalLayout {
+    in property <CBuilderKeywordData> entry;
+    in property <bool> busy;
+    property <float> weight: root.entry.weight;
+    callback changed(selected: bool, weight: int);
+    changed entry => {
+        if (Math.round(root.weight) != Math.round(root.entry.weight)) {
+            root.weight = root.entry.weight;
+        }
+    }
+    spacing: 2px;
+    HorizontalLayout {
+        spacing: 8px;
+        Check { checked: root.entry.selected; enabled: !root.busy;
+            toggled(on) => { root.changed(on, Math.round(root.weight)); } }
+        Text { text: root.entry.keyword; color: Theme.fg; font-size: Theme.fs;
+            wrap: word-wrap; vertical-alignment: center; horizontal-stretch: 1; }
+        Text { text: Math.round(root.entry.weight) + "%  ·  " + root.entry.available + " available";
+            color: Theme.fg-muted; font-size: Theme.fs-sm; vertical-alignment: center; }
+    }
+    Param { label: "Share"; value <=> root.weight; rail: true;
+        minimum: 0; maximum: 100; step: 1; unit: "%"; fmt: ParamFormat.steps;
+        enabled: !root.busy;
+        changed(v) => { root.changed(v > 0 ? true : root.entry.selected, Math.round(v)); } }
+    Rectangle { height: 1px; background: Theme.line; }
+}
+
+export component CBuilderSelectionPanel inherits VerticalLayout {
+    in property <[CBuilderKeywordData]> images;
+    in property <[CBuilderKeywordData]> videos;
+    in property <bool> videos-enabled;
+    in property <bool> busy;
+    in property <string> image-summary;
+    in property <string> video-summary;
+    callback changed(video: bool, keyword: string, selected: bool, weight: int);
+    callback equalize(video: bool);
+    callback videos-toggled(on: bool);
+    spacing: 8px;
+
+    Text { text: "Media Selection"; color: Theme.fg; font-size: Theme.fs-lg; font-weight: Theme.weight-title; }
+    Text { text: "Each enabled keyword shares one 100% budget within Images or Videos. Moving one slider redistributes the rest proportionally. These are sampling probabilities, not fixed shot counts.";
+        color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
+    HorizontalLayout {
+        spacing: 8px;
+        Text { text: "Images · 100% budget"; color: Theme.fg; font-size: Theme.fs;
+            font-weight: Theme.weight-title; vertical-alignment: center; horizontal-stretch: 1; }
+        Button { label: "Equalize Images"; enabled: !root.busy && root.images.length > 0;
+            clicked => { root.equalize(false); } }
+    }
+    Text { text: root.image-summary; color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
+    for entry in root.images: KeywordRow { entry: entry; busy: root.busy;
+        changed(selected, weight) => { root.changed(false, entry.keyword, selected, weight); } }
+    if root.images.length == 0: Text { text: "Import a folder to list image keywords."; color: Theme.fg-muted; wrap: word-wrap; }
+    Rectangle { height: 1px; background: Theme.line; }
+    HorizontalLayout {
+        spacing: 8px;
+        Check { checked: root.videos-enabled; enabled: !root.busy; toggled(on) => { root.videos-toggled(on); } }
+        Text { text: "Enable Video Selection"; color: Theme.fg; font-size: Theme.fs; vertical-alignment: center; }
+    }
+    if root.videos-enabled: HorizontalLayout {
+        spacing: 8px;
+        Text { text: "Videos · independent 100% budget"; color: Theme.fg; font-size: Theme.fs;
+            font-weight: Theme.weight-title; vertical-alignment: center; horizontal-stretch: 1; }
+        Button { label: "Equalize Videos"; enabled: !root.busy && root.videos.length > 0;
+            clicked => { root.equalize(true); } }
+    }
+    if root.videos-enabled: Text { text: root.video-summary; color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
+    if root.videos-enabled: VerticalLayout {
+        spacing: 6px;
+        for entry in root.videos: KeywordRow { entry: entry; busy: root.busy;
+            changed(selected, weight) => { root.changed(true, entry.keyword, selected, weight); } }
+        if root.videos.length == 0: Text { text: "No video keywords are available in this folder."; color: Theme.fg-muted; wrap: word-wrap; }
+    }
+}

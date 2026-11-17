@@ -17,6 +17,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use slint::{ModelRc, SharedString, VecModel};
+use concat_project::Command;
 
 // `DataTransfer` is what a drag carries. Slint keeps the platform's drag
 // object opaque and leaves building and reading one to the host language.
@@ -34,6 +35,7 @@ mod ui {
 mod batch_volume;
 mod chips;
 mod c_builder;
+mod c_builder_used;
 mod dock;
 mod fonts;
 mod format;
@@ -595,6 +597,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         }
     });
     app.set_own_window_buttons(platform::OWN_WINDOW_BUTTONS);
+    studio::caption_preview::install(&app);
 
     // Mutate, then republish. Every handler is one of these three: the whole
     // window, the lanes alone (for the handlers a pointer drives directly,
@@ -804,7 +807,35 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         *ratio = (from + delta / extent).clamp(floor, 1.0 - floor);
     }));
 
-    // ── embedded C Builder (no separate EXE) ──
+    app.global::<TransitionControls>().on_apply(on_window!(|state, json:SharedString| {
+        state.set_transition_controls(&json);
+    }));
+    app.global::<ParticleBulk>().on_apply(on_window!(|state, preset:i32, mode:i32, selected_only:bool, images:bool, videos:bool| {
+        state.apply_particle_bulk(preset,mode,selected_only,images,videos);
+    }));
+    app.global::<CanvasPresets>().on_choose(move |index| {
+        Shell::with(|_, app| {
+            if let Some(config) = concat_project::canvas_preset::Config::preset(index as u32) {
+                app.global::<CanvasPresets>().set_profile(serde_json::to_string_pretty(&config).unwrap_or_default().into());
+            }
+        });
+    });
+    app.global::<CanvasPresets>().on_apply(on_window!(|state, json: SharedString, all: bool, images:bool, videos:bool| {
+        state.apply_canvas_preset(&json, all, images, videos);
+    }));
+    app.global::<CanvasPresets>().set_profile(serde_json::to_string_pretty(
+        &concat_project::canvas_preset::Config::preset(1).expect("sports canvas default")).unwrap_or_default().into());
+    app.on_start_c_builder(on_window!(|studio| {studio.builder_home();}));
+    app.on_c_builder_return_home(on_window!(|studio,profile:SharedString| {studio.builder_return_home(&profile);}));
+    app.on_c_builder_open_generated(on_window!(|studio| {studio.builder_open_generated();}));
+    app.on_c_builder_cancel_generation(on_window!(|studio| {studio.builder_cancel_generation();}));
+    app.on_c_builder_retry_used(on_window!(|studio| {studio.builder_retry_used();}));
+    app.on_c_builder_choose_output(|| {
+        #[cfg(not(any(target_os="android",target_os="ios")))]
+        host::after_dialog(||rfd::FileDialog::new().set_title("C Builder output folder").pick_folder(),
+            |studio,_,_,folder|{if !studio.c_builder.scanning {studio.cb_output_folder=folder.to_string_lossy().into_owned();}});
+    });
+    // ── Home C Builder (no separate EXE or editor project required) ──
     editor.on_cb_import_folder(|| {
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         host::after_dialog(
@@ -818,6 +849,8 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             c_builder_scan(&mut studio, folder);
         }
     }));
+    editor.on_cb_project_name_edited(on_window!(|studio,name:SharedString|{studio.c_builder.edit_project_name(&name);}));
+    editor.on_cb_reset_project_name(on_window!(|studio|{studio.c_builder.reset_project_name();}));
     editor.on_cb_choose_narration(|| {
         host::pick_files_then("C Builder - Narration".into(),
             Some(("Audio".into(), &["mp3", "wav", "m4a", "aac", "flac", "ogg", "opus"])),
@@ -835,6 +868,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                         studio.c_builder.scanning = false;
                         match outcome {
                             Ok((path, duration)) => {
+                                studio.c_builder.choose_narration_name(&path);
                                 studio.c_builder.narration = path.to_string_lossy().into_owned();
                                 studio.c_builder.duration = Some(duration);
                                 studio.c_builder.status = format!("Narration ready: {duration:.2}s");
@@ -849,58 +883,210 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             },
         );
     });
-    editor.on_cb_generate_project(on_window!(
-        |studio, name: SharedString, images: SharedString, videos: SharedString, coverage: i32| {
+    editor.on_cb_keyword_changed(on_window!(|studio,json:SharedString,video:bool,keyword:SharedString,selected:bool,weight:i32| {
+        studio.set_c_builder_keyword(&json,video,&keyword,selected,weight);
+    }));
+    editor.on_cb_equalize_keywords(on_window!(|studio,json:SharedString,video:bool| {
+        studio.equalize_c_builder_keywords(&json,video);
+    }));
+    editor.on_cb_tune_profile(on_window!(
+        |studio, json:SharedString, name:SharedString, opening:SharedString, closing:SharedString,
+         image_min:SharedString, image_max:SharedString, video_min:SharedString, video_max:SharedString,
+         max_videos:SharedString, max_images:SharedString, cooldown:SharedString, seed:SharedString| {
             if studio.c_builder.scanning { return; }
+            let mut profile=match concat_project::planning::Profile::from_json(&json) {
+                Ok(p)=>p,Err(e)=>{studio.notify(&e,true);return;}
+            };
+            let parse_float=|label:&str,value:&SharedString|->Result<f64,String> {
+                value.trim().parse::<f64>().map_err(|_|format!("{label} must be a number"))
+            };
+            let parse_usize=|label:&str,value:&SharedString|->Result<usize,String> {
+                value.trim().parse::<usize>().map_err(|_|format!("{label} must be a non-negative integer"))
+            };
+            let result=(||->Result<(),String>{
+                let first=parse_float("Opening video %",&opening)?;
+                let last=parse_float("Ending video %",&closing)?;
+                if !(0.0..=100.0).contains(&first)||!(0.0..=100.0).contains(&last) {
+                    return Err("Video mix percentages must be within 0–100".into());
+                }
+                profile.name=name.trim().to_owned();
+                // Preserve any custom intermediate curve anchors.
+                profile.curve.first_mut().expect("validated curve").video=first/100.;
+                profile.curve.last_mut().expect("validated curve").video=last/100.;
+                profile.image_seconds=[
+                    parse_float("Image minimum seconds",&image_min)?,
+                    parse_float("Image maximum seconds",&image_max)?,
+                ];
+                profile.video_seconds=[
+                    parse_float("Video minimum seconds",&video_min)?,
+                    parse_float("Video maximum seconds",&video_max)?,
+                ];
+                profile.max_videos=parse_usize("Max video run",&max_videos)?;
+                profile.max_images=parse_usize("Max image run",&max_images)?;
+                profile.cooldown=parse_usize("Cooldown",&cooldown)?;
+                profile.seed=seed.trim().parse::<u64>().map_err(|_|"Seed must be a non-negative integer".to_owned())?;
+                if let Some(selection)=profile.media_selection.as_mut(){selection.normalize();}
+                profile.validate()
+            })();
+            if let Err(e)=result{studio.notify(&e,true);return;}
+            studio.c_builder.profile_json=serde_json::to_string_pretty(&profile).unwrap_or_default();
+            studio.c_builder.preview.clear();studio.c_builder.preview_shots.clear();
+            studio.apply(concat_project::Command::SetPlanningProfile {
+                profile:serde_json::to_value(&profile).unwrap_or_default(),
+            });
+        }
+    ));
+    editor.on_cb_videos_toggled(on_window!(|studio,json:SharedString,on:bool| {
+        studio.set_c_builder_videos_enabled(&json,on);
+    }));
+    editor.on_cb_plan_profile(on_window!(|studio, json: SharedString, images: SharedString, videos: SharedString, action: SharedString| {
+        let action = action.to_string();
+        if action == "load" {
+            host::pick_files_then("Import C Builder planning profile".into(), Some(("JSON".into(), &["json"])),
+                |studio, _, _, paths| {
+                    if let Some(path) = paths.first() {
+                        match std::fs::read_to_string(path).map_err(|e| e.to_string())
+                            .and_then(|s| concat_project::planning::Profile::from_json(&s)) {
+                            Ok(mut p) => {
+                                if let Some(s)=p.media_selection.as_mut(){s.normalize();}
+                                studio.c_builder.profile_json = serde_json::to_string_pretty(&p).unwrap_or_default();
+                                studio.apply(Command::SetPlanningProfile {profile:serde_json::to_value(p).unwrap_or_default()});
+                            },
+                            Err(e) => studio.notify(&e, true),
+                        }
+                    }
+                });
+            return;
+        }
+        let mut profile = match concat_project::planning::Profile::from_json(&json) {
+            Ok(p) => p,
+            Err(e) => { studio.notify(&e, true); return; }
+        };
+        if let Some(selection)=profile.media_selection.as_mut(){selection.normalize();}
+        let folder=studio.host.dirs.config.join("c-builder-profiles");
+        if let Some(index) = action.strip_prefix("select:").and_then(|v|v.parse::<usize>().ok()) {
+            let selected = concat_project::planning::Profile::builtin(index)
+                .or_else(|| index.checked_sub(4).and_then(|i|studio.c_builder.stored_profiles.get(i).cloned()));
+            if let Some(mut selected) = selected {
+                if selected.media_selection.is_none(){selected.media_selection=profile.media_selection.clone();}
+                profile=selected;
+                if let Some(selection)=profile.media_selection.as_mut(){selection.normalize();}
+                studio.c_builder.active_profile_name=profile.name.clone();
+            }
+            else {studio.notify("Planning profile no longer exists",true);return;}
+        }
+        if action == "duplicate" {
+            let original=profile.name.clone();let mut n=1;
+            loop {let candidate=format!("{original} Copy {n}");if !studio.c_builder.stored_profiles.iter().any(|p|p.name==candidate){profile.name=candidate;break;}n+=1;}
+        }
+        if let Some(index) = action.strip_prefix("pin:").and_then(|v|v.trim().parse::<usize>().ok()) {
+            let Some(shot) = index.checked_sub(1).and_then(|i|studio.c_builder.preview_shots.get(i)) else {studio.notify("Preview a plan and choose its shot number first",true);return;};
+            profile.pins.retain(|p|p.start_us!=shot.start_us);
+            profile.pins.push(concat_project::planning::Pin {source_id:shot.asset.path.clone(),start_us:shot.start_us,duration_us:shot.duration_us,trim_us:shot.trim_us});
+            profile.pins.sort_by_key(|p|p.start_us);
+        }
+        if action == "clear-pins" {profile.pins.clear();}
+        if matches!(action.as_str(),"store"|"duplicate"|"rename") {
+            if let Err(e)=c_builder::store_profile(&folder,&serde_json::to_string(&profile).unwrap_or_default()){studio.notify(&e,true);return;}
+            if action=="rename" && !studio.c_builder.active_profile_name.is_empty() && studio.c_builder.active_profile_name!=profile.name {
+                let old=c_builder::profile_file(&folder,&studio.c_builder.active_profile_name);
+                if old.is_file()&&!old.is_symlink(){if let Err(e)=std::fs::remove_file(old){studio.notify(&e.to_string(),true);return;}}
+            }
+            studio.c_builder.active_profile_name=profile.name.clone();
+            studio.c_builder.stored_profiles=c_builder::load_profiles(&folder);
+        }
+        if action=="delete" {
+            let name=&studio.c_builder.active_profile_name;
+            if !studio.c_builder.stored_profiles.iter().any(|p|&p.name==name){studio.notify("Built-in profiles cannot be deleted; select a saved profile first",true);return;}
+            let path=c_builder::profile_file(&folder,name);
+            if path.is_symlink(){studio.notify("Managed profile cannot be a symbolic link",true);return;}
+            if let Err(e)=std::fs::remove_file(path){studio.notify(&e.to_string(),true);return;}
+            studio.c_builder.stored_profiles=c_builder::load_profiles(&folder);
+            studio.c_builder.active_profile_name.clear();
+            studio.c_builder.status="Saved profile deleted. Current project settings are preserved.".into();
+            return;
+        }
+        if action == "reroll" { profile.seed = c_builder::random_seed(); }
+        let encoded = serde_json::to_string_pretty(&profile).unwrap_or_default();
+        studio.c_builder.profile_json = encoded.clone();
+        studio.apply(concat_project::Command::SetPlanningProfile {
+            profile: serde_json::to_value(&profile).unwrap_or_default(),
+        });
+        if action == "save" {
+            // A declarative profile is saved independently, so duplicates and renamed
+            // profiles can be shared without rebuilding the application.
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            host::after_dialog(
+                || rfd::FileDialog::new().set_title("Export planning profile").add_filter("JSON", &["json"]).save_file(),
+                move |studio, _, _, path| {
+                    let result = c_builder::save_profile(&path, &encoded);
+                    if let Err(e) = result { studio.notify(&format!("Profile save failed: {e}"), true); }
+                });
+            return;
+        }
+        if matches!(action.as_str(),"store"|"duplicate"|"rename")||action.starts_with("select:"){return;}
+        let Some(duration) = studio.c_builder.duration else { studio.notify("Select narration first", true); return; };
+        profile.media_selection.get_or_insert_with(Default::default).normalize();
+        let assets = studio.c_builder.assets.clone();
+        let iw = images.to_string(); let vw = videos.to_string();
+        studio.c_builder.scanning = true;
+        host::spawn(move || c_builder::plan_profile(&assets, duration, &iw, &vw, &profile),
+            |studio, _, _, result| {
+                studio.c_builder.scanning = false;
+                match result {
+                    Ok((shots, summary)) => {studio.c_builder.preview_shots=shots;studio.c_builder.preview=summary;},
+                    Err(e) => { studio.c_builder.preview = format!("Plan rejected: {e}"); studio.notify(&e, true); }
+                }
+            });
+    }));
+    editor.on_cb_generate_project(on_window!(
+        |studio, name: SharedString, images: SharedString, videos: SharedString, coverage: i32, profile_json: SharedString| {
+            if studio.c_builder.scanning { return; }
+            if studio.cb_pending_used.is_some(){studio.notify("Retry the blocked used-media step before generating another timeline",true);return;}
             let Some(duration) = studio.c_builder.duration else {
                 studio.notify("Select narration first", true);
                 return;
             };
-            let Some(session) = studio.session.as_ref() else {
-                studio.notify("Open a Concat project before generating", true);
-                return;
-            };
-            let output = std::path::Path::new(session.path()).parent()
-                .map(std::path::Path::to_path_buf);
-            let Some(output) = output else {
-                studio.notify("Could not determine project folder", true);
-                return;
-            };
+            let output=std::path::PathBuf::from(studio.cb_output_folder.clone());
+            if output.as_os_str().is_empty(){studio.notify("Choose an output folder",true);return;}
             let audio = std::path::PathBuf::from(studio.c_builder.narration.clone());
             let assets = studio.c_builder.assets.clone();
-            let project_name = name.to_string();
+            if !name.trim().is_empty() && name.as_str()!=studio.c_builder.project_name {studio.c_builder.edit_project_name(&name);}
+            let project_name = studio.c_builder.effective_name();
             let image_weights = images.to_string();
             let video_weights = videos.to_string();
+            let _ = coverage; // retained callback parameter for older UI integrations
+            let mut profile = match concat_project::planning::Profile::from_json(&profile_json) {
+                Ok(p) => p, Err(e) => { studio.notify(&e, true); return; }
+            };
+            profile.media_selection.get_or_insert_with(Default::default).normalize();
             let cache_path = studio.host.dirs.data.join("c-builder-media-cache.json");
+            let library=std::path::PathBuf::from(studio.c_builder.folder.clone());
+            let cancel=std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));studio.cb_generation_cancel=Some(cancel.clone());
             studio.c_builder.scanning = true;
             studio.c_builder.status = "Planning and verifying native Concat timeline...".into();
             host::spawn(
                 move || {
-                    let shots = c_builder::plan(&assets, duration, &image_weights,
-                        &video_weights, coverage.max(0) as u32, c_builder::random_seed())?;
-                    let folder = c_builder::write_native(&shots, &audio, duration, &output,
-                        &project_name)?;
+                    if cancel.load(std::sync::atomic::Ordering::Relaxed){return Err("Generation cancelled before saving any project".into());}
+                    std::fs::create_dir_all(&output).map_err(|e|format!("Could not create output folder: {e}"))?;
+                    let (shots, _) = c_builder::plan_profile(&assets, duration, &image_weights,
+                        &video_weights, &profile)?;
+                    let folder = c_builder::write_native_with_profile(&shots, &audio, duration, &output,
+                        &project_name, Some(&profile))?;
+                    std::fs::write(folder.join("planning-profile.json"),
+                        serde_json::to_vec_pretty(&profile).map_err(|e| e.to_string())?)
+                        .map_err(|e| format!("Project created but profile snapshot failed: {e}"))?;
                     let used: Vec<String> = shots.iter().map(|s| s.asset.path.clone())
                         .collect::<std::collections::HashSet<_>>().into_iter().collect();
-                    let usage_warning = c_builder::mark_used(&cache_path, &used).err();
-                    Ok::<_, String>((folder, shots.len(), usage_warning))
+                    let sources=used.into_iter().map(std::path::PathBuf::from).collect::<Vec<_>>();
+                    let pending=crate::studio::c_builder_home::PendingUsed{library,project:folder,sources,cache:cache_path};
+                    let finish=c_builder_used::finish(&pending.library,&pending.project,&pending.sources,&pending.cache,&cancel);
+                    Ok::<_, String>((pending,finish))
                 },
                 |studio, _, _, result| {
-                    studio.c_builder.scanning = false;
                     match result {
-                        Ok((folder, clips, warning)) => {
-                            studio.c_builder.status = format!(
-                                "Created {clips} editable clips: {}{}",
-                                folder.display(),
-                                warning.map(|w| format!(" (usage cache warning: {w})"))
-                                    .unwrap_or_default()
-                            );
-                            studio.notify("C Builder project created. Use File > Open Project to edit it.", false);
-                        }
-                        Err(error) => {
-                            studio.c_builder.status = format!("Generation failed: {error}");
-                            studio.notify(&error, true);
-                        }
+                        Ok((pending,finish))=>studio.builder_archive_finished(pending,finish),
+                        Err(error)=>{studio.c_builder.scanning=false;studio.cb_generation_cancel=None;studio.c_builder.status=format!("Generation failed: {error}");studio.notify(&error,true);}
                     }
                 },
             );
@@ -1203,12 +1389,14 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     }));
 
     // ── the gestures ──
-    editor.on_clip_pressed(on_lanes!(|state,
-                                      id: SharedString,
-                                      additive: bool,
-                                      edge: i32| {
-        state.clip_pressed(id.as_str(), additive, edge);
-    }));
+    editor.on_clip_pressed(move |id:SharedString, additive:bool, edge:i32| {
+        Shell::with(|shell,app| {
+            {let mut state=shell.studio.borrow_mut();state.drag_copy_held=app.global::<crate::ui::TimelineDrag>().get_copy_modifier();state.clip_pressed(&id,additive,edge);}
+            shell.studio.borrow_mut().refresh_art();shell.studio.borrow().publish_lanes(&app,&shell.models);
+        });
+    });
+    app.global::<crate::ui::TimelineDrag>().on_modes_changed(on_window!(|state,ripple:bool,duplicate:bool| {state.drag_modes_changed(ripple,duplicate);}));
+    editor.on_clip_cancelled(on_window!(|state| {state.clip_cancelled();}));
     editor.on_clip_split(on_lanes!(|state, id: SharedString, seconds: f32| {
         state.split_clip_at(&id, seconds);
     }));
@@ -1308,6 +1496,10 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             state.apply_physics_bulk(preset, mode, images, videos, selected_only,
                 strength, duration, speed, intensity);
         }));
+        keys.on_apply_canvas_motion(on_lanes!(|state, preset: i32, mode: i32, images: bool,
+            videos: bool, selected_only: bool, settings: CanvasMotionData| {
+            state.apply_canvas_motion_bulk(preset, mode, images, videos, selected_only, settings);
+        }));
         keys.on_toggle_physics_favourite(on_lanes!(|state, index: i32| {
             state.toggle_physics_favourite(index);
         }));
@@ -1325,10 +1517,14 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                 mode, preset, images, video_clips, selected_only,
             );
         }));
+        keys.on_layout_set(on_lanes!(|state, field:ClipField, value:f32| {
+            state.layout_set(field,value);
+        }));
+        keys.on_layout_frame(on_lanes!(|state,fill:bool| {state.layout_frame(fill);}));
         keys.on_apply_bulk_transform(on_lanes!(|state, mode: i32, images: bool,
-            video_clips: bool, selected_only: bool, scale: f32, x: f32, y: f32| {
+            video_clips: bool, selected_only: bool, scale: f32, x: f32, y: f32, rotation: f32| {
             state.apply_bulk_gpu_transform(
-                mode, images, video_clips, selected_only, scale, x, y,
+                mode, images, video_clips, selected_only, scale, x, y, rotation,
             );
         }));
         // The same three verbs for the Adjust panel's knobs, which are
@@ -1358,6 +1554,9 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         }));
         backdrop.on_set_still(on_lanes!(|state, clip: bool, row: i32| {
             state.backdrop_set_still(clip, row);
+        }));
+        backdrop.on_apply_bulk(on_lanes!(|state, mode:i32, amount:f32, colour:slint::Color, images:bool, videos:bool, selected_only:bool| {
+            state.apply_bulk_canvas_background(mode,amount,colour,images,videos,selected_only);
         }));
         backdrop.on_apply_to_all(on_lanes!(|state| {
             state.backdrop_apply_to_all();
@@ -1659,6 +1858,9 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     editor.on_transition_duration_set(on_window!(|state, seconds: f32| {
         state.set_transition_duration(seconds as f64);
     }));
+    editor.on_transition_duration_all(on_window!(|state, seconds: f32| {
+        state.apply_transition_duration_to_all(seconds as f64);
+    }));
     editor.on_transition_intensity_set(on_window!(|state, amount: f32| {
         state.set_transition_intensity(amount as f64);
     }));
@@ -1792,6 +1994,9 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             let Some(chord) = chord else {
                 return;
             };
+            if chord == "escape" && matches!(shell.studio.borrow().gesture, crate::studio::Gesture::Move {..} | crate::studio::Gesture::Trim {..} | crate::studio::Gesture::TransitionResize {..}) {
+                shell.studio.borrow_mut().clip_cancelled();shell.studio.borrow().publish(&app,&shell.models);handled=true;return;
+            }
             if on_start {
                 // The launch screen has no project to act on. Capture
                 // is handled above, so its keys work there too.
@@ -2210,6 +2415,18 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     app.on_captions_model_changed(on_window!(|state, index: i32| {
         state.handle(Msg::Captions(CaptionsMsg::ModelChanged(index)));
     }));
+    app.on_captions_gpu_render_toggled(on_window!(|state, on: bool| {
+        state.handle(Msg::Captions(CaptionsMsg::GpuRenderToggled(on)));
+    }));
+    app.on_captions_gpu_toggled(on_window!(|state, on: bool| {
+        state.handle(Msg::Captions(CaptionsMsg::GpuToggled(on)));
+    }));
+    app.on_captions_preset_changed(on_window!(|state, index: i32| {
+        state.handle(Msg::Captions(CaptionsMsg::PresetChanged(index)));
+    }));
+    app.on_captions_import_gpu_json(on_window!(|state| {
+        state.handle(Msg::Captions(CaptionsMsg::ImportGpuJson));
+    }));
     app.on_captions_karaoke_toggled(on_window!(|state, on: bool| {
         state.handle(Msg::Captions(CaptionsMsg::KaraokeToggled(on)));
     }));
@@ -2322,11 +2539,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                             } else if let Some(project) = state.save_for_gpu() {
                                 // Reuse precisely the Send to GPU saved-project snapshot.
                                 // The picker runs later with Studio unborrowed.
-                                let label = std::path::Path::new(&project)
-                                    .file_name()
-                                    .and_then(|name| name.to_str())
-                                    .unwrap_or("Concat")
-                                    .to_string();
+                                let label = concat_project::naming::basename(&state.project_name);
                                 host::after_dialog(
                                     move || rfd::FileDialog::new()
                                         .set_title("Prepare ZIP Only - Offline")

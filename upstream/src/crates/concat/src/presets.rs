@@ -99,6 +99,7 @@ struct PresetStyle {
     color: Option<String>,
     karaoke: Option<bool>,
     karaoke_color: Option<String>,
+    karaoke_background: Option<String>,
     align: Option<String>,
     opacity: Option<f64>,
     stroke_width: Option<f64>,
@@ -131,6 +132,9 @@ impl PresetStyle {
             color: self.color.unwrap_or(base.color),
             karaoke: self.karaoke.unwrap_or(false),
             karaoke_color: self.karaoke_color.unwrap_or_default(),
+            karaoke_background: self.karaoke_background.unwrap_or_default(),
+            karaoke_words: Vec::new(),
+            karaoke_word: None,
             align: match self.align.as_deref() {
                 Some("left") => TextAlign::Left,
                 Some("right") => TextAlign::Right,
@@ -234,7 +238,11 @@ fn parse(text: &str, folder: Option<&Path>) -> Option<(i64, TextPreset)> {
         .map(|language| language.trim().to_owned())
         .filter(|language| !language.is_empty())
         .unwrap_or_else(|| "Latin".to_owned());
-    let style = file.style.over(&file.name);
+    let mut style = file.style.over(&file.name);
+    if id.starts_with("cuda-caption.") && style.max_width == 0.0 {
+        // Use the same safe wrapping box in local audition, saved captions and GPU export.
+        style.max_width = 0.88;
+    }
     let sample = file
         .sample
         .map(|sample| sample.trim().to_owned())
@@ -251,6 +259,9 @@ fn parse(text: &str, folder: Option<&Path>) -> Option<(i64, TextPreset)> {
                     .collect()
             }
         });
+    let sample = if id.starts_with("cuda-caption.") { "Hello".to_owned() }
+        else if language.eq_ignore_ascii_case("latin") && sample.chars().count() > 6 { "Aa".to_owned() }
+        else { sample };
     Some((
         order,
         TextPreset {
@@ -261,7 +272,7 @@ fn parse(text: &str, folder: Option<&Path>) -> Option<(i64, TextPreset)> {
             },
             id,
             style,
-            offset_y: file.offset_y,
+            offset_y: if file.id.starts_with("cuda-caption.") { Some(0.35) } else { file.offset_y },
             font,
             language,
             sample,
@@ -359,20 +370,32 @@ mod tests {
     }
 
     #[test]
-    fn seven_cuda_caption_presets_are_embedded_and_worker_safe() {
+    fn all_nine_cuda_caption_presets_are_embedded_and_worker_safe() {
         let captions: Vec<_> = builtin().into_iter()
             .filter(|item| item.id.starts_with("cuda-caption."))
             .collect();
-        assert_eq!(captions.len(), 7);
+        assert_eq!(captions.len(), 9);
         for preset in &captions {
             if preset.id == "cuda-caption.karaoke-highlight" {
                 assert!(preset.style.karaoke);
                 assert_eq!(preset.style.karaoke_color, "#ffe13c");
+            } else if preset.id == "cuda-caption.preset-1-purple-word" {
+                assert!(preset.style.karaoke);
+                assert_eq!(preset.style.karaoke_background, "#a020f0");
+                assert_eq!(preset.style.karaoke_color, "#ffffff");
             } else {
                 assert!(!preset.style.karaoke);
             }
-            assert_eq!(preset.style.font_family, "Hanken Grotesk");
-            assert_eq!(preset.style.font_weight, 600.0);
+            let custom = preset.id.starts_with("cuda-caption.preset-");
+            assert_eq!(preset.style.font_family, if custom { "Inter" } else { "Hanken Grotesk" });
+            assert_eq!(preset.style.font_weight, if custom { 900.0 } else { 600.0 });
+            if preset.id == "cuda-caption.preset-2-yellow-bar" {
+                assert_eq!(preset.style.background, "#ffff00");
+                assert_eq!(preset.style.color, "#000000");
+                assert_eq!(preset.offset_y, Some(0.35));
+            }
+            assert_eq!(preset.offset_y, Some(0.35));
+            assert_eq!(preset.style.max_width, 0.88);
             assert!((0.01..=0.5).contains(&preset.style.font_size));
             assert!(!preset.style.italic);
         }

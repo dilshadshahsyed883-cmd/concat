@@ -26,6 +26,37 @@ fn mode_of(background: &Background) -> i32 {
 }
 
 impl Studio {
+    pub fn can_edit_layout(&self)->bool {
+        self.sole_selection().and_then(|id|self.clip(&id)).is_some_and(|c|
+            self.timeline().track(&c.track_id).is_some_and(|t|layout_source_allowed(c,t,self.locked(&c.track_id))))
+    }
+    pub fn layout_set(&mut self,field:crate::ui::ClipField,value:f32) {
+        if !self.can_edit_layout(){self.notify("Choose one unlocked visible image/video clip",true);return;}
+        self.clip_set(field,value);self.clip_commit();
+    }
+    pub fn layout_frame(&mut self,fill:bool) {
+        if !self.can_edit_layout(){self.notify("Choose one unlocked visible image/video clip",true);return;}
+        self.frame_selected(fill);
+    }
+
+    /// Apply backgrounds only to explicitly chosen editable media, without changing timeline defaults.
+    pub fn apply_bulk_canvas_background(&mut self, mode:i32, amount:f32, colour:slint::Color, images:bool, videos:bool, selected_only:bool) {
+        if !images && !videos {self.notify("Choose Images, Video Clips, or both",true);return;}
+        if !amount.is_finite() || !(0.0..=1.0).contains(&amount) {self.notify("Invalid background softness",true);return;}
+        let background=match mode {
+            0=>Background::None,1=>Background::Blur {amount:amount as f64},2=>Background::Color {color:hex_of(colour)},
+            _=>{self.notify("Unsupported canvas background",true);return;}
+        };
+        self.flush_commit();
+        let selected:std::collections::HashSet<_>=self.selection.iter().cloned().collect();
+        if selected_only && selected.is_empty(){self.notify("Select timeline media first",true);return;}
+        let locked:std::collections::HashSet<_>=self.timeline().tracks.iter().filter(|t|self.locked(&t.id)).map(|t|t.id.clone()).collect();
+        let (commands,skipped)=canvas_background_commands(self.timeline(), &locked, &selected, images,videos,selected_only, &background);
+        let count=commands.len();
+        if count>0 {self.apply(Command::Batch {commands});}
+        self.notify(&format!("Updated {count} canvas backgrounds. {skipped} overlay/preset clips skipped; edit their Canvas preset instead."),count==0);
+    }
+
     /// The bin's stills, in the bin's order: the rows of the still picker,
     /// which a row index is read back against.
     fn stills(&self) -> Vec<&model::MediaItem> {
@@ -302,5 +333,88 @@ impl Studio {
         }
         self.apply_within(&key, command);
         self.last_commit = Some((key, now));
+    }
+}
+
+fn layout_source_allowed(clip:&Clip,track:&model::Track,locked:bool)->bool {
+    clip.kind.is_visual() && !clip.extra.contains_key("canvasOwner") && track.visible && !locked
+}
+
+fn canvas_background_commands(
+    timeline:&model::Timeline, locked:&std::collections::HashSet<String>, selected:&std::collections::HashSet<String>,
+    images:bool,videos:bool,selected_only:bool,background:&Background,
+)->(Vec<Command>,usize) {
+    let lane=timeline.background_lane();
+    let mut skipped=0;
+    let commands=timeline.clips.iter().filter(|c| {
+        let media=match c.kind {model::ClipKind::Image=>images,model::ClipKind::Video=>videos,_=>false};
+        media && !c.extra.contains_key("canvasOwner") && (!selected_only || selected.contains(&c.id))
+            && !locked.contains(&c.track_id) && timeline.track(&c.track_id).is_some_and(|t|t.visible)
+    }).filter_map(|c| {
+        if Some(c.track_id.as_str())!=lane || c.extra.contains_key("canvasPreset") {skipped+=1;return None;}
+        (c.background.as_ref()!=Some(background)).then(||Command::UpdateClip {clip_id:c.id.clone(),patch:ClipPatch {background:Some(Some(background.clone())),..Default::default()}})
+    }).collect();
+    (commands,skipped)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{collections::HashSet,sync::Arc};
+    use concat_project::{Editor,doc::{to_document,DocumentSettings},model::{ClipKind,Project}};
+    #[test]
+    fn live_layout_enforces_visibility_locks_media_kind_and_companion_protection() {
+        let mut clip=Clip::blank("i","T1",ClipKind::Image,"image",0.0,2.0);
+        let mut track=model::Track {id:"T1".into(),..Default::default()};
+        assert!(layout_source_allowed(&clip,&track,false));
+        assert!(!layout_source_allowed(&clip,&track,true));
+        track.visible=false;assert!(!layout_source_allowed(&clip,&track,false));track.visible=true;
+        clip.extra.insert("canvasOwner".into(),serde_json::json!("owner"));
+        assert!(!layout_source_allowed(&clip,&track,false));clip.extra.clear();
+        clip.kind=ClipKind::Audio;assert!(!layout_source_allowed(&clip,&track,false));
+    }
+
+    #[test]
+    fn typed_canvas_application_preserves_unselected_media_defaults_and_undo() {
+        let mut p=Project::new();
+        for (id,kind) in [("mi",MediaKind::Image),("mv",MediaKind::Video),("ma",MediaKind::Audio)] {
+            p.media.push(model::MediaItem {id:id.into(),kind,path:format!("{id}.fixture"),duration:Some(20.0),width:Some(1920),height:Some(1080),..Default::default()});
+        }
+        for (id,kind,start) in [("i",ClipKind::Image,0.0),("v",ClipKind::Video,2.0),("a",ClipKind::Audio,0.0)] {
+            let mut c=Clip::blank(id,if kind==ClipKind::Audio {"T3"}else{"T1"},kind,id,start,2.0);
+            c.media_id=format!("m{id}"); p.active_mut().clips.push(Arc::new(c));
+        }
+        let settings=DocumentSettings {name:"layout".into(),width:1920,height:1080,rate_num:30,rate_den:1};
+        let mut editor=Editor::from_document(&to_document(&settings,&p)).unwrap();
+        let before=editor.project().clone();
+        let bg=Background::Blur {amount:0.7};
+        let (commands,skipped)=canvas_background_commands(editor.project().active(),&HashSet::new(),&HashSet::new(),true,false,false,&bg);
+        assert_eq!((commands.len(),skipped),(1,0));
+        editor.apply(Command::Batch {commands}).unwrap();
+        let tl=editor.project().active();
+        assert_eq!(tl.clip("i").unwrap().background,Some(bg));
+        assert_eq!(tl.clip("v").unwrap(),before.active().clip("v").unwrap());
+        assert_eq!(tl.clip("a").unwrap(),before.active().clip("a").unwrap());
+        assert_eq!(tl.background,before.active().background);
+        let reopened=Editor::from_document(&to_document(&settings,editor.project())).unwrap();
+        assert_eq!(reopened.project(),editor.project());
+        assert!(editor.undo());assert_eq!(editor.project(),&before);assert!(editor.redo());
+    }
+    #[test]
+    fn canvas_scope_locks_hidden_tracks_and_companions_are_protected() {
+        let mut p=Project::new();
+        for (id,track) in [("i","T1"),("upper","T2"),("companion","T1")] {
+            let mut c=Clip::blank(id,track,ClipKind::Image,id,0.0,2.0);
+            if id=="companion" {c.extra.insert("canvasOwner".into(),serde_json::json!("i"));}
+            p.active_mut().clips.push(Arc::new(c));
+        }
+        let bg=Background::None;let all=HashSet::new();
+        let selected=HashSet::from(["i".into()]);
+        assert_eq!(canvas_background_commands(p.active(),&all,&selected,false,true,true,&bg).0.len(),0);
+        assert_eq!(canvas_background_commands(p.active(),&all,&selected,true,false,true,&bg).0.len(),1);
+        assert_eq!(canvas_background_commands(p.active(),&HashSet::from(["T1".into()]),&all,true,true,false,&bg).0.len(),0);
+        assert_eq!(canvas_background_commands(p.active(),&all,&all,true,true,false,&bg).1,1);
+        p.active_mut().tracks.iter_mut().find(|t|t.id=="T1").unwrap().visible=false;
+        assert_eq!(canvas_background_commands(p.active(),&all,&selected,true,true,true,&bg).0.len(),0);
     }
 }

@@ -381,6 +381,9 @@ pub struct TransitionSpec {
     pub kind: String,
     /// Seconds the transition covers.
     pub duration: f64,
+    /// Explicit package parameters, resolved by the same catalogue for preview and export.
+    #[serde(default)]
+    pub params: BTreeMap<String, f64>,
 }
 
 fn yes() -> bool {
@@ -654,6 +657,7 @@ fn resolve_transitions_at(
                 outgoing,
                 kind: transition.kind.clone(),
                 duration: transition.duration.max(0.0),
+                params: transition.params.clone(),
             }),
             _ => {}
         }
@@ -802,7 +806,7 @@ fn resolve_transitions_at(
                     end,
                     to_track: b.track,
                     id: cut.kind.clone(),
-                    params: BTreeMap::new(),
+                    params: cut.params.clone(),
                 });
             }
             // A kind this build does not know renders as a plain cut rather
@@ -821,6 +825,7 @@ struct Cut {
     outgoing: usize,
     kind: String,
     duration: f64,
+    params: BTreeMap<String,f64>,
 }
 
 /// What [`overlap`] built a transition on.
@@ -2594,6 +2599,7 @@ mod tests {
         Some(TransitionSpec {
             kind: kind.to_owned(),
             duration,
+            params: BTreeMap::new(),
         })
     }
 

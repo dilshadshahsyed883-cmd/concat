@@ -14,9 +14,9 @@ class PhysicsControlContractTests(unittest.TestCase):
         timeline_ui = (ROOT / "upstream/src/crates/concat/ui/timeline/model.slint").read_text()
         for control in ("strength", "duration", "speed", "intensity"):
             self.assertIn("pub " + control + ": f64", physics)
-            # Agent 4 moved preset buttons into the Animations tab while
-            # keeping all four Inspector knobs backed by shared Keyframes state.
-            self.assertIn("Keyframes.physics-" + control, ui)
+            # All animation controls now live together in the left Animations page.
+            self.assertIn("Keyframes.physics-" + control, media_ui)
+            self.assertNotIn("Keyframes.physics-" + control, ui)
             self.assertIn("in-out property <float> physics-" + control, timeline_ui)
         self.assertIn("pub fn command_with(", physics)
         self.assertIn("state.apply_physics_motion(index, strength, duration, speed, intensity)", lib)

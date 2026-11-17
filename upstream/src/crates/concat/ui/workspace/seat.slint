@@ -117,11 +117,20 @@ export component Seat inherits Rectangle {
             cb-scan-done: Editor.cb-scan-done;
             cb-scan-total: Editor.cb-scan-total;
             cb-busy: Editor.cb-busy;
+            cb-profile: Editor.cb-profile;
+            cb-image-keywords: Editor.cb-image-keywords; cb-video-keywords: Editor.cb-video-keywords;
+            cb-videos-enabled: Editor.cb-videos-enabled;
+            cb-image-selection-summary: Editor.cb-image-selection-summary; cb-video-selection-summary: Editor.cb-video-selection-summary;
+            cb-keyword-changed(json, video, keyword, selected, weight) => { Editor.cb-keyword-changed(json, video, keyword, selected, weight); }
+            cb-videos-toggled(json, on) => { Editor.cb-videos-toggled(json, on); }
+            cb-profile-names: Editor.cb-profile-names;
+            cb-preview: Editor.cb-preview;
+            cb-plan-profile(json, images, videos, action) => { Editor.cb-plan-profile(json, images, videos, action); }
             cb-import-folder => { Editor.cb-import-folder(); }
             cb-refresh-folder => { Editor.cb-refresh-folder(); }
             cb-choose-narration => { Editor.cb-choose-narration(); }
-            cb-generate-project(name, images, videos, coverage) => {
-                Editor.cb-generate-project(name, images, videos, coverage);
+            cb-generate-project(name, images, videos, coverage, profile) => {
+                Editor.cb-generate-project(name, images, videos, coverage, profile);
             }
 
             import-media => { Editor.import-media(); }
@@ -305,6 +314,7 @@ export component Seat inherits Rectangle {
             clip-enhance-run => { Editor.clip-enhance-run(); }
             transition-remove => { Editor.transition-remove(); }
             transition-duration-set(seconds) => { Editor.transition-duration-set(seconds); }
+            transition-duration-all(seconds) => { Editor.transition-duration-all(seconds); }
             transition-intensity-set(amount) => { Editor.transition-intensity-set(amount); }
 
             project-name: Editor.project-name;
@@ -466,6 +476,7 @@ export component Seat inherits Rectangle {
             clip-volume(id, gain) => { Editor.clip-volume(id, gain); }
             clip-dragged(seconds, pixels) => { Editor.clip-dragged(seconds, pixels); }
             clip-released => { Editor.clip-released(); }
+            clip-cancelled => { Editor.clip-cancelled(); }
             menu-items: Editor.menu-items;
             menu-height: Editor.menu-height;
             menu-token: Editor.menu-token;

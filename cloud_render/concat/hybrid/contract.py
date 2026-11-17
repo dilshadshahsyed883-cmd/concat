@@ -11,6 +11,10 @@ RENDER_MODE = "cuda-stage1"
 HYBRID_MODE = "cuda-hybrid-v1"
 RENDER_MODES = (RENDER_MODE, HYBRID_MODE)
 HYBRID_EFFECTS_VERSION = 1
+# Desktop ZIP and Salad worker publish/require the same explicit render contract.
+# Increment on incompatible manifest/render semantics; preserve legacy v1 bundles.
+RENDER_CONTRACT_ID = "concat-cuda-hybrid-v1"
+RENDER_CONTRACT_VERSION = 1
 
 
 @dataclass(frozen=True)

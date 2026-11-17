@@ -15,6 +15,8 @@ from pathlib import Path
 
 from .animations import apply_transform
 from .canvas import make_background
+from .canvas_shapes import render_shape, apply_mask
+from .particles import ParticleEffect, apply as apply_particles
 from .cuda_audio import mux_cuda_audio
 from .captions import CaptionRenderer
 from .codec import Nvdec, Nvenc, nv12_from_rgba
@@ -35,6 +37,37 @@ def invoke(args, timeout=3600):
     return result.stdout
 
 
+STILL_IMAGE_EXTENSIONS = {".jpg": "JPEG", ".jpeg": "JPEG", ".png": "PNG"}
+MAX_STILL_PIXELS = 100_000_000
+
+
+def decode_still_rgba(path):
+    """Validate and decode a source JPEG/PNG once; return straight RGBA uint8.
+
+    CPU work is confined to still-image decompression. Video decode, fitting,
+    compositing and final H.264 encoding remain CUDA/NVDEC/NVENC only.
+    """
+    from PIL import Image, ImageOps, UnidentifiedImageError
+    import numpy as np
+
+    path = Path(path)
+    expected = STILL_IMAGE_EXTENSIONS.get(path.suffix.lower())
+    if expected is None:
+        raise ValueError(f"{path.name}: unsupported still image; expected JPEG or PNG")
+    try:
+        with Image.open(path) as source:
+            if source.format != expected:
+                raise ValueError(f"expected {expected} image data, got {source.format or 'unknown'}")
+            if source.width < 1 or source.height < 1 or source.width * source.height > MAX_STILL_PIXELS:
+                raise ValueError("image dimensions exceed supported limits")
+            # RGB, RGBA, grayscale, palette+tRNS and CMYK JPEG are normalized
+            # without flattening the image onto an opaque matte.
+            oriented = ImageOps.exif_transpose(source)
+            return np.array(oriented.convert("RGBA"), dtype=np.uint8)
+    except (OSError, ValueError, UnidentifiedImageError, Image.DecompressionBombError) as error:
+        raise ValueError(f"{path.name}: invalid {expected} still image ({error})") from error
+
+
 class Sources:
     def __init__(self, temporary, profiler=None):
         self.temporary = temporary
@@ -47,6 +80,14 @@ class Sources:
         self.rates = {}
         self.sizes = {}
         self.backgrounds = OrderedDict()
+        self.shapes = OrderedDict()
+
+    def shape(self, spec):
+        value = self.shapes.pop(spec, None)
+        if value is None: value = render_shape(spec, WIDTH, HEIGHT)
+        self.shapes[spec] = value
+        while len(self.shapes) > 4: self.shapes.popitem(last=False)
+        return value
 
     def backdrop(self, clip, pixels):
         """Reuse still-image Canvas textures across frames without a reblur."""
@@ -93,19 +134,18 @@ class Sources:
         if cached is not None:
             self.stills[path] = cached
             return cached
-        if path.suffix.lower() not in (".jpg", ".jpeg"):
-            raise ValueError(f"{path.name}: CUDA still-image input must be a baseline JPEG")
-        # NVDEC cannot feed an RGB JPEG directly into the video SDK wrapper.
-        # Produce a single 4:2:0 H.264 frame entirely on the device and decode it there.
-        with tempfile.TemporaryDirectory(dir=self.temporary) as scratch:
-            encoded = Path(scratch) / "still.mp4"
-            invoke(["ffmpeg", "-hide_banner", "-nostdin", "-v", "error",
-                    "-init_hw_device", "cuda=gpu:0", "-filter_hw_device", "gpu",
-                    "-hwaccel", "cuda", "-hwaccel_output_format", "cuda",
-                    "-c:v", "mjpeg_cuvid", "-i", str(path), "-frames:v", "1",
-                    "-vf", "scale_cuda=w=trunc(iw/2)*2:h=trunc(ih/2)*2:format=nv12",
-                    "-an", "-c:v", "h264_nvenc", "-y", str(encoded)], timeout=90)
-            pixels = fitted(Nvdec(encoded).frame(0))
+        # Still-image entropy decoding is CPU-side (Pillow); every transform,
+        # alpha-aware resize, blend and output encode remains on CUDA/NVENC.
+        # Unlike JPEG -> H.264 -> NVDEC, this retains PNG's original alpha.
+        cp = cuda()
+        pixels = cp.asarray(decode_still_rgba(path), dtype=cp.float32) / 255.0
+        # Work in premultiplied alpha during GPU interpolation to prevent RGB
+        # from transparent texels bleeding into visible PNG edges.
+        pixels[..., :3] *= pixels[..., 3:4]
+        pixels = fitted(pixels)
+        alpha = pixels[..., 3:4]
+        pixels[..., :3] = cp.where(
+            alpha > 1e-6, pixels[..., :3] / cp.maximum(alpha, 1e-6), 0.0)
         if len(self.stills) >= 6:
             self.stills.popitem(last=False)
         self.stills[path] = pixels
@@ -165,7 +205,13 @@ NATIVE_COLOR_PASSES = {EXPOSURE: apply_exposure, CONTRAST: apply_contrast}
 
 def picture(sources, clip, index, tail=False, *, force_opacity=False, placement_index=None,
             return_background=False):
-    pixels = sources.image(clip.path) if clip.kind == "image" else sources.video(clip, index, tail)
+    if clip.kind == "image":
+        try:
+            pixels = sources.image(clip.path)
+        except (ValueError, OSError, RuntimeError) as error:
+            raise ValueError(f"GPU clip {clip.id} image {clip.path}: {error}") from error
+    else:
+        pixels = sources.shape(clip.shape) if clip.kind == "shape" else sources.video(clip, index, tail)
     if clip.flip_h:
         pixels = pixels[:, ::-1]
     if clip.flip_v:
@@ -177,13 +223,17 @@ def picture(sources, clip, index, tail=False, *, force_opacity=False, placement_
     transform = clip.transform(index if placement_index is None else placement_index)
     if force_opacity:
         transform = replace(transform, opacity=1)
+    if clip.mask is not None:
+        pixels = apply_mask(pixels, clip.mask, sources.dimensions(clip.path), transform.scale)
     # Native packages run on the fitted picture before placement. Preserve
     # the old post-placement order for clips with only legacy filters.
-    native_chain = any(isinstance(settings, NativeColorEffect) for settings in clip.filters)
+    native_chain = any(isinstance(settings, (NativeColorEffect, ParticleEffect)) for settings in clip.filters)
     if not native_chain:
         pixels = apply_transform(pixels, transform)
     for settings in clip.filters:
-        if isinstance(settings, NativeColorEffect):
+        if isinstance(settings, ParticleEffect):
+            pixels = apply_particles(pixels, settings, index)
+        elif isinstance(settings, NativeColorEffect):
             handler = NATIVE_COLOR_PASSES[settings.id]
             pixels = handler(pixels, settings.at_frame(index))
         else:
@@ -250,12 +300,13 @@ def timeline_frames(plan, temporary, log, profiler=None):
                         below = composite(layers, width=WIDTH, height=HEIGHT, background=(0,0,0,1))
                         effect = below
                         for settings in clip.filters:
-                            effect = filter_picture(effect, settings)
+                            effect = (apply_particles(effect, settings, index) if isinstance(settings, ParticleEffect)
+                                      else filter_picture(effect, settings))
                         layers = [Layer(below), Layer(effect, opacity=clip.transform(index).opacity)]
                     continue
                 clip_layers = picture_layers(
                     sources, clip, index,
-                    with_canvas=(rank == plan.background_rank and clip.kind in ("image", "video")))
+                    with_canvas=((rank == plan.background_rank or clip.canvas_backdrop) and clip.kind in ("image", "video")))
                 if clip.transition and clip.transition.span.contains(index):
                     outgoing = picture(sources, clip.outgoing, index, tail=True)
                     pixels = render_transition(outgoing, clip_layers[-1].texture,

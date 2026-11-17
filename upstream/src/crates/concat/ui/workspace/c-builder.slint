@@ -2,11 +2,13 @@
 // C Builder lives inside Concat. It is not a second executable.
 import { Theme } from "../theme/theme.slint";
 import { Button } from "../primitives/modal.slint";
+import { CBuilderSelectionPanel, CBuilderKeywordData } from "c-builder-selection.slint";
 import { Select } from "../primitives/select.slint";
 
 component CField inherits Rectangle {
     in property <string> placeholder;
     in-out property <string> value;
+    callback edited(value:string);
     height: 32px;
     border-radius: Theme.r;
     border-width: 1px;
@@ -21,6 +23,7 @@ component CField inherits Rectangle {
         color: Theme.fg;
         font-size: Theme.fs;
         text <=> root.value;
+        edited=>{root.edited(self.text);}
     }
     if root.value == "" && !input.has-focus: Text {
         x: 8px;
@@ -29,6 +32,15 @@ component CField inherits Rectangle {
         color: Theme.fg-muted;
         font-size: Theme.fs;
     }
+}
+
+
+component TuneField inherits VerticalLayout {
+    in property <string> caption;
+    in-out property <string> value;
+    spacing: 3px;
+    Text { text: root.caption; color: Theme.fg-muted; font-size: Theme.fs-sm; }
+    CField { value <=> root.value; }
 }
 
 export component CBuilderPane inherits VerticalLayout {
@@ -43,23 +55,86 @@ export component CBuilderPane inherits VerticalLayout {
     in property <int> scan-done;
     in property <int> scan-total;
     in property <bool> busy;
+    in property <bool> generating;
+    in property <string> profile;
+    in property <[string]> profile-names;
+    in property <string> plan-name;
+    in property <string> plan-opening;
+    in property <string> plan-closing;
+    in property <string> plan-image-min;
+    in property <string> plan-image-max;
+    in property <string> plan-video-min;
+    in property <string> plan-video-max;
+    in property <string> plan-max-videos;
+    in property <string> plan-max-images;
+    in property <string> plan-cooldown;
+    in property <string> plan-seed;
+    property <string> tune-name: root.plan-name;
+    property <string> tune-opening: root.plan-opening;
+    property <string> tune-closing: root.plan-closing;
+    property <string> tune-image-min: root.plan-image-min;
+    property <string> tune-image-max: root.plan-image-max;
+    property <string> tune-video-min: root.plan-video-min;
+    property <string> tune-video-max: root.plan-video-max;
+    property <string> tune-max-videos: root.plan-max-videos;
+    property <string> tune-max-images: root.plan-max-images;
+    property <string> tune-cooldown: root.plan-cooldown;
+    property <string> tune-seed: root.plan-seed;
+    property <bool> show-advanced: false;
+    changed plan-name => { root.tune-name = root.plan-name; }
+    changed plan-opening => { root.tune-opening = root.plan-opening; }
+    changed plan-closing => { root.tune-closing = root.plan-closing; }
+    changed plan-image-min => { root.tune-image-min = root.plan-image-min; }
+    changed plan-image-max => { root.tune-image-max = root.plan-image-max; }
+    changed plan-video-min => { root.tune-video-min = root.plan-video-min; }
+    changed plan-video-max => { root.tune-video-max = root.plan-video-max; }
+    changed plan-max-videos => { root.tune-max-videos = root.plan-max-videos; }
+    changed plan-max-images => { root.tune-max-images = root.plan-max-images; }
+    changed plan-cooldown => { root.tune-cooldown = root.plan-cooldown; }
+    changed plan-seed => { root.tune-seed = root.plan-seed; }
+    callback tune-profile(json:string, name:string, opening:string, closing:string,
+        image-min:string, image-max:string, video-min:string, video-max:string,
+        max-videos:string, max-images:string, cooldown:string, seed:string);
+    callback equalize-keywords(json:string, video:bool);
+    property <int> profile-index: 1;
+    property <string> pin-index;
+    property <bool> confirm-delete: false;
+    in property <[CBuilderKeywordData]> image-keywords;
+    in property <[CBuilderKeywordData]> video-keywords;
+    in property <bool> videos-enabled;
+    in property <string> image-selection-summary;
+    in property <string> video-selection-summary;
+    callback keyword-changed(json: string, video: bool, keyword: string, selected: bool, weight: int);
+    callback videos-toggled(json: string, on: bool);
+    in property <string> preview;
+    callback plan-profile(json: string, images: string, videos: string, action: string);
+    out property <string> draft-profile: root.edited-profile;
+    property <string> edited-profile: root.profile == "" ? "{\"version\":1,\"name\":\"Video-Heavy Opening\",\"curve\":[{\"at\":0,\"video\":0.65},{\"at\":0.25,\"video\":0.45},{\"at\":0.75,\"video\":0.2},{\"at\":1,\"video\":0.05}],\"imageSeconds\":[3,5],\"videoSeconds\":[2.5,4],\"maxVideos\":2,\"maxImages\":0,\"cooldown\":3,\"allowRepeats\":true,\"ratioBySeconds\":true,\"seed\":1}" : root.profile;
     in property <float> narration-duration;
 
     callback import-folder();
     callback refresh-folder();
     callback choose-narration();
-    callback generate-project(name: string, image-weights: string, video-weights: string, coverage: int);
+    callback generate-project(name: string, image-weights: string, video-weights: string, coverage: int, profile: string);
 
+    changed profile => { root.edited-profile = root.profile; root.confirm-delete = false; }
     property <int> page: 0;
-    property <string> project-name: "New Timeline";
+    in property <string> project-name;
+    in property <bool> name-overridden;
+    in property <string> name-preview;
+    in property <bool> can-generate: true;
+    callback project-name-edited(value:string);
+    callback reset-project-name();
+    property <string> edited-name: root.project-name;
+    changed project-name=>{root.edited-name=root.project-name;}
     property <string> images-weights: "";
     property <string> videos-weights: "";
     property <int> video-coverage: 20;
 
-    padding: 10px;
-    spacing: 12px;
+    padding: 8px;
+    spacing: 8px;
 
-    Text { text: "C BUILDER"; color: Theme.fg; font-size: Theme.fs-lg; font-weight: Theme.weight-title; }
+    Text { text: "1  Media Library    /    2  Timeline Builder    /    3  Media Selection"; color: Theme.fg-muted; font-size: Theme.fs-sm; }
     HorizontalLayout {
         spacing: 6px;
         Button {
@@ -71,7 +146,8 @@ export component CBuilderPane inherits VerticalLayout {
             label: "Timeline Builder";
             primary: root.page == 1;
             clicked => { root.page = 1; }
-        }
+        }        Button { label: "Media Selection"; primary: root.page == 2; clicked => { root.page = 2; } }
+
     }
     if root.page == 0: VerticalLayout {
         spacing: 10px;
@@ -89,7 +165,7 @@ export component CBuilderPane inherits VerticalLayout {
             }
         }
         Text {
-            text: root.media-folder == "" ? "Choose a media folder. Originals are never moved or deleted."
+            text: root.media-folder == "" ? "Choose a media folder. Successful generation archives consumed media in used/ with compatibility links for older projects."
                 : root.media-folder;
             color: Theme.fg-muted;
             font-size: Theme.fs-sm;
@@ -119,7 +195,7 @@ export component CBuilderPane inherits VerticalLayout {
             }
         }
         Text {
-            text: root.busy ? "Scanning media: \{root.scan-done} / \{root.scan-total}"
+            text: root.busy && !root.generating ? "Scanning media: \{root.scan-done} / \{root.scan-total}"
                 : root.status;
             color: Theme.fg-muted;
             font-size: Theme.fs-sm;
@@ -139,64 +215,147 @@ export component CBuilderPane inherits VerticalLayout {
             wrap: word-wrap;
         }
     }
+    if root.page == 2: CBuilderSelectionPanel {
+        images: root.image-keywords; videos: root.video-keywords; videos-enabled: root.videos-enabled;
+        busy: root.busy; image-summary: root.image-selection-summary; video-summary: root.video-selection-summary;
+        changed(video, keyword, selected, weight) => { root.keyword-changed(root.edited-profile, video, keyword, selected, weight); }
+        equalize(video) => { root.equalize-keywords(root.edited-profile, video); }
+        videos-toggled(on) => { root.videos-toggled(root.edited-profile, on); }
+    }
     if root.page == 1: VerticalLayout {
-        spacing: 10px;
-        Text { text: "Narration"; color: Theme.fg; font-weight: Theme.weight-title; }
-        Button {
-            label: "Select Audio";
-            enabled: !root.busy;
-            clicked => { root.choose-narration(); }
+        spacing: 9px;
+        Text { text: "Timeline Builder"; color: Theme.fg; font-size: Theme.fs-lg;
+            font-weight: Theme.weight-title; }
+        Text { text: "Narration & project"; color: Theme.fg; font-weight: Theme.weight-title; }
+        HorizontalLayout {
+            spacing: 8px;
+            Button { label: "Select Audio"; enabled: !root.busy; clicked => { root.choose-narration(); } }
+            Text { text: "Duration: \{Math.round(root.narration-duration * 100) / 100}s";
+                color: Theme.fg-muted; font-size: Theme.fs-sm; vertical-alignment: center; }
+            Rectangle { horizontal-stretch: 1; }
         }
-        Text {
-            text: root.narration == "" ? "Select an MP3/WAV narration." : root.narration;
-            color: Theme.fg-muted;
-            font-size: Theme.fs-sm;
-            wrap: word-wrap;
+        Text { text: root.narration == "" ? "Select an MP3/WAV narration." : root.narration;
+            color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
+        Text { text: "Project name"; color: Theme.fg-muted; font-size: Theme.fs-sm; }
+        CField { max-width: 520px; value <=> root.edited-name; placeholder: "From narration"; edited(value)=>{root.project-name-edited(value);} }
+        HorizontalLayout {
+            spacing: 8px;
+            Button { label: "Use Audio Name"; enabled: !root.busy && root.narration != ""; clicked => { root.reset-project-name(); } }
+            Button { label: "Media Selection"; enabled: !root.busy; clicked => { root.page = 2; } }
+            Rectangle { horizontal-stretch: 1; }
         }
-        Text {
-            text: "Narration duration: \{Math.round(root.narration-duration * 100) / 100} seconds";
-            color: Theme.fg-muted;
-            font-size: Theme.fs-sm;
+        Text { text: root.name-preview; color: Theme.fg-muted; wrap: word-wrap; font-size: Theme.fs-sm; }
+
+        Rectangle { height: 1px; background: Theme.line; }
+        Text { text: "Planning profile"; color: Theme.fg; font-weight: Theme.weight-title; }
+        Select { max-width: 440px; options: root.profile-names; current <=> root.profile-index;
+            changed(index) => { root.plan-profile(root.edited-profile, root.images-weights, root.videos-weights, "select:\{index}"); } }
+        TuneField { max-width: 520px; caption: "Profile name"; value <=> root.tune-name; }
+        Text { text: "Video mix over the timeline · % (intermediate anchors stay intact)";
+            color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
+        HorizontalLayout {
+            spacing: 8px;
+            TuneField { max-width: 215px; caption: "Opening video %"; value <=> root.tune-opening; }
+            TuneField { max-width: 215px; caption: "Ending video %"; value <=> root.tune-closing; }
+            Rectangle { horizontal-stretch: 1; }
         }
-        Text { text: "New Concat project name"; color: Theme.fg; }
-        CField { value <=> root.project-name; placeholder: "Project name"; }
-        Text { text: "Image keyword strengths (optional)"; color: Theme.fg; }
-        CField { value <=> root.images-weights; placeholder: "Alex Eala=70, Interview=30"; }
-        Text { text: "Video keyword strengths (optional)"; color: Theme.fg; }
-        CField { value <=> root.videos-weights; placeholder: "Match=60, Interview=40"; }
-        Text { text: "Target video coverage"; color: Theme.fg; }
-        Select {
-            options: ["0% (images only)", "10%", "15%", "20%", "25%", "30%", "35%", "40%"];
-            current: root.video-coverage == 0 ? 0 : root.video-coverage == 10 ? 1
-                : root.video-coverage == 15 ? 2 : root.video-coverage == 20 ? 3
-                : root.video-coverage == 25 ? 4 : root.video-coverage == 30 ? 5
-                : root.video-coverage == 35 ? 6 : 7;
-            changed(index) => {
-                root.video-coverage = index == 0 ? 0 : index == 1 ? 10
-                    : index == 2 ? 15 : index == 3 ? 20 : index == 4 ? 25
-                    : index == 5 ? 30 : index == 6 ? 35 : 40;
+        Text { text: "Shot duration range · seconds"; color: Theme.fg-muted; font-size: Theme.fs-sm; }
+        HorizontalLayout {
+            spacing: 8px;
+            TuneField { max-width: 215px; caption: "Image min"; value <=> root.tune-image-min; }
+            TuneField { max-width: 215px; caption: "Image max"; value <=> root.tune-image-max; }
+            Rectangle { horizontal-stretch: 1; }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            TuneField { max-width: 215px; caption: "Video min"; value <=> root.tune-video-min; }
+            TuneField { max-width: 215px; caption: "Video max"; value <=> root.tune-video-max; }
+            Rectangle { horizontal-stretch: 1; }
+        }
+        Text { text: "Humanized sequence · 0 run limit = unlimited"; color: Theme.fg-muted; font-size: Theme.fs-sm; }
+        HorizontalLayout {
+            spacing: 8px;
+            TuneField { max-width: 215px; caption: "Max video run"; value <=> root.tune-max-videos; }
+            TuneField { max-width: 215px; caption: "Max image run"; value <=> root.tune-max-images; }
+            Rectangle { horizontal-stretch: 1; }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            TuneField { max-width: 215px; caption: "Repeat cooldown"; value <=> root.tune-cooldown; }
+            TuneField { max-width: 215px; caption: "Random seed"; value <=> root.tune-seed; }
+            Rectangle { horizontal-stretch: 1; }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            Button { label: "Apply Planning Settings"; primary: true; enabled: !root.busy;
+                clicked => {
+                    root.tune-profile(root.edited-profile, root.tune-name, root.tune-opening, root.tune-closing,
+                        root.tune-image-min, root.tune-image-max, root.tune-video-min, root.tune-video-max,
+                        root.tune-max-videos, root.tune-max-images, root.tune-cooldown, root.tune-seed);
+                }
+            }
+            Rectangle { horizontal-stretch: 1; }
+        }
+        Text { text: "Apply settings before previewing. Preview, Reroll and Generate use the saved slider shares from Media Selection.";
+            color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
+
+        HorizontalLayout {
+            spacing: 6px;
+            Button { label: "Store"; enabled: !root.busy; clicked => { root.plan-profile(root.edited-profile, root.images-weights, root.videos-weights, "store"); } }
+            Button { label: "Duplicate"; enabled: !root.busy; clicked => { root.plan-profile(root.edited-profile, root.images-weights, root.videos-weights, "duplicate"); } }
+            Button { label: "Rename"; enabled: !root.busy; clicked => { root.plan-profile(root.edited-profile, root.images-weights, root.videos-weights, "rename"); } }
+            Button { label: root.confirm-delete ? "Confirm Delete" : "Delete Saved"; enabled: !root.busy;
+                clicked => { if root.confirm-delete {root.plan-profile(root.edited-profile, root.images-weights, root.videos-weights, "delete");root.confirm-delete=false;} else {root.confirm-delete=true;} } }
+            Rectangle { horizontal-stretch: 1; }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            Button { label: "Import"; enabled: !root.busy; clicked => { root.plan-profile(root.edited-profile, root.images-weights, root.videos-weights, "load"); } }
+            Button { label: "Export"; enabled: !root.busy; clicked => { root.plan-profile(root.edited-profile, root.images-weights, root.videos-weights, "save"); } }
+            Button { label: root.show-advanced ? "Hide Advanced JSON" : "Advanced / Edit JSON"; enabled: !root.busy;
+                clicked => { root.show-advanced = !root.show-advanced; } }
+            Rectangle { horizontal-stretch: 1; }
+        }
+        if root.show-advanced: VerticalLayout {
+            spacing: 5px;
+            Text { text: "Advanced · versioned planning JSON (validated on Preview / Apply / Generate)";
+                color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
+            Rectangle {
+                max-width: 660px; height: 165px; background: Theme.field; border-radius: Theme.r;
+                TextInput { x: 6px; y: 6px; width: parent.width - 12px; height: parent.height - 12px;
+                    text <=> root.edited-profile; color: Theme.fg; font-size: Theme.fs-sm; wrap: word-wrap; }
             }
         }
-        Text {
-            text: "Images 3–5s; videos 2.5–4s muted. No source moves. Keywords are auto-balanced if left blank.";
-            color: Theme.fg-muted;
-            font-size: Theme.fs-sm;
-            wrap: word-wrap;
+
+        Rectangle { height: 1px; background: Theme.line; }
+        Text { text: "Preview & generate"; color: Theme.fg; font-weight: Theme.weight-title; }
+        HorizontalLayout {
+            spacing: 8px;
+            Button { label: "Preview Plan"; enabled: !root.busy; clicked => { root.plan-profile(root.edited-profile, root.images-weights, root.videos-weights, "preview"); } }
+            Button { label: "Reroll"; enabled: !root.busy; clicked => { root.plan-profile(root.edited-profile, root.images-weights, root.videos-weights, "reroll"); } }
+            Rectangle { horizontal-stretch: 1; }
         }
-        Button {
-            label: "Generate Native Concat Timeline";
-            primary: true;
-            enabled: !root.busy && root.image-count > 0 && root.narration != "";
-            clicked => {
-                root.generate-project(root.project-name, root.images-weights,
-                    root.videos-weights, root.video-coverage);
+        Text { text: root.preview == "" ? "Preview a deterministic plan before generating." : root.preview;
+            color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
+        CField { max-width: 320px; value <=> root.pin-index; placeholder: "Storyboard shot number to pin"; }
+        HorizontalLayout {
+            spacing: 8px;
+            Button { label: "Pin Preview Shot"; enabled: !root.busy; clicked => { root.plan-profile(root.edited-profile, root.images-weights, root.videos-weights, "pin:\{root.pin-index}"); } }
+            Button { label: "Clear Pins"; enabled: !root.busy; clicked => { root.plan-profile(root.edited-profile, root.images-weights, root.videos-weights, "clear-pins"); } }
+            Rectangle { horizontal-stretch: 1; }
+        }
+        HorizontalLayout {
+            Button {
+                label: "Generate Native Concat Timeline";
+                primary: true;
+                enabled: root.can-generate && !root.busy && (root.image-count + root.video-count) > 0 && root.narration != "";
+                clicked => {
+                    root.generate-project(root.edited-name, root.images-weights,
+                        root.videos-weights, root.video-coverage, root.edited-profile);
+                }
             }
+            Rectangle { horizontal-stretch: 1; }
         }
-        Text {
-            text: root.status;
-            color: Theme.fg-muted;
-            font-size: Theme.fs-sm;
-            wrap: word-wrap;
-        }
+        Text { text: root.status; color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
     }
 }

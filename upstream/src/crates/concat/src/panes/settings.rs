@@ -337,6 +337,7 @@ impl SettingsPane {
                 studio.notify(&t("settings.gpuNextStart"), false);
             }
             SettingsMsg::MagneticChanged(on) => {
+                studio.apply(concat_project::Command::SetTimelineMagnetic { enabled: on });
                 studio.prefs.magnetic = on;
                 studio.prefs.save(&studio.host.dirs);
             }
@@ -861,7 +862,7 @@ impl SettingsPane {
             proxies: studio.prefs.proxies,
             gpu: !studio.prefs.software_gpu,
             gpu_switchable: cfg!(any(windows, target_os = "linux")),
-            magnetic: studio.prefs.magnetic,
+            magnetic: studio.magnetic(),
             download_source: self.download_source as i32,
             download_base: self.download_base.as_str().into(),
             server_enabled: studio.prefs.server.enabled,

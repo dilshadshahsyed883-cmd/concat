@@ -110,6 +110,7 @@ export component TimelinePane inherits Rectangle {
     callback clip-volume(id: string, gain: float);
     callback clip-dragged(seconds: float, pixels: length);
     callback clip-released();
+    callback clip-cancelled();
     in property <[MenuItemData]> menu-items;
     in property <length> menu-height;
     in property <int> menu-token;
@@ -443,6 +444,7 @@ export component TimelinePane inherits Rectangle {
                 clip-volume(id, gain) => { root.clip-volume(id, gain); }
                 clip-dragged(seconds, pixels) => { root.clip-dragged(seconds, pixels); }
                 clip-released => { root.clip-released(); }
+                clip-cancelled => { root.clip-cancelled(); }
                 menu-items: root.menu-items;
                 menu-height: root.menu-height;
                 menu-token: root.menu-token;

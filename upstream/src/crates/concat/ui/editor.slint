@@ -1,3 +1,4 @@
+import { CBuilderKeywordData } from "workspace/c-builder-selection.slint";
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
 
@@ -98,10 +99,41 @@ export global Editor {
     in-out property <int> cb-scan-done;
     in-out property <int> cb-scan-total;
     in-out property <bool> cb-busy;
+    in-out property <string> cb-project-name;
+    in-out property <bool> cb-name-overridden;
+    in-out property <string> cb-name-preview;
+    callback cb-project-name-edited(name:string);
+    callback cb-reset-project-name();
+    in-out property <string> cb-profile;
+    in-out property <[string]> cb-profile-names;
+    in-out property <[CBuilderKeywordData]> cb-image-keywords;
+    in-out property <[CBuilderKeywordData]> cb-video-keywords;
+    in-out property <bool> cb-videos-enabled;
+    in-out property <string> cb-image-selection-summary;
+    in-out property <string> cb-video-selection-summary;
+    in-out property <string> cb-plan-name;
+    in-out property <string> cb-plan-opening;
+    in-out property <string> cb-plan-closing;
+    in-out property <string> cb-plan-image-min;
+    in-out property <string> cb-plan-image-max;
+    in-out property <string> cb-plan-video-min;
+    in-out property <string> cb-plan-video-max;
+    in-out property <string> cb-plan-max-videos;
+    in-out property <string> cb-plan-max-images;
+    in-out property <string> cb-plan-cooldown;
+    in-out property <string> cb-plan-seed;
+    callback cb-tune-profile(json:string, name:string, opening:string, closing:string,
+        image-min:string, image-max:string, video-min:string, video-max:string,
+        max-videos:string, max-images:string, cooldown:string, seed:string);
+    callback cb-equalize-keywords(json:string, video:bool);
+    callback cb-keyword-changed(json: string, video: bool, keyword: string, selected: bool, weight: int);
+    callback cb-videos-toggled(json: string, on: bool);
+    in-out property <string> cb-preview;
+    callback cb-plan-profile(json: string, images: string, videos: string, action: string);
     callback cb-import-folder();
     callback cb-refresh-folder();
     callback cb-choose-narration();
-    callback cb-generate-project(name: string, images: string, videos: string, coverage: int);
+    callback cb-generate-project(name: string, images: string, videos: string, coverage: int, profile: string);
 
     callback import-media();
     callback media-filter-changed(filter: MediaFilter);
@@ -323,6 +355,7 @@ export global Editor {
     /// The transition riding into the selected clip; see VideoPanel.
     callback transition-remove();
     callback transition-duration-set(seconds: float);
+    callback transition-duration-all(seconds: float);
     callback transition-intensity-set(amount: float);
 
     // ── the timeline ──
@@ -457,6 +490,7 @@ export global Editor {
     callback clip-volume(id: string, gain: float);
     callback clip-dragged(seconds: float, pixels: length);
     callback clip-released();
+    callback clip-cancelled();
     in-out property <[MenuItemData]> menu-items;
     in-out property <length> menu-height;
     in-out property <int> menu-token;

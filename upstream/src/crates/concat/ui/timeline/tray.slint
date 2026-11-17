@@ -6,7 +6,7 @@ import { Theme } from "../theme/theme.slint";
 import { Glyph, Icon } from "../icons.slint";
 import { IconButton } from "../primitives/panel.slint";
 import { LevelMeter } from "../primitives/level-meter.slint";
-import { TimelineTool } from "model.slint";
+import { TimelineTool, TimelineDrag } from "model.slint";
 import { Editor } from "../editor.slint";
 
 // The timeline's tool tray.
@@ -380,6 +380,10 @@ export component TimelineTray inherits Rectangle {
             checked: root.snap;
             clicked => { root.snap-changed(!root.snap); }
         }
+        TrayButton {glyph:Glyph.plus; label:"Ripple drag insertion: shift following clips"; checked:TimelineDrag.ripple;
+            clicked=>{TimelineDrag.modes-changed(!TimelineDrag.ripple,TimelineDrag.duplicate);} }
+        TrayButton {glyph:Glyph.copy; label:"Duplicate drag (also Ctrl/Alt-drag)"; checked:TimelineDrag.duplicate;
+            clicked=>{TimelineDrag.modes-changed(TimelineDrag.ripple,!TimelineDrag.duplicate);} }
         // The magnetic timeline, beside the snap it is so often mistaken
         // for: snap is where a drag lands, magnetic is that a delete or a
         // trim leaves no hole. https://github.com/jub0t/Concat/issues/106

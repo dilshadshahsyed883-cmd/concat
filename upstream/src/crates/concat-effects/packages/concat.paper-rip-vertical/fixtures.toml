@@ -1,0 +1,25 @@
+# Analytic boundary/invariant probes; requires real GPU execution for pixel verification.
+
+[[probe]]
+name = "outgoing endpoint default"
+at = "default"
+input = [0.2,0.4,0.6,1.0]
+to = [0.7,0.3,0.1,1.0]
+progress = 0.0
+expect = [0.2,0.4,0.6,1.0]
+
+[[probe]]
+name = "outgoing endpoint min"
+at = "min"
+input = [0.2,0.4,0.6,1.0]
+to = [0.7,0.3,0.1,1.0]
+progress = 0.0
+expect = [0.2,0.4,0.6,1.0]
+
+[[probe]]
+name = "outgoing endpoint max"
+at = "max"
+input = [0.2,0.4,0.6,1.0]
+to = [0.7,0.3,0.1,1.0]
+progress = 0.0
+expect = [0.2,0.4,0.6,1.0]

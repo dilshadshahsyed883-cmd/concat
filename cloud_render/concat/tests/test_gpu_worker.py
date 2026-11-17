@@ -84,6 +84,38 @@ class WorkerTests(unittest.TestCase):
             self.worker.accept("half", io.BytesIO(self.data[:5]), len(self.data), self.sha)
         self.assertFalse((self.worker.inputs / "half").exists())
 
+    def test_cancel_during_render_never_delivers_or_removes_retained_sources(self):
+        entered = threading.Event()
+        release = threading.Event()
+        def render(project, output):
+            entered.set()
+            if not release.wait(timeout=5):
+                raise RuntimeError("Test renderer timed out")
+            output.write_bytes(MP4)
+        self.worker.renderer = render
+        self.worker.receiver = "https://receiver.example"
+        self.add("cancelrender")
+        try:
+            self.assertTrue(entered.wait(timeout=5))
+            self.assertEqual(self.worker.cancel("cancelrender")["state"], "cancellation_requested")
+        finally:
+            release.set()
+        self.wait()
+        status = self.worker.status("cancelrender")
+        self.assertEqual(status["state"], "cancelled")
+        self.assertNotIn("output_sha256", status)
+        self.assertEqual(self.delivered, [])
+        self.assertTrue((self.worker.inputs / "cancelrender/project.zip").is_file())
+        self.assertTrue((self.worker.outputs / "cancelrender.mp4").is_file())
+
+    def test_cancel_completed_result_leaves_it_available(self):
+        self.add("completed")
+        self.wait()
+        before = self.worker.status("completed")
+        self.assertEqual(before["state"], "rendered")
+        self.assertEqual(self.worker.cancel("completed"), before)
+        self.assertTrue((self.worker.outputs / "completed.mp4").is_file())
+
     def test_delivery_ack_cleanup_is_per_job(self):
         self.worker.receiver = "https://app.scenebuilder.online"
         self.add("one")

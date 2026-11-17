@@ -49,6 +49,27 @@ impl MotionPreset {
 
     /// Calculate the preset's native keys before committing an edit.
     pub fn keys(self, clip: &Clip, frame: f64) -> Result<([ClipKey; 2], f64), PresetError> {
+        self.keys_with(clip, frame, 1.0, 1.0, 1.0)
+    }
+
+    /// Shared authoring controls, sampled as the same two editable keys.
+    pub fn keys_with(
+        self,
+        clip: &Clip,
+        frame: f64,
+        strength: f64,
+        duration: f64,
+        speed: f64,
+    ) -> Result<([ClipKey; 2], f64), PresetError> {
+        if !strength.is_finite()
+            || !duration.is_finite()
+            || !speed.is_finite()
+            || !(0.1..=2.0).contains(&strength)
+            || !(0.1..=1.0).contains(&duration)
+            || !(0.25..=3.0).contains(&speed)
+        {
+            return Err(PresetError::NoChange);
+        }
         if !matches!(clip.kind, ClipKind::Video | ClipKind::Image) {
             return Err(PresetError::NeedsPicture);
         }
@@ -81,6 +102,14 @@ impl MotionPreset {
                 (0.1 * clip.duration / frame).ceil().min(last),
             ),
         };
+        let final_value = match property {
+            KeyProperty::Scale => (first + (final_value - first) * strength)
+                .clamp(ranges::MIN_SCALE, ranges::MAX_SCALE),
+            KeyProperty::Opacity => (first + (final_value - first) * strength).clamp(0.0, 1.0),
+            _ => (first + (final_value - first) * strength)
+                .clamp(-ranges::MAX_OFFSET, ranges::MAX_OFFSET),
+        };
+        let end_frame = (end_frame * duration / speed).round().clamp(1.0, last);
         if clip.is_keyed(property) {
             return Err(PresetError::AlreadyKeyed);
         }

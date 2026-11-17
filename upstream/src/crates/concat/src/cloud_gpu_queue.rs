@@ -25,6 +25,7 @@ enum Action {
     Prepare,
     Upload,
     Status,
+    Cancel,
 }
 
 impl Action {
@@ -33,6 +34,7 @@ impl Action {
             Self::Prepare => "Prepare",
             Self::Upload => "Upload",
             Self::Status => "Status",
+            Self::Cancel => "Cancel",
         }
     }
 }
@@ -218,14 +220,14 @@ impl Controller {
             self.changed = true;
             return;
         }
+        let display_name = fs::read_to_string(snapshot.join("concat.json")).ok()
+            .and_then(|text|serde_json::from_str::<Value>(text.trim_start_matches('\u{feff}')).ok())
+            .and_then(|doc|doc.get("name").and_then(Value::as_str).filter(|name|!name.trim().is_empty()).map(str::to_owned))
+            .unwrap_or_else(||path.file_name().and_then(|n|n.to_str()).unwrap_or(project).to_owned());
         self.data.enqueue(Job {
             remote: id.clone(),
             id,
-            label: path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or(project)
-                .into(),
+            label: concat_project::naming::basename(&display_name),
             project: project.into(),
             domain: String::new(),
             phase: Phase::Preparing,
@@ -269,6 +271,13 @@ impl Controller {
         let phase = self.data.jobs[index].phase;
         match action {
             "retry" if phase.can_retry() => {
+                if phase == Phase::RenderFailed && self.data.jobs[index].detail.starts_with("GPU ASR unavailable:") {
+                    let job=self.data.jobs[index].clone();
+                    self.data.jobs[index].phase=Phase::Queued;
+                    self.launch_operation(Action::Status,"Retry",job);
+                    self.save();
+                    return;
+                }
                 let new_id = self.next_id();
                 let job = &mut self.data.jobs[index];
                 job.phase = match phase {
@@ -296,7 +305,11 @@ impl Controller {
                 } else {
                     "Cancelled before submission.".into()
                 };
+                let remote_cancel = (submitted && !job.domain.is_empty()).then(|| job.clone());
                 self.data.started = false;
+                if let Some(job) = remote_cancel {
+                    self.launch(Action::Cancel, job);
+                }
                 // Keep in-flight flags set until the helper exits. Starting
                 // another upload before the aborted process ends is unsafe.
                 self.note = "Queue paused after cancellation. Click Start Queue to continue.".into();
@@ -347,6 +360,10 @@ impl Controller {
     }
 
     fn launch(&mut self, action: Action, job: Job) {
+        self.launch_operation(action, action.operation(), job);
+    }
+
+    fn launch_operation(&mut self, action: Action, operation: &'static str, job: Job) {
         let id = job.id.clone();
         let abort = new_abort_handle();
         self.active_transfers.insert((id.clone(), action), abort.clone());
@@ -354,7 +371,7 @@ impl Controller {
         std::thread::spawn(move || {
             let result = run_script(
                 &Task::Queue {
-                    operation: action.operation(),
+                    operation,
                     job,
                 },
                 None,
@@ -540,11 +557,19 @@ impl Controller {
                         self.next_poll = Instant::now() + Duration::from_secs(4);
                     }
                     Action::Upload => self.uploading = false,
+                    Action::Cancel => {},
                 }
                 let Some(job) = self.data.jobs.iter_mut().find(|job| job.id == id) else {
                     return;
                 };
                 if job.phase == Phase::Cancelled {
+                    if action == Action::Cancel {
+                        job.detail = match result {
+                            Ok(()) => "Cancelled locally; worker cancellation requested.".into(),
+                            Err(_) => "Cancelled locally. Worker cancellation was not confirmed; reconnect to check the remote job.".into(),
+                        };
+                        self.save();
+                    }
                     return;
                 }
                 match action {

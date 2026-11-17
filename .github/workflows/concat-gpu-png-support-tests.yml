@@ -1,0 +1,41 @@
+name: Concat GPU JPEG/PNG source and ZIP compatibility tests
+on:
+  push:
+    branches: [fix/gpu-png-support-68]
+    paths:
+      - 'cloud_render/concat/hybrid/project.py'
+      - 'cloud_render/concat/hybrid/render.py'
+      - 'cloud_render/concat/tests/test_gpu_png_support.py'
+      - 'cloud_render/concat/tests/test_gpu_compat_validation.py'
+      - '.github/workflows/concat-gpu-png-support-tests.yml'
+  pull_request:
+    paths:
+      - 'cloud_render/concat/hybrid/project.py'
+      - 'cloud_render/concat/hybrid/render.py'
+      - 'cloud_render/concat/tests/test_gpu_png_support.py'
+      - 'cloud_render/concat/tests/test_gpu_compat_validation.py'
+      - '.github/workflows/concat-gpu-png-support-tests.yml'
+permissions:
+  contents: read
+jobs:
+  png-zip-source-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install FFmpeg for real-media ZIP and caption audio fixtures
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install Pillow==12.0.0 numpy==2.2.6
+      - name: Compile GPU worker source
+        run: python -m compileall -q cloud_render/concat
+      - name: JPEG/PNG decode, alpha, actual ZIP and legacy retry
+        run: python -m unittest -v cloud_render.concat.tests.test_gpu_png_support
+      - name: Windows preflight to worker feature-validation parity
+        run: python -m unittest -v cloud_render.concat.tests.test_gpu_compat_validation

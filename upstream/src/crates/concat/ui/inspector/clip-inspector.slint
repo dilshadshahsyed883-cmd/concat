@@ -1,3 +1,4 @@
+import { CreativeTransitionEditor } from "creative-transition-controls.slint";
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
 
@@ -13,6 +14,7 @@ import {
     SectionHeader,
 } from "../primitives/panel.slint";
 import { Button } from "../primitives/modal.slint";
+import { NumberField } from "../primitives/number-field.slint";
 import { SegmentedControl } from "../primitives/segmented-control.slint";
 import { Select } from "../primitives/select.slint";
 import {
@@ -1168,7 +1170,7 @@ export component VideoPanel inherits VerticalLayout {
     init => { root.seed(); }
     changed selected => { root.seed(); }
 
-    Section {
+    if !GpuCompatibility.enabled || !root.canvas || (root.selected.kind != ClipKind.video && root.selected.kind != ClipKind.image): Section {
         first: true;
         transform := SectionHeader {
             title: I18n.t("clipInspector.transform");
@@ -1295,7 +1297,7 @@ export component VideoPanel inherits VerticalLayout {
         }
     }
 
-    if root.canvas && (root.selected.kind == ClipKind.video || root.selected.kind == ClipKind.image): Section {
+    if !GpuCompatibility.enabled && root.canvas && (root.selected.kind == ClipKind.video || root.selected.kind == ClipKind.image): Section {
         motion := SectionHeader {
             title: I18n.t("clipInspector.motionPresets");
             collapsible: true;
@@ -1323,62 +1325,8 @@ export component VideoPanel inherits VerticalLayout {
                     clicked => { Keyframes.apply-motion-preset(ClipField.opacity); }
                 }
             }
-            if GpuCompatibility.enabled: HorizontalLayout {
-                padding-left: Theme.pad;
-                padding-right: Theme.pad;
-                Button {
-                    block: true;
-                    label: I18n.t("common.applyAllRandomly");
-                    clicked => { Keyframes.apply-random-motion(); }
-                }
-            }
-            if GpuCompatibility.enabled: VerticalLayout {
-                padding-left: Theme.pad;
-                padding-right: Theme.pad;
-                Param {
-                    label: "Strength";
-                    value <=> Keyframes.physics-strength;
-                    minimum: 0.1;
-                    maximum: 2;
-                    step: 0.1;
-                    default-value: 1;
-                    fmt: ParamFormat.fraction;
-                }
-                Param {
-                    label: "Duration (clip fraction)";
-                    value <=> Keyframes.physics-duration;
-                    minimum: 0.1;
-                    maximum: 1;
-                    step: 0.05;
-                    default-value: 1;
-                    fmt: ParamFormat.fraction;
-                    unit: "%";
-                    unit-scale: 100;
-                }
-                Param {
-                    label: "Speed";
-                    value <=> Keyframes.physics-speed;
-                    minimum: 0.25;
-                    maximum: 3;
-                    step: 0.05;
-                    default-value: 1;
-                    fmt: ParamFormat.fraction;
-                }
-                Param {
-                    label: "Physics Intensity";
-                    value <=> Keyframes.physics-intensity;
-                    minimum: 0.2;
-                    maximum: 2;
-                    step: 0.1;
-                    default-value: 1;
-                    fmt: ParamFormat.fraction;
-                }
-                Text {
-                    text: "Choose an animation in the Library's Animations tab. These controls bake editable GPU-compatible keyframes.";
-                    color: Theme.fg-muted;
-                    wrap: word-wrap;
-                }
-            }
+
+
 
         }
     }
@@ -1386,11 +1334,8 @@ export component VideoPanel inherits VerticalLayout {
     // What fills the frame where this picture does not reach: the
     // timeline's background, or one of the clip's own. Only on the lowest
     // picture lane, which is where a background is drawn.
-    if GpuCompatibility.enabled && root.canvas && Backdrop.clip-has && Backdrop.clip.mode > 0: Button {
-        label: I18n.t("project.clearGpuBackground");
-        clicked => { Backdrop.set-mode(true, -1); }
-    }
-    if root.canvas && Backdrop.clip-has: Section {
+
+    if !GpuCompatibility.enabled && root.canvas && Backdrop.clip-has: Section {
         canvas := SectionHeader {
             title: I18n.t("phone.canvas");
             collapsible: true;
@@ -2195,18 +2140,29 @@ export component TransitionPanel inherits VerticalLayout {
     /// Set to a new length - clamped as applying one is, so this can never
     /// ask for more than the cut can give it.
     callback duration-set(seconds: float);
+    callback duration-all(seconds: float);
     callback intensity-set(amount: float);
 
     property <float> duration;
+    // Preserve the entered bulk value when the selected short cut clamps its
+    // individual duration. The hint below keeps that distinct value visible.
+    property <float> bulk-duration;
+    property <string> duration-clip;
     property <float> intensity;
 
     init => {
         root.duration = root.transition.duration;
+        root.bulk-duration = root.transition.duration;
+        root.duration-clip = root.transition.id;
         root.intensity = root.transition.intensity;
     }
     changed transition => {
         root.duration = root.transition.duration;
         root.intensity = root.transition.intensity;
+        if (root.duration-clip != root.transition.id) {
+            root.bulk-duration = root.transition.duration;
+            root.duration-clip = root.transition.id;
+        }
     }
 
     Section {
@@ -2254,15 +2210,47 @@ export component TransitionPanel inherits VerticalLayout {
                 }
             }
 
-            Param {
-                label: I18n.t("common.duration");
-                value <=> root.duration;
-                minimum: 0.05;
-                maximum: 5;
-                step: 0.05;
-                default-value: 0.5;
-                fmt: ParamFormat.seconds2;
-                changed(v) => { root.duration-set(v); }
+            VerticalLayout {
+                padding-left: Theme.pad;
+                padding-right: Theme.pad;
+                spacing: 4px;
+                Text {
+                    text: I18n.t("common.duration");
+                    color: Theme.fg-muted;
+                    font-size: Theme.fs;
+                    TouchArea {
+                        double-clicked => {
+                            root.bulk-duration = 0.5;
+                            root.duration-set(0.5);
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 6px;
+                    NumberField {
+                        width: 72px;
+                        horizontal-stretch: 0;
+                        value <=> root.duration;
+                        minimum: 0.1;
+                        maximum: 5;
+                        step: 0.05;
+                        precision: 2;
+                        unit: "s";
+                        changed(v) => { root.bulk-duration = v; root.duration-set(v); }
+                    }
+                    Button {
+                        label: "Apply Duration to All";
+                        horizontal-stretch: 1;
+                        clicked => { root.duration-all(root.bulk-duration); }
+                    }
+                }
+                Text {
+                    text: "All cuts: " + InspectorFmt.format(ParamFormat.seconds2, root.bulk-duration)
+                        + ". Quantized to timeline frames; cuts without room are skipped.";
+                    color: Theme.fg-muted;
+                    font-size: Theme.fs-sm;
+                    wrap: word-wrap;
+                }
             }
             if GpuCompatibility.enabled && root.transition.intensity-supported: Param {
                 label: "GPU Intensity";
@@ -2276,8 +2264,9 @@ export component TransitionPanel inherits VerticalLayout {
                 unit-scale: 100;
                 changed(v) => { root.intensity-set(v); }
             }
+            if root.transition.intensity-supported: CreativeTransitionEditor { }
             if GpuCompatibility.enabled: Text {
-                text: "Intensity affects the Salad GPU render. Desktop preview may differ.";
+                text: "Controls are saved with the cut and shared with native preview and GPU export.";
                 color: Theme.fg-muted;
                 wrap: word-wrap;
             }

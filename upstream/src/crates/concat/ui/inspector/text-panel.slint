@@ -269,6 +269,24 @@ export component TextPanel inherits VerticalLayout {
         }
     }
 
+    if GpuCompatibility.enabled: Section {
+        SectionHeader { title: "Caption Font and Size"; }
+        SectionBody {
+            Select {
+                options: ["Hanken Grotesk SemiBold", "Hanken Grotesk Bold", "Inter Black", "Inter Bold", "Montserrat ExtraBold", "Archivo Black", "Anton"];
+                current: root.selected.font-family == "Inter" ? (root.selected.font-weight >= 900 ? 2 : 3)
+                    : root.selected.font-family == "Montserrat" ? 4 : root.selected.font-family == "Archivo Black" ? 5
+                    : root.selected.font-family == "Anton" ? 6 : root.selected.font-weight >= 700 ? 1 : 0;
+                changed(index) => {
+                    root.set-text(ClipTextField.font-family, index <= 1 ? "Hanken Grotesk" : index <= 3 ? "Inter" : index == 4 ? "Montserrat" : index == 5 ? "Archivo Black" : "Anton");
+                    root.set(ClipField.font-weight, index == 0 ? 600 : index == 1 || index == 3 ? 700 : index == 2 ? 900 : index == 4 ? 800 : 400);
+                    root.commit();
+                }
+            }
+            Param { label: I18n.t("common.size"); value <=> root.size; minimum: 0.01; maximum: 0.2; step: 0.001;
+                fmt: ParamFormat.height; changed(v) => { root.set(ClipField.font-size, v); root.commit(); } }
+        }
+    }
     // ── typography ───────────────────────────────────────────────────────
     // The face, its weight and size, and its colour: one drawer, because
     // they are one decision. A colour drawer apart from the font it colours
@@ -494,6 +512,15 @@ export component TextPanel inherits VerticalLayout {
             summary: "Color · outline · shadow";
         }
         if gpu-style.open: SectionBody {
+            ColourField {
+                label: "Caption Background"; value: root.selected.plate; alpha: true;
+                changed(colour) => { root.set-colour(ClipTextField.background, colour); root.commit(); }
+            }
+            Param {
+                label: "Background Corner Radius"; value <=> root.plate-radius;
+                minimum: 0; maximum: 0.2; step: 0.001; fmt: ParamFormat.outline;
+                changed(v) => { root.set(ClipField.background-radius, v); root.commit(); }
+            }
             ColourField {
                 label: I18n.t("common.color");
                 value: root.selected.fill;

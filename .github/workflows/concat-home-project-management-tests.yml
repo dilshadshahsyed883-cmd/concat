@@ -1,0 +1,76 @@
+name: Concat Home project management tests (source only)
+on:
+  push:
+    branches: [fix/home-project-management-20261117, fix/home-regression-67]
+    paths:
+      - 'upstream/src/crates/concat-host/src/projects.rs'
+      - 'upstream/src/crates/concat-host/src/project_delete.rs'
+      - 'upstream/src/crates/concat-host/src/lib.rs'
+      - 'upstream/src/crates/concat/src/panes/start.rs'
+      - 'upstream/src/crates/concat/src/studio.rs'
+      - 'upstream/src/crates/concat/ui/start.slint'
+      - 'upstream/src/crates/concat/ui/dialogs/confirm.slint'
+      - 'upstream/src/crates/concat/tests/test_*project*.py'
+      - 'tools/home-project-source-check/**'
+      - '.github/workflows/concat-home-project-management-tests.yml'
+  pull_request:
+    paths:
+      - 'upstream/src/crates/concat-host/src/projects.rs'
+      - 'upstream/src/crates/concat-host/src/project_delete.rs'
+      - 'upstream/src/crates/concat-host/src/lib.rs'
+      - 'upstream/src/crates/concat/src/panes/start.rs'
+      - 'upstream/src/crates/concat/src/studio.rs'
+      - 'upstream/src/crates/concat/ui/start.slint'
+      - 'upstream/src/crates/concat/ui/dialogs/confirm.slint'
+      - 'upstream/src/crates/concat/tests/test_*project*.py'
+      - 'tools/home-project-source-check/**'
+      - '.github/workflows/concat-home-project-management-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust-filesystem-and-ui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
+        with:
+          toolchain: '1.93.0'
+          components: rustfmt
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Python Home UI and compatibility regression checks
+        run: |
+          python3 upstream/src/crates/concat/tests/test_recent_projects_menu.py
+          python3 upstream/src/crates/concat/tests/test_home_project_management.py
+          python3 upstream/src/crates/concat/tests/test_home_project_layout.py
+      - name: Rust syntax of changed source modules (no app build)
+        run: |
+          rustfmt --edition 2024 --emit stdout upstream/src/crates/concat-host/src/projects.rs > /dev/null
+          rustfmt --edition 2024 --emit stdout upstream/src/crates/concat-host/src/project_delete.rs > /dev/null
+          rustfmt --edition 2024 --emit stdout upstream/src/crates/concat/src/panes/start.rs > /dev/null
+          rustfmt --edition 2024 --emit stdout upstream/src/crates/concat/src/studio.rs > /dev/null
+      - name: Execute production Rust filesystem unit tests without FFmpeg or EXE
+        run: cargo test --manifest-path tools/home-project-source-check/Cargo.toml --lib
+      - name: Compile Slint UI source tree (no EXE)
+        run: cargo check --locked --manifest-path tools/slint-source-check/Cargo.toml
+
+  windows-recycle-bin:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
+        with:
+          toolchain: '1.93.0'
+      - name: Windows filesystem protections and actual Recycle Bin test
+        shell: pwsh
+        run: cargo test --manifest-path tools/home-project-source-check/Cargo.toml --lib -- --nocapture

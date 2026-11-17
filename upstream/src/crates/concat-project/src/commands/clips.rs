@@ -29,6 +29,11 @@ pub(super) fn apply(
             if timeline.track(&track_id).is_none() {
                 return Err(CommandError::TrackGone);
             }
+            if media.kind != MediaKind::Audio && super::editing::audio_lane(timeline, &track_id) {
+                return Err(CommandError::UnsafeEdit {
+                    reason: "Cannot place visual media on a narration track".into(),
+                });
+            }
             // Magnetic, the lane makes room; otherwise the clip takes the
             // nearest gap it fits, never the top of another clip.
             let start = if ripple {
@@ -53,7 +58,11 @@ pub(super) fn apply(
                 .clone();
             let duration = clip_length(&media);
             let timeline = project.active_mut();
-            let track_id = first_free_track(timeline, start, duration)
+            let track_id = timeline.tracks.iter()
+                .find(|track| (media.kind == MediaKind::Audio
+                    || !super::editing::audio_lane(timeline, &track.id))
+                    && timeline.is_free(&track.id, start, duration, &[]))
+                .map(|track| track.id.clone())
                 .unwrap_or_else(|| fresh_track(timeline, mint));
             let id = mint.next("c");
             timeline
@@ -88,12 +97,21 @@ pub(super) fn apply(
             }
             let start = start.max(0.0);
             let total: f64 = items.iter().map(clip_length).sum();
+            let has_visual = items.iter().any(|item| item.kind != MediaKind::Audio);
             let timeline = project.active_mut();
             let free_range = track_id.is_none();
             let track_id = match track_id {
                 Some(id) if timeline.track(&id).is_none() => return Err(CommandError::TrackGone),
+                Some(id) if has_visual && super::editing::audio_lane(timeline, &id) => {
+                    return Err(CommandError::UnsafeEdit {
+                        reason: "Cannot ripple visual media through narration".into(),
+                    });
+                }
                 Some(id) => id,
-                None => first_free_track(timeline, start, total)
+                None => timeline.tracks.iter()
+                    .find(|track| (!has_visual || !super::editing::audio_lane(timeline, &track.id))
+                        && timeline.is_free(&track.id, start, total, &[]))
+                    .map(|track| track.id.clone())
                     .unwrap_or_else(|| fresh_track(timeline, mint)),
             };
             let mut at = start;
@@ -299,6 +317,7 @@ pub(super) fn apply(
                     let applied = assign(&mut clip.duration, duration);
                     if applied {
                         clip.rewindow_keys(old, 0.0, duration);
+                        clip.rewindow_caption(0.0,duration);
                     }
                     (applied, duration - old, old_end - JOIN_EPSILON)
                 }
@@ -327,6 +346,7 @@ pub(super) fn apply(
                         | assign(&mut clip.source_start, source_start);
                     if applied {
                         clip.rewindow_keys(old, moved, old);
+                        clip.rewindow_caption(moved,old);
                     }
                     if ripple {
                         // The in-point moved; the clip stays put, and the
@@ -389,12 +409,14 @@ pub(super) fn apply(
                 tail.transition_in = None;
                 tail.fade_in = 0.0;
                 tail.rewindow_keys(whole, offset, whole);
+                tail.rewindow_caption(offset,whole);
                 created = Some(tail.id.clone());
                 let head = timeline.clip_at_mut(index);
                 head.duration = offset;
                 head.source_start = head_source;
                 head.fade_out = 0.0;
                 head.rewindow_keys(whole, 0.0, offset);
+                head.rewindow_caption(0.0,offset);
                 timeline.clips.insert(index + 1, Arc::new(tail));
             }
             // A split always mints the tail, so "minted anything" and
@@ -784,7 +806,7 @@ fn close_gaps(timeline: &mut Timeline, removed: &[(String, f64, f64)]) {
     }
 }
 
-fn default_clip(id: String, track_id: String, media: &MediaItem, start: f64) -> Clip {
+pub(super) fn default_clip(id: String, track_id: String, media: &MediaItem, start: f64) -> Clip {
     let kind = match media.kind {
         MediaKind::Video => ClipKind::Video,
         MediaKind::Audio => ClipKind::Audio,
@@ -833,7 +855,7 @@ fn ripple_room_for(timeline: &mut Timeline, track_id: &str, start: f64, media: &
 
 /// How long a new clip of `media` is: a still's default hold, or the
 /// file's own length.
-fn clip_length(media: &MediaItem) -> f64 {
+pub(super) fn clip_length(media: &MediaItem) -> f64 {
     match media.kind {
         MediaKind::Image => DEFAULT_IMAGE_DURATION,
         _ => media.duration.unwrap_or(UNKNOWN_DURATION),

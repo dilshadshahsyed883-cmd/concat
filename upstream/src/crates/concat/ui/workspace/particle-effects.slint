@@ -1,0 +1,33 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+import { Theme } from "../theme/theme.slint";
+import { Button } from "../primitives/modal.slint";
+import { Select } from "../primitives/select.slint";
+import { Check } from "../inspector/controls.slint";
+export global ParticleBulk {
+    callback apply(preset: int, mode: int, selected-only: bool, images: bool, videos: bool);
+}
+export component ParticleEffectsPanel inherits VerticalLayout {
+    property <int> preset: 0;
+    property <bool> images: true;
+    property <bool> videos: true;
+    spacing: 8px;
+    Text { text: "Particle Overlays"; color: Theme.fg; font-size: Theme.fs; }
+    Select { options: ["White Twinkling Stars", "Golden Sparkles", "Orange Embers", "Fireflies", "Bokeh Lights", "Dust Motes", "Snow", "Rain", "Ash", "Light Leaks", "Shooting Stars", "Confetti"]; current <=> root.preset; }
+    HorizontalLayout {
+        Check { checked: root.images; toggled(on) => { root.images = on; } }
+        Text { text: "Images"; color: Theme.fg; }
+        Check { checked: root.videos; toggled(on) => { root.videos = on; } }
+        Text { text: "Videos"; color: Theme.fg; }
+    }
+    Text { text: "Overlays stack independently. Adjust density, color, timing, speed and seed or reorder layers in the existing Effects inspector.";
+        color: Theme.fg-muted; wrap: word-wrap; font-size: Theme.fs-sm; }
+    HorizontalLayout {
+        Button { label: "Apply Selected"; clicked => { ParticleBulk.apply(root.preset, 0, true, root.images, root.videos); } }
+        Button { label: "Apply All"; clicked => { ParticleBulk.apply(root.preset, 0, false, root.images, root.videos); } }
+    }
+    HorizontalLayout {
+        Button { label: "Random All"; clicked => { ParticleBulk.apply(root.preset, 1, false, root.images, root.videos); } }
+        Button { label: "Random Selected"; clicked => { ParticleBulk.apply(root.preset, 1, true, root.images, root.videos); } }
+    }
+    Button { label: "Favorites Randomly"; clicked => { ParticleBulk.apply(root.preset, 2, false, root.images, root.videos); } }
+}

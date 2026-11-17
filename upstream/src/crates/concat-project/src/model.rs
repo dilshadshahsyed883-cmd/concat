@@ -200,6 +200,8 @@ fn unity() -> f64 {
     1.0
 }
 
+fn is_zero(value: &f64) -> bool { *value == 0.0 }
+
 fn is_unity(value: &f64) -> bool {
     *value == 1.0
 }
@@ -1312,6 +1314,9 @@ pub struct Transition {
     /// default (70% for procedural effects, 100% for fades).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub intensity: Option<f64>,
+    /// Declarative package controls; empty preserves the legacy wire format.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<String, f64>,
 }
 
 /// How a title's lines sit within their block, and which point of the block
@@ -1397,6 +1402,15 @@ pub struct ShapeStyle {
     pub kind: ShapeKind,
     /// The figure's longer side, as a fraction of frame height.
     pub size: f64,
+    /// Explicit rectangle width in frame-width fractions; zero uses `size`.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub width: f64,
+    /// Explicit rectangle height in frame-height fractions; zero uses `size`.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub height: f64,
+    /// Rectangle corner radius in frame-height fractions.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub corner_radius: f64,
     /// The inside's colour as `#rrggbb[aa]`; empty for an outline alone.
     pub fill: String,
     /// The outline's colour, drawn when `stroke_width` is above zero. A
@@ -1424,6 +1438,9 @@ impl ShapeStyle {
         }
         let base = ShapeStyle::default();
         self.size = finite(self.size, base.size).clamp(0.01, 2.0);
+        self.width = finite(self.width, 0.0).clamp(0.0, 2.0);
+        self.height = finite(self.height, 0.0).clamp(0.0, 2.0);
+        self.corner_radius = finite(self.corner_radius, 0.0).clamp(0.0, 0.5);
         self.stroke_width = finite(self.stroke_width, base.stroke_width).clamp(0.0, 0.5);
         self
     }
@@ -1436,6 +1453,7 @@ impl Default for ShapeStyle {
             // A third of the frame's height: big enough to be the point of
             // the frame, small enough to leave the picture around it.
             size: 0.35,
+            width: 0.0, height: 0.0, corner_radius: 0.0,
             fill: "#ffffff".to_owned(),
             stroke: String::new(),
             // A line or an arrow is nothing but its stroke, so the default
@@ -1477,6 +1495,15 @@ pub struct TextStyle {
     /// Optional word highlight color; empty uses the worker default.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub karaoke_color: String,
+    /// Active-word backing; empty preserves legacy foreground-only karaoke.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub karaoke_background: String,
+    /// Accurate speech word boundaries; empty is never treated as aligned.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub karaoke_words: Vec<CaptionWord>,
+    /// Internal render state; the editable phrase remains a single document clip.
+    #[serde(skip)]
+    pub karaoke_word: Option<usize>,
     /// Line alignment within the block; see [`TextAlign`].
     #[serde(deserialize_with = "wire::text_align")]
     pub align: TextAlign,
@@ -1565,6 +1592,9 @@ impl Default for TextStyle {
             color: "#ffffff".to_owned(),
             karaoke: false,
             karaoke_color: String::new(),
+            karaoke_background: String::new(),
+            karaoke_words: Vec::new(),
+            karaoke_word: None,
             align: TextAlign::Center,
             opacity: 1.0,
             stroke_width: 0.0,
@@ -1579,6 +1609,40 @@ impl Default for TextStyle {
             max_width: 0.0,
             max_height: 0.0,
         }
+    }
+}
+
+/// One speech-derived word interval relative to its caption clip, in milliseconds.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptionWord {
+    /// The exact displayed word.
+    pub text: String,
+    /// Inclusive start relative to the caption clip.
+    pub start_ms: u64,
+    /// Exclusive end relative to the caption clip.
+    pub end_ms: u64,
+}
+
+impl TextStyle {
+    /// Validate real word timings before a native preview or artifact import.
+    /// Timings are never inferred from character counts.
+    pub fn validate_caption_words(&self, duration: f64) -> Result<(), String> {
+        let tokens: Vec<_> = self.content.split_whitespace().collect();
+        if tokens.len() != self.karaoke_words.len() || tokens.is_empty() {
+            return Err("Speech word timings must match every displayed word".into());
+        }
+        if !duration.is_finite() || duration <= 0.0 { return Err("Invalid caption duration".into()); }
+        let mut previous = 0;
+        for (token, word) in tokens.into_iter().zip(&self.karaoke_words) {
+            if token != word.text || word.start_ms < previous || word.end_ms <= word.start_ms
+                || word.end_ms as f64 > duration * 1000.0 + 1.0 {
+                return Err("Invalid, overlapping or out-of-bounds speech word timing".into());
+            }
+            previous = word.end_ms;
+        }
+        Ok(())
     }
 }
 
@@ -2287,6 +2351,19 @@ impl Clip {
     /// A key outside the window is replaced by one on the window's edge
     /// carrying the ride's value there, so the piece plays exactly what
     /// the whole played over that stretch, and a merge of the pieces gets
+    /// Rewindow only speech-derived caption words during a logical split/trim.
+    pub fn rewindow_caption(&mut self, from:f64, to:f64) {
+        let Some(style)=self.text.as_mut().filter(|s|!s.karaoke_words.is_empty()) else{return;};
+        let from_ms=(from*1000.).round() as i64;let to_ms=(to*1000.).round() as i64;
+        if to_ms<=from_ms{return;}
+        style.karaoke_words=style.karaoke_words.iter().filter_map(|w|{
+            let start=(w.start_ms as i64).max(from_ms);let end=(w.end_ms as i64).min(to_ms);
+            (end>start).then(||CaptionWord {text:w.text.clone(),start_ms:(start-from_ms) as u64,end_ms:(end-from_ms) as u64})
+        }).collect();
+        style.content=style.karaoke_words.iter().map(|w|w.text.as_str()).collect::<Vec<_>>().join(" ");
+        self.extra.remove("captionWords");
+    }
+
     /// the ride back.
     pub fn rewindow_keys(&mut self, old: f64, from: f64, to: f64) {
         let sane = old.is_finite() && old > 0.0 && to.is_finite() && to > from;
@@ -2776,7 +2853,9 @@ impl Timeline {
 
     /// The lane whose pictures have a background: the lowest lane holding a
     /// video or a still - the main picture of the cut, where CapCut has its
-    /// main track. Lowest rather than simply the first lane, so a cut whose
+    /// main track. Generated canvas companion pictures do not claim this
+    /// lane; their explicitly owned backdrops are handled by `background_on`.
+    /// Lowest rather than simply the first lane, so a cut whose
     /// bottom lane holds only music still has one. None for a timeline
     /// without a picture.
     pub fn background_lane(&self) -> Option<&str> {
@@ -2785,7 +2864,8 @@ impl Timeline {
             .find(|track| {
                 self.clips
                     .iter()
-                    .any(|clip| clip.track_id == track.id && clip.kind.is_visual())
+                    .any(|clip| clip.track_id == track.id && clip.kind.is_visual()
+                        && !clip.extra.contains_key("canvasOwner"))
             })
             .map(|track| track.id.as_str())
     }
@@ -2807,7 +2887,10 @@ impl Timeline {
         clip: &'a Clip,
         lane: Option<&str>,
     ) -> Option<&'a Background> {
-        if !clip.kind.is_visual() || lane != Some(clip.track_id.as_str()) {
+        // A canvas preset's explicitly owned backdrop is a separate source
+        // layer; unlike ordinary overlays it may fill its companion lane.
+        let owned_backdrop = clip.extra.get("canvasRole").and_then(Value::as_str) == Some("backdrop");
+        if !clip.kind.is_visual() || (!owned_backdrop && lane != Some(clip.track_id.as_str())) {
             return None;
         }
         let background = clip.background.as_ref().unwrap_or(&self.background);

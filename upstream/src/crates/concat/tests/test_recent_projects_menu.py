@@ -3,10 +3,10 @@
 Regression test suite for Recent Projects Menu (⋯) on Concat Home Screen.
 
 Verifies:
-1. Recent Projects Open, Rename, and Delete behavior.
+1. Recent Projects Open, Rename, Remove-from-Recent, and disk deletion UI contracts.
 2. Persistence of renamed projects across application reloads.
-3. Unchanged project directory paths and preserved media files on delete.
-4. Exact popup menu options (Open, Rename, Delete).
+3. Unchanged project paths and preserved media files on Remove-from-Recent.
+4. Exact popup menu options (Open, Rename, Delete Project).
 5. Manifest integrity and media reference preservation.
 """
 
@@ -268,8 +268,8 @@ class TestRecentProjectsMenu(unittest.TestCase):
         self.assertEqual(fresh_open["name"], "Vlog: Tokyo Summer")
         self.assertEqual(fresh_open["path"], info["path"])
 
-    def test_delete_forgets_from_recents_preserving_media_and_other_projects(self):
-        """Delete removes from recents without deleting disk files or affecting other projects."""
+    def test_remove_from_recent_preserves_media_and_other_projects(self):
+        """Remove-from-Recent is metadata-only and leaves other projects untouched."""
         proj_a = self.pm.create(self.projects_dir, "Project A")
         proj_b = self.pm.create(self.projects_dir, "Project B")
 
@@ -288,7 +288,7 @@ class TestRecentProjectsMenu(unittest.TestCase):
         recents_before = self.pm.read_recents()
         self.assertEqual(len(recents_before), 2)
 
-        # Delete Project A
+        # Remove Project A from Recents only
         self.pm.forget(proj_a["path"])
 
         # 1. recents.json only contains Project B
@@ -329,7 +329,7 @@ class TestRecentProjectsMenu(unittest.TestCase):
         # Task 3: Popup menu options Open, Rename, Delete
         self.assertIn('label: I18n.t("start.open")', start_content)
         self.assertIn('label: I18n.t("start.rename")', start_content)
-        self.assertIn('label: I18n.t("common.delete")', start_content)
+        self.assertIn('label: "Delete Project"', start_content)
         self.assertIn("danger: true", start_content)
 
         # Task 3: Rename dialog modal

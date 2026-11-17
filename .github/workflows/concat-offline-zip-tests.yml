@@ -12,6 +12,7 @@ on:
       - 'upstream/src/crates/concat/src/concat_gpu_client.ps1'
       - 'upstream/src/crates/concat/ui/**'
       - 'upstream/src/crates/concat/tests/test_offline_zip_only.ps1'
+      - 'upstream/src/crates/concat/tests/test_render_contract.ps1'
       - 'concat_gpu/concat_gpu_client.ps1'
       - '.github/workflows/concat-offline-zip-tests.yml'
   pull_request:
@@ -22,6 +23,7 @@ on:
       - 'upstream/src/crates/concat/src/concat_gpu_client.ps1'
       - 'upstream/src/crates/concat/ui/**'
       - 'upstream/src/crates/concat/tests/test_offline_zip_only.ps1'
+      - 'upstream/src/crates/concat/tests/test_render_contract.ps1'
       - 'concat_gpu/concat_gpu_client.ps1'
       - '.github/workflows/concat-offline-zip-tests.yml'
 
@@ -36,6 +38,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Verify both bundled clients are identical and parse correctly
         shell: pwsh
         run: |
@@ -58,3 +63,14 @@ jobs:
           # rejected overwrite (nonzero child exit), so LASTEXITCODE remains
           # nonzero even when every assertion passed.
           & ./upstream/src/crates/concat/tests/test_offline_zip_only.ps1
+      - name: Verify authenticated GPU caption retry/cancel without network
+        shell: pwsh
+        run: ./upstream/src/crates/concat/tests/test_gpu_caption_queue_controls.ps1
+      - name: Verify strict EXE render contract negotiation without network
+        shell: pwsh
+        run: |
+          ./upstream/src/crates/concat/tests/test_render_contract.ps1
+          powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ./upstream/src/crates/concat/tests/test_render_contract.ps1
+      - name: Verify friendly names and collision-safe downloads without network
+        shell: pwsh
+        run: ./upstream/src/crates/concat/tests/test_friendly_names.ps1

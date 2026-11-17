@@ -83,7 +83,7 @@ class CanvasValidationTests(unittest.TestCase):
         bg = CanvasBackground("blur", .4)
         animated = object()  # Represents an evaluated frame-specific transform.
         clip = SimpleNamespace(kind="image", path="photo.jpg", flip_h=False, flip_v=False,
-                               background=bg, filters=(),
+                               background=bg, filters=(), mask=None,
                                transform=lambda index: animated)
         sources = SimpleNamespace(image=Mock(return_value="original-frame"),
                                   backdrop=Mock(return_value="blurred-background"))

@@ -37,6 +37,7 @@ pub mod models;
 pub mod playback;
 pub mod preview;
 pub mod projects;
+pub mod project_delete;
 pub mod proxy;
 pub mod record;
 pub mod reverse;

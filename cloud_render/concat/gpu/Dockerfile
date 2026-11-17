@@ -16,15 +16,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY cloud_render/concat/hybrid/ /opt/app/cloud_render/concat/hybrid/
 COPY upstream/src/crates/concat-text/fonts/HankenGrotesk-SemiBold.ttf /opt/app/cloud_render/concat/hybrid/HankenGrotesk-SemiBold.ttf
-COPY upstream/src/crates/concat-text/fonts/LICENSE-HankenGrotesk.txt /opt/app/cloud_render/concat/hybrid/LICENSE-HankenGrotesk.txt
+COPY upstream/src/crates/concat-text/fonts/ /opt/app/cloud_render/concat/hybrid/fonts/
 RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: \
        -r /opt/app/cloud_render/concat/hybrid/requirements-codec.txt \
        -r /opt/app/cloud_render/concat/hybrid/requirements-captions.txt \
+       -r /opt/app/cloud_render/concat/hybrid/requirements-asr.txt \
        nvidia-cuda-runtime-cu12==12.8.90 nvidia-cuda-nvrtc-cu12==12.8.93
 ENV PATH=/opt/venv/bin:$PATH
-ENV LD_LIBRARY_PATH=/opt/venv/lib/python3.12/site-packages/nvidia/cuda_runtime/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cuda_nvrtc/lib:/usr/local/nvidia/lib64
+ENV LD_LIBRARY_PATH=/opt/venv/lib/python3.12/site-packages/nvidia/cublas/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cudnn/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cuda_runtime/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cuda_nvrtc/lib:/usr/local/nvidia/lib64
 COPY cloud_render/concat/project_bundle.py /opt/app/cloud_render/concat/project_bundle.py
+# The worker imports caption_jobs at startup; ship the ASR implementation and
+# the exact native caption-gallery TOMLs used by the Windows editor.
+COPY cloud_render/concat/gpu/caption_jobs.py /opt/app/cloud_render/concat/gpu/caption_jobs.py
+COPY upstream/src/crates/concat/text-presets/ /opt/app/cloud_render/concat/gpu/text-presets/
 COPY cloud_render/concat/gpu/worker.py /opt/app/cloud_render/concat/gpu/worker.py
 COPY cloud_render/concat/gpu/resumable.py /opt/app/cloud_render/concat/gpu/resumable.py
 COPY cloud_render/concat/gpu/simple_timeline_v1.py /opt/app/cloud_render/concat/gpu/simple_timeline_v1.py

@@ -142,10 +142,15 @@ class GpuManifestValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "source start"):
             validate_gpu_manifest(document)
 
-    def test_denies_non_jpeg_image_before_upload(self):
+    def test_accepts_png_and_jpeg_before_upload_and_rejects_other_images(self):
         document = minimal_project()
-        document["media"][0]["path"] = "picture.png"
-        with self.assertRaisesRegex(ValueError, "JPEG"):
+        for filename in ("picture.png", "PICTURE.PNG", "picture.jpg", "picture.jpeg"):
+            with self.subTest(filename=filename):
+                document["media"][0]["path"] = filename
+                self.assertEqual(validate_gpu_manifest(document)["id"], "timeline")
+        document["media"][0]["path"] = "picture.gif"
+        document["timelines"][0]["clips"][0]["id"] = "c200"
+        with self.assertRaisesRegex(ValueError, r"c200.*JPEG or PNG"):
             validate_gpu_manifest(document)
 
     def test_native_caption_preserves_font_position_shadow_and_frame_boundaries(self):
@@ -180,7 +185,7 @@ class GpuManifestValidationTests(unittest.TestCase):
                             for _, (red, green, blue, alpha) in colors))
 
     def test_existing_custom_caption_style_is_not_silently_dropped(self):
-        for field, value in (("fontFamily", "Unsupported family"), ("fontWeight", 700),
+        for field, value in (("fontFamily", "Unsupported family"), ("fontWeight", 333),
                              ("tracking", .01), ("background", "not-a-color"), ("align", "left")):
             with self.subTest(field=field):
                 document = minimal_project()
@@ -245,8 +250,9 @@ class GpuManifestValidationTests(unittest.TestCase):
         capabilities = json.loads((Path(__file__).parents[1] / "hybrid"
                                    / "gpu_ui_capabilities.json").read_text())
         from cloud_render.concat.hybrid.capcut_transitions import CAPCUT_IDS
+        from cloud_render.concat.hybrid.creative_transitions import CREATIVE_IDS
         self.assertEqual(set(capabilities["transitions"]),
-                         {"concat.fade-black", "concat.fade-white", *CAPCUT_IDS})
+                         {"concat.fade-black", "concat.fade-white", *CAPCUT_IDS, *CREATIVE_IDS})
         for native_id in ("concat.dissolve", "concat.push", "concat.zoom-transition"):
             with self.subTest(transition=native_id):
                 document = minimal_project()
@@ -335,7 +341,8 @@ class GpuManifestValidationTests(unittest.TestCase):
     def test_rejects_inexact_packaged_filters_in_preflight(self):
         capabilities = json.loads((Path(__file__).parents[1] / "hybrid"
                                    / "gpu_ui_capabilities.json").read_text())
-        self.assertEqual(capabilities["video_effects"], ["concat.exposure", "concat.contrast"])
+        from cloud_render.concat.hybrid.particles import PARTICLE_IDS
+        self.assertEqual(set(capabilities["video_effects"]), {"concat.exposure", "concat.contrast", *PARTICLE_IDS})
         for effect_id in ("concat.saturation", "concat.sharpen"):
             with self.subTest(effect=effect_id):
                 document = minimal_project()
@@ -418,6 +425,15 @@ class WorkerPreflightTests(unittest.TestCase):
                         accepted = client.getresponse()
                         self.assertEqual(accepted.status, 200)
                         self.assertTrue(json.loads(accepted.read())["ok"])
+                        # Windows calls this worker endpoint with the native
+                        # document before it creates/uploads the matching ZIP.
+                        document["media"][0]["path"] = "transparent.PNG"
+                        client.request("POST", "/api/validate",
+                                       body=json.dumps(document).encode("utf-8"),
+                                       headers=headers)
+                        png_preflight = client.getresponse()
+                        self.assertEqual(png_preflight.status, 200)
+                        self.assertTrue(json.loads(png_preflight.read())["ok"])
                         invalid = minimal_project()
                         invalid["timelines"][0]["clips"][0]["videoEffects"] = [
                             {"id": "concat.unsupported-filter"}]

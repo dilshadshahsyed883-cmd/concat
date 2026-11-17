@@ -4,7 +4,7 @@
 import { I18n } from "../i18n.slint";
 import { Theme } from "../theme/theme.slint";
 import { Glyph } from "../icons.slint";
-import { Button, Modal } from "../primitives/modal.slint";
+import { Button, Field, Modal } from "../primitives/modal.slint";
 
 /// One question before something is thrown away: what it is, what goes
 /// with it, and the word on the button that does it. Rust fills it and
@@ -15,6 +15,8 @@ export struct ConfirmData {
     message: string,
     /// The button that goes ahead, in the danger tone: "Delete".
     action: string,
+    // Empty for existing confirmations; destructive Home deletion requires typing.
+    required-name: string,
 }
 
 // The confirmation sheet. Return goes ahead and Escape backs out, so a
@@ -29,13 +31,16 @@ export component ConfirmDialog inherits Modal {
     open: root.data.open;
     title: root.data.title;
     glyph: Glyph.trash;
-    surface-width: 400px;
+    surface-width: 520px;
+    property <string> typed-name: "";
+    property <bool> authorized: root.data.required-name == "" || root.typed-name == root.data.required-name;
 
     closed => { root.dismissed(); }
 
     // The keys go to the sheet the moment it shows, not to whatever had
     // focus under it.
     changed open => {
+        root.typed-name = "";
         if (root.open) {
             keys.focus();
         }
@@ -48,7 +53,7 @@ export component ConfirmDialog inherits Modal {
                 return accept;
             }
             if (event.text == Key.Return) {
-                root.confirmed();
+                if (root.authorized) { root.confirmed(); }
                 return accept;
             }
             reject
@@ -65,6 +70,21 @@ export component ConfirmDialog inherits Modal {
                 wrap: word-wrap;
             }
 
+            if root.data.required-name != "": VerticalLayout {
+                spacing: 6px;
+                Text {
+                    text: "Type project name exactly to authorize Recycle Bin deletion:";
+                    color: Theme.fg;
+                    font-size: Theme.fs;
+                    wrap: word-wrap;
+                }
+                Field {
+                    value: root.typed-name;
+                    placeholder: root.data.required-name;
+                    edited(text) => { root.typed-name = text; }
+                }
+            }
+
             HorizontalLayout {
                 alignment: end;
                 spacing: 8px;
@@ -77,7 +97,10 @@ export component ConfirmDialog inherits Modal {
                 Button {
                     danger: true;
                     label: root.data.action;
-                    clicked => { root.confirmed(); }
+                    enabled: root.authorized;
+                    clicked => {
+                        if (root.authorized) { root.confirmed(); }
+                    }
                 }
             }
         }

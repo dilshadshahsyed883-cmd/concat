@@ -1,3 +1,4 @@
+import { CBuilderKeywordData } from "c-builder-selection.slint";
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
 
@@ -16,7 +17,11 @@ import { Wave } from "../primitives/wave.slint";
 import { ContextMenu, MenuItemData } from "../primitives/context-menu.slint";
 import { SourcePreview } from "source-preview.slint";
 import { Sounds, SoundList, VoiceList } from "audio-page.slint";
-import { CBuilderPane } from "c-builder.slint";
+import { CaptionPresetPreview, CaptionPresetPreviewPanel } from "caption-preset-preview.slint";
+import { CanvasPresetPanel } from "canvas-presets.slint";
+import { MediaLayoutPanel } from "media-layout.slint";
+import { CanvasMotionPanel } from "canvas-motion.slint";
+import { ParticleEffectsPanel } from "particle-effects.slint";
 
 export { SourcePreview }
 
@@ -1190,7 +1195,7 @@ component PresetCard inherits Rectangle {
 
     /// One size for every sample, a good third of the tile: large enough
     /// that a stroke and a face are told apart at a glance.
-    property <length> sample-size: root.width * 0.36;
+    property <length> sample-size: root.width * 0.20;
 
     drag := DragArea {
         data: Payload.of("text:\{root.preset.id}:\{root.preset.name}");
@@ -1235,7 +1240,7 @@ component PresetCard inherits Rectangle {
                     stroke: root.preset.stroke;
                     stroke-width: root.preset.stroke-width > 0 ? 1px : 0px;
                     horizontal-alignment: center;
-                    overflow: elide;
+                    wrap: word-wrap;
                 }
 
                 if touch.has-hover: Rectangle {
@@ -1744,10 +1749,21 @@ export component MediaPane inherits Rectangle {
     in property <int> cb-scan-done;
     in property <int> cb-scan-total;
     in property <bool> cb-busy;
+    in property <string> cb-profile;
+    in property <[string]> cb-profile-names;
+    in property <[CBuilderKeywordData]> cb-image-keywords;
+    in property <[CBuilderKeywordData]> cb-video-keywords;
+    in property <bool> cb-videos-enabled;
+    in property <string> cb-image-selection-summary;
+    in property <string> cb-video-selection-summary;
+    callback cb-keyword-changed(json: string, video: bool, keyword: string, selected: bool, weight: int);
+    callback cb-videos-toggled(json: string, on: bool);
+    in property <string> cb-preview;
+    callback cb-plan-profile(json: string, images: string, videos: string, action: string);
     callback cb-import-folder();
     callback cb-refresh-folder();
     callback cb-choose-narration();
-    callback cb-generate-project(name: string, images: string, videos: string, coverage: int);
+    callback cb-generate-project(name: string, images: string, videos: string, coverage: int, profile: string);
 
     callback import-media();
     callback filter-changed(filter: MediaFilter);
@@ -1792,6 +1808,7 @@ export component MediaPane inherits Rectangle {
     // Opens the existing speech/captions dialog (including SRT and Whisper).
     callback generate-captions();
     property <string> active-caption-preset: "cuda-caption.classic-subtitle";
+    changed text-category => { CaptionPresetPreview.scope(root.tab == 1 && root.text-category == 1 && GpuCompatibility.enabled); }
     /// Stickers page: add the figure `shape` names at the playhead, as a
     /// clip called `label`.
     callback add-shape(shape: string, label: string);
@@ -1840,17 +1857,18 @@ export component MediaPane inherits Rectangle {
     // Audio is a Media sub-view, not a ninth top-level tab. Keep the existing
     // sounds, voice and import implementation accessible from the Media sidebar.
     property <bool> media-audio-view: false;
-    changed tab => { Sounds.shown(root.tab == 0 && root.media-audio-view); }
+    changed tab => {
+        Sounds.shown(root.tab == 0 && root.media-audio-view);
+        CaptionPresetPreview.scope(root.tab == 1 && root.text-category == 1 && GpuCompatibility.enabled);
+    }
     changed media-audio-view => { Sounds.shown(root.tab == 0 && root.media-audio-view); }
     property <bool> physics-images: true;
     property <bool> physics-videos: true;
     // 0 = full timeline, 1 = selected timeline clips.
     property <int> physics-scope: 0;
     property <int> physics-preset: 0;
-    // Bulk transforms share Animations' type switches and scope.
-    property <float> bulk-scale: 1;
-    property <float> bulk-position-x: 0;
-    property <float> bulk-position-y: 0;
+    property <bool> canvas-motion-page: false;
+    property <int> animation-page: 0;
     /// The Audio page's shelf: 0 = Mine, 1 = Concat, 10 = Voices,
     /// 11 = Styles.
     property <int> audio-category;
@@ -1893,7 +1911,7 @@ export component MediaPane inherits Rectangle {
     /// pane, which has the same problem for the same reason. A library
     /// dropped into a narrow seat would otherwise hand the card grid a
     /// negative width.
-    property <length> sidebar: root.tab == 9 || root.tab == 10 ? 0px : Math.max(0px,
+    property <length> sidebar: Math.max(0px,
         Math.min(root.sidebar-w, root.width / 2));
 
     // The catalogues. The ids are written into project files, so they are
@@ -1982,12 +2000,6 @@ export component MediaPane inherits Rectangle {
                             clicked => { root.tab = 0; root.media-audio-view = false; }
                         }
                         LibraryTab {
-                            glyph: Glyph.film;
-                            label: "C Builder";
-                            current: root.tab == 9;
-                            clicked => { root.tab = 9; }
-                        }
-                        LibraryTab {
                             glyph: Glyph.text-mark;
                             label: I18n.t("common.text");
                             current: root.tab == 1;
@@ -2011,17 +2023,17 @@ export component MediaPane inherits Rectangle {
                             current: root.tab == 5;
                             clicked => { root.tab = 5; }
                         }
-                        LibraryTab {
-                            glyph: Glyph.slot;
-                            label: I18n.t("mediaPane.templates");
-                            current: root.tab == 6;
-                            clicked => { root.tab = 6; }
-                        }
                         if GpuCompatibility.video-effects: LibraryTab {
                             glyph: Glyph.sparkle;
                             label: I18n.t("common.effects");
                             current: root.tab == 4;
                             clicked => { root.tab = 4; }
+                        }
+                        LibraryTab {
+                            glyph: Glyph.slot;
+                            label: I18n.t("mediaPane.templates");
+                            current: root.tab == 6;
+                            clicked => { root.tab = 6; }
                         }
                         // Legacy non-GPU editing features remain reachable.
                         if !GpuCompatibility.enabled: LibraryTab {
@@ -2383,74 +2395,15 @@ export component MediaPane inherits Rectangle {
                     // Filters are colour looks, the way every video editor's
                     // users understand the word. What a voice or a room does
                     // to the sound is on the Effects page.
-                    // The same checkboxes and scope also target scale and
-                // position edits. Animated properties stay untouched.
-                if root.tab == 10 && GpuCompatibility.enabled: VerticalLayout {
-                    padding: 8px;
-                    spacing: 8px;
-                    Text {
-                        text: "Bulk Transform";
-                        font-size: Theme.fs;
-                        color: Theme.fg;
-                    }
-                    Text {
-                        text: "Use the Images/Video Clips checkboxes and scope above. Manual keyframes are protected per property.";
-                        color: Theme.fg-muted;
-                        wrap: word-wrap;
-                        font-size: Theme.fs-sm;
-                    }
-                    Param {
-                        label: "Bulk Scale";
-                        value <=> root.bulk-scale;
-                        minimum: 0.05;
-                        maximum: 8;
-                        step: 0.01;
-                        default-value: 1;
-                        fmt: ParamFormat.fraction;
-                        unit: "%";
-                        unit-scale: 100;
-                    }
-                    Button {
-                        label: "Apply Bulk Scale";
-                        enabled: root.physics-images || root.physics-videos;
-                        clicked => {
-                            Keyframes.apply-bulk-transform(0, root.physics-images,
-                                root.physics-videos, root.physics-scope == 1,
-                                root.bulk-scale, root.bulk-position-x, root.bulk-position-y);
+                    if root.tab == 10 && GpuCompatibility.enabled: VerticalLayout {
+                        spacing: 1px;
+                        for label[index] in ["Animations", "Transform", "Canvas"]: CategoryRow {
+                            label: label; height: 30px;
+                            current: root.animation-page == index;
+                            clicked => { root.animation-page = index; }
                         }
                     }
-                    Param {
-                        label: "Bulk Position X";
-                        value <=> root.bulk-position-x;
-                        minimum: -1;
-                        maximum: 1;
-                        step: 0.005;
-                        default-value: 0;
-                        fmt: ParamFormat.centred;
-                        unit: "%";
-                        unit-scale: 100;
-                    }
-                    Param {
-                        label: "Bulk Position Y";
-                        value <=> root.bulk-position-y;
-                        minimum: -1;
-                        maximum: 1;
-                        step: 0.005;
-                        default-value: 0;
-                        fmt: ParamFormat.centred;
-                        unit: "%";
-                        unit-scale: 100;
-                    }
-                    Button {
-                        label: "Apply Bulk Position X/Y";
-                        enabled: root.physics-images || root.physics-videos;
-                        clicked => {
-                            Keyframes.apply-bulk-transform(1, root.physics-images,
-                                root.physics-videos, root.physics-scope == 1,
-                                root.bulk-scale, root.bulk-position-x, root.bulk-position-y);
-                        }
-                    }
-                }
+
 
                 if root.tab == 5: VerticalLayout {
                         spacing: 1px;
@@ -2517,27 +2470,6 @@ export component MediaPane inherits Rectangle {
                 x: root.sidebar + 1px;
                 width: Math.max(0px, parent.width - root.sidebar - 1px);
                 height: parent.height;
-
-                if root.tab == 9: CBuilderPane {
-                    media-folder: root.cb-media-folder;
-                    narration: root.cb-narration;
-                    narration-duration: root.cb-duration;
-                    status: root.cb-status;
-                    keywords: root.cb-keywords;
-                    image-count: root.cb-image-count;
-                    video-count: root.cb-video-count;
-                    cache-probed: root.cb-probed;
-                    cache-reused: root.cb-reused;
-                    scan-done: root.cb-scan-done;
-                    scan-total: root.cb-scan-total;
-                    busy: root.cb-busy;
-                    import-folder => { root.cb-import-folder(); }
-                    refresh-folder => { root.cb-refresh-folder(); }
-                    choose-narration => { root.cb-choose-narration(); }
-                    generate-project(name, images, videos, coverage) => {
-                        root.cb-generate-project(name, images, videos, coverage);
-                    }
-                }
 
                 if root.tab == 0 && !root.media-audio-view: HorizontalLayout {
                     padding: 8px;
@@ -2811,33 +2743,16 @@ export component MediaPane inherits Rectangle {
                     }
                 }
 
-                // The looks. Each card is a title in that look, placed at
-                // the playhead on a click or dragged onto a lane; a preset
-                // that brings a font installs it on the way.
-                if root.tab == 1 && ((GpuCompatibility.enabled && root.text-category == 1)
-                        || (!GpuCompatibility.enabled && root.text-category >= 1)): VerticalLayout {
+                // Caption cards stage a local monitor preview. Only explicit Apply edits the document.
+                if root.tab == 1 && GpuCompatibility.enabled && root.text-category == 1: CaptionPresetPreviewPanel {
                     padding: 8px;
-                    if GpuCompatibility.enabled: Text {
-                        text: "Select a preset to style selected captions, or add one at the playhead.";
-                        color: Theme.fg-muted;
-                        font-size: Theme.fs-sm;
-                        wrap: word-wrap;
-                    }
-                    if GpuCompatibility.enabled: Button {
-                        label: "Apply Selected Preset to All Captions";
-                        clicked => { root.apply-caption-preset(root.active-caption-preset, true); }
-                    }
+                }
+                if root.tab == 1 && !GpuCompatibility.enabled && root.text-category >= 1: VerticalLayout {
+                    padding: 8px;
                     PresetGrid {
                         horizontal-stretch: 1;
                         items: root.text-category == 2 ? root.language-presets : root.presets;
-                        applied(id) => {
-                            if (GpuCompatibility.enabled) {
-                                root.active-caption-preset = id;
-                                root.apply-caption-preset(id, false);
-                            } else {
-                                root.add-text(id);
-                            }
-                        }
+                        applied(id) => { root.add-text(id); }
                     }
                 }
 
@@ -2884,6 +2799,7 @@ export component MediaPane inherits Rectangle {
                 }
 
                 if root.tab == 4: VerticalLayout {
+                    ParticleEffectsPanel { }
                     padding: 8px;
 
                     // A package folder written while the app runs - the
@@ -2924,16 +2840,18 @@ export component MediaPane inherits Rectangle {
                 // Dedicated Animations page. Inspector knobs are shared
                 // through Keyframes; no second motion format is introduced.
                 if root.tab == 10 && GpuCompatibility.enabled: VerticalLayout {
+                    spacing: 8px;
+                if root.animation-page == 0: VerticalLayout {
                     padding: 8px;
                     spacing: 8px;
 
                     Text {
-                        text: "Physics Animations";
+                        text: "Animations";
                         font-size: Theme.fs;
                         color: Theme.fg;
                     }
                     Text {
-                        text: "Choose a preset below. Strength, Duration, Speed and Physics Intensity are in the right Inspector.";
+                        text: "Basic, physics and canvas motion presets all create editable animation keyframes.";
                         color: Theme.fg-muted;
                         font-size: Theme.fs-sm;
                         wrap: word-wrap;
@@ -2972,9 +2890,17 @@ export component MediaPane inherits Rectangle {
                             changed(index) => { root.physics-scope = index; }
                         }
                     }
+                    Button { label: root.canvas-motion-page ? "Basic / Physics" : "Canvas Motion"; clicked => {root.canvas-motion-page = !root.canvas-motion-page;} }
+                    if root.canvas-motion-page: CanvasMotionPanel {images:root.physics-images; videos:root.physics-videos; selected-only:root.physics-scope==1;}
+                    if !root.canvas-motion-page: VerticalLayout { spacing:8px;
+                    Param { label: "Strength"; value <=> Keyframes.physics-strength; minimum: 0.1; maximum: 2; step: 0.1; fmt: ParamFormat.fraction; }
+                    Param { label: "Duration (clip fraction)"; value <=> Keyframes.physics-duration; minimum: 0.1; maximum: 1; step: 0.05; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; }
+                    Param { label: "Speed"; value <=> Keyframes.physics-speed; minimum: 0.25; maximum: 3; step: 0.05; fmt: ParamFormat.fraction; }
+                    Param { label: "Physics Intensity"; value <=> Keyframes.physics-intensity; minimum: 0.2; maximum: 2; step: 0.1; fmt: ParamFormat.fraction; }
                     for label[index] in [
                         "Spring Zoom", "Pendulum Swing", "Gravity Bounce",
-                        "Elastic Pop", "Inertia Glide", "Damped Shake"
+                        "Elastic Pop", "Inertia Glide", "Damped Shake",
+                        "Push In", "Pan Right", "Fade In"
                     ]: HorizontalLayout {
                         spacing: 8px;
                         Button {
@@ -3012,7 +2938,7 @@ export component MediaPane inherits Rectangle {
                             clicked => {
                                 Keyframes.apply-physics-bulk(root.physics-preset, 0,
                                     root.physics-images, root.physics-videos,
-                                    root.physics-scope == 1,
+                                    false,
                                     Keyframes.physics-strength, Keyframes.physics-duration,
                                     Keyframes.physics-speed, Keyframes.physics-intensity);
                             }
@@ -3039,6 +2965,19 @@ export component MediaPane inherits Rectangle {
                         }
                     }
                 }
+                }
+                    if root.animation-page == 1: MediaLayoutPanel { canvas: false; }
+                    if root.animation-page == 2: VerticalLayout {
+                        spacing: 8px;
+                        canvas-layout := MediaLayoutPanel { canvas: true; }
+                        CanvasPresetPanel {
+                            padding: 8px;
+                            images: canvas-layout.images;
+                            videos: canvas-layout.videos;
+                        }
+                    }
+                }
+
 
                 if root.tab == 5: VerticalLayout {
                     padding: 8px;
@@ -3120,20 +3059,13 @@ export component MediaPane inherits Rectangle {
 
                 // Templates: the save affordance, then the gallery of saved
                 // templates, which shows its empty state until one is saved.
-                if root.tab == 6: HorizontalLayout {
-                    padding: 8px;
-
-                    ImportButton {
-                        label: I18n.t("mediaPane.saveProjectTemplate");
-                        glyph: Glyph.slot;
-                        clicked => { root.save-template(); }
+                if root.tab == 6: PaneScroll {
+                    HorizontalLayout { padding: 8px;
+                        ImportButton { label: I18n.t("mediaPane.saveProjectTemplate"); glyph: Glyph.slot; clicked => { root.save-template(); } }
                     }
+
                 }
 
-                if root.tab == 6: Empty {
-                    glyph: Glyph.slot;
-                    text: I18n.t("mediaPane.noTemplatesYetMark");
-                }
             }
         }
     }

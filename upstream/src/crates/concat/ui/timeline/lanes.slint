@@ -5,7 +5,7 @@ import { Wave } from "../primitives/wave.slint";
 import { Theme } from "../theme/theme.slint";
 import { Fmt, Payload } from "../util.slint";
 import { Glyph, Icon } from "../icons.slint";
-import { ClipData, ClipKind, DropData, TimelineTool, TrackData } from "model.slint";
+import { ClipData, ClipKind, DropData, TimelineDrag, TimelineTool, TrackData } from "model.slint";
 import { ContextMenu, MenuItemData } from "../primitives/context-menu.slint";
 
 // The lanes: the ruler, the banded track stack, the clips on it, the playhead
@@ -144,8 +144,9 @@ component Clip inherits Rectangle {
     callback dragged(seconds: float, pixels: length);
     /// Where the pointer is across the clip while it drags, for the lanes
     /// to scroll when it reaches their edge.
-    callback pointer-at(x: length);
+    callback pointer-at(x: length, y: length);
     callback released();
+    callback cancelled();
     /// A press and release that never travelled, on the body rather than
     /// an edge: a click, at this x in the clip. The playhead goes there.
     callback clicked(x: length);
@@ -533,7 +534,9 @@ component Clip inherits Rectangle {
     // the same fix, as the workspace splitters.
     touch := TouchArea {
         enabled: !root.locked;
-        mouse-cursor: root.tool == TimelineTool.split ? MouseCursor.crosshair
+        mouse-cursor: TimelineDrag.feedback.active && !TimelineDrag.feedback.valid ? MouseCursor.not-allowed
+            : self.pressed && TimelineDrag.feedback.active ? MouseCursor.grabbing
+            : root.tool == TimelineTool.split ? MouseCursor.crosshair
             : root.edge-at >= 0 ? MouseCursor.ew-resize : MouseCursor.grab;
 
         changed mouse-x => {
@@ -568,13 +571,14 @@ component Clip inherits Rectangle {
                 self.origin-y = self.absolute-position.y + self.mouse-y;
                 self.travelled = false;
                 self.on-edge = root.edge-at >= 0;
+                TimelineDrag.copy-modifier = event.modifiers.control || event.modifiers.meta || event.modifiers.alt;
                 root.pressed(event.modifiers.shift || event.modifiers.control
                     || event.modifiers.meta, root.edge-at);
             } else if (event.kind == PointerEventKind.up
                 || event.kind == PointerEventKind.cancel) {
                 // Only a release ends it. Slint delivers `move` here too, so a
                 // plain `else` would end the gesture the moment it began.
-                root.released();
+                if event.kind == PointerEventKind.cancel {root.cancelled();} else {root.released();}
                 if (event.kind == PointerEventKind.up && !self.travelled && !self.on-edge
                     && root.tool == TimelineTool.select) {
                     root.clicked(self.mouse-x);
@@ -592,8 +596,8 @@ component Clip inherits Rectangle {
                 || Math.abs(self.absolute-position.y + self.mouse-y - self.origin-y) > 4px) {
                 self.travelled = true;
             }
-            if (self.travelled && root.tool == TimelineTool.select) {
-                root.pointer-at(self.mouse-x);
+            if (self.pressed && self.travelled && root.tool == TimelineTool.select) {
+                root.pointer-at(self.mouse-x, self.mouse-y);
                 root.dragged(
                     (self.absolute-position.x + self.mouse-x - self.origin-x)
                         / root.px-per-second,
@@ -759,7 +763,7 @@ component Clip inherits Rectangle {
                 if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
                     root.pressed(false, 2);
                 } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
-                    root.released();
+                    if event.kind == PointerEventKind.cancel {root.cancelled();} else {root.released();}
                 }
             }
         }
@@ -833,7 +837,7 @@ component Clip inherits Rectangle {
                 } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
                     self.is-dragging = false;
                     root.left-handle-drag = false;
-                    root.released();
+                    if event.kind == PointerEventKind.cancel {root.cancelled();} else {root.released();}
                 }
             }
 
@@ -916,7 +920,7 @@ component Clip inherits Rectangle {
                 } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
                     self.is-dragging = false;
                     root.right-handle-drag = false;
-                    root.released();
+                    if event.kind == PointerEventKind.cancel {root.cancelled();} else {root.released();}
                 }
             }
 
@@ -1016,7 +1020,7 @@ component Clip inherits Rectangle {
                     } else if (event.kind == PointerEventKind.up || event.kind == PointerEventKind.cancel) {
                         self.is-dragging = false;
                         root.trans-btn-drag = false;
-                        root.released();
+                        if event.kind == PointerEventKind.cancel {root.cancelled();} else {root.released();}
                     }
                 }
 
@@ -1114,6 +1118,7 @@ export component Lanes inherits Rectangle {
     callback clip-volume(id: string, gain: float);
     callback clip-dragged(seconds: float, pixels: length);
     callback clip-released();
+    callback clip-cancelled();
     /// Right-click on a clip. The caller fills the menu and bumps `menu-token`;
     /// where it opens is decided here, because only this side knows where the
     /// pointer was.
@@ -1242,25 +1247,35 @@ export component Lanes inherits Rectangle {
     // report to repeat.
     property <bool> scrubbing;
     property <bool> clip-dragging;
+    property <bool> body-drag;
+    property <bool> move-preview-active: TimelineDrag.feedback.active;
+    changed move-preview-active => {if !root.move-preview-active && root.body-drag {root.clip-dragging=false;}}
     property <length> pointer-x;
+    property <length> pointer-y;
+    property <length> press-track-scroll;
     property <float> drag-seconds;
     property <length> drag-pixels;
     /// `scroll-left` when the clip was pressed; see the clip's `dragged`.
     property <float> press-scroll;
     property <length> edge-zone: 40px;
-    property <bool> at-edge: (root.scrubbing || root.clip-dragging)
-        && (root.pointer-x < root.edge-zone || root.pointer-x > root.width - root.edge-zone);
+    property <bool> at-edge: ((root.scrubbing || root.clip-dragging)
+        && (root.pointer-x < root.edge-zone || root.pointer-x > root.width - root.edge-zone))
+        || (root.clip-dragging && (root.pointer-y < root.ruler-height + 20px || root.pointer-y > root.height - 20px));
 
     edge-scroll := Timer {
         interval: 16ms;
         running: root.at-edge;
         triggered => {
-            root.scrolled(Math.max(0, root.scroll-left
-                + (root.pointer-x < root.edge-zone ? -12 : 12) * root.seconds-per-pixel));
+            if root.pointer-x < root.edge-zone || root.pointer-x > root.width - root.edge-zone {
+                root.scrolled(Math.max(0, root.scroll-left + (root.pointer-x < root.edge-zone ? -12 : 12) * root.seconds-per-pixel));
+            }
+            if root.clip-dragging && (root.pointer-y < root.ruler-height + 20px || root.pointer-y > root.height - 20px) {
+                root.track-scrolled(root.pointer-y < root.ruler-height + 20px ? -10px : 10px);
+            }
             if (root.scrubbing) {
                 root.scrubbed(Math.max(0, root.seconds-at(root.pointer-x)));
             } else {
-                root.clip-dragged(root.drag-seconds + (root.scroll-left - root.press-scroll), root.drag-pixels);
+                root.clip-dragged(root.drag-seconds + (root.scroll-left - root.press-scroll), root.drag-pixels + root.track-scroll - root.press-track-scroll);
             }
         }
     }
@@ -1515,9 +1530,10 @@ export component Lanes inherits Rectangle {
                     root.finger-held();
                 }
                 root.press-scroll = root.scroll-left;
+                root.press-track-scroll = root.track-scroll;
                 root.drag-seconds = 0;
                 root.drag-pixels = 0;
-                root.clip-dragging = false;
+                root.clip-dragging = false; root.body-drag = edge < 0;
                 root.clip-pressed(entry.id, additive, edge);
             }
             split-at(x) => {
@@ -1530,14 +1546,17 @@ export component Lanes inherits Rectangle {
             dragged(seconds, pixels) => {
                 root.drag-seconds = seconds;
                 root.drag-pixels = pixels;
-                root.clip-dragging = true;
-                root.clip-dragged(seconds + (root.scroll-left - root.press-scroll), pixels);
+                root.clip-dragged(seconds + (root.scroll-left - root.press-scroll), pixels + root.track-scroll - root.press-track-scroll);
+                root.clip-dragging = !root.body-drag || TimelineDrag.feedback.active;
             }
-            pointer-at(x) => { root.pointer-x = self.x + x; }
+            pointer-at(x, y) => { root.pointer-x = self.x + x; root.pointer-y = self.y + y; }
             released => {
-                root.clip-dragging = false;
-                root.clip-released();
+                if root.clip-dragging && (root.pointer-x < 0px || root.pointer-x > root.width || root.pointer-y < root.ruler-height || root.pointer-y > root.height) {
+                    root.clip-cancelled();
+                } else {root.clip-released();}
+                root.clip-dragging = false; TimelineDrag.copy-modifier = false;
             }
+            cancelled => {root.clip-dragging=false; TimelineDrag.copy-modifier=false; root.clip-cancelled();}
             // Click anywhere on the timeline and the playhead goes there,
             // a clip included: it is selected and the playhead lands on it.
             // Not under a finger: the lanes are held at the playhead there,
@@ -1658,6 +1677,30 @@ export component Lanes inherits Rectangle {
                     overflow: elide;
                 }
             }
+        }
+
+        // Same native plan drives the ghost/caret and commit; status never edits a clip.
+        if TimelineDrag.feedback.active && TimelineDrag.feedback.row >= 0 && TimelineDrag.feedback.row < root.tracks.length: Rectangle {
+            x: Math.max(0px,root.at(TimelineDrag.feedback.start));
+            y: root.row-y(TimelineDrag.feedback.row)+4px;
+            width: Math.max(2px,Math.min(root.width,root.at(TimelineDrag.feedback.start)+TimelineDrag.feedback.duration*root.px-per-second)-self.x);
+            height: Math.max(2px,root.tracks[TimelineDrag.feedback.row].height - 10px);
+            visible: root.at(TimelineDrag.feedback.start) < root.width && root.at(TimelineDrag.feedback.start)+TimelineDrag.feedback.duration*root.px-per-second > 0px;
+            background: (TimelineDrag.feedback.valid ? Theme.accent : Theme.danger).with-alpha(0.12);
+            border-width: 2px; border-radius:Theme.r-sm;
+            border-color: TimelineDrag.feedback.valid ? Theme.accent : Theme.danger;
+        }
+        if TimelineDrag.feedback.active && TimelineDrag.feedback.row >= 0 && TimelineDrag.feedback.row < root.tracks.length: Rectangle {
+            x: root.at(TimelineDrag.feedback.start); width: 2px;
+            y: root.row-y(TimelineDrag.feedback.row)+2px; height: Math.max(4px,root.tracks[TimelineDrag.feedback.row].height - 6px);
+            visible: self.x >= 0px && self.x <= root.width;
+            background: TimelineDrag.feedback.valid ? Theme.accent : Theme.danger;
+        }
+        if TimelineDrag.feedback.active: Rectangle {
+            x: 8px; y: root.ruler-height+2px; width: Math.max(0px,Math.min(root.width - 16px,640px)); height:24px;
+            background: Theme.well.with-alpha(0.95); border-radius:Theme.r-sm;
+            Text {x:6px;width:parent.width - 12px;height:parent.height;text:TimelineDrag.feedback.label;
+                color:TimelineDrag.feedback.valid ? Theme.fg : Theme.danger; font-size:Theme.fs-sm;vertical-alignment:center;overflow:elide;}
         }
 
         // ── the ruler ────────────────────────────────────────────────────

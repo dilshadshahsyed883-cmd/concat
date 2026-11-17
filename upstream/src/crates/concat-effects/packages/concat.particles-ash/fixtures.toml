@@ -1,0 +1,22 @@
+# Numeric oracle at the 8x8 probe center, t=0; real GPU execution remains required.
+
+[[probe]]
+name = "default"
+at = "default"
+input = [0.0, 0.0, 0.0, 1.0]
+expect = [5.97271745373e-236, 5.59757347045e-236, 5.06127848877e-236, 1.0]
+tolerance = 0.02
+
+[[probe]]
+name = "minimum"
+at = "min"
+input = [0.0, 0.0, 0.0, 1.0]
+expect = [0, 0, 0, 1.0]
+tolerance = 0.02
+
+[[probe]]
+name = "maximum"
+at = "max"
+input = [0.0, 0.0, 0.0, 1.0]
+expect = [0, 0, 0, 1.0]
+tolerance = 0.02

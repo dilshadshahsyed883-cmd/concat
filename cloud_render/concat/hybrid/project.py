@@ -9,7 +9,10 @@ from pathlib import Path
 
 from .animations import Transform
 from .canvas import CanvasBackground, parse_background
+from .canvas_shapes import Rectangle, RectangleMask, parse_shape, parse_mask
+from .particles import PARTICLE_IDS, ParticleEffect, parse_effect
 from .captions import CaptionStyle, Cue, WordTiming
+from .fonts import resolve_font
 from .contract import FrameSpan
 from .filters import FilterSettings
 from .looks import FILTER_LOOKS
@@ -72,14 +75,14 @@ def _validated_timeline(document):
     track_ids = index_by_id(tracks, "track")
     media_items = index_by_id(media, "media")
     index_by_id(clips, "clip")
-    unsupported_fields = ("crop", "mask", "cutout", "stabilize", "enhanced",
-                          "speedCurve", "shape", "transitionOut")
+    unsupported_fields = ("crop", "cutout", "stabilize", "enhanced",
+                          "speedCurve", "transitionOut")
     if not clips:
         raise ValueError("Active timeline has no clips to render")
     for clip in clips:
         ident = clip["id"]
         kind = clip.get("kind")
-        if kind not in ("image", "video", "audio", "text", "layer"):
+        if kind not in ("image", "video", "audio", "text", "layer", "shape"):
             raise ValueError(f"Unsupported GPU clip kind {kind} on {ident}")
         track_id = clip.get("trackId")
         if not isinstance(track_id, str) or track_id not in track_ids:
@@ -90,12 +93,18 @@ def _validated_timeline(document):
             if not item or item.get("placeholder"):
                 raise ValueError(f"Missing or placeholder media for GPU clip {ident}")
             if kind == "image" and _media_path(item).suffix.lower() not in (
-                    ".jpg", ".jpeg"):
-                raise ValueError(f"GPU clip {ident} requires a JPEG photo; PNG is not supported")
+                    ".jpg", ".jpeg", ".png"):
+                raise ValueError(
+                    f"GPU clip {ident} has an unsupported still-image type; use JPEG or PNG")
         if clip.get("background") is not None:
             background = parse_background(clip["background"])
             if background is not None and kind not in ("image", "video"):
                 raise ValueError(f"Unsupported GPU Canvas background on clip {ident}")
+        if clip.get("mask") is not None:
+            if kind not in ("image", "video"): raise ValueError(f"Unsupported GPU mask on clip {ident}")
+            parse_mask(clip["mask"])
+        if kind == "shape": parse_shape(clip.get("shape"))
+        elif clip.get("shape") is not None: raise ValueError(f"Unsupported shape on clip {ident}")
         for field in unsupported_fields:
             if clip.get(field):
                 raise ValueError(f"Unsupported GPU feature {field} on clip {ident}")
@@ -112,7 +121,7 @@ def _validated_timeline(document):
             raise ValueError(f"GPU clip {ident} has too many animation keyframes (2048 maximum)")
         for key in keys:
             prop = key.get("property") if isinstance(key, dict) else None
-            if kind not in ("image", "video", "layer") or not isinstance(prop, str) or prop not in KEYS:
+            if kind not in ("image", "video", "layer", "shape") or not isinstance(prop, str) or prop not in KEYS:
                 raise ValueError(f"Unsupported GPU keyframe {prop} on clip {ident}")
         effects = clip.get("videoEffects") or []
         if not isinstance(effects, list):
@@ -128,14 +137,15 @@ def _validated_timeline(document):
             if (kind not in ("image", "video", "layer")
                     or not (effect_id == "concat.box-blur"
                             or (kind != "layer" and effect_id in NATIVE_COLOR_PARAMS)
-                            or (kind == "layer" and effect_id in FILTER_LOOKS))):
+                            or (kind == "layer" and effect_id in FILTER_LOOKS)
+                            or effect_id in PARTICLE_IDS)):
                 raise ValueError(f"Unsupported GPU effect {effect_id} on clip {ident}")
         transition = clip.get("transitionIn")
         if transition is not None:
             transition_id = transition.get("id") if isinstance(transition, dict) else None
             if (kind not in ("image", "video") or not isinstance(transition_id, str)
                     or (transition_id not in TRANSITIONS and transition_id not in NATIVE_TRANSITIONS)
-                    or set(transition) - {"id", "duration", "intensity"}):
+                    or set(transition) - {"id", "duration", "intensity", "params"}):
                 raise ValueError(f"Unsupported GPU transition {transition_id} on clip {ident}")
         if kind == "text" and (any(clip.get(field) for field in ("flipH", "flipV"))
                                or clip.get("rotation", 0) != 0 or clip.get("scale", 1) != 1):
@@ -216,12 +226,16 @@ class Picture:
     speed: float
     constants: dict
     keys: dict = field(default_factory=dict)
-    filters: tuple[FilterSettings | NativeColorEffect, ...] = ()
+    filters: tuple[FilterSettings | NativeColorEffect | ParticleEffect, ...] = ()
     transition: Transition | None = None
     outgoing: Picture | None = None
     flip_h: bool = False
     flip_v: bool = False
     background: CanvasBackground | None = None
+    shape: Rectangle | None = None
+    mask: RectangleMask | None = None
+    canvas_backdrop: bool = False
+    canvas_companion: bool = False
 
     def transform(self, index):
         fraction = min(max((index - self.span.start) / (self.span.end - self.span.start), 0), 1)
@@ -357,7 +371,9 @@ def filters_for(clip, start, duration):
         try:
             if not isinstance(params, dict):
                 raise ValueError("invalid effect parameters")
-            if ident in NATIVE_COLOR_PARAMS:
+            if ident in PARTICLE_IDS:
+                settings = parse_effect(effect, start, duration)
+            elif ident in NATIVE_COLOR_PARAMS:
                 settings = _native_color_effect(effect, params, start, duration)
             elif ident in FILTER_LOOKS:
                 if params or effect.get("keys"):
@@ -419,19 +435,18 @@ def _caption(clip, first, end, index, track_rank):
     # defaults where they have no visible effect and reject changed styles
     # that the worker cannot faithfully draw.
     neutral = {"italic": False,
-               "backgroundPaddingX": .0315, "backgroundPaddingY": .018,
-               "lineHeight": 1.2, "tracking": 0, "maxWidth": 0, "maxHeight": 0}
+               "lineHeight": 1.2, "tracking": 0}
     supported = {"content", "fontFamily", "fontSize", "fontWeight", "color",
                  "opacity", "strokeWidth", "strokeColor", "shadow", "align",
-                 "background", "backgroundRadius", "karaoke", "karaokeColor"}
+                 "background", "backgroundRadius", "backgroundPaddingX", "backgroundPaddingY", "karaoke", "karaokeColor", "karaokeBackground", "karaokeWords", "maxWidth", "maxHeight"}
     for name, value in style.items():
         if name not in supported and (name not in neutral or value != neutral[name]):
             raise ValueError(f"Unsupported caption styling {name} on clip {ident}")
     family = style.get("fontFamily", "Hanken Grotesk")
-    if (family not in ("Hanken Grotesk", '"Hanken Grotesk"')
-            or style.get("fontWeight", 600) != 600):
-        raise ValueError(f"Unsupported caption styling fontFamily or fontWeight on clip {ident}; "
-                         "use Hanken Grotesk SemiBold")
+    try:
+        font = resolve_font(family, style.get("fontWeight", 600))
+    except ValueError as exc:
+        raise ValueError(f"{exc} on clip {ident}") from exc
     if style.get("align", "center") != "center":
         raise ValueError(f"Unsupported caption styling align on clip {ident}")
     karaoke = style.get("karaoke", False)
@@ -448,6 +463,8 @@ def _caption(clip, first, end, index, track_rank):
                   if style.get("background") else (0, 0, 0, 0))
     highlight = (_caption_color(style["karaokeColor"], "karaokeColor", ident)
                  if style.get("karaokeColor") else (255, 225, 60, 255))
+    word_background = (_caption_color(style["karaokeBackground"], "karaokeBackground", ident)
+                       if style.get("karaokeBackground") else (0, 0, 0, 0))
     radius = number(style.get("backgroundRadius", .0135),
                     f"caption backgroundRadius on {ident}")
     if radius < 0 or radius > .2:
@@ -468,7 +485,21 @@ def _caption(clip, first, end, index, track_rank):
     # Floor the cue boundary to keep its quantized start/end on exact 30fps
     # frames rather than dropping a frame when rounding 66.667ms to 67ms.
     words = ()
-    if karaoke:
+    cue_start, cue_end = first * 1000 // FPS, end * 1000 // FPS
+    exact = style.get("karaokeWords") or clip.get("captionWords")
+    if exact:
+        if not isinstance(exact, list) or len(exact) > 10000:
+            raise ValueError(f"Invalid exact caption word timings on {ident}")
+        cue_start = round(number(clip.get("start"), "caption start")*1000)
+        cue_end = round((number(clip.get("start"), "caption start")+number(clip.get("duration"), "caption duration"))*1000)
+        try:
+            words = tuple(WordTiming(w["text"], cue_start+w["startMs"], cue_start+w["endMs"])
+                          for w in exact)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid exact caption word timings on {ident}: {exc}") from exc
+    elif word_background[3]:
+        raise ValueError(f"Caption {ident} needs real word timestamps for active-word backing; generate or import timed captions")
+    elif karaoke:
         # Without ASR word timestamps, the native caption's exact clip
         # frames are apportioned by word length. This is approximate
         # pacing, not claimed to be speech-aligned transcription.
@@ -492,13 +523,22 @@ def _caption(clip, first, end, index, track_rank):
             remaining -= allot
             weight_left -= weight
         words = tuple(built)
-    cue = Cue(index, first * 1000 // FPS, end * 1000 // FPS, content, words)
-    caption_style = CaptionStyle(font=str(_hanken_font()), font_size=size, fill=fill,
+    cue = Cue(index, cue_start, cue_end, content, words)
+    px = round(number(style.get("backgroundPaddingX", .0315), f"caption backgroundPaddingX on {ident}")*HEIGHT)
+    py = round(number(style.get("backgroundPaddingY", .018), f"caption backgroundPaddingY on {ident}")*HEIGHT)
+    if not 0 <= px <= 512 or not 0 <= py <= 512:
+        raise ValueError(f"Unsupported caption styling backgroundPadding on clip {ident}")
+    max_width = number(style.get("maxWidth", 0), f"caption maxWidth on {ident}")
+    max_height = number(style.get("maxHeight", 0), f"caption maxHeight on {ident}")
+    if not 0 <= max_width <= 1 or not 0 <= max_height <= 1:
+        raise ValueError(f"Unsupported caption styling maxWidth/maxHeight on clip {ident}")
+    caption_style = CaptionStyle(font=str(font), font_size=size, fill=fill,
                                  outline=outline, background=background,
-                                 highlight=highlight,
+                                 highlight=highlight, word_background=word_background,
+                                 max_width=round(max_width*WIDTH), max_height=round(max_height*HEIGHT),
                                  outline_width=stroke,
-                                 padding=(12 if background[3] else 0), margin=0,
-                                 plate_radius=(round(radius * HEIGHT) if background[3] else 0),
+                                 padding=0, padding_x=px if background[3] else 0, padding_y=py if background[3] else 0, margin=0,
+                                 plate_radius=(round(radius * HEIGHT) if background[3] or word_background[3] else 0),
                                  anchor=(anchor_x, anchor_y), shadow=shadow,
                                  opacity=opacity * clip_opacity, track_rank=track_rank)
     return cue, caption_style
@@ -569,13 +609,17 @@ def _plan_project(document, timeline, resolve_media):
             if not 0 <= at <= 1:
                 raise ValueError(f"Clip {ident} has a key outside its duration")
             keys.setdefault(name, {})[at] = (at, number(key.get("value"), f"key value on {ident}"), key.get("ease"))
-        picture = Picture(ident, kind, None if kind == "layer" else resolve_media(item),
+        picture = Picture(ident, kind, None if kind in ("layer", "shape") else resolve_media(item),
                           span, source, speed, constants,
                           {key: sorted(points.values()) for key, points in keys.items()},
                           filters_for(clip, start, duration), flip_h=bool(clip.get("flipH")),
                           flip_v=bool(clip.get("flipV")),
                           background=(timeline_background if clip.get("background") is None
-                                      else parse_background(clip["background"])))
+                                      else parse_background(clip["background"])),
+                          shape=parse_shape(clip.get("shape")) if kind == "shape" else None,
+                          mask=parse_mask(clip.get("mask")),
+                          canvas_backdrop=clip.get("canvasRole") == "backdrop",
+                          canvas_companion="canvasOwner" in clip)
         lanes[clip["trackId"]].append(picture)
         media_durations[ident] = item.get("duration")
         if clip.get("transitionIn"):
@@ -601,8 +645,12 @@ def _plan_project(document, timeline, resolve_media):
             if previous.span.end != span.start or "layer" in (incoming.kind, previous.kind):
                 raise ValueError(f"Unsupported or unaligned GPU transition {ident} on {incoming.id}")
             if ident in NATIVE_TRANSITIONS:
-                native_cuts.append(_native_cut(rank, previous, incoming, ident, duration,
-                                               media_durations[previous.id], intensity))
+                cut=_native_cut(rank, previous, incoming, ident, duration, media_durations[previous.id], intensity)
+                parameters=spec.get("params",{})
+                if not isinstance(parameters,dict):raise ValueError("Invalid transition parameters")
+                if parameters:
+                    cut=replace(cut,transition=replace(cut.transition,params=tuple(sorted(parameters.items()))))
+                native_cuts.append(cut)
                 continue
             mode = TRANSITIONS[ident]
             length = round(duration * FPS)
@@ -632,9 +680,12 @@ def _plan_project(document, timeline, resolve_media):
                 raise ValueError(f"GPU caption {ident} overlaps video or effects on its track or above; "
                                  "move the caption to a higher track")
     # Concat draws Canvas only under the lowest track containing pictures,
-    # never under additional video layers or captions.
+    # never under additional video layers or captions. Generated canvas
+    # companion pictures must not claim the main lane for the whole timeline;
+    # their owned backdrops are still drawn through canvas_backdrop.
     background_rank = next((rank for rank, lane in enumerate(sorted_lanes)
-                            if any(clip.kind in ("image", "video") for clip in lane)), None)
+                            if any(clip.kind in ("image", "video") and not clip.canvas_companion
+                                   for clip in lane)), None)
     return Project(tuple(sorted_lanes), tuple(caption for _, _, _, caption in sorted(
         captions, key=lambda entry: (entry[0], entry[1].start))), tuple(sounds.values()), end_frame,
         tuple(native_cuts), background_rank)

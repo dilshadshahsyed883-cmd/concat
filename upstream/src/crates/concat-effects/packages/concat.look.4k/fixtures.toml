@@ -1,0 +1,6 @@
+# Analytic uniform-color display-space grading fixture; no measured GPU claim.
+[[probe]]
+name = "uniform color grading"
+input = [0.2,0.4,0.6,1.0]
+expect = [0.19972483413709324, 0.40441795326622854, 0.6101048665778038, 1.0]
+tolerance = 0.01
