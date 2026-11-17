@@ -42,6 +42,7 @@ jobs:
     timeout-minutes: 190
     env:
       ORT_VERSION: 1.28.0
+      CONCAT_BUILD_SHA: ${{ github.sha }}
       GGML_NATIVE: "OFF"
       GGML_AVX2: "OFF"
       GGML_FMA: "OFF"
@@ -205,6 +206,12 @@ jobs:
           & ".\upstream\scripts\ci\smoke-windows.ps1" -Bundle $out
           $hash = (Get-FileHash "$out\concat.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  concat.exe" | Set-Content -LiteralPath "$out\SHA256SUMS" -Encoding ascii
+          $revision = $env:GITHUB_SHA
+          $binary = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes("$out\concat.exe"))
+          if (-not $binary.Contains($revision)) { throw "EXE does not embed the exact source SHA" }
+          $metadata = [ordered]@{ source_sha=$revision; app_version="0.2.8"; executable_sha256=$hash; render_contract=[ordered]@{id="concat-cuda-hybrid-v1";version=1}; smoke="passed" }
+          $metadata | ConvertTo-Json -Depth 4 | Set-Content "$out\release-metadata.json" -Encoding UTF8
+          Copy-Item concat_gpu/concat_gpu_client.ps1 "$out\concat_gpu_client.ps1"
           Get-ChildItem $out -File | Select-Object Name,Length | Format-Table
       - name: Test project editing and persistence
         if: github.ref_name != 'gpu/final-integration' && github.head_ref != 'gpu/final-integration'
@@ -224,10 +231,14 @@ jobs:
     needs: native-editor-windows
     if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 45
     permissions:
       contents: write
+      actions: read
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           name: Concat-Windows-x64-dev
@@ -243,6 +254,10 @@ jobs:
           cd ..
           zip -r "Concat-Windows-x64-${GITHUB_SHA:0:12}.zip" Concat-0.2.8-GPU-Windows-x64
           sha256sum "Concat-Windows-x64-${GITHUB_SHA:0:12}.zip" > release-sha256.txt
+      - name: Verify matching published GPU candidate before releasing Windows bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/verify_matching_release.py Concat-0.2.8-GPU-Windows-x64/release-metadata.json
       - name: Publish commit-matched GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -253,11 +268,11 @@ jobs:
           {
             echo "Portable Windows x64 Concat editor built and smoke-tested from main commit ${GITHUB_SHA}."
             echo
-            echo "Optional Salad GPU candidate (only after a separate manual image build):"
-            echo "`ghcr.io/${GITHUB_REPOSITORY,,}-gpu-candidate:${GITHUB_SHA}`"
+            echo "Matching Salad GPU candidate (image startup and contract checks passed):"
+            echo "ghcr.io/${GITHUB_REPOSITORY,,}-gpu-candidate:${GITHUB_SHA}"
             echo
             echo "GPU RTX 3060 Ti acceptance is pending a live test; this release does not claim GPU acceptance."
           } > release-notes.txt
-          gh release create "$tag" "Concat-Windows-x64-${GITHUB_SHA:0:12}.zip" release-sha256.txt \
+          gh release create "$tag" "Concat-Windows-x64-${GITHUB_SHA:0:12}.zip" release-sha256.txt matching-release.json \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --title "Concat CUDA Desktop ${GITHUB_SHA:0:12}" --notes-file release-notes.txt

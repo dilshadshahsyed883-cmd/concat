@@ -641,6 +641,7 @@ class Handler(BaseHTTPRequestHandler):
                                     "bundle_versions": [BUNDLE_VERSION],
                                     "render_modes": list(RENDER_MODES),
                                     "validation_version": 1,
+                                    "source_sha": os.environ.get("CONCAT_SOURCE_SHA", "unknown"),
                                     "render_contract": {"id": RENDER_CONTRACT_ID, "version": RENDER_CONTRACT_VERSION},
                                     "gpu_captions": {"request_version": 1, **FasterWhisperCuda.capability()},
                                     "max_project_manifest_bytes": MAX_PROJECT_MANIFEST_BYTES})
