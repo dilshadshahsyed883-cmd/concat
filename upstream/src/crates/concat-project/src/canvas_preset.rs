@@ -438,7 +438,14 @@ fn unedited_legacy_headline(piece: &Clip, owner: &Clip) -> bool {
     let Ok(previous) = serde_json::from_value::<Config>(saved.clone()) else {
         return false;
     };
-    if !previous.headline.enabled {
+    // A user-authored headline profile (color, positioning, font or text)
+    // is customized even when its generated rectangle was never edited.
+    // Only the exact historical default placeholder is safe to remove.
+    let Some(mut default) = Config::preset(previous.preset) else {
+        return false;
+    };
+    default.headline.enabled = true;
+    if previous.headline != default.headline {
         return false;
     }
     // Rebuild the old rectangle without consuming the project's real IdMint.
@@ -901,6 +908,34 @@ mod tests {
             serde_json::to_value(project.active().clip("real-caption").unwrap()).unwrap(),
             caption_before
         );
+    }
+
+    #[test]
+    fn customized_legacy_profile_is_not_silently_removed() {
+        let (mut project, mut mint) = fixture();
+        apply(
+            &mut project,
+            &mut mint,
+            Config::preset(1).unwrap(),
+            vec!["c1".into()],
+            vec![],
+        )
+        .unwrap();
+        let mut authored = Config::preset(1).unwrap();
+        authored.headline.enabled = true;
+        authored.headline.background = "#cc0088".into();
+        let legacy_id = legacy_bar(&mut project, &mut mint, &authored);
+        let before = serde_json::to_value(&project).unwrap();
+        assert!(apply(
+            &mut project,
+            &mut mint,
+            Config::preset(2).unwrap(),
+            vec!["c1".into()],
+            vec![],
+        )
+        .is_err());
+        assert!(project.active().clip(&legacy_id).is_some());
+        assert_eq!(serde_json::to_value(&project).unwrap(), before);
     }
 
     #[test]
