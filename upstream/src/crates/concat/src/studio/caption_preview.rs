@@ -5,7 +5,7 @@ use crate::ui::{App, CaptionPresetPreview, CaptionPreviewCard};
 use concat_core::frame::Frame;
 use concat_export::ExportClip;
 use concat_project::caption_preview::{card_sample, stage_actual, stage_sample};
-use concat_project::model::{Clip, ClipKind, CustomFont, Project, Track};
+use concat_project::model::{Clip, ClipKind, CustomFont, Project, TextStyle, Track};
 use slint::{ComponentHandle, ModelRc, VecModel};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -51,6 +51,7 @@ struct RenderedPreview {
 #[derive(Default)]
 pub(crate) struct CaptionPreview {
     pub(crate) preset: Option<String>,
+    pub(crate) style_override: Option<TextStyle>,
     browsing: bool,
     demo_timer: slint::Timer,
     demo_playing: bool,
@@ -66,6 +67,7 @@ impl CaptionPreview {
     /// Drop staged styling without changing a document or its history.
     pub(crate) fn clear(&mut self) {
         self.preset = None;
+        self.style_override = None;
         self.demo_timer.stop();
         self.demo_playing = false;
         self.demo_override = false;
@@ -100,6 +102,37 @@ fn one_caption(project: &Project, clip: Clip, font: Option<&std::path::Path>) ->
 }
 
 impl Studio {
+    pub(crate) fn applied_caption_id(&self) -> Option<&str> {
+        self.project().extra.get("captionPreset")?
+            .get("presetId")?.as_str()
+    }
+
+    /// Staged changes beat saved changes; otherwise the original library look.
+    pub(crate) fn caption_effective_style(&self, id: &str) -> Option<TextStyle> {
+        if self.caption_preview.preset.as_deref() == Some(id) {
+            if let Some(staged) = self.caption_preview.style_override.as_ref() {
+                return Some(staged.clone());
+            }
+        }
+        self.project().extra.get("captionPreset")
+            .filter(|v| v.get("presetId").and_then(|x| x.as_str()) == Some(id))
+            .and_then(|v| v.get("style"))
+            .and_then(|v| serde_json::from_value::<TextStyle>(v.clone()).ok())
+            .or_else(|| self.text_presets.iter()
+                .find(|p| p.id == id).map(|p| p.style.clone()))
+    }
+
+    /// The inspector controls only modify the audition until Apply.
+    fn edit_caption_preview_style(&mut self, change: impl FnOnce(&mut TextStyle)) {
+        let Some(id) = self.caption_preview.preset.clone()
+            .or_else(|| self.applied_caption_id().map(str::to_owned)) else { return; };
+        let Some(mut style) = self.caption_effective_style(&id) else { return; };
+        change(&mut style);
+        self.caption_preview.preset = Some(id);
+        self.caption_preview.style_override = Some(style);
+        self.request_preview();
+    }
+
     /// Build an interval index only when the document, timeline or caption selection changes.
     fn caption_at_preview_time(&self, at: f64) -> Option<Arc<Clip>> {
         let selected = self.sole_selection().unwrap_or_default();
@@ -147,12 +180,13 @@ impl Studio {
     ) -> Option<Vec<ExportClip>> {
         let id = self.caption_preview.preset.as_deref()?;
         let preset = self.text_presets.iter().find(|p| p.id == id)?;
+        let style = self.caption_effective_style(id)?;
         let at = f64::from(self.preview_time());
         let source = self.caption_at_preview_time(at);
         let staged = source
             .as_ref()
-            .map(|c| stage_actual(c, &preset.style, id))
-            .unwrap_or_else(|| stage_sample(&preset.style, id, 0.0, preset.offset_y));
+            .map(|c| stage_actual(c, &style, id))
+            .unwrap_or_else(|| stage_sample(&style, id, 0.0, preset.offset_y));
         let (shown_w, shown_h) =
             crate::panes::monitor::MonitorPane::frame_size(self.quality_of(), (width, height));
         let key = format!(
@@ -246,17 +280,41 @@ impl Studio {
     /// Publish card pixels drawn by the same native title painter used by preview/export.
     pub(crate) fn publish_caption_preview(&self, app: &App) {
         let ui = app.global::<CaptionPresetPreview>();
-        ui.set_chosen(
-            self.caption_preview
-                .preset
-                .as_deref()
-                .unwrap_or_default()
-                .into(),
-        );
+        let applied = self.applied_caption_id().unwrap_or_default();
+        let chosen = self.caption_preview.preset.as_deref().unwrap_or(applied);
+        ui.set_chosen(chosen.into());
+        ui.set_applied(applied.into());
+        ui.set_previewing(self.caption_preview.preset.is_some());
         let rendered = self.caption_preview.rendered.borrow();
-        ui.set_status(rendered.message.as_str().into());
-        ui.set_sample(rendered.sample);
+        let status = if self.caption_preview.preset.is_some() {
+            if rendered.message.is_empty() { "Sample preview — project unchanged" }
+            else { rendered.message.as_str() }
+        } else if !applied.is_empty() {
+            if self.project().extra.contains_key("gpuCaptionRequest") {
+                "Preset Applied — captions will be generated on GPU"
+            } else {
+                "Preset Applied — captions will be generated on GPU once narration is added"
+            }
+        } else { "" };
+        ui.set_status(status.into());
+        ui.set_sample(self.caption_preview.preset.is_some() && rendered.sample);
         ui.set_demo_playing(self.caption_preview.demo_playing);
+        if let Some(style) = self.caption_effective_style(chosen) {
+            let index = match style.font_family.as_str() {
+                "Inter" => if style.font_weight >= 900.0 { 2 } else { 3 },
+                "Montserrat" => 4,
+                "Archivo Black" => 5,
+                "Anton" => 6,
+                _ => if style.font_weight >= 700.0 { 1 } else { 0 },
+            };
+            ui.set_font_index(index);
+            ui.set_text_hex(style.color.into());
+            ui.set_background_hex(if style.background.is_empty() {
+                "#000000".into()
+            } else {
+                style.background.into()
+            });
+        }
         ui.set_can_apply_selected(self.selection.iter().any(|id| {
             self.clip(id).is_some_and(|c| {
                 c.kind == ClipKind::Text
@@ -268,20 +326,8 @@ impl Studio {
                     && !self.locked(&c.track_id)
             })
         }));
-        let caption_lane = concat_project::caption_preview::caption_lane(
-            self.timeline(),
-            self.sole_selection().as_deref(),
-        );
-        ui.set_can_apply_all(self.timeline().clips.iter().any(|c| {
-            c.kind == ClipKind::Text
-                && caption_lane.as_deref() == Some(c.track_id.as_str())
-                && !c.extra.contains_key("canvasOwner")
-                && self
-                    .timeline()
-                    .track(&c.track_id)
-                    .is_some_and(|t| t.visible)
-                && !self.locked(&c.track_id)
-        }));
+        // A project-level preset is legal with zero generated caption segments.
+        ui.set_can_apply_all(true);
         if !self.caption_preview.browsing {
             return;
         }
@@ -360,6 +406,7 @@ pub(crate) fn install(app: &App) {
                     studio.caption_preview.clear();
                 } else {
                     studio.caption_preview.preset = Some(id.to_string());
+                    studio.caption_preview.style_override = None;
                 }
                 studio.request_preview();
             }
@@ -440,14 +487,55 @@ pub(crate) fn install(app: &App) {
             shell.studio.borrow().publish(&app, &shell.models);
         })
     });
+    ui.on_style_font(|index| {
+        crate::host::Shell::with(|shell, app| {
+            {
+                let mut studio = shell.studio.borrow_mut();
+                studio.edit_caption_preview_style(|style| {
+                    let (family, weight) = match index {
+                        0 => ("Hanken Grotesk", 600.0),
+                        1 => ("Hanken Grotesk", 700.0),
+                        2 => ("Inter", 900.0),
+                        3 => ("Inter", 700.0),
+                        4 => ("Montserrat", 800.0),
+                        5 => ("Archivo Black", 900.0),
+                        _ => ("Anton", 400.0),
+                    };
+                    style.font_family = family.into();
+                    style.font_weight = weight;
+                });
+            }
+            shell.studio.borrow().publish(&app, &shell.models);
+        })
+    });
+    ui.on_style_color(|field, hex| {
+        if hex.len() != 7 || !hex.starts_with('#')
+            || !hex.as_bytes()[1..].iter().all(|b| b.is_ascii_hexdigit())
+        {
+            return;
+        }
+        crate::host::Shell::with(|shell, app| {
+            {
+                let mut studio = shell.studio.borrow_mut();
+                studio.edit_caption_preview_style(|style| {
+                    if field.as_str() == "text" { style.color = hex.to_string(); }
+                    else if field.as_str() == "background" { style.background = hex.to_string(); }
+                });
+            }
+            shell.studio.borrow().publish(&app, &shell.models);
+        })
+    });
     ui.on_apply(|all| {
         crate::host::Shell::with(|shell, app| {
             {
                 let mut studio = shell.studio.borrow_mut();
-                if let Some(id) = studio.caption_preview.preset.clone() {
-                    // Explicit Apply uses the existing atomic batch and scope handling.
-                    studio.caption_preview.clear();
+                if let Some(id) = studio.caption_preview.preset.clone()
+                    .or_else(|| studio.applied_caption_id().map(str::to_owned))
+                {
                     studio.apply_caption_preset(&id, all);
+                    if all && studio.applied_caption_id() == Some(id.as_str()) {
+                        studio.caption_preview.clear();
+                    }
                     studio.request_preview();
                 }
             }
