@@ -1,13 +1,18 @@
 """Issue #68: matching desktop ZIP and Salad JPEG/PNG still-image support."""
-import importlib.util
+import hashlib
+import io
 import json
 import os
+import shutil
+import subprocess
 import tempfile
+import time
 import unittest
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
+from cloud_render.concat.gpu.worker import RenderWorker
 from cloud_render.concat.hybrid.project import load_project, validate_gpu_manifest
 from cloud_render.concat.project_bundle import pack, restore, sha256
 
@@ -135,6 +140,7 @@ class StillImageDecodeTests(unittest.TestCase):
 
 @unittest.skipUnless(Image is not None, "Pillow is required by the GPU worker")
 class ZipParityTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("ffmpeg"), "FFmpeg required for real mixed-media fixture")
     def test_legacy_zip_restores_and_retries_rgb_rgba_mixed_video_without_loss(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -142,7 +148,12 @@ class ZipParityTests(unittest.TestCase):
             source.mkdir()
             Image.new("RGB", (2, 2), (60, 70, 80)).save(source / "background.jpg")
             Image.new("RGBA", (2, 2), (10, 20, 30, 125)).save(source / "cutout.png")
-            (source / "clip.mp4").write_bytes(b"unchanged video media fixture")
+            subprocess.run([
+                "ffmpeg", "-hide_banner", "-nostdin", "-loglevel", "error", "-y",
+                "-f", "lavfi", "-i", "color=c=green:s=16x16:r=30:d=1",
+                "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                str(source / "clip.mp4"),
+            ], capture_output=True, check=True, timeout=30)
             document = manifest()
             (source / "concat.json").write_text(json.dumps(document), encoding="utf-8")
             originals = {p.name: sha256(p) for p in source.iterdir()}
@@ -175,6 +186,55 @@ class ZipParityTests(unittest.TestCase):
                     self.assertEqual(sha256(Path(media["path"])),
                                      expected_by_id[media["id"]])
             self.assertEqual({p.name: sha256(p) for p in source.iterdir()}, originals)
+
+
+    def test_failed_worker_job_retries_unchanged_legacy_png_zip_with_same_id(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            Image.new("RGBA", (2, 2), (0, 0, 255, 128)).save(source / "cutout.png")
+            Image.new("RGB", (2, 2), (0, 255, 0)).save(source / "background.jpg")
+            (source / "clip.mp4").write_bytes(b"retained source video")
+            (source / "concat.json").write_text(json.dumps(manifest()), encoding="utf-8")
+            archive = root / "legacy.zip"
+            pack(source, archive)
+            raw = archive.read_bytes()
+            checksum = hashlib.sha256(raw).hexdigest()
+            calls = []
+
+            def simulate_renderer(project, output):
+                calls.append(project)
+                doc = json.loads((project / "concat.json").read_text())
+                validate_gpu_manifest(doc)
+                png_path = next(Path(m["path"]) for m in doc["media"]
+                                if m["id"] == "png")
+                self.assertEqual(png_path.read_bytes(), (source / "cutout.png").read_bytes())
+                if len(calls) == 1:
+                    raise RuntimeError("old renderer rejected PNG")
+                output.write_bytes(b"\\x00\\x00\\x00\\x18ftypisom" + b"\\x00" * 20)
+
+            worker = RenderWorker(root / "worker", token="png-retry-test-token" * 3,
+                                  renderer=simulate_renderer)
+            def until_state(expected):
+                deadline = time.monotonic() + 6
+                while time.monotonic() < deadline:
+                    if worker.status("oldzip68")["state"] == expected:
+                        return
+                    time.sleep(.02)
+                self.fail(f"Worker never reached {expected}: {worker.status('oldzip68')}")
+            try:
+                worker.accept("oldzip68", io.BytesIO(raw), len(raw), checksum,
+                              render_mode="cuda-hybrid-v1")
+                until_state("failed")
+                saved_zip = worker.inputs / "oldzip68" / "project.zip"
+                self.assertEqual(hashlib.sha256(saved_zip.read_bytes()).hexdigest(), checksum)
+                worker.retry("oldzip68")
+                until_state("rendered")
+                self.assertEqual(len(calls), 2)
+                self.assertEqual(hashlib.sha256(saved_zip.read_bytes()).hexdigest(), checksum)
+            finally:
+                worker.pool.shutdown(wait=True)
 
     def test_manifest_rejects_unsupported_extension_with_clip_id(self):
         document = manifest()
