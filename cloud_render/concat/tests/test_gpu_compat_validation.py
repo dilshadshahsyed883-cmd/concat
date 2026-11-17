@@ -425,6 +425,15 @@ class WorkerPreflightTests(unittest.TestCase):
                         accepted = client.getresponse()
                         self.assertEqual(accepted.status, 200)
                         self.assertTrue(json.loads(accepted.read())["ok"])
+                        # Windows calls this worker endpoint with the native
+                        # document before it creates/uploads the matching ZIP.
+                        document["media"][0]["path"] = "transparent.PNG"
+                        client.request("POST", "/api/validate",
+                                       body=json.dumps(document).encode("utf-8"),
+                                       headers=headers)
+                        png_preflight = client.getresponse()
+                        self.assertEqual(png_preflight.status, 200)
+                        self.assertTrue(json.loads(png_preflight.read())["ok"])
                         invalid = minimal_project()
                         invalid["timelines"][0]["clips"][0]["videoEffects"] = [
                             {"id": "concat.unsupported-filter"}]
