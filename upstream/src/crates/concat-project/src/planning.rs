@@ -92,7 +92,10 @@ impl MediaSelection {
         for entries in [&mut self.images, &mut self.videos] {
             let keys: Vec<String> = entries.iter().filter(|(_, row)| row.selected)
                 .map(|(key, _)| key.clone()).collect();
-            allocate_keyword_budget(entries, &keys, 100);
+            // All-zero groups are intentionally excluded, not silently enabled.
+            if keys.iter().any(|key| entries[key].weight > 0) {
+                allocate_keyword_budget(entries, &keys, 100);
+            }
         }
     }
 
@@ -794,6 +797,15 @@ mod keyword_budget_tests {
         s.change_keyword(false,"b",true,0);
         // b's remembered 34% is restored, without wiping a.
         assert_eq!(shares(&s,false),vec![66,34]);
+    }
+    #[test]
+    fn all_zero_selection_stays_excluded_until_explicit_drag_or_equalize() {
+        let mut s=MediaSelection::default();
+        for key in ["a","b"] {s.images.insert(key.into(), row(true, 0));}
+        s.normalize();
+        assert_eq!(shares(&s,false),vec![0,0]);
+        s.change_keyword(false,"a",true,40);
+        assert_eq!(shares(&s,false),vec![40,60]);
     }
     #[test]
     fn legacy_profiles_round_trip_deterministically() {
