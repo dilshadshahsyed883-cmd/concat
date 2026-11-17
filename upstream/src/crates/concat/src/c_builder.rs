@@ -571,6 +571,28 @@ mod tests {
         assert!((ratio-0.70).abs()<0.10,"actual share {ratio}");
     }
     #[test]
+    fn legacy_keyword_shares_preserve_planner_results_after_reopen() {
+        use concat_project::planning::{KeywordSelection,MediaSelection,Profile};
+        let mut assets=Vec::new();
+        let mut selection=MediaSelection::default();
+        for key in ["alpha","beta","gamma","delta"] {
+            let mut a=image(key);
+            a.keyword=key.into();
+            assets.push(a);
+            selection.images.insert(key.into(),KeywordSelection {selected:true,weight:100});
+        }
+        let mut profile=Profile::default();
+        profile.media_selection=Some(selection);
+        let (before,_)=plan_profile(&assets,120.,"","",&profile).unwrap();
+        profile.media_selection.as_mut().unwrap().normalize();
+        let saved=serde_json::to_string(&profile).unwrap();
+        let reopened=Profile::from_json(&saved).unwrap();
+        let (after,_)=plan_profile(&assets,120.,"","",&reopened).unwrap();
+        assert_eq!(reopened.media_selection.as_ref().unwrap().images.values().map(|x|x.weight).collect::<Vec<_>>(),vec![25,25,25,25]);
+        let identity=|shots:Vec<Shot>|shots.into_iter().map(|s|(s.asset.path,s.start_us,s.duration_us,s.trim_us)).collect::<Vec<_>>();
+        assert_eq!(identity(before),identity(after));
+    }
+    #[test]
     fn validates_gaps() {
         let bad = vec![Shot { asset: image("one"), start_us: 2, duration_us: 1_000_000, trim_us: 0 }];
         assert!(validate(&bad, 1_000_002).is_err());

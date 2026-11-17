@@ -886,6 +886,56 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     editor.on_cb_keyword_changed(on_window!(|studio,json:SharedString,video:bool,keyword:SharedString,selected:bool,weight:i32| {
         studio.set_c_builder_keyword(&json,video,&keyword,selected,weight);
     }));
+    editor.on_cb_equalize_keywords(on_window!(|studio,json:SharedString,video:bool| {
+        studio.equalize_c_builder_keywords(&json,video);
+    }));
+    editor.on_cb_tune_profile(on_window!(
+        |studio, json:SharedString, name:SharedString, opening:SharedString, closing:SharedString,
+         image_min:SharedString, image_max:SharedString, video_min:SharedString, video_max:SharedString,
+         max_videos:SharedString, max_images:SharedString, cooldown:SharedString, seed:SharedString| {
+            if studio.c_builder.scanning { return; }
+            let mut profile=match concat_project::planning::Profile::from_json(&json) {
+                Ok(p)=>p,Err(e)=>{studio.notify(&e,true);return;}
+            };
+            let parse_float=|label:&str,value:&SharedString|->Result<f64,String> {
+                value.trim().parse::<f64>().map_err(|_|format!("{label} must be a number"))
+            };
+            let parse_usize=|label:&str,value:&SharedString|->Result<usize,String> {
+                value.trim().parse::<usize>().map_err(|_|format!("{label} must be a non-negative integer"))
+            };
+            let result=(||->Result<(),String>{
+                let first=parse_float("Opening video %",&opening)?;
+                let last=parse_float("Ending video %",&closing)?;
+                if !(0.0..=100.0).contains(&first)||!(0.0..=100.0).contains(&last) {
+                    return Err("Video mix percentages must be within 0–100".into());
+                }
+                profile.name=name.trim().to_owned();
+                // Preserve any custom intermediate curve anchors.
+                profile.curve.first_mut().expect("validated curve").video=first/100.;
+                profile.curve.last_mut().expect("validated curve").video=last/100.;
+                profile.image_seconds=[
+                    parse_float("Image minimum seconds",&image_min)?,
+                    parse_float("Image maximum seconds",&image_max)?,
+                ];
+                profile.video_seconds=[
+                    parse_float("Video minimum seconds",&video_min)?,
+                    parse_float("Video maximum seconds",&video_max)?,
+                ];
+                profile.max_videos=parse_usize("Max video run",&max_videos)?;
+                profile.max_images=parse_usize("Max image run",&max_images)?;
+                profile.cooldown=parse_usize("Cooldown",&cooldown)?;
+                profile.seed=seed.trim().parse::<u64>().map_err(|_|"Seed must be a non-negative integer".to_owned())?;
+                if let Some(selection)=profile.media_selection.as_mut(){selection.normalize();}
+                profile.validate()
+            })();
+            if let Err(e)=result{studio.notify(&e,true);return;}
+            studio.c_builder.profile_json=serde_json::to_string_pretty(&profile).unwrap_or_default();
+            studio.c_builder.preview.clear();studio.c_builder.preview_shots.clear();
+            studio.apply(concat_project::Command::SetPlanningProfile {
+                profile:serde_json::to_value(&profile).unwrap_or_default(),
+            });
+        }
+    ));
     editor.on_cb_videos_toggled(on_window!(|studio,json:SharedString,on:bool| {
         studio.set_c_builder_videos_enabled(&json,on);
     }));
@@ -897,7 +947,8 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                     if let Some(path) = paths.first() {
                         match std::fs::read_to_string(path).map_err(|e| e.to_string())
                             .and_then(|s| concat_project::planning::Profile::from_json(&s)) {
-                            Ok(p) => {
+                            Ok(mut p) => {
+                                if let Some(s)=p.media_selection.as_mut(){s.normalize();}
                                 studio.c_builder.profile_json = serde_json::to_string_pretty(&p).unwrap_or_default();
                                 studio.apply(Command::SetPlanningProfile {profile:serde_json::to_value(p).unwrap_or_default()});
                             },
@@ -911,13 +962,16 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             Ok(p) => p,
             Err(e) => { studio.notify(&e, true); return; }
         };
+        if let Some(selection)=profile.media_selection.as_mut(){selection.normalize();}
         let folder=studio.host.dirs.config.join("c-builder-profiles");
         if let Some(index) = action.strip_prefix("select:").and_then(|v|v.parse::<usize>().ok()) {
             let selected = concat_project::planning::Profile::builtin(index)
                 .or_else(|| index.checked_sub(4).and_then(|i|studio.c_builder.stored_profiles.get(i).cloned()));
             if let Some(mut selected) = selected {
                 if selected.media_selection.is_none(){selected.media_selection=profile.media_selection.clone();}
-                profile=selected; studio.c_builder.active_profile_name=profile.name.clone();
+                profile=selected;
+                if let Some(selection)=profile.media_selection.as_mut(){selection.normalize();}
+                studio.c_builder.active_profile_name=profile.name.clone();
             }
             else {studio.notify("Planning profile no longer exists",true);return;}
         }
@@ -972,7 +1026,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         }
         if matches!(action.as_str(),"store"|"duplicate"|"rename")||action.starts_with("select:"){return;}
         let Some(duration) = studio.c_builder.duration else { studio.notify("Select narration first", true); return; };
-        profile.media_selection.get_or_insert_with(Default::default);
+        profile.media_selection.get_or_insert_with(Default::default).normalize();
         let assets = studio.c_builder.assets.clone();
         let iw = images.to_string(); let vw = videos.to_string();
         studio.c_builder.scanning = true;
@@ -1005,7 +1059,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             let mut profile = match concat_project::planning::Profile::from_json(&profile_json) {
                 Ok(p) => p, Err(e) => { studio.notify(&e, true); return; }
             };
-            profile.media_selection.get_or_insert_with(Default::default);
+            profile.media_selection.get_or_insert_with(Default::default).normalize();
             let cache_path = studio.host.dirs.data.join("c-builder-media-cache.json");
             let library=std::path::PathBuf::from(studio.c_builder.folder.clone());
             let cancel=std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));studio.cb_generation_cancel=Some(cancel.clone());

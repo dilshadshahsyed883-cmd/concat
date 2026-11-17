@@ -2119,8 +2119,8 @@ pub enum Confirm {
     /// this a disk unplugged, full or read-only made a window that would
     /// never close.
     QuitWithoutSaving { error: String },
-    /// Removing a project from Recent Projects.
-    DeleteRecent { path: String, name: String },
+    /// Moving an explicitly confirmed, validated project into Windows Recycle Bin.
+    DeleteRecent { path: String, name: String, resolved_path: String },
 }
 
 /// One clip on the clipboard: the clip as it was when copied, and the row
@@ -2525,10 +2525,26 @@ impl Studio {
                 self.release_project();
                 slint::quit_event_loop().ok();
             }
-            Some(Confirm::DeleteRecent { path, .. }) => {
-                if let Err(error) = concat_host::projects::forget(&self.host.dirs.config, &path) {
-                    self.notify(&error, true);
+            Some(Confirm::DeleteRecent { path, name, .. }) => {
+                // No deletion of an active edit or anything with pending unsaved
+                // changes. The backend checks the selected manifest, linked
+                // folders and other project references again before recycling.
+                if self.session.is_some() || self.dirty {
+                    self.notify("Close and save the active project before deleting another project", true);
+                } else {
+                    match concat_host::project_delete::recycle(
+                        &self.host.dirs.config, &path, &name, None,
+                    ) {
+                        Ok(()) => {
+                            self.posters.remove(&path);
+                            self.lengths.remove(&path);
+                            self.notify("Project moved to the Windows Recycle Bin", false);
+                        }
+                        Err(error) => self.notify(&error, true),
+                    }
                 }
+                // The actual filesystem is authoritative: an error must never
+                // hide a card whose directory still exists.
                 self.recents = concat_host::projects::recents(&self.host.dirs.config);
             }
             None => {}
@@ -2558,6 +2574,7 @@ impl Studio {
                     title: t("timeline.deleteTrackTitle").into(),
                     message: message.into(),
                     action: t("common.delete").into(),
+                    required_name: "".into(),
                 }
             }
             Confirm::ReplaceExport { path } => crate::ui::ConfirmData {
@@ -2565,18 +2582,23 @@ impl Studio {
                 title: t("export.replaceFileTitle").into(),
                 message: tf("export.replaceFileMessage", &[path]).into(),
                 action: t("export.replace").into(),
+                required_name: "".into(),
             },
             Confirm::QuitWithoutSaving { error } => crate::ui::ConfirmData {
                 open: true,
                 title: t("close.unsavedTitle").into(),
                 message: tf("close.unsavedMessage", &[error]).into(),
                 action: t("close.quitWithoutSaving").into(),
+                required_name: "".into(),
             },
-            Confirm::DeleteRecent { name, .. } => crate::ui::ConfirmData {
+            Confirm::DeleteRecent { name, resolved_path, .. } => crate::ui::ConfirmData {
                 open: true,
-                title: t("start.deleteRecentTitle").into(),
-                message: tf("start.deleteRecentMessage", &[name]).into(),
-                action: t("common.delete").into(),
+                title: "Delete Project from disk".into(),
+                message: format!(
+                    "Project: {name}\\nFolder: {resolved_path}\\n\\nMove this entire folder to the Windows Recycle Bin? Original media outside this folder will be left alone. Type the exact project name below to confirm. Remove from Recent is a separate, list-only action."
+                ).replace("\\n", "\n").into(),
+                action: "Move to Recycle Bin".into(),
+                required_name: name.as_str().into(),
             },
         }
     }
@@ -3958,7 +3980,7 @@ impl Studio {
             let (tracks, locked_tracks) = self.edit_scope(&track_id);
             self.apply(Command::InsertMedia {
                 media_id: plan.media.clone(), track_id, tracks, locked_tracks,
-                time: f64::from(plan.start), overwrite: false,
+                time: f64::from(plan.start), overwrite: false, linked_audio: false,
             })
         };
         if let Some(id) = created {
@@ -9014,6 +9036,18 @@ impl Studio {
             .into_iter().map(SharedString::from).chain(self.c_builder.stored_profiles.iter().map(|p|SharedString::from(p.name.as_str()))).collect();
         editor.set_cb_profile_names(slint::ModelRc::new(VecModel::from(names)));
         let selection_profile=self.c_builder_profile("").unwrap_or_default();
+        editor.set_cb_plan_name(selection_profile.name.as_str().into());
+        editor.set_cb_plan_opening(format!("{}",(selection_profile.curve.first().map_or(0.,|a|a.video)*100.).round() as i32).into());
+        editor.set_cb_plan_closing(format!("{}",(selection_profile.curve.last().map_or(0.,|a|a.video)*100.).round() as i32).into());
+        editor.set_cb_plan_image_min(format!("{}",selection_profile.image_seconds[0]).into());
+        editor.set_cb_plan_image_max(format!("{}",selection_profile.image_seconds[1]).into());
+        editor.set_cb_plan_video_min(format!("{}",selection_profile.video_seconds[0]).into());
+        editor.set_cb_plan_video_max(format!("{}",selection_profile.video_seconds[1]).into());
+        editor.set_cb_plan_max_videos(selection_profile.max_videos.to_string().into());
+        editor.set_cb_plan_max_images(selection_profile.max_images.to_string().into());
+        editor.set_cb_plan_cooldown(selection_profile.cooldown.to_string().into());
+        editor.set_cb_plan_seed(selection_profile.seed.to_string().into());
+
         let(images,image_summary)=self.c_builder_keyword_rows(false,&selection_profile);
         let(videos,video_summary)=self.c_builder_keyword_rows(true,&selection_profile);
         sync(&models.cb_image_keywords, images);
@@ -11627,7 +11661,7 @@ impl Studio {
         };
         let mut rows = vec![
             action("add", t("studio.addAtPlayhead"), Glyph::Plus, false),
-            action("insert-ripple", "Ripple Insert at Playhead (selected tracks)".into(), Glyph::Plus, false),
+            action("insert-ripple", "Ripple Insert at Playhead (visual tracks only)".into(), Glyph::Plus, false),
             action("insert-overwrite", "Overwrite at Playhead (destination track)".into(), Glyph::Plus, false),
             action("replace-slot", "Replace Selected Clip — Keep Duration and Edits".into(), Glyph::None, false),
             action("replace-reset", "Replace Selected Clip — Keep Duration, Reset Edits".into(), Glyph::None, false),
@@ -11674,13 +11708,20 @@ impl Studio {
     }
     pub fn set_c_builder_keyword(&mut self,json:&str,video:bool,keyword:&str,selected:bool,weight:i32) {
         if self.c_builder.scanning{return;}
-        if !self.c_builder.assets.iter().any(|a|a.keyword==keyword&&(a.kind=="video")==video){self.notify("Media keyword is no longer available; refresh the library",true);return;}
+        if !self.c_builder.assets.iter().any(|a|a.keyword==keyword&&(a.kind=="video")==video){
+            self.notify("Media keyword is no longer available; refresh the library",true);return;
+        }
         let mut profile=match self.c_builder_profile(json){Ok(p)=>p,Err(e)=>{self.notify(&e,true);return;}};
         let selection=profile.media_selection.get_or_insert_with(Default::default);
-        let map=if video{&mut selection.videos}else{&mut selection.images};
-        let previous=map.get(keyword).is_some_and(|v|v.selected);
-        let weight=if selected&&!previous&&weight==0{100}else{weight.clamp(0,100) as u32};
-        map.insert(keyword.to_owned(),concat_project::planning::KeywordSelection {selected,weight});
+        selection.change_keyword(video,keyword,selected,weight.clamp(0,100) as u32);
+        self.c_builder.profile_json=serde_json::to_string_pretty(&profile).unwrap_or_default();
+        self.c_builder.preview.clear();self.c_builder.preview_shots.clear();
+        self.apply_within("c-builder-media-selection",Command::SetPlanningProfile {profile:serde_json::to_value(profile).unwrap_or_default()});
+    }
+    pub fn equalize_c_builder_keywords(&mut self,json:&str,video:bool) {
+        if self.c_builder.scanning{return;}
+        let mut profile=match self.c_builder_profile(json){Ok(p)=>p,Err(e)=>{self.notify(&e,true);return;}};
+        profile.media_selection.get_or_insert_with(Default::default).equalize(video);
         self.c_builder.profile_json=serde_json::to_string_pretty(&profile).unwrap_or_default();
         self.c_builder.preview.clear();self.c_builder.preview_shots.clear();
         self.apply_within("c-builder-media-selection",Command::SetPlanningProfile {profile:serde_json::to_value(profile).unwrap_or_default()});
@@ -11688,7 +11729,9 @@ impl Studio {
     pub fn set_c_builder_videos_enabled(&mut self,json:&str,on:bool) {
         if self.c_builder.scanning{return;}
         let mut profile=match self.c_builder_profile(json){Ok(p)=>p,Err(e)=>{self.notify(&e,true);return;}};
-        profile.media_selection.get_or_insert_with(Default::default).videos_enabled=on;
+        let selection=profile.media_selection.get_or_insert_with(Default::default);
+        selection.normalize();
+        selection.videos_enabled=on;
         self.c_builder.profile_json=serde_json::to_string_pretty(&profile).unwrap_or_default();
         self.c_builder.preview.clear();self.c_builder.preview_shots.clear();
         self.apply_within("c-builder-media-selection",Command::SetPlanningProfile {profile:serde_json::to_value(profile).unwrap_or_default()});
@@ -11696,15 +11739,18 @@ impl Studio {
     fn c_builder_keyword_rows(&self,video:bool,profile:&concat_project::planning::Profile)->(Vec<crate::ui::CBuilderKeywordData>,String) {
         let mut groups=std::collections::BTreeMap::<&str,usize>::new();
         for asset in self.c_builder.assets.iter().filter(|a|(a.kind=="video")==video){*groups.entry(&asset.keyword).or_default()+=1;}
-        let selections=profile.media_selection.as_ref().map(|m|if video{&m.videos}else{&m.images});
+        let mut selection=profile.media_selection.clone().unwrap_or_default();
+        selection.normalize(); // legacy 100/100/100/100 is shown as 25/25/25/25
+        let selections=if video{&selection.videos}else{&selection.images};
         let rows:Vec<_>=groups.into_iter().map(|(keyword,available)|{
-            let selected=selections.and_then(|s|s.get(keyword));
+            let selected=selections.get(keyword);
             crate::ui::CBuilderKeywordData {keyword:keyword.into(),available:available.min(i32::MAX as usize) as i32,
                 selected:selected.is_some_and(|s|s.selected),weight:selected.map_or(0.,|s|s.weight as f32)}
         }).collect();
-        let count=rows.iter().filter(|r|r.selected).count();
-        let total:f32=rows.iter().filter(|r|r.selected).map(|r|r.weight).sum();
-        let summary=format!("{count} selected keywords · Total {total:.0}%{}",if total>0.&&total!=100.{" · normalized to 100% for planning"}else if total==0.{" · select a keyword and give it a positive weight"}else{""});
+        let count=rows.iter().filter(|r|r.selected&&r.weight>0.).count();
+        let total:u32=rows.iter().filter(|r|r.selected&&r.weight>0.).map(|r|r.weight as u32).sum();
+        let summary=if count==0{"0 active groups · select a keyword to allocate the 100% budget".into()}
+            else{format!("{count} active groups · {total}% allocated · percentages are selection probabilities")};
         (rows,summary)
     }
 
@@ -11718,7 +11764,7 @@ impl Studio {
                             match result {
                                 Ok(item)=>if let Some(track_id)=studio.clip(&clip_id).map(|c|c.track_id.clone()) {
                                     let(tracks,locked_tracks)=studio.edit_scope(&track_id);
-                                    studio.apply(Command::ReplaceMediaFromFile {clip_id,item,use_source_duration:false,keep_edits:true,tracks,locked_tracks});
+                                    studio.apply(Command::ReplaceMediaFromFile {clip_id,item,use_source_duration:false,keep_edits:true,tracks,locked_tracks,linked_audio:false});
                                 },
                                 Err(e)=>studio.notify(&e,true),
                             }
@@ -11731,6 +11777,21 @@ impl Studio {
     pub fn magnetic(&self) -> bool {
         self.timeline().extra.get("magnetic").and_then(serde_json::Value::as_bool)
             .unwrap_or(self.prefs.magnetic)
+    }
+
+    /// Audio lanes may be empty at the playhead while still containing a
+    /// continuous narration elsewhere. They are never a default visual target.
+    fn visual_lane(&self, id: &str) -> bool {
+        !self.timeline().clips.iter().any(|clip|
+            clip.track_id == id && clip.kind == model::ClipKind::Audio)
+            && self.timeline().track(id).is_some_and(|track| {
+                track.extra.get("audioOnly").and_then(serde_json::Value::as_bool) != Some(true)
+                    && !["kind", "type", "mediaKind", "contentType"].iter().any(|key| {
+                        track.extra.get(*key).and_then(serde_json::Value::as_str)
+                            .is_some_and(|value| matches!(value.to_ascii_lowercase().as_str(),
+                                "audio" | "audio-only" | "audio_only" | "sound"))
+                    })
+            })
     }
 
     fn edit_scope(&self, destination: &str) -> (Vec<String>, Vec<String>) {
@@ -11755,13 +11816,21 @@ impl Studio {
         };
         match action {
             "insert-ripple" | "insert-overwrite" => {
-                let destination = self.selection.first().and_then(|id| self.clip(id)).map(|c| c.track_id.clone())
-                    .or_else(|| self.timeline().tracks.iter().find(|t| !self.locked(&t.id)).map(|t| t.id.clone()));
+                let visual = self.project().media_by_id(id)
+                    .is_some_and(|item| item.kind != model::MediaKind::Audio);
+                let destination = self.selection.iter().filter_map(|id| self.clip(id))
+                    .find(|clip| !self.locked(&clip.track_id)
+                        && (!visual || (clip.kind.is_visual() && self.visual_lane(&clip.track_id))))
+                    .map(|clip| clip.track_id.clone())
+                    .or_else(|| self.timeline().tracks.iter()
+                        .find(|t| !self.locked(&t.id) && (!visual || self.visual_lane(&t.id)))
+                        .map(|t| t.id.clone()));
                 if let Some(track_id) = destination {
                     let (mut tracks, locked_tracks) = self.edit_scope(&track_id);
                     if action == "insert-overwrite" { tracks = vec![track_id.clone()]; }
                     self.apply(Command::InsertMedia { media_id: id.to_owned(), track_id, tracks, locked_tracks,
-                        time: f64::from(self.playhead), overwrite: action == "insert-overwrite" });
+                        time: f64::from(self.playhead), overwrite: action == "insert-overwrite",
+                        linked_audio: false });
                 }
             }
             "replace-slot" | "replace-reset" | "replace-ripple" => {
@@ -11770,7 +11839,7 @@ impl Studio {
                         let (tracks, locked_tracks) = self.edit_scope(&track_id);
                         self.apply(Command::ReplaceMediaInSlot { clip_id, media_id: id.to_owned(),
                             use_source_duration: action == "replace-ripple", keep_edits: action != "replace-reset",
-                            tracks, locked_tracks });
+                            tracks, locked_tracks, linked_audio: false });
                     }
                 } else { self.notify("Select one timeline clip to replace", true); }
             }

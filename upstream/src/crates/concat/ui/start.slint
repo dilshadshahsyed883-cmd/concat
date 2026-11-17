@@ -952,7 +952,7 @@ component PosterCard inherits Pressable {
     callback delete-requested();
 
     property <length> inset: 6px;
-    property <length> menu-w: 150px;
+    property <length> menu-w: 174px;
     property <length> menu-h: 90px;
     property <bool> actions: root.touchy || root.lit || root.ring || root.project.missing;
 
@@ -1100,7 +1100,7 @@ component PosterCard inherits Pressable {
 
                 RecentMenuRow {
                     glyph: Glyph.trash;
-                    label: I18n.t("common.delete");
+                    label: "Delete Project";
                     danger: true;
                     clicked => {
                         menu.close();
@@ -1111,30 +1111,51 @@ component PosterCard inherits Pressable {
         }
     }
 
-    VerticalLayout {
+    // Dedicated text rows keep resolution/FPS readable. Delete owns the
+    // bottom-right corner rather than covering any metadata or poster.
+    Text {
         x: root.inset + 6px;
-        y: poster.y + poster.height + 10px;
+        y: poster.y + poster.height + 9px;
         width: root.width - 2 * root.inset - 12px;
-        height: self.preferred-height;
-        spacing: 3px;
+        height: 24px;
+        text: root.project.name;
+        color: root.project.missing ? Theme.fg-muted : Theme.fg;
+        font-size: Theme.fs-xl;
+        font-weight: Theme.weight-title;
+        overflow: elide;
+    }
 
-        Text {
-            text: root.project.name;
-            color: root.project.missing ? Theme.fg-muted : Theme.fg;
-            font-size: Theme.fs-xl;
-            font-weight: Theme.weight-title;
-            overflow: elide;
-        }
+    Text {
+        x: root.inset + 6px;
+        y: poster.y + poster.height + 35px;
+        width: root.width - 2 * root.inset - 12px;
+        height: 20px;
+        text: root.project.missing ? root.project.path : root.project.detail;
+        color: Theme.fg-dim;
+        font-size: Theme.fs-sm;
+        overflow: elide;
+    }
 
-        // Where it was, for one that has gone: the one thing worth
-        // knowing about a folder that is not there.
-        Text {
-            text: root.project.missing ? root.project.path
-                : root.project.when + "  ·  " + root.project.detail;
-            color: Theme.fg-dim;
-            font-size: Theme.fs-sm;
-            overflow: elide;
-        }
+    Text {
+        x: root.inset + 6px;
+        y: poster.y + poster.height + 67px;
+        width: root.width - 2 * root.inset - 103px;
+        height: 22px;
+        text: root.project.missing ? I18n.t("start.folderNotFound") : root.project.when;
+        color: Theme.fg-dim;
+        font-size: Theme.fs-sm;
+        overflow: elide;
+    }
+
+    // This is a child hit target, independent of the card's Open action.
+    Button {
+        x: root.width - 94px;
+        y: poster.y + poster.height + 63px;
+        width: 82px;
+        glyph: Glyph.trash;
+        label: "Delete";
+        danger: true;
+        clicked => { root.delete-requested(); }
     }
 }
 
@@ -1162,7 +1183,7 @@ component ProjectsGrid inherits Rectangle {
         Math.floor((root.width + root.gap) / (root.min-card + root.gap)));
     property <length> card-w: (root.width - (root.cols - 1) * root.gap) / root.cols;
     /// The inset poster, and the name and the line under it.
-    property <length> card-h: (root.card-w - 12px) * 9 / 16 + 70px;
+    property <length> card-h: (root.card-w - 12px) * 9 / 16 + 106px;
     property <int> rows: Math.ceil(root.recents.length / root.cols);
 
     height: Math.max(0px, root.rows * (root.card-h + root.gap) - root.gap);
@@ -1192,6 +1213,7 @@ component ProjectRow inherits Pressable {
 
     callback opened();
     callback forgotten();
+    callback delete-requested();
 
     label: root.project.name;
     radius: Theme.r;
@@ -1270,23 +1292,19 @@ component ProjectRow inherits Pressable {
             }
         }
 
-        // A thumb's target, though the cross is small: the whole square
-        // at the row's end takes the press.
-        Rectangle {
-            width: 44px;
-
-            Icon {
-                x: (parent.width - self.width) / 2;
-                y: (parent.height - self.height) / 2;
-                glyph: Glyph.close;
-                size: 14px;
-                tint: forget.pressed || forget.has-hover ? Theme.fg : Theme.fg-dim;
-            }
-
-            forget := TouchArea {
-                mouse-cursor: pointer;
-                clicked => { root.forgotten(); }
-            }
+        // Two distinct hit targets: Remove only hides the card, Delete
+        // asks permission to recycle the actual project folder.
+        Button {
+            glyph: Glyph.close;
+            square: true;
+            label: I18n.t("start.removeFromList");
+            clicked => { root.forgotten(); }
+        }
+        Button {
+            glyph: Glyph.trash;
+            label: "Delete";
+            danger: true;
+            clicked => { root.delete-requested(); }
         }
     }
 }
@@ -1801,15 +1819,21 @@ component WideHome inherits Rectangle {
                         }
                     }
 
-                    VerticalLayout {
+                    HorizontalLayout {
                         alignment: center;
+                        spacing: 8px;
+                        Button {
+                            glyph: Glyph.slot;
+                            label: "C Builder";
+                            enabled: !root.busy;
+                            clicked => { root.open-c-builder(); }
+                        }
                         Button {
                             glyph: Glyph.export;
                             label: I18n.t("cloudGpu.gpuQueue");
                             enabled: !root.busy;
                             clicked => { root.open-gpu-queue(); }
                         }
-                        BarAction { glyph:Glyph.slot; label:"C Builder"; enabled:!root.busy; clicked=>{root.open-c-builder();} }
                     }
                 }
 
@@ -2019,6 +2043,7 @@ component NarrowHome inherits Rectangle {
     callback open-c-builder();
     callback open-recent(path: string);
     callback forget-recent(path: string);
+    callback delete-recent(path: string);
     callback search-edited(query: string);
     callback link(name: string);
 
@@ -2070,17 +2095,6 @@ component NarrowHome inherits Rectangle {
                 VerticalLayout {
                     alignment: center;
                     BarAction {
-                        glyph: Glyph.export;
-                        label: I18n.t("cloudGpu.gpuQueue");
-                        enabled: !root.busy;
-                        clicked => { root.open-gpu-queue(); }
-                    }
-                    BarAction { glyph:Glyph.slot; label:"C Builder"; enabled:!root.busy; clicked=>{root.open-c-builder();} }
-                }
-
-                VerticalLayout {
-                    alignment: center;
-                    BarAction {
                         glyph: Glyph.settings;
                         label: I18n.t("common.settings");
                         enabled: !root.busy;
@@ -2098,6 +2112,25 @@ component NarrowHome inherits Rectangle {
                 color: Theme.fg-muted;
                 font-size: Theme.fs-lg;
                 wrap: word-wrap;
+            }
+
+            Rectangle { height: 12px; }
+
+            // Full labels stay usable in compact Windows layouts too.
+            HorizontalLayout {
+                spacing: 8px;
+                Button {
+                    glyph: Glyph.slot;
+                    label: "C Builder";
+                    enabled: !root.busy;
+                    clicked => { root.open-c-builder(); }
+                }
+                Button {
+                    glyph: Glyph.export;
+                    label: I18n.t("cloudGpu.gpuQueue");
+                    enabled: !root.busy;
+                    clicked => { root.open-gpu-queue(); }
+                }
             }
 
             Rectangle { height: 20px; }
@@ -2149,6 +2182,7 @@ component NarrowHome inherits Rectangle {
                 enabled: !root.busy;
                 opened => { root.open-recent(project.path); }
                 forgotten => { root.forget-recent(project.path); }
+                delete-requested => { root.delete-recent(project.path); }
             }
 
             Rectangle { height: 32px; }
@@ -2279,6 +2313,7 @@ export component StartScreen inherits Rectangle {
         open-c-builder => { root.open-c-builder(); }
         open-recent(path) => { root.open-recent(path); }
         forget-recent(path) => { root.forget-recent(path); }
+        delete-recent(path) => { root.delete-recent(path); }
         search-edited(query) => { root.search-edited(query); }
         link(name) => { root.link(name); }
     }

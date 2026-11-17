@@ -56,7 +56,7 @@ pub enum StartMsg {
     ApplyRename,
     /// Dismiss the project rename prompt.
     DismissRename,
-    /// Prompt to delete (forget) a recent project with confirmation.
+    /// Prompt to recycle an actual project directory with name/path confirmation.
     PromptDelete(String),
     /// What the projects' search field holds now.
     SearchEdited(String),
@@ -388,13 +388,27 @@ impl StartPane {
                 self.rename_name.clear();
             }
             StartMsg::PromptDelete(path) => {
-                let name = studio
-                    .recents
-                    .iter()
-                    .find(|r| projects::same_path(&r.info.path, &path))
-                    .map(|r| r.info.name.clone())
-                    .unwrap_or_else(|| "project".to_string());
-                studio.confirm = Some(crate::studio::Confirm::DeleteRecent { path, name });
+                if studio.session.is_some() {
+                    studio.notify("Close and save the active project before deleting from disk", true);
+                    return;
+                }
+                let Some(recent) = studio.recents.iter().find(|r| r.info.path == path) else {
+                    studio.notify("This project is no longer in Recent Projects", true);
+                    return;
+                };
+                let name = recent.info.name.clone();
+                match concat_host::project_delete::prepare(
+                    &studio.host.dirs.config, &path, &name, None,
+                ) {
+                    Ok(target) => {
+                        studio.confirm = Some(crate::studio::Confirm::DeleteRecent {
+                            path,
+                            name,
+                            resolved_path: target.path.to_string_lossy().into_owned(),
+                        });
+                    }
+                    Err(error) => studio.notify(&error, true),
+                }
             }
             StartMsg::SearchEdited(query) => self.query = query,
             StartMsg::Sort(sort) => {

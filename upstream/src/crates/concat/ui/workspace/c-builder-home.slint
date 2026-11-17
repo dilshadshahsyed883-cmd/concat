@@ -18,13 +18,19 @@ export component CBuilderHome inherits Rectangle {
     VerticalLayout {
         padding:12px;spacing:8px;
         HorizontalLayout {
-            spacing:8px;
-            Button {label:"Home";enabled:!Editor.cb-busy;clicked=>{root.return-home(builder.draft-profile);} }
-            Text {text:"C Builder";color:Theme.fg;font-size:Theme.fs-lg;vertical-alignment:center;horizontal-stretch:1;}
-            if root.generating: Button {label:"Cancel Generation";clicked=>{root.cancel-generation();}}
-            if root.used-pending: Button {label:"Retry used-media step";enabled:!Editor.cb-busy;clicked=>{root.retry-used();}}
-            Button {label:"Output Folder";enabled:!Editor.cb-busy;clicked=>{root.choose-output();}}
-            Button {label:"Open in Editor";primary:true;enabled:!Editor.cb-busy && root.generated-project!="";clicked=>{root.open-generated();}}
+            spacing: 8px;
+            Button { label: "Home"; enabled: !Editor.cb-busy; clicked => { root.return-home(builder.draft-profile); } }
+            Text { text: "C Builder  /  Home"; color: Theme.fg; font-size: Theme.fs-lg;
+                vertical-alignment: center; horizontal-stretch: 1; }
+            if root.generating: Button { label: "Cancel"; clicked => { root.cancel-generation(); } }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            Button { label: "Output Folder"; enabled: !Editor.cb-busy; clicked => { root.choose-output(); } }
+            Button { label: "Open in Editor"; primary: true;
+                enabled: !Editor.cb-busy && root.generated-project != ""; clicked => { root.open-generated(); } }
+            if root.used-pending: Button { label: "Retry used-media"; enabled: !Editor.cb-busy; clicked => { root.retry-used(); } }
+            Rectangle { horizontal-stretch: 1; }
         }
         Text {text:"Output: " + root.output-folder;color:Theme.fg-muted;font-size:Theme.fs-sm;wrap:word-wrap;}
         if root.generated-project!="": Text {text:"Generated: " + root.generated-project;color:Theme.fg-muted;wrap:word-wrap;font-size:Theme.fs-sm;}
@@ -37,6 +43,16 @@ export component CBuilderHome inherits Rectangle {
                 status:Editor.cb-status;keywords:Editor.cb-keywords;image-count:Editor.cb-image-count;video-count:Editor.cb-video-count;
                 cache-probed:Editor.cb-probed;cache-reused:Editor.cb-reused;scan-done:Editor.cb-scan-done;scan-total:Editor.cb-scan-total;
                 busy:Editor.cb-busy;profile:Editor.cb-profile;profile-names:Editor.cb-profile-names;preview:Editor.cb-preview;
+                plan-name: Editor.cb-plan-name;
+                plan-opening: Editor.cb-plan-opening; plan-closing: Editor.cb-plan-closing;
+                plan-image-min: Editor.cb-plan-image-min; plan-image-max: Editor.cb-plan-image-max;
+                plan-video-min: Editor.cb-plan-video-min; plan-video-max: Editor.cb-plan-video-max;
+                plan-max-videos: Editor.cb-plan-max-videos; plan-max-images: Editor.cb-plan-max-images;
+                plan-cooldown: Editor.cb-plan-cooldown; plan-seed: Editor.cb-plan-seed;
+                tune-profile(json,name,opening,closing,imin,imax,vmin,vmax,maxv,maxi,cooldown,seed) => {
+                    Editor.cb-tune-profile(json,name,opening,closing,imin,imax,vmin,vmax,maxv,maxi,cooldown,seed);
+                }
+                equalize-keywords(json,video) => { Editor.cb-equalize-keywords(json,video); }
                 image-keywords:Editor.cb-image-keywords;video-keywords:Editor.cb-video-keywords;videos-enabled:Editor.cb-videos-enabled;
                 image-selection-summary:Editor.cb-image-selection-summary;video-selection-summary:Editor.cb-video-selection-summary;
                 keyword-changed(json,video,keyword,selected,weight)=>{Editor.cb-keyword-changed(json,video,keyword,selected,weight);}

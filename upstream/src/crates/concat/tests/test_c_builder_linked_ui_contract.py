@@ -1,0 +1,65 @@
+"""Issue #65 source contracts; actual slider interaction needs Windows acceptance."""
+from pathlib import Path
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+UI = ROOT / "ui"
+SRC = ROOT / "src"
+
+
+class CBuilderLinkedUiContracts(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.home = (UI / "workspace/c-builder-home.slint").read_text(encoding="utf-8")
+        cls.pane = (UI / "workspace/c-builder.slint").read_text(encoding="utf-8")
+        cls.selection = (UI / "workspace/c-builder-selection.slint").read_text(encoding="utf-8")
+        cls.editor = (UI / "editor.slint").read_text(encoding="utf-8")
+        cls.studio = (SRC / "studio.rs").read_text(encoding="utf-8")
+        cls.lib = (SRC / "lib.rs").read_text(encoding="utf-8")
+
+    def test_c_builder_remains_home_only_and_keeps_output_actions(self):
+        self.assertIn("CBuilderPane {", self.home)
+        self.assertNotIn("CBuilderPane {", self.editor)
+        for phrase in ("Home", "Output Folder", "Open in Editor", "Retry used-media"):
+            self.assertIn(phrase, self.home)
+        for phrase in ("used-pending", "cb-project-name", "cb-name-preview", "cb-generate-project"):
+            self.assertIn(phrase, self.home)
+
+    def test_linked_rails_are_atomically_persisted_for_both_media_types(self):
+        self.assertIn("rail: true", self.selection)
+        self.assertIn("Each enabled keyword shares one 100% budget", self.selection)
+        self.assertIn("root.changed(false, entry.keyword, selected, weight)", self.selection)
+        self.assertIn("root.changed(true, entry.keyword, selected, weight)", self.selection)
+        self.assertIn("root.equalize(false)", self.selection)
+        self.assertIn("root.equalize(true)", self.selection)
+        self.assertIn("selection.change_keyword(video,keyword,selected", self.studio)
+        self.assertIn("selection.normalize()", self.studio)
+        self.assertIn("editor.on_cb_equalize_keywords", self.lib)
+
+    def test_compact_form_and_advanced_json_are_wired_to_backend(self):
+        for label in (
+            "Media Library", "Timeline Builder", "Media Selection", "Preview Plan", "Reroll",
+            "Generate Native Concat Timeline", "Apply Planning Settings",
+            "Opening video %", "Ending video %", "Image min", "Image max",
+            "Video min", "Video max", "Max video run", "Max image run",
+            "Repeat cooldown", "Random seed",
+        ):
+            self.assertIn(label, self.pane)
+        self.assertIn("if root.show-advanced: VerticalLayout", self.pane)
+        self.assertIn("Advanced / Edit JSON", self.pane)
+        self.assertIn("callback tune-profile(", self.pane)
+        self.assertIn("Editor.cb-tune-profile(", self.home)
+        self.assertIn("callback cb-tune-profile(", self.editor)
+        self.assertIn("editor.on_cb_tune_profile(", self.lib)
+        self.assertIn("profile.validate()", self.lib)
+
+    def test_legacy_and_generation_paths_use_canonical_shares(self):
+        self.assertIn("if let Some(s)=p.media_selection.as_mut(){s.normalize();}", self.lib)
+        self.assertIn("profile.media_selection.get_or_insert_with(Default::default).normalize();", self.lib)
+        self.assertIn("studio.builder_archive_finished(pending,finish)", self.lib)
+        self.assertIn("studio.c_builder.effective_name()", self.lib)
+        self.assertIn("studio.c_builder.profile_json = encoded.clone()", self.lib)
+
+
+if __name__ == "__main__":
+    unittest.main()

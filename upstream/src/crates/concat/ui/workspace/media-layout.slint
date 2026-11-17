@@ -53,6 +53,14 @@ export component MediaLayoutPanel inherits VerticalLayout {
         Text { text: "Video Clips"; color: Theme.fg; vertical-alignment: center; }
     }
     Select { options: ["Whole timeline", "Selected media"]; current <=> root.scope; }
+    if root.scope == 1 && root.selected.count == 0: Text {
+        text: "No visual media selected. Select an image or video, or choose Whole timeline for bulk changes.";
+        color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
+    }
+    if root.scope == 1 && root.selected.count > 1: Text {
+        text: "Multiple clips selected. Apply Selected works on this selection; live keyframe editing needs a single editable clip.";
+        color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
+    }
     if !root.canvas: VerticalLayout {
         spacing: 8px;
         HorizontalLayout {
@@ -70,15 +78,24 @@ export component MediaLayoutPanel inherits VerticalLayout {
             Button { label: "Fit"; enabled: root.images || root.videos; clicked => { if root.live-selected && root.can-edit {Keyframes.layout-frame(false);} else {root.apply(4, root.scope == 1);} } }
             Button { label: "Fill"; enabled: root.images || root.videos; clicked => { if root.live-selected && root.can-edit {Keyframes.layout-frame(true);} else {root.apply(5, root.scope == 1);} } }
         }
-        Button { label: "Apply All Transform Values"; primary: true; enabled: root.images || root.videos; clicked => { root.apply(3, root.scope == 1); } }
+        HorizontalLayout {
+            spacing: 8px;
+            Button { label: "Apply Selected"; primary: true; enabled: root.images || root.videos; clicked => { root.apply(3, true); } }
+            Button { label: "Apply All"; enabled: root.images || root.videos; clicked => { root.apply(3, false); } }
+        }
     }
     if root.canvas: VerticalLayout {
         spacing: 8px;
         Select { options: ["None", "Blur", "Solid color"]; current <=> root.background-mode; }
         if root.background-mode == 1: Param { label: "Softness"; value <=> root.blur; minimum: 0; maximum: 1; step: 0.01; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; }
         if root.background-mode == 2: ColourField { label: "Background color"; value: root.colour; alpha: false; changed(c) => { root.colour = c; } }
-        Button { label: "Apply Canvas Background"; primary: true; enabled: root.images || root.videos;
-            clicked => { Backdrop.apply-bulk(root.background-mode, root.blur, root.colour, root.images, root.videos, root.scope == 1); } }
+        HorizontalLayout {
+            spacing: 8px;
+            Button { label: "Apply Selected"; primary: true; enabled: root.images || root.videos;
+                clicked => { Backdrop.apply-bulk(root.background-mode, root.blur, root.colour, root.images, root.videos, true); } }
+            Button { label: "Apply All"; enabled: root.images || root.videos;
+                clicked => { Backdrop.apply-bulk(root.background-mode, root.blur, root.colour, root.images, root.videos, false); } }
+        }
         Text { text: "Backgrounds apply to the main picture lane. For framed layouts, use the canvas presets below."; color: Theme.fg-muted; wrap: word-wrap; font-size: Theme.fs-sm; }
     }
     Text { text: "Images and Video Clips are independent targets. Locked/hidden tracks, canvas companion layers and manually animated transform fields are protected. Each Apply is one Undo step."; color: Theme.fg-muted; wrap: word-wrap; font-size: Theme.fs-sm; }

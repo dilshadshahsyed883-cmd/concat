@@ -55,6 +55,88 @@ pub struct Profile {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub media_selection: Option<MediaSelection>,
 }
+
+/// Shared integer-percentage budget for one kind of C Builder keyword.
+/// Disabled entries retain their last share as a re-enable hint, but do not
+/// participate in the budget or sampling. BTreeMap ordering breaks ties.
+fn allocate_keyword_budget(
+    entries: &mut std::collections::BTreeMap<String, KeywordSelection>,
+    keys: &[String],
+    budget: u32,
+) {
+    if keys.is_empty() { return; }
+    let sum: u64 = keys.iter().map(|key| entries[key].weight as u64).sum();
+    let equal = sum == 0;
+    let denominator = if equal { keys.len() as u64 } else { sum };
+    let mut shares: Vec<(String, u32, u64)> = keys.iter().map(|key| {
+        let weight = if equal { 1 } else { entries[key].weight as u64 };
+        let numerator = weight * budget as u64;
+        (key.clone(), (numerator / denominator) as u32, numerator % denominator)
+    }).collect();
+    let allocated: u32 = shares.iter().map(|entry| entry.1).sum();
+    let mut ranks: Vec<usize> = (0..shares.len()).collect();
+    // Stable ties by keyword, independently of arrival order or UI recycling.
+    ranks.sort_by(|a, b| shares[*b].2.cmp(&shares[*a].2).then_with(|| shares[*a].0.cmp(&shares[*b].0)));
+    for index in ranks.into_iter().take((budget - allocated) as usize) {
+        shares[index].1 += 1;
+    }
+    for (key, value, _) in shares {
+        entries.get_mut(&key).expect("known keyword").weight = value;
+    }
+}
+
+impl MediaSelection {
+    /// Canonicalize legacy independent 0-100 slider values without modifying
+    /// disabled rows. Only enabled keyword groups consume a 100% budget.
+    pub fn normalize(&mut self) {
+        for entries in [&mut self.images, &mut self.videos] {
+            let keys: Vec<String> = entries.iter().filter(|(_, row)| row.selected)
+                .map(|(key, _)| key.clone()).collect();
+            // All-zero groups are intentionally excluded, not silently enabled.
+            if keys.iter().any(|key| entries[key].weight > 0) {
+                allocate_keyword_budget(entries, &keys, 100);
+            }
+        }
+    }
+
+    /// Apply exactly one slider/checkbox transaction, then publish one coherent
+    /// normalized model. Independent media kinds are never cross-modified.
+    pub fn change_keyword(&mut self, video: bool, keyword: &str, selected: bool, requested: u32) {
+        self.normalize();
+        let entries = if video { &mut self.videos } else { &mut self.images };
+        let old = entries.get(keyword).cloned().unwrap_or_default();
+        if !selected {
+            // Remember the old value so toggling on can restore a useful share.
+            entries.insert(keyword.into(), KeywordSelection {
+                selected: false, weight: old.weight,
+            });
+            let peers: Vec<String> = entries.iter().filter(|(_, v)| v.selected)
+                .map(|(k, _)| k.clone()).collect();
+            allocate_keyword_budget(entries, &peers, 100);
+            return;
+        }
+        let peers: Vec<String> = entries.iter().filter(|(k, v)| v.selected && k.as_str() != keyword)
+            .map(|(k, _)| k.clone()).collect();
+        let desired = if peers.is_empty() { 100 }
+            else if !old.selected && (requested == 0 || requested == old.weight) {
+                // Re-enabled rows regain up to their remembered percentage, but
+                // at most an equal portion, never silently wiping peers.
+                old.weight.max(1).min(100 / (peers.len() as u32 + 1))
+            } else { requested.min(100) };
+        entries.insert(keyword.into(), KeywordSelection { selected: true, weight: desired });
+        allocate_keyword_budget(entries, &peers, 100 - desired);
+    }
+
+    /// One-click equal weighting for enabled groups of the requested type.
+    pub fn equalize(&mut self, video: bool) {
+        let entries = if video { &mut self.videos } else { &mut self.images };
+        let peers: Vec<String> = entries.iter().filter(|(_, v)| v.selected)
+            .map(|(k, _)| k.clone()).collect();
+        for key in &peers { entries.get_mut(key).expect("known keyword").weight = 1; }
+        allocate_keyword_budget(entries, &peers, 100);
+    }
+}
+
 impl Default for Profile {
     fn default() -> Self {
         Self {
@@ -651,5 +733,94 @@ mod pin_tests {
         }
         p.pins[0].trim_us = 19_000_000;
         assert!(generate(&sources, 60_000_000, &p).is_err());
+    }
+}
+
+
+#[cfg(test)]
+mod keyword_budget_tests {
+    use super::*;
+    fn row(selected: bool, weight: u32) -> KeywordSelection { KeywordSelection { selected, weight } }
+    fn shares(selection: &MediaSelection, video: bool) -> Vec<u32> {
+        let entries = if video { &selection.videos } else { &selection.images };
+        entries.values().filter(|entry| entry.selected).map(|entry| entry.weight).collect()
+    }
+    #[test]
+    fn coupled_drag_and_independent_budgets() {
+        let mut s = MediaSelection::default();
+        for key in ["a", "b", "c", "d"] {
+            s.images.insert(key.into(), row(true, 100));
+            s.videos.insert(key.into(), row(true, 100));
+        }
+        s.normalize();
+        assert_eq!(shares(&s, false), vec![25, 25, 25, 25]);
+        assert_eq!(shares(&s, true), vec![25, 25, 25, 25]);
+        s.change_keyword(false, "a", true, 40);
+        assert_eq!(shares(&s, false), vec![40, 20, 20, 20]);
+        assert_eq!(shares(&s, true), vec![25, 25, 25, 25]);
+        s.change_keyword(false, "a", true, 10);
+        assert_eq!(shares(&s, false), vec![10, 30, 30, 30]);
+        assert_eq!(shares(&s, true), vec![25, 25, 25, 25]);
+    }
+    #[test]
+    fn rounding_and_unequal_shares_are_stable() {
+        let mut s=MediaSelection::default();
+        for (key, weight) in [("a", 10), ("b", 30), ("c", 60)] {
+            s.images.insert(key.into(), row(true, weight));
+        }
+        s.change_keyword(false, "a", true, 39);
+        assert_eq!(shares(&s, false), vec![39, 20, 41]);
+        assert_eq!(shares(&s, false).iter().sum::<u32>(), 100);
+        let once = s.clone();
+        for _ in 0..10 { s.normalize(); }
+        assert_eq!(s, once);
+    }
+    #[test]
+    fn disable_reenable_zero_hundred_and_equalize() {
+        let mut s=MediaSelection::default();
+        for key in ["a","b","c","d"] { s.images.insert(key.into(), row(true, 25)); }
+        s.change_keyword(false,"a",false,25);
+        assert_eq!(shares(&s,false),vec![34,33,33]);
+        assert_eq!(s.images["a"].weight,25);
+        s.change_keyword(false,"a",true,25);
+        assert_eq!(shares(&s,false),vec![25,25,25,25]);
+        s.change_keyword(false,"a",true,100);
+        assert_eq!(shares(&s,false),vec![100,0,0,0]);
+        s.change_keyword(false,"a",true,0);
+        assert_eq!(shares(&s,false),vec![0,34,33,33]);
+        s.equalize(false);
+        assert_eq!(shares(&s,false),vec![25,25,25,25]);
+        for key in ["a","b","c","d"] { s.change_keyword(false,key,false,0); }
+        assert!(shares(&s,false).is_empty());
+        s.change_keyword(false,"a",true,0);
+        assert_eq!(shares(&s,false),vec![100]);
+        s.change_keyword(false,"b",true,0);
+        // b's remembered 34% is restored, without wiping a.
+        assert_eq!(shares(&s,false),vec![66,34]);
+    }
+    #[test]
+    fn all_zero_selection_stays_excluded_until_explicit_drag_or_equalize() {
+        let mut s=MediaSelection::default();
+        for key in ["a","b"] {s.images.insert(key.into(), row(true, 0));}
+        s.normalize();
+        assert_eq!(shares(&s,false),vec![0,0]);
+        s.change_keyword(false,"a",true,40);
+        assert_eq!(shares(&s,false),vec![40,60]);
+    }
+    #[test]
+    fn legacy_profiles_round_trip_deterministically() {
+        let mut p=Profile::default();
+        let mut s=MediaSelection::default();
+        for key in ["a","b","c","d"] {s.images.insert(key.into(),row(true,100));}
+        s.videos.insert("unused".into(), row(false, 87));
+        p.media_selection=Some(s);
+        let original=serde_json::to_string(&p).unwrap();
+        let mut loaded=Profile::from_json(&original).unwrap();
+        assert_eq!(loaded.media_selection.as_ref().unwrap().images["a"].weight,100);
+        loaded.media_selection.as_mut().unwrap().normalize();
+        let normalized=serde_json::to_string(&loaded).unwrap();
+        assert_eq!(shares(loaded.media_selection.as_ref().unwrap(),false),vec![25,25,25,25]);
+        assert_eq!(normalized,serde_json::to_string(&Profile::from_json(&normalized).unwrap()).unwrap());
+        assert_eq!(loaded.media_selection.as_ref().unwrap().videos["unused"].weight,87);
     }
 }
