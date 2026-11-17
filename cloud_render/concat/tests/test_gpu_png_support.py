@@ -110,6 +110,13 @@ class StillImageDecodeTests(unittest.TestCase):
         Image.new("RGB", (1, 1)).save(gif)
         with self.assertRaisesRegex(ValueError, r"animated.gif.*JPEG or PNG"):
             decode_still_rgba(gif)
+        # A render-time decode failure also identifies the native clip ID.
+        from types import SimpleNamespace
+        from cloud_render.concat.hybrid.render import picture
+        source = SimpleNamespace(image=decode_still_rgba)
+        clip = SimpleNamespace(id="c200", kind="image", path=bad)
+        with self.assertRaisesRegex(ValueError, r"GPU clip c200.*bad.png"):
+            picture(source, clip, 0)
 
     def test_gpu_resizing_and_blending_preserve_transparent_edges(self):
         from cloud_render.concat.hybrid.contract import cuda
