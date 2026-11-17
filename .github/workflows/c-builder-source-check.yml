@@ -151,3 +151,22 @@ jobs:
           cargo test -p concat --lib --locked -j 2 studio::backdrop::tests
           cargo test -p concat --lib --locked -j 2 presets::tests
           cargo test -p concat --lib --locked -j 2 studio::caption_preview::tests
+
+  focused-cbuilder-source:
+    name: C Builder planner tests + Slint source typecheck (no EXE)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
+        with:
+          toolchain: "1.93.0"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          key: "c-builder-issue-65-source"
+      - name: C Builder cached planner, naming, used-media and linked slider tests
+        run: cargo test --locked -j 2 --manifest-path tools/cbuilder-source-check/Cargo.toml
+      - name: Compile Slint source and bindings (no desktop executable)
+        run: cargo check --locked -j 2 --manifest-path tools/slint-source-check/Cargo.toml
