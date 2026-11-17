@@ -11674,13 +11674,20 @@ impl Studio {
     }
     pub fn set_c_builder_keyword(&mut self,json:&str,video:bool,keyword:&str,selected:bool,weight:i32) {
         if self.c_builder.scanning{return;}
-        if !self.c_builder.assets.iter().any(|a|a.keyword==keyword&&(a.kind=="video")==video){self.notify("Media keyword is no longer available; refresh the library",true);return;}
+        if !self.c_builder.assets.iter().any(|a|a.keyword==keyword&&(a.kind=="video")==video){
+            self.notify("Media keyword is no longer available; refresh the library",true);return;
+        }
         let mut profile=match self.c_builder_profile(json){Ok(p)=>p,Err(e)=>{self.notify(&e,true);return;}};
         let selection=profile.media_selection.get_or_insert_with(Default::default);
-        let map=if video{&mut selection.videos}else{&mut selection.images};
-        let previous=map.get(keyword).is_some_and(|v|v.selected);
-        let weight=if selected&&!previous&&weight==0{100}else{weight.clamp(0,100) as u32};
-        map.insert(keyword.to_owned(),concat_project::planning::KeywordSelection {selected,weight});
+        selection.change_keyword(video,keyword,selected,weight.clamp(0,100) as u32);
+        self.c_builder.profile_json=serde_json::to_string_pretty(&profile).unwrap_or_default();
+        self.c_builder.preview.clear();self.c_builder.preview_shots.clear();
+        self.apply_within("c-builder-media-selection",Command::SetPlanningProfile {profile:serde_json::to_value(profile).unwrap_or_default()});
+    }
+    pub fn equalize_c_builder_keywords(&mut self,json:&str,video:bool) {
+        if self.c_builder.scanning{return;}
+        let mut profile=match self.c_builder_profile(json){Ok(p)=>p,Err(e)=>{self.notify(&e,true);return;}};
+        profile.media_selection.get_or_insert_with(Default::default).equalize(video);
         self.c_builder.profile_json=serde_json::to_string_pretty(&profile).unwrap_or_default();
         self.c_builder.preview.clear();self.c_builder.preview_shots.clear();
         self.apply_within("c-builder-media-selection",Command::SetPlanningProfile {profile:serde_json::to_value(profile).unwrap_or_default()});
@@ -11688,7 +11695,9 @@ impl Studio {
     pub fn set_c_builder_videos_enabled(&mut self,json:&str,on:bool) {
         if self.c_builder.scanning{return;}
         let mut profile=match self.c_builder_profile(json){Ok(p)=>p,Err(e)=>{self.notify(&e,true);return;}};
-        profile.media_selection.get_or_insert_with(Default::default).videos_enabled=on;
+        let selection=profile.media_selection.get_or_insert_with(Default::default);
+        selection.normalize();
+        selection.videos_enabled=on;
         self.c_builder.profile_json=serde_json::to_string_pretty(&profile).unwrap_or_default();
         self.c_builder.preview.clear();self.c_builder.preview_shots.clear();
         self.apply_within("c-builder-media-selection",Command::SetPlanningProfile {profile:serde_json::to_value(profile).unwrap_or_default()});
@@ -11696,15 +11705,18 @@ impl Studio {
     fn c_builder_keyword_rows(&self,video:bool,profile:&concat_project::planning::Profile)->(Vec<crate::ui::CBuilderKeywordData>,String) {
         let mut groups=std::collections::BTreeMap::<&str,usize>::new();
         for asset in self.c_builder.assets.iter().filter(|a|(a.kind=="video")==video){*groups.entry(&asset.keyword).or_default()+=1;}
-        let selections=profile.media_selection.as_ref().map(|m|if video{&m.videos}else{&m.images});
+        let mut selection=profile.media_selection.clone().unwrap_or_default();
+        selection.normalize(); // legacy 100/100/100/100 is shown as 25/25/25/25
+        let selections=if video{&selection.videos}else{&selection.images};
         let rows:Vec<_>=groups.into_iter().map(|(keyword,available)|{
-            let selected=selections.and_then(|s|s.get(keyword));
+            let selected=selections.get(keyword);
             crate::ui::CBuilderKeywordData {keyword:keyword.into(),available:available.min(i32::MAX as usize) as i32,
                 selected:selected.is_some_and(|s|s.selected),weight:selected.map_or(0.,|s|s.weight as f32)}
         }).collect();
-        let count=rows.iter().filter(|r|r.selected).count();
-        let total:f32=rows.iter().filter(|r|r.selected).map(|r|r.weight).sum();
-        let summary=format!("{count} selected keywords · Total {total:.0}%{}",if total>0.&&total!=100.{" · normalized to 100% for planning"}else if total==0.{" · select a keyword and give it a positive weight"}else{""});
+        let count=rows.iter().filter(|r|r.selected&&r.weight>0.).count();
+        let total:u32=rows.iter().filter(|r|r.selected&&r.weight>0.).map(|r|r.weight as u32).sum();
+        let summary=if count==0{"0 active groups · select a keyword to allocate the 100% budget".into()}
+            else{format!("{count} active groups · {total}% allocated · percentages are selection probabilities")};
         (rows,summary)
     }
 
