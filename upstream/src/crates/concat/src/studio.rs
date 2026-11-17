@@ -4037,63 +4037,134 @@ impl Studio {
         self.apply(Command::ApplyCanvasPreset { config, targets, locked_tracks });
     }
 
-    /// Apply a CUDA caption look to a selection, or to every unlocked title
-    /// in the active timeline. Preserve each caption's words, duration,
-    /// position, keys, and track; one batch is one Undo step.
+    /// Applying a look is a GPU configuration edit, valid with zero caption
+    /// segments. All project metadata and any existing cue styling share one
+    /// atomic Undo step; no desktop transcription or sample timeline clips.
     pub fn apply_caption_preset(&mut self, preset: &str, all: bool) {
         self.flush_commit();
-        let Some(style) = self.text_presets.iter()
-            .find(|held| held.id == preset && held.id.starts_with("cuda-caption."))
-            .map(|found| found.style.clone())
-        else {
+        let Some(style) = self.caption_effective_style(preset).filter(|_| {
+            self.text_presets.iter().any(|p|
+                p.id == preset && p.id.starts_with("cuda-caption."))
+        }) else {
             self.notify("Unknown CUDA caption preset", true);
             return;
         };
         let ids: Vec<String> = if all {
-            // A timeline also contains title cards. "Apply to all captions"
-            // means the active caption lane (or the busiest text lane),
-            // not unrelated title tracks elsewhere in the project.
-            let chosen=self.sole_selection();
-            let lane=concat_project::caption_preview::caption_lane(self.timeline(),chosen.as_deref());
+            // Only known caption cues: unrelated titles and canvas headlines
+            // never become implicit transcription targets.
             self.timeline().clips.iter()
                 .filter(|clip| clip.kind == model::ClipKind::Text
-                    && lane.as_deref() == Some(clip.track_id.as_str())
-                    && !self.locked(&clip.track_id) && !clip.extra.contains_key("canvasOwner")
-                    && self.timeline().track(&clip.track_id).is_some_and(|t|t.visible))
+                    && !self.locked(&clip.track_id)
+                    && !clip.extra.contains_key("canvasOwner")
+                    && self.timeline().track(&clip.track_id).is_some_and(|t| t.visible)
+                    && (clip.extra.contains_key("gpuCaptionSource")
+                        || clip.extra.contains_key("captionWords")
+                        || clip.text.as_ref().is_some_and(|t| !t.karaoke_words.is_empty())))
                 .map(|clip| clip.id.clone())
                 .collect()
         } else {
             self.edit_targets().into_iter()
                 .filter(|id| self.clip(id).is_some_and(|clip|
-                    clip.kind == model::ClipKind::Text && !self.locked(&clip.track_id) && !clip.extra.contains_key("canvasOwner")
-                    && self.timeline().track(&clip.track_id).is_some_and(|t|t.visible)))
+                    clip.kind == model::ClipKind::Text
+                    && !self.locked(&clip.track_id)
+                    && !clip.extra.contains_key("canvasOwner")
+                    && self.timeline().track(&clip.track_id).is_some_and(|t| t.visible)))
                 .collect()
         };
-        if ids.is_empty() {
-            self.notify(if all {"No unlocked captions on this timeline"} else {"Select caption clips before Apply"}, true);
+        if !all && ids.is_empty() {
+            self.notify("Select existing captions before Apply to Selected", true);
             return;
         }
-        // Validate the complete scope before any mutation; preview and Apply share this style model.
-        let mut commands=Vec::new();
+        let mut commands = Vec::new();
         for id in ids {
-            let Some(clip)=self.clip(&id) else {continue;};
-            let next=match concat_project::caption_preview::style_for_clip(clip,&style,preset) {
-                Ok(next)=>next,Err(error)=>{self.notify(&error,true);return;}
+            let Some(clip) = self.clip(&id) else { continue; };
+            let next = match concat_project::caption_preview::style_for_clip(clip, &style, preset) {
+                Ok(next) => next,
+                Err(_) if all => {
+                    // Missing real word intervals must not become fabricated
+                    // karaoke timing. Use static styling until GPU ASR.
+                    let mut static_style = style.clone();
+                    static_style.karaoke = false;
+                    static_style.karaoke_background.clear();
+                    match concat_project::caption_preview::style_for_clip(
+                        clip, &static_style, preset) {
+                        Ok(next) => next,
+                        Err(error) => { self.notify(&error, true); return; }
+                    }
+                }
+                Err(error) => { self.notify(&error, true); return; }
             };
-            let move_y=preset=="cuda-caption.preset-2-yellow-bar" && (clip.offset_y+0.35).abs()>1e-9;
-            if clip.text.as_ref()!=Some(&next) {
-                commands.push(Command::UpdateClip {clip_id:id.clone(),patch:ClipPatch {text:Some(Some(next)),..Default::default()}});
-            }
-            if move_y {
-                commands.push(Command::SetClipTransform {clip_id:id,scale:None,offset_x:None,offset_y:Some(-0.35),rotation:None,stretch_x:None,stretch_y:None});
+            if clip.text.as_ref() != Some(&next) {
+                commands.push(Command::UpdateClip {
+                    clip_id: id,
+                    patch: ClipPatch { text: Some(Some(next)), ..Default::default() },
+                });
             }
         }
-        if !commands.is_empty() {
-            if let Some((family,path))=self.text_presets.iter().find(|p|p.id==preset).and_then(|p|presets::install_font(&self.host.dirs,p)) {
-                commands.insert(0,Command::AddFont {family,path});
+        if all {
+            let mut wire_style = serde_json::to_value(&style).unwrap_or_default();
+            if let Some(fields) = wire_style.as_object_mut() {
+                fields.remove("content");
+                fields.remove("karaokeWords");
+                fields.remove("karaokeWord");
             }
-            self.apply(Command::Batch {commands});
+            let position = self.project().extra.get("captionPreset")
+                .filter(|old| old.get("presetId").and_then(|p| p.as_str()) == Some(preset))
+                .and_then(|old| old.get("position")).cloned()
+                .unwrap_or_else(|| serde_json::json!({
+                    "anchor": "bottom-center", "offsetX": 0.0,
+                    "offsetY": 0.35, "safeMargin": 0.08
+                }));
+            let existing_source = self.project().extra.get("gpuCaptionRequest")
+                .and_then(|req| req.get("sourceClipId"))
+                .and_then(|id| id.as_str())
+                .filter(|id| self.timeline().clip(id).is_some_and(|c|
+                    matches!(c.kind, model::ClipKind::Audio | model::ClipKind::Video)))
+                .map(str::to_owned);
+            let narration = self.timeline().clips.iter()
+                .find(|c| c.kind == model::ClipKind::Audio)
+                .map(|c| c.id.clone());
+            let video_with_sound = self.timeline().clips.iter()
+                .find(|c| c.kind == model::ClipKind::Video
+                    && self.project().media.iter().any(|m|
+                        m.id == c.media_id && m.has_audio))
+                .map(|c| c.id.clone());
+            let source_id = existing_source.or(narration).or(video_with_sound);
+            commands.push(Command::SetCaptionPresetSettings {
+                settings: serde_json::json!({
+                    "version": 1, "presetId": preset,
+                    "generateOnGpu": true, "style": wire_style,
+                    "position": position, "sourceClipId": source_id
+                }),
+            });
+            if let Some(source_id) = source_id {
+                let legacy_preset = match preset {
+                    "cuda-caption.preset-1-purple-word" => "purple-word",
+                    "cuda-caption.preset-2-yellow-bar" => "yellow-bar",
+                    _ => "classic",
+                };
+                commands.push(Command::SetGpuCaptionRequest {
+                    request: Some(serde_json::json!({
+                        "version": 1, "sourceClipId": source_id,
+                        "model": "small", "language": null,
+                        "wordTimestamps": true, "preset": legacy_preset,
+                        "renderAfter": true, "style": wire_style
+                    })),
+                });
+            } else {
+                // The project setting still saves before narration exists;
+                // do not hand the current worker an invalid sourceClipId.
+                commands.push(Command::SetGpuCaptionRequest { request: None });
+            }
         }
+        if commands.is_empty() { return; }
+        if let Some((family, path)) = self.text_presets.iter()
+            .find(|p| p.id == preset)
+            .and_then(|p| presets::install_font(&self.host.dirs, p))
+        {
+            commands.insert(0, Command::AddFont { family, path });
+        }
+        self.apply(Command::Batch { commands });
     }
 
     /// Places a title in the look a preset names - "default" for the plain
