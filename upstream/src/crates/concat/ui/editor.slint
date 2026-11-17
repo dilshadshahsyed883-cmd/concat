@@ -98,10 +98,13 @@ export global Editor {
     in-out property <int> cb-scan-done;
     in-out property <int> cb-scan-total;
     in-out property <bool> cb-busy;
+    in-out property <string> cb-profile;
+    in-out property <string> cb-preview;
+    callback cb-plan-profile(json: string, images: string, videos: string, action: string);
     callback cb-import-folder();
     callback cb-refresh-folder();
     callback cb-choose-narration();
-    callback cb-generate-project(name: string, images: string, videos: string, coverage: int);
+    callback cb-generate-project(name: string, images: string, videos: string, coverage: int, profile: string);
 
     callback import-media();
     callback media-filter-changed(filter: MediaFilter);

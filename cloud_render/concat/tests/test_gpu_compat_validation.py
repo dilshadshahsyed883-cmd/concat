@@ -180,7 +180,7 @@ class GpuManifestValidationTests(unittest.TestCase):
                             for _, (red, green, blue, alpha) in colors))
 
     def test_existing_custom_caption_style_is_not_silently_dropped(self):
-        for field, value in (("fontFamily", "Unsupported family"), ("fontWeight", 700),
+        for field, value in (("fontFamily", "Unsupported family"), ("fontWeight", 333),
                              ("tracking", .01), ("background", "not-a-color"), ("align", "left")):
             with self.subTest(field=field):
                 document = minimal_project()

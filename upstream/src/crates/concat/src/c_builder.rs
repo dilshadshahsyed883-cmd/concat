@@ -180,14 +180,6 @@ pub struct Shot {
     pub trim_us: u64,
 }
 impl Shot { pub fn end_us(&self) -> u64 { self.start_us + self.duration_us } }
-struct Rng(u64);
-impl Rng {
-    fn new(seed: u64) -> Self { Self(if seed == 0 { 0x9e3779b97f4a7c15 } else { seed }) }
-    fn next(&mut self) -> u64 {
-        let mut x = self.0; x ^= x << 13; x ^= x >> 7; x ^= x << 17; self.0 = x; x
-    }
-    fn up_to(&mut self, limit: u64) -> u64 { if limit == 0 { 0 } else { self.next() % limit } }
-}
 fn strengths(input: &str, pool: &[&Asset]) -> Result<HashMap<String, u32>, String> {
     let mut known: HashMap<String, String> = HashMap::new();
     for a in pool { known.insert(a.keyword.to_lowercase(), a.keyword.clone()); }
@@ -209,121 +201,57 @@ fn strengths(input: &str, pool: &[&Asset]) -> Result<HashMap<String, u32>, Strin
     if requested.is_empty() { return Err("Select at least one keyword".into()); }
     Ok(requested)
 }
-fn choose<'a>(pool: &[&'a Asset], weights: &HashMap<String, u32>,
-    counts: &mut HashMap<String, u32>, recent: &[String], used: &HashSet<String>,
-    unique: bool, rng: &mut Rng) -> Option<&'a Asset> {
-    let mut candidates: Vec<&Asset> = pool.iter().copied().filter(|a|
-        weights.contains_key(&a.keyword) && (!unique || !used.contains(&a.path))).collect();
-    if candidates.len() > 1 {
-        let other: Vec<&Asset> = candidates.iter().copied()
-            .filter(|a| !recent.contains(&a.path)).collect();
-        if !other.is_empty() { candidates = other; }
-    }
-    if candidates.is_empty() { return None; }
-    let denominator: f64 = weights.values().map(|n| f64::from(*n)).sum();
-    let picked: f64 = counts.values().map(|n| f64::from(*n)).sum();
-    let min_use = candidates.iter().map(|a| a.used_count).min().unwrap_or(0);
-    let mut best = f64::NEG_INFINITY; let mut options: Vec<&Asset> = Vec::new();
-    for a in candidates {
-        let deficit = (picked + 1.0) * f64::from(weights[&a.keyword]) / denominator
-            - f64::from(*counts.get(&a.keyword).unwrap_or(&0));
-        let score = deficit - 0.01 * f64::from(a.used_count.saturating_sub(min_use));
-        if score > best + 0.000001 { best = score; options.clear(); }
-        if score >= best - 0.000001 { options.push(a); }
-    }
-    let chosen = options[rng.up_to(options.len() as u64) as usize];
-    *counts.entry(chosen.keyword.clone()).or_default() += 1;
-    Some(chosen)
-}
 pub fn plan(assets: &[Asset], seconds: f64, image_weights: &str, video_weights: &str,
     coverage: u32, seed: u64) -> Result<Vec<Shot>, String> {
+    if coverage > 100 { return Err("Coverage must be 0–100%".into()); }
+    let mut profile = concat_project::planning::Profile::default();
+    profile.curve = vec![concat_project::planning::Anchor { at: 0.0, video: coverage as f64/100.0 },
+        concat_project::planning::Anchor { at: 1.0, video: coverage as f64/100.0 }];
+    profile.seed = seed;
+    profile.max_videos = 0;
+    plan_profile(assets, seconds, image_weights, video_weights, &profile).map(|p| p.0)
+}
+pub fn plan_profile(assets: &[Asset], seconds: f64, image_weights: &str, video_weights: &str,
+    profile: &concat_project::planning::Profile) -> Result<(Vec<Shot>, String), String> {
     if !seconds.is_finite() || seconds <= 0.0 || seconds > 86_400.0 {
         return Err("Narration duration must be between 0 and 24 hours".into());
     }
-    if coverage > 40 { return Err("Video coverage must be 0–40%".into()); }
-    let total = (seconds * 1_000_000.0).round() as u64;
-    let image_pool: Vec<&Asset> = assets.iter().filter(|a| a.kind == "image").collect();
-    let image_weights = strengths(image_weights, &image_pool)?;
-    let video_pool: Vec<&Asset> = assets.iter().filter(|a|
-        a.kind == "video" && a.duration.is_some_and(|d| d >= 2.5)).collect();
-    let video_weights = if coverage > 0 { strengths(video_weights, &video_pool)? }
-        else { HashMap::new() };
-    let mut rng = Rng::new(seed);
-    let mut videos = Vec::new(); let mut video_count = HashMap::new();
-    let mut used = HashSet::new(); let mut recent_video = Vec::new();
-    let target = (seconds * f64::from(coverage) / 100.0 / 3.25).round() as usize;
-    // Never plan clips that cannot have an image-only interval on both sides.
-    let maximum = (seconds / 6.0).floor() as usize;
-    for _ in 0..target.min(video_pool.len()).min(maximum) {
-        let Some(a) = choose(&video_pool, &video_weights, &mut video_count,
-            &recent_video, &used, true, &mut rng) else { break };
-        used.insert(a.path.clone()); recent_video = vec![a.path.clone()];
-        let source_seconds = a.duration.unwrap_or(2.5);
-        let duration = 2_500_000 + rng.up_to(1_500_001);
-        let duration = duration.min((source_seconds * 1_000_000.0) as u64);
-        let trim_max = (source_seconds * 1_000_000.0) as u64 - duration;
-        videos.push(((*a).clone(), duration, rng.up_to(trim_max + 1)));
+    let images: Vec<_> = assets.iter().filter(|a| a.kind == "image").collect();
+    let videos: Vec<_> = assets.iter().filter(|a| a.kind == "video").collect();
+    let iw = if images.is_empty() { HashMap::new() } else { strengths(image_weights, &images)? };
+    let vw = if videos.is_empty() { HashMap::new() } else { strengths(video_weights, &videos)? };
+    let sources: Vec<_> = assets.iter().map(|a| concat_project::planning::Source {
+        id: a.path.clone(), video: a.kind == "video",
+        duration_us: a.duration.filter(|d| d.is_finite() && *d > 0.0)
+            .map(|d| (d*1e6) as u64).unwrap_or(0),
+        weight: f64::from(*if a.kind == "video" { vw.get(&a.keyword) } else { iw.get(&a.keyword) }.unwrap_or(&0))
+            / (1.0 + f64::from(a.used_count)),
+    }).collect();
+    let result = concat_project::planning::generate(&sources, (seconds*1e6).round() as u64, profile)?;
+    let stats = result.stats(&sources);
+    let count = stats.images+stats.videos;
+    let mut summary = format!("{} shots; video {:.1}% by count / {:.1}% by seconds. Seed {}.",
+        count, stats.videos as f64/count as f64*100.0, stats.video_us as f64/(seconds*1e6)*100.0, profile.seed);
+    for warning in result.warnings { summary.push_str(&format!("\n{warning}")); }
+    let shots: Vec<_> = result.shots.into_iter().map(|s| Shot { asset: assets[s.source].clone(),
+        start_us: s.start_us, duration_us: s.duration_us, trim_us: s.trim_us }).collect();
+    validate(&shots, (seconds*1e6).round() as u64)?;
+    for (i,s) in shots.iter().enumerate().take(200) {
+        summary.push_str(&format!("\n{}: {:.2}–{:.2}s {} {}", i+1, s.start_us as f64/1e6,
+            s.end_us() as f64/1e6, s.asset.kind, Path::new(&s.asset.path).file_name().unwrap_or_default().to_string_lossy()));
     }
-    let video_duration: u64 = videos.iter().map(|v| v.1).sum();
-    let gaps = videos.len() + 1;
-    let minimum_gap = if videos.is_empty() { 0 } else { 3_000_000 };
-    if video_duration + minimum_gap * gaps as u64 >= total {
-        return Err("Insufficient image-only room for chosen video coverage".into());
-    }
-    let extra = total - video_duration - minimum_gap * gaps as u64;
-    let weights: Vec<u64> = (0..gaps).map(|_| 70 + rng.up_to(61)).collect();
-    let sum: u64 = weights.iter().sum();
-    let mut sizes: Vec<u64> = weights.iter().map(|w| minimum_gap + extra * w / sum).collect();
-    sizes[gaps - 1] += total - video_duration - sizes.iter().sum::<u64>();
-    let mut result = Vec::new(); let mut cursor = 0; let mut image_counts = HashMap::new();
-    let mut recent_images: Vec<String> = Vec::new();
-    for (index, gap) in sizes.into_iter().enumerate() {
-        let mut remaining = gap;
-        while remaining > 0 {
-            let duration = remaining.min(3_000_000 + rng.up_to(2_000_001));
-            let a = choose(&image_pool, &image_weights, &mut image_counts,
-                &recent_images, &HashSet::new(), false, &mut rng)
-                .ok_or("Unable to choose image for gap")?;
-            recent_images.push(a.path.clone());
-            if recent_images.len() > 3 { recent_images.remove(0); }
-            result.push(Shot { asset: (*a).clone(), start_us: cursor,
-                duration_us: duration, trim_us: 0 });
-            cursor += duration; remaining -= duration;
-        }
-        if let Some((asset, duration, trim)) = videos.get(index) {
-            result.push(Shot { asset: asset.clone(), start_us: cursor,
-                duration_us: *duration, trim_us: *trim });
-            cursor += *duration;
-        }
-    }
-    validate(&result, total)?;
-    Ok(result)
+    if shots.len() > 200 { summary.push_str("\nPreview limited to first 200 shots."); }
+    Ok((shots, summary))
 }
 pub fn validate(shots: &[Shot], total: u64) -> Result<(), String> {
     if shots.is_empty() { return Err("Timeline has no visual media".into()); }
     let mut cursor = 0;
-    let mut seen_videos = HashSet::new();
-    let mut previous_video = false;
     for shot in shots {
-        if shot.start_us != cursor || shot.duration_us == 0 {
-            return Err("Timeline contains a gap or overlap".into());
-        }
-        if shot.asset.kind == "video" {
-            if previous_video || !seen_videos.insert(&shot.asset.path) {
-                return Err("Consecutive or repeated video clips".into());
-            }
-            if !(2_500_000..=4_000_000).contains(&shot.duration_us) {
-                return Err("Video duration outside 2.5–4 seconds".into());
-            }
-            if shot.asset.duration.unwrap_or(0.0) * 1_000_000.0 + 1.0
-                < (shot.trim_us + shot.duration_us) as f64 {
-                return Err("Video trim exceeds source".into());
-            }
-        } else if shot.duration_us > 5_000_000 {
-            return Err("Image duration exceeds 5 seconds".into());
-        }
-        previous_video = shot.asset.kind == "video";
-        cursor = shot.end_us();
+        if shot.start_us != cursor || shot.duration_us == 0 { return Err("Timeline contains a gap or overlap".into()); }
+        if shot.asset.kind == "video" && shot.asset.duration.unwrap_or(0.0)*1e6+1.0
+            < shot.trim_us.saturating_add(shot.duration_us) as f64 { return Err("Video trim exceeds source".into()); }
+        if !matches!(shot.asset.kind.as_str(), "image" | "video") { return Err("Unsupported visual type".into()); }
+        cursor = cursor.checked_add(shot.duration_us).ok_or("Timeline overflow")?;
     }
     if cursor != total { return Err("Timeline endpoint differs from narration".into()); }
     Ok(())
@@ -571,6 +499,8 @@ pub struct State {
     pub probed: usize,
     pub reused: usize,
     pub removed: usize,
+    pub profile_json: String,
+    pub preview: String,
 }
 impl State {
     pub fn images(&self) -> usize { self.assets.iter().filter(|a| a.kind == "image").count() }
@@ -584,4 +514,22 @@ impl State {
         totals.into_iter().map(|(k, (i, v))| format!("{k}: {i} images, {v} videos"))
             .collect::<Vec<_>>().join("\n")
     }
+}
+
+/// Validated profile persistence with Windows-safe replacement and rollback.
+pub fn save_profile(path: &Path, source: &str) -> Result<(), String> {
+    let profile = concat_project::planning::Profile::from_json(source)?;
+    let bytes = serde_json::to_vec_pretty(&profile).map_err(|e| e.to_string())?;
+    let pending = path.with_extension("json.pending");
+    let backup = path.with_extension("json.backup");
+    fs::write(&pending, bytes).map_err(|e| e.to_string())?;
+    if backup.exists() { fs::remove_file(&backup).map_err(|e| e.to_string())?; }
+    let existed = path.exists();
+    if existed { fs::rename(path, &backup).map_err(|e| e.to_string())?; }
+    if let Err(e) = fs::rename(&pending, path) {
+        if existed { let _ = fs::rename(&backup, path); }
+        return Err(e.to_string());
+    }
+    if existed { let _ = fs::remove_file(backup); }
+    Ok(())
 }

@@ -21,6 +21,7 @@ use crate::model::{
 
 mod audio;
 mod clips;
+mod editing;
 pub use clips::{PlayheadSide, consolidation_clips, delete_to_playhead, why_not_merge};
 mod media;
 mod properties;
@@ -526,6 +527,20 @@ pub enum Command {
         /// The stroke, in source fractions.
         stroke: Stroke,
     },
+    /// Inserts at a frame-aligned playhead; splits intersecting clips and ripples an explicit scope.
+    InsertMedia {
+        media_id: String, track_id: String, tracks: Vec<String>, locked_tracks: Vec<String>,
+        time: f64, overwrite: bool,
+    },
+    /// Replaces a visual source, optionally resizing its slot and rippling the explicit scope.
+    ReplaceMediaInSlot {
+        clip_id: String, media_id: String, use_source_duration: bool, keep_edits: bool,
+        tracks: Vec<String>, locked_tracks: Vec<String>,
+    },
+    /// Closes internal visual gaps only. `at` selects the gap under the playhead; None closes all.
+    CloseTrackGaps { track_id: String, locked_tracks: Vec<String>, at: Option<f64> },
+    /// Persists the independent magnetic-edit setting with this timeline.
+    SetTimelineMagnetic { enabled: bool },
     /// Repositions any number of clips in one edit - one undo step for a
     /// whole multi-selection drag. Unknown clips and tracks are tolerated
     /// per [`ClipMove`].
@@ -849,6 +864,9 @@ pub struct Outcome {
 /// those sentences names a host can match on.
 #[derive(Clone, PartialEq, Eq, Debug, thiserror::Error)]
 pub enum CommandError {
+    /// An edit needs a compatible scope or source.
+    #[error("{reason}")]
+    UnsafeEdit { reason: String },
     /// [`Command::FillSlot`] named a media id no longer in the bin.
     #[error("That template slot no longer exists.")]
     SlotGone,
@@ -997,6 +1015,8 @@ impl Command {
         }
         match self {
             Command::Batch { commands } => commands.iter().any(Command::has_non_finite),
+            Command::InsertMedia { time, .. } => bad([*time]),
+            Command::CloseTrackGaps { at, .. } => bad(*at),
             Command::AddMedia { item }
             | Command::FillSlot { item, .. }
             | Command::ConsolidateClips { item, .. } => bad(item.duration) || bad(item.frame_rate),
@@ -1181,6 +1201,8 @@ pub fn apply(
             })
         }
 
+        command @ (Command::InsertMedia { .. } | Command::ReplaceMediaInSlot { .. }
+            | Command::CloseTrackGaps { .. } | Command::SetTimelineMagnetic { .. }) => editing::apply(project, mint, command),
         command @ (Command::AddMedia { .. }
         | Command::SetMediaPlaceholder { .. }
         | Command::FillSlot { .. }

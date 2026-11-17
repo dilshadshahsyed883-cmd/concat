@@ -849,8 +849,55 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             },
         );
     });
+    editor.on_cb_plan_profile(on_window!(|studio, json: SharedString, images: SharedString, videos: SharedString, action: SharedString| {
+        let action = action.to_string();
+        if action == "load" {
+            host::pick_files_then("Import C Builder planning profile".into(), Some(("JSON".into(), &["json"])),
+                |studio, _, _, paths| {
+                    if let Some(path) = paths.first() {
+                        match std::fs::read_to_string(path).map_err(|e| e.to_string())
+                            .and_then(|s| concat_project::planning::Profile::from_json(&s)) {
+                            Ok(p) => studio.c_builder.profile_json = serde_json::to_string_pretty(&p).unwrap_or_default(),
+                            Err(e) => studio.notify(&e, true),
+                        }
+                    }
+                });
+            return;
+        }
+        let mut profile = match concat_project::planning::Profile::from_json(&json) {
+            Ok(p) => p,
+            Err(e) => { studio.notify(&e, true); return; }
+        };
+        if action == "reroll" { profile.seed = c_builder::random_seed(); }
+        let encoded = serde_json::to_string_pretty(&profile).unwrap_or_default();
+        studio.c_builder.profile_json = encoded.clone();
+        if action == "save" {
+            // A declarative profile is saved independently, so duplicates and renamed
+            // profiles can be shared without rebuilding the application.
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            host::after_dialog(
+                || rfd::FileDialog::new().set_title("Export planning profile").add_filter("JSON", &["json"]).save_file(),
+                move |studio, _, _, path| {
+                    let result = c_builder::save_profile(&path, &encoded);
+                    if let Err(e) = result { studio.notify(&format!("Profile save failed: {e}"), true); }
+                });
+            return;
+        }
+        let Some(duration) = studio.c_builder.duration else { studio.notify("Select narration first", true); return; };
+        let assets = studio.c_builder.assets.clone();
+        let iw = images.to_string(); let vw = videos.to_string();
+        studio.c_builder.scanning = true;
+        host::spawn(move || c_builder::plan_profile(&assets, duration, &iw, &vw, &profile),
+            |studio, _, _, result| {
+                studio.c_builder.scanning = false;
+                match result {
+                    Ok((_, summary)) => studio.c_builder.preview = summary,
+                    Err(e) => { studio.c_builder.preview = format!("Plan rejected: {e}"); studio.notify(&e, true); }
+                }
+            });
+    }));
     editor.on_cb_generate_project(on_window!(
-        |studio, name: SharedString, images: SharedString, videos: SharedString, coverage: i32| {
+        |studio, name: SharedString, images: SharedString, videos: SharedString, coverage: i32, profile_json: SharedString| {
             if studio.c_builder.scanning { return; }
             let Some(duration) = studio.c_builder.duration else {
                 studio.notify("Select narration first", true);
@@ -871,15 +918,22 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             let project_name = name.to_string();
             let image_weights = images.to_string();
             let video_weights = videos.to_string();
+            let _ = coverage; // retained callback parameter for older UI integrations
+            let profile = match concat_project::planning::Profile::from_json(&profile_json) {
+                Ok(p) => p, Err(e) => { studio.notify(&e, true); return; }
+            };
             let cache_path = studio.host.dirs.data.join("c-builder-media-cache.json");
             studio.c_builder.scanning = true;
             studio.c_builder.status = "Planning and verifying native Concat timeline...".into();
             host::spawn(
                 move || {
-                    let shots = c_builder::plan(&assets, duration, &image_weights,
-                        &video_weights, coverage.max(0) as u32, c_builder::random_seed())?;
+                    let (shots, _) = c_builder::plan_profile(&assets, duration, &image_weights,
+                        &video_weights, &profile)?;
                     let folder = c_builder::write_native(&shots, &audio, duration, &output,
                         &project_name)?;
+                    std::fs::write(folder.join("planning-profile.json"),
+                        serde_json::to_vec_pretty(&profile).map_err(|e| e.to_string())?)
+                        .map_err(|e| format!("Project created but profile snapshot failed: {e}"))?;
                     let used: Vec<String> = shots.iter().map(|s| s.asset.path.clone())
                         .collect::<std::collections::HashSet<_>>().into_iter().collect();
                     let usage_warning = c_builder::mark_used(&cache_path, &used).err();

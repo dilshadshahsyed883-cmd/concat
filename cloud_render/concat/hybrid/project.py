@@ -10,6 +10,7 @@ from pathlib import Path
 from .animations import Transform
 from .canvas import CanvasBackground, parse_background
 from .captions import CaptionStyle, Cue, WordTiming
+from .fonts import resolve_font
 from .contract import FrameSpan
 from .filters import FilterSettings
 from .looks import FILTER_LOOKS
@@ -419,19 +420,18 @@ def _caption(clip, first, end, index, track_rank):
     # defaults where they have no visible effect and reject changed styles
     # that the worker cannot faithfully draw.
     neutral = {"italic": False,
-               "backgroundPaddingX": .0315, "backgroundPaddingY": .018,
                "lineHeight": 1.2, "tracking": 0, "maxWidth": 0, "maxHeight": 0}
     supported = {"content", "fontFamily", "fontSize", "fontWeight", "color",
                  "opacity", "strokeWidth", "strokeColor", "shadow", "align",
-                 "background", "backgroundRadius", "karaoke", "karaokeColor"}
+                 "background", "backgroundRadius", "backgroundPaddingX", "backgroundPaddingY", "karaoke", "karaokeColor"}
     for name, value in style.items():
         if name not in supported and (name not in neutral or value != neutral[name]):
             raise ValueError(f"Unsupported caption styling {name} on clip {ident}")
     family = style.get("fontFamily", "Hanken Grotesk")
-    if (family not in ("Hanken Grotesk", '"Hanken Grotesk"')
-            or style.get("fontWeight", 600) != 600):
-        raise ValueError(f"Unsupported caption styling fontFamily or fontWeight on clip {ident}; "
-                         "use Hanken Grotesk SemiBold")
+    try:
+        font = resolve_font(family, style.get("fontWeight", 600))
+    except ValueError as exc:
+        raise ValueError(f"{exc} on clip {ident}") from exc
     if style.get("align", "center") != "center":
         raise ValueError(f"Unsupported caption styling align on clip {ident}")
     karaoke = style.get("karaoke", False)
@@ -493,11 +493,15 @@ def _caption(clip, first, end, index, track_rank):
             weight_left -= weight
         words = tuple(built)
     cue = Cue(index, first * 1000 // FPS, end * 1000 // FPS, content, words)
-    caption_style = CaptionStyle(font=str(_hanken_font()), font_size=size, fill=fill,
+    px = round(number(style.get("backgroundPaddingX", .0315), f"caption backgroundPaddingX on {ident}")*HEIGHT)
+    py = round(number(style.get("backgroundPaddingY", .018), f"caption backgroundPaddingY on {ident}")*HEIGHT)
+    if not 0 <= px <= 512 or not 0 <= py <= 512:
+        raise ValueError(f"Unsupported caption styling backgroundPadding on clip {ident}")
+    caption_style = CaptionStyle(font=str(font), font_size=size, fill=fill,
                                  outline=outline, background=background,
                                  highlight=highlight,
                                  outline_width=stroke,
-                                 padding=(12 if background[3] else 0), margin=0,
+                                 padding=0, padding_x=px if background[3] else 0, padding_y=py if background[3] else 0, margin=0,
                                  plate_radius=(round(radius * HEIGHT) if background[3] else 0),
                                  anchor=(anchor_x, anchor_y), shadow=shadow,
                                  opacity=opacity * clip_opacity, track_rank=track_rank)

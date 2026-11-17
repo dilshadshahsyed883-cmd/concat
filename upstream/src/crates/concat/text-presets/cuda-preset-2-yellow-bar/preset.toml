@@ -1,0 +1,17 @@
+id = "cuda-caption.preset-2-yellow-bar"
+name = "Caption Preset 2 — Yellow Bar"
+order = 1090
+language = "Latin"
+sample = "YOUR CAPTION HERE"
+offsetY = -0.35
+[style]
+content = "YOUR CAPTION HERE"
+fontFamily = "Inter"
+fontSize = 0.053
+fontWeight = 900
+color = "#000000"
+background = "#ffff00"
+backgroundRadius = 0.012
+strokeWidth = 0
+shadow = false
+karaoke = false

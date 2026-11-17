@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY cloud_render/concat/hybrid/ /opt/app/cloud_render/concat/hybrid/
 COPY upstream/src/crates/concat-text/fonts/HankenGrotesk-SemiBold.ttf /opt/app/cloud_render/concat/hybrid/HankenGrotesk-SemiBold.ttf
-COPY upstream/src/crates/concat-text/fonts/LICENSE-HankenGrotesk.txt /opt/app/cloud_render/concat/hybrid/LICENSE-HankenGrotesk.txt
+COPY upstream/src/crates/concat-text/fonts/ /opt/app/cloud_render/concat/hybrid/fonts/
 RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: \
        -r /opt/app/cloud_render/concat/hybrid/requirements-codec.txt \

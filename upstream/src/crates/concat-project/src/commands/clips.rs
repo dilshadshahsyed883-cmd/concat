@@ -784,7 +784,7 @@ fn close_gaps(timeline: &mut Timeline, removed: &[(String, f64, f64)]) {
     }
 }
 
-fn default_clip(id: String, track_id: String, media: &MediaItem, start: f64) -> Clip {
+pub(super) fn default_clip(id: String, track_id: String, media: &MediaItem, start: f64) -> Clip {
     let kind = match media.kind {
         MediaKind::Video => ClipKind::Video,
         MediaKind::Audio => ClipKind::Audio,
@@ -833,7 +833,7 @@ fn ripple_room_for(timeline: &mut Timeline, track_id: &str, start: f64, media: &
 
 /// How long a new clip of `media` is: a still's default hold, or the
 /// file's own length.
-fn clip_length(media: &MediaItem) -> f64 {
+pub(super) fn clip_length(media: &MediaItem) -> f64 {
     match media.kind {
         MediaKind::Image => DEFAULT_IMAGE_DURATION,
         _ => media.duration.unwrap_or(UNKNOWN_DURATION),

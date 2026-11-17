@@ -43,13 +43,18 @@ export component CBuilderPane inherits VerticalLayout {
     in property <int> scan-done;
     in property <int> scan-total;
     in property <bool> busy;
+    in property <string> profile;
+    in property <string> preview;
+    callback plan-profile(json: string, images: string, videos: string, action: string);
+    property <string> edited-profile: root.profile == "" ? "{\"version\":1,\"name\":\"Video-Heavy Opening\",\"curve\":[{\"at\":0,\"video\":0.65},{\"at\":0.25,\"video\":0.45},{\"at\":0.75,\"video\":0.2},{\"at\":1,\"video\":0.05}],\"imageSeconds\":[3,5],\"videoSeconds\":[2.5,4],\"maxVideos\":2,\"maxImages\":0,\"cooldown\":3,\"allowRepeats\":true,\"ratioBySeconds\":true,\"seed\":1}" : root.profile;
     in property <float> narration-duration;
 
     callback import-folder();
     callback refresh-folder();
     callback choose-narration();
-    callback generate-project(name: string, image-weights: string, video-weights: string, coverage: int);
+    callback generate-project(name: string, image-weights: string, video-weights: string, coverage: int, profile: string);
 
+    changed profile => { root.edited-profile = root.profile; }
     property <int> page: 0;
     property <string> project-name: "New Timeline";
     property <string> images-weights: "";
@@ -164,32 +169,30 @@ export component CBuilderPane inherits VerticalLayout {
         CField { value <=> root.images-weights; placeholder: "Alex Eala=70, Interview=30"; }
         Text { text: "Video keyword strengths (optional)"; color: Theme.fg; }
         CField { value <=> root.videos-weights; placeholder: "Match=60, Interview=40"; }
-        Text { text: "Target video coverage"; color: Theme.fg; }
-        Select {
-            options: ["0% (images only)", "10%", "15%", "20%", "25%", "30%", "35%", "40%"];
-            current: root.video-coverage == 0 ? 0 : root.video-coverage == 10 ? 1
-                : root.video-coverage == 15 ? 2 : root.video-coverage == 20 ? 3
-                : root.video-coverage == 25 ? 4 : root.video-coverage == 30 ? 5
-                : root.video-coverage == 35 ? 6 : 7;
-            changed(index) => {
-                root.video-coverage = index == 0 ? 0 : index == 1 ? 10
-                    : index == 2 ? 15 : index == 3 ? 20 : index == 4 ? 25
-                    : index == 5 ? 30 : index == 6 ? 35 : 40;
-            }
+        Text { text: "Planning profile (versioned JSON)"; color: Theme.fg; }
+        Text { text: "Edit curve weights (0–1), shot durations, run limits (0 = unlimited), cooldown and seed. Save/import named profiles without rebuilding.";
+            color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
+        Rectangle {
+            height: 180px; background: Theme.field; border-radius: Theme.r;
+            TextInput { x: 6px; y: 6px; width: parent.width - 12px; height: parent.height - 12px;
+                text <=> root.edited-profile; color: Theme.fg; font-size: Theme.fs-sm; wrap: word-wrap; }
         }
-        Text {
-            text: "Images 3–5s; videos 2.5–4s muted. No source moves. Keywords are auto-balanced if left blank.";
-            color: Theme.fg-muted;
-            font-size: Theme.fs-sm;
-            wrap: word-wrap;
+        HorizontalLayout {
+            Button { label: "Import Profile"; clicked => { root.plan-profile(root.edited-profile, root.images-weights, root.videos-weights, "load"); } }
+            Button { label: "Save Profile"; clicked => { root.plan-profile(root.edited-profile, root.images-weights, root.videos-weights, "save"); } }
         }
+        HorizontalLayout {
+            Button { label: "Preview Plan"; enabled: !root.busy; clicked => { root.plan-profile(root.edited-profile, root.images-weights, root.videos-weights, "preview"); } }
+            Button { label: "Reroll"; enabled: !root.busy; clicked => { root.plan-profile(root.edited-profile, root.images-weights, root.videos-weights, "reroll"); } }
+        }
+        Text { text: root.preview; color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
         Button {
             label: "Generate Native Concat Timeline";
             primary: true;
-            enabled: !root.busy && root.image-count > 0 && root.narration != "";
+            enabled: !root.busy && (root.image-count + root.video-count) > 0 && root.narration != "";
             clicked => {
                 root.generate-project(root.project-name, root.images-weights,
-                    root.videos-weights, root.video-coverage);
+                    root.videos-weights, root.video-coverage, root.edited-profile);
             }
         }
         Text {

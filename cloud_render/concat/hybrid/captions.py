@@ -116,6 +116,8 @@ class CaptionStyle:
     background: _RGBA = (0, 0, 0, 170)
     outline_width: int = 2
     padding: int = 10
+    padding_x: int | None = None
+    padding_y: int | None = None
     margin: int = 24
     plate_radius: int = 0
     placement: str = "bottom"
@@ -132,6 +134,9 @@ class CaptionStyle:
             if (not isinstance(color, tuple) or len(color) != 4
                     or any(type(c) is not int or not 0 <= c <= 255 for c in color)):
                 raise ValueError("Caption colors must be 8-bit RGBA tuples")
+        if any(value is not None and (type(value) is not int or not 0 <= value <= 512)
+               for value in (self.padding_x, self.padding_y)):
+            raise ValueError("Caption padding must be 0–512 pixels")
         sizes = (self.font_size, self.outline_width, self.padding, self.margin, self.plate_radius)
         limits = ((8, 540 if self.anchor is not None else 512),
                   (0, 32), (0, 128), (0, 512), (0, 512))
@@ -191,7 +196,10 @@ def _glyph_texture(cue: Cue, active: int | None, style: CaptionStyle,
 
     font = (ImageFont.truetype(style.font, style.font_size) if style.font
             else ImageFont.load_default(size=style.font_size))
-    available = frame_width - 2 * (style.margin + style.padding + style.outline_width)
+    px = style.padding if style.padding_x is None else style.padding_x
+    py = style.padding if style.padding_y is None else style.padding_y
+    safe_width = frame_width if style.anchor is None else int(2 * min(style.anchor[0], 1-style.anchor[0]) * frame_width)
+    available = safe_width - 2 * (style.margin + px + style.outline_width)
     if available < 1:
         raise ValueError("Frame too narrow for the caption style")
     lines = _wrapped_lines(cue.text, font, available, native=style.anchor is not None)
@@ -200,8 +208,9 @@ def _glyph_texture(cue: Cue, active: int | None, style: CaptionStyle,
     shadow_radius = max(1, round(style.font_size * .04)) if style.shadow else 0
     shadow_offset = (round(style.font_size * .05), round(style.font_size * .07))
     # Symmetric padding keeps the text center fixed when the shadow is enabled.
-    pad = style.padding + (max(shadow_offset) + 3 * shadow_radius if style.shadow else 0)
-    width = max(right - left for left, _, right, _ in boxes) + 2 * pad
+    extra = max(shadow_offset) + 3 * shadow_radius if style.shadow else 0
+    pad_x, pad_y = px + extra, py + extra
+    width = max(right - left for left, _, right, _ in boxes) + 2 * pad_x
     if style.anchor is None:
         ascent = max(-top for _, top, _, _ in boxes)
         descent = max(bottom for _, _, _, bottom in boxes)
@@ -211,9 +220,9 @@ def _glyph_texture(cue: Cue, active: int | None, style: CaptionStyle,
         ascent = max(ascent, *(-top for _, top, _, _ in boxes))
         descent = max(descent, *(bottom for _, _, _, bottom in boxes))
         line_height = round(style.font_size * 1.2)
-    height = (len(lines) - 1) * line_height + ascent + descent + 2 * pad
-    if (width - 2 * (pad - style.padding) > frame_width - 2 * style.margin
-            or height - 2 * (pad - style.padding) > frame_height - 2 * style.margin):
+    height = (len(lines) - 1) * line_height + ascent + descent + 2 * pad_y
+    if (width - 2 * extra > frame_width - 2 * style.margin
+            or height - 2 * extra > frame_height - 2 * style.margin):
         raise ValueError("Caption exceeds the available frame area")
 
     texture = Image.new("RGBA", (width, height), (0, 0, 0, 0))
@@ -229,7 +238,7 @@ def _glyph_texture(cue: Cue, active: int | None, style: CaptionStyle,
     outline_draw, fill_draw = ImageDraw.Draw(outline_mask), ImageDraw.Draw(fill_mask)
     for row, ((line, first, count), (left, _, right, _)) in enumerate(zip(lines, boxes)):
         x = (width - (right - left)) // 2 - left
-        y = pad + ascent + row * line_height
+        y = pad_y + ascent + row * line_height
         outline_draw.text((x, y), line, fill=255, stroke_fill=255,
                           stroke_width=style.outline_width, font=font, anchor="ls")
         fill_draw.text((x, y), line, fill=255, font=font, anchor="ls")

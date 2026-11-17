@@ -136,11 +136,14 @@ impl TimelinePane {
             TimelineMsg::SnapChanged(on) => self.snap = on,
             TimelineMsg::SnapToggled => self.snap = !self.snap,
             TimelineMsg::MagneticChanged(on) => {
+                studio.apply(concat_project::Command::SetTimelineMagnetic { enabled: on });
                 studio.prefs.magnetic = on;
                 studio.prefs.save(&studio.host.dirs);
             }
             TimelineMsg::MagneticToggled => {
-                studio.prefs.magnetic = !studio.prefs.magnetic;
+                let enabled = !studio.magnetic();
+                studio.apply(concat_project::Command::SetTimelineMagnetic { enabled });
+                studio.prefs.magnetic = enabled;
                 studio.prefs.save(&studio.host.dirs);
             }
             TimelineMsg::TrimFollowChanged(on) => {

@@ -1744,10 +1744,13 @@ export component MediaPane inherits Rectangle {
     in property <int> cb-scan-done;
     in property <int> cb-scan-total;
     in property <bool> cb-busy;
+    in property <string> cb-profile;
+    in property <string> cb-preview;
+    callback cb-plan-profile(json: string, images: string, videos: string, action: string);
     callback cb-import-folder();
     callback cb-refresh-folder();
     callback cb-choose-narration();
-    callback cb-generate-project(name: string, images: string, videos: string, coverage: int);
+    callback cb-generate-project(name: string, images: string, videos: string, coverage: int, profile: string);
 
     callback import-media();
     callback filter-changed(filter: MediaFilter);
@@ -2531,11 +2534,14 @@ export component MediaPane inherits Rectangle {
                     scan-done: root.cb-scan-done;
                     scan-total: root.cb-scan-total;
                     busy: root.cb-busy;
+                    profile: root.cb-profile;
+                    preview: root.cb-preview;
+                    plan-profile(json, images, videos, action) => { root.cb-plan-profile(json, images, videos, action); }
                     import-folder => { root.cb-import-folder(); }
                     refresh-folder => { root.cb-refresh-folder(); }
                     choose-narration => { root.cb-choose-narration(); }
-                    generate-project(name, images, videos, coverage) => {
-                        root.cb-generate-project(name, images, videos, coverage);
+                    generate-project(name, images, videos, coverage, profile) => {
+                        root.cb-generate-project(name, images, videos, coverage, profile);
                     }
                 }
 

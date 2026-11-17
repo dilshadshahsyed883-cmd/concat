@@ -117,11 +117,14 @@ export component Seat inherits Rectangle {
             cb-scan-done: Editor.cb-scan-done;
             cb-scan-total: Editor.cb-scan-total;
             cb-busy: Editor.cb-busy;
+            cb-profile: Editor.cb-profile;
+            cb-preview: Editor.cb-preview;
+            cb-plan-profile(json, images, videos, action) => { Editor.cb-plan-profile(json, images, videos, action); }
             cb-import-folder => { Editor.cb-import-folder(); }
             cb-refresh-folder => { Editor.cb-refresh-folder(); }
             cb-choose-narration => { Editor.cb-choose-narration(); }
-            cb-generate-project(name, images, videos, coverage) => {
-                Editor.cb-generate-project(name, images, videos, coverage);
+            cb-generate-project(name, images, videos, coverage, profile) => {
+                Editor.cb-generate-project(name, images, videos, coverage, profile);
             }
 
             import-media => { Editor.import-media(); }

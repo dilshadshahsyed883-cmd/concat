@@ -1,0 +1,539 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//! Explicit timeline edits, staged atomically before touching the open project.
+use super::*;
+trait ClipEnd {
+    fn end(&self) -> f64;
+}
+impl ClipEnd for Clip {
+    fn end(&self) -> f64 {
+        self.start + self.duration
+    }
+}
+
+fn refused(reason: &str) -> CommandError {
+    CommandError::UnsafeEdit {
+        reason: reason.into(),
+    }
+}
+fn scope(project: &Project, tracks: &[String], locked: &[String]) -> Result<(), CommandError> {
+    if tracks.is_empty() {
+        return Err(refused("Select at least one track"));
+    }
+    for id in tracks {
+        if project.active().track(id).is_none() {
+            return Err(CommandError::TrackGone);
+        }
+        if locked.contains(id) {
+            return Err(refused("Selected scope contains a locked track"));
+        }
+    }
+    Ok(())
+}
+fn links(project: &Project, tracks: &[String], from: f64) -> Result<(), CommandError> {
+    let timeline = project.active();
+    for clip in &timeline.clips {
+        if clip.end() <= from {
+            continue;
+        }
+        if let Some(parent) = clip.detached_from.as_ref().and_then(|id| timeline.clip(id)) {
+            if tracks.contains(&clip.track_id) != tracks.contains(&parent.track_id) {
+                return Err(refused(
+                    "Include both linked audio and video tracks to preserve sync",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn apply(
+    project: &mut Project,
+    mint: &mut IdMint,
+    command: Command,
+) -> Result<Outcome, CommandError> {
+    let mut staged = project.clone();
+    let outcome = match command {
+        Command::InsertMedia {
+            media_id,
+            track_id,
+            tracks,
+            locked_tracks,
+            time,
+            overwrite,
+        } => {
+            scope(&staged, &tracks, &locked_tracks)?;
+            if !tracks.contains(&track_id) {
+                return Err(refused("Destination must be in the selected scope"));
+            }
+            links(&staged, &tracks, time)?;
+            let media = staged
+                .media_by_id(&media_id)
+                .ok_or(CommandError::MediaGone)?
+                .clone();
+            let duration = super::clips::clip_length(&media);
+            if !duration.is_finite() || duration < MIN_CLIP_DURATION {
+                return Err(refused("Invalid source duration"));
+            }
+            let rate = staged.active().video;
+            let fps = rate.rate();
+            let time = (time.max(0.0) * fps).round() / fps;
+            let cut_ids: Vec<_> = staged
+                .active()
+                .clips
+                .iter()
+                .filter(|c| tracks.contains(&c.track_id) && c.start < time && c.end() > time)
+                .map(|c| c.id.clone())
+                .collect();
+            // Do not silently flatten a speed curve or round away a very short head/tail.
+            for id in &cut_ids {
+                let c = staged.active().clip(id).ok_or(CommandError::MediaGone)?;
+                if c.speed_curve.is_some()
+                    || time - c.start <= MIN_CLIP_DURATION
+                    || c.end() - time <= MIN_CLIP_DURATION
+                {
+                    return Err(refused(
+                        "Insert touches a speed curve or a sub-frame fragment; split/adjust the clip first",
+                    ));
+                }
+            }
+            let originals: Vec<_> = cut_ids
+                .iter()
+                .filter_map(|id| staged.active().clip(id).cloned())
+                .collect();
+            super::apply(
+                &mut staged,
+                mint,
+                Command::SplitClips {
+                    clip_ids: cut_ids,
+                    time,
+                },
+            )?;
+            let mut tails = std::collections::HashMap::new();
+            for original in &originals {
+                if let Some(tail) = staged.active().clips.iter().find(|c| {
+                    c.id != original.id
+                        && c.track_id == original.track_id
+                        && (c.start - time).abs() < 1e-8
+                }) {
+                    tails.insert(original.id.clone(), tail.id.clone());
+                }
+            }
+            for tail in staged
+                .active_mut()
+                .clips_where(|c| (c.start - time).abs() < 1e-8)
+            {
+                if let Some(parent) = tail.detached_from.as_ref().and_then(|id| tails.get(id)) {
+                    tail.detached_from = Some(parent.clone());
+                }
+            }
+            if overwrite {
+                let end = time + duration;
+                let end_ids = staged
+                    .active()
+                    .clips
+                    .iter()
+                    .filter(|c| c.track_id == track_id && c.start < end && c.end() > end)
+                    .map(|c| c.id.clone())
+                    .collect();
+                super::apply(
+                    &mut staged,
+                    mint,
+                    Command::SplitClips {
+                        clip_ids: end_ids,
+                        time: end,
+                    },
+                )?;
+                // Overwrite is explicit and affects only the destination lane.
+                staged
+                    .active_mut()
+                    .clips
+                    .retain(|c| !(c.track_id == track_id && c.start >= time && c.start < end));
+            } else {
+                for c in staged
+                    .active_mut()
+                    .clips_where(|c| tracks.contains(&c.track_id) && c.start >= time)
+                {
+                    c.start += duration;
+                }
+            }
+            let id = mint.next("c");
+            staged
+                .active_mut()
+                .clips
+                .push(Arc::new(super::clips::default_clip(
+                    id.clone(),
+                    track_id,
+                    &media,
+                    time,
+                )));
+            Outcome {
+                created_id: Some(id),
+                applied: true,
+            }
+        }
+        Command::ReplaceMediaInSlot {
+            clip_id,
+            media_id,
+            use_source_duration,
+            keep_edits,
+            tracks,
+            locked_tracks,
+        } => {
+            scope(&staged, &tracks, &locked_tracks)?;
+            let before = staged
+                .active()
+                .clip(&clip_id)
+                .ok_or(CommandError::MediaGone)?
+                .clone();
+            if !tracks.contains(&before.track_id) {
+                return Err(refused("Clip is outside selected scope"));
+            }
+            if !before.kind.is_visual() {
+                return Err(refused("Select an image or video clip"));
+            }
+            let media = staged
+                .media_by_id(&media_id)
+                .ok_or(CommandError::MediaGone)?
+                .clone();
+            if media.kind == MediaKind::Audio {
+                return Err(refused("Choose an image or video"));
+            }
+            let new_duration = if use_source_duration {
+                super::clips::clip_length(&media)
+            } else {
+                before.duration
+            };
+            let source_span = if keep_edits {
+                new_duration * before.speed.abs()
+            } else {
+                new_duration
+            };
+            if !new_duration.is_finite()
+                || new_duration < MIN_CLIP_DURATION
+                || (media.kind == MediaKind::Video
+                    && media
+                        .duration
+                        .is_none_or(|d| !d.is_finite() || d + 1e-6 < source_span))
+            {
+                return Err(refused(
+                    "New video is shorter than the slot; choose source-duration ripple or a longer source",
+                ));
+            }
+            if before.speed_curve.is_some() && keep_edits {
+                return Err(refused(
+                    "Reset edits before replacing a variable-speed clip",
+                ));
+            }
+            let delta = new_duration - before.duration;
+            if delta != 0.0 {
+                links(&staged, &tracks, before.start)?;
+            }
+            // Refuse a ripple that would collide with a spanning clip on another scoped lane.
+            if delta != 0.0
+                && staged.active().clips.iter().any(|c| {
+                    tracks.contains(&c.track_id)
+                        && c.id != clip_id
+                        && c.start < before.end()
+                        && c.end() > before.end()
+                })
+            {
+                return Err(refused(
+                    "A scoped clip spans the ripple boundary; split it first",
+                ));
+            }
+            let mut after = if keep_edits {
+                before.clone()
+            } else {
+                super::clips::default_clip(
+                    before.id.clone(),
+                    before.track_id.clone(),
+                    &media,
+                    before.start,
+                )
+            };
+            after.media_id = media_id;
+            after.kind = if media.kind == MediaKind::Image {
+                ClipKind::Image
+            } else {
+                ClipKind::Video
+            };
+            after.duration = new_duration;
+            after.source_start = 0.0;
+            after.name = media.name;
+            // Source-derived cached processing cannot be reused on unrelated media.
+            after.enhanced = None;
+            after.stabilize = None;
+            after.cutout = None;
+            if after.kind == ClipKind::Image {
+                after.audio_stream = None;
+            }
+            for c in &mut staged.active_mut().clips {
+                if c.id == clip_id {
+                    *c = Arc::new(after.clone());
+                } else if tracks.contains(&c.track_id) && c.start >= before.end() {
+                    Arc::make_mut(c).start += delta;
+                }
+            }
+            Outcome {
+                created_id: Some(clip_id),
+                applied: true,
+            }
+        }
+        Command::CloseTrackGaps {
+            track_id,
+            locked_tracks,
+            at,
+        } => {
+            scope(&staged, std::slice::from_ref(&track_id), &locked_tracks)?;
+            // Gap closing is a visual lane operation. Linked audio needs an explicit multi-track edit.
+            links(&staged, std::slice::from_ref(&track_id), 0.0)?;
+            let mut ordered: Vec<_> = staged
+                .active()
+                .clips
+                .iter()
+                .filter(|c| c.track_id == track_id)
+                .cloned()
+                .collect();
+            ordered.sort_by(|a, b| a.start.total_cmp(&b.start));
+            if ordered.iter().any(|c| !c.kind.is_visual()) {
+                return Err(refused("Gap close is restricted to a visual track"));
+            }
+            let mut commands = Vec::new();
+            let mut shift = 0.0;
+            for pair in ordered.windows(2) {
+                let gap = pair[1].start - pair[0].end();
+                // Preserve the intentional intro; selected gap is the one under the playhead.
+                if gap > 1e-6 && at.is_none_or(|t| t >= pair[0].end() && t < pair[1].start) {
+                    shift += gap;
+                }
+                if shift > 0.0 {
+                    commands.push(ClipMove {
+                        clip_id: pair[1].id.clone(),
+                        track_id: track_id.clone(),
+                        start: pair[1].start - shift,
+                    });
+                }
+            }
+            super::apply(&mut staged, mint, Command::MoveClips { moves: commands })?
+        }
+        Command::SetTimelineMagnetic { enabled } => {
+            let old = staged
+                .active_mut()
+                .extra
+                .insert("magnetic".into(), serde_json::Value::Bool(enabled));
+            Outcome {
+                created_id: None,
+                applied: old != Some(serde_json::Value::Bool(enabled)),
+            }
+        }
+        _ => unreachable!("editing commands only"),
+    };
+    *project = staged;
+    Ok(outcome)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::editor::Editor;
+    fn settings() -> crate::doc::DocumentSettings {
+        crate::doc::DocumentSettings {
+            name: "Test".into(),
+            width: 1920,
+            height: 1080,
+            rate_num: 30,
+            rate_den: 1,
+        }
+    }
+    fn fixture() -> Editor {
+        let mut project = Project::new();
+        project.media.push(MediaItem {
+            id: "m1".into(),
+            name: "Video".into(),
+            path: "video.mp4".into(),
+            duration: Some(10.0),
+            kind: MediaKind::Video,
+            ..Default::default()
+        });
+        project.media.push(MediaItem {
+            id: "m2".into(),
+            name: "Photo".into(),
+            path: "photo.png".into(),
+            kind: MediaKind::Image,
+            ..Default::default()
+        });
+        for (id, start) in [("c1", 0.0), ("c2", 10.0)] {
+            let mut c = Clip::blank(id, "T1", ClipKind::Video, "Original", start, 10.0);
+            c.media_id = "m1".into();
+            project.active_mut().clips.push(Arc::new(c));
+        }
+        Editor::from_document(&crate::doc::to_document(&settings(), &project)).unwrap()
+    }
+    fn insert(time: f64, locked: bool) -> Command {
+        Command::InsertMedia {
+            media_id: "m2".into(),
+            track_id: "T1".into(),
+            tracks: vec!["T1".into()],
+            locked_tracks: if locked { vec!["T1".into()] } else { vec![] },
+            time,
+            overwrite: false,
+        }
+    }
+    #[test]
+    fn insert_inside_is_source_continuous_and_one_undo() {
+        let mut e = fixture();
+        e.apply(insert(4.0, false)).unwrap();
+        let t = e.project().active();
+        assert_eq!(t.clips.len(), 4);
+        let tail = t.clips.iter().find(|c| c.start == 9.0).unwrap();
+        assert_eq!(tail.source_start, 4.0);
+        assert_eq!(tail.duration, 6.0);
+        assert_eq!(t.clip("c2").unwrap().start, 15.0);
+        assert!(e.undo());
+        assert_eq!(e.project().active().clips.len(), 2);
+        assert!(e.redo());
+    }
+    #[test]
+    fn rejected_edits_are_atomic() {
+        let mut e = fixture();
+        let before = e.to_document(&settings());
+        assert!(e.apply(insert(4.0, true)).is_err());
+        assert!(e.apply(insert(f64::NAN, false)).is_err());
+        assert_eq!(before, e.to_document(&settings()));
+    }
+    #[test]
+    fn replace_and_gap_close_keep_slot_and_intro() {
+        let mut e = fixture();
+        e.apply(Command::ReplaceMediaInSlot {
+            clip_id: "c1".into(),
+            media_id: "m2".into(),
+            use_source_duration: false,
+            keep_edits: true,
+            tracks: vec!["T1".into()],
+            locked_tracks: vec![],
+        })
+        .unwrap();
+        assert_eq!(e.project().active().clip("c1").unwrap().duration, 10.0);
+        assert_eq!(
+            e.project().active().clip("c1").unwrap().kind,
+            ClipKind::Image
+        );
+        e.apply(Command::MoveClips {
+            moves: vec![
+                ClipMove {
+                    clip_id: "c1".into(),
+                    track_id: "T1".into(),
+                    start: 3.0,
+                },
+                ClipMove {
+                    clip_id: "c2".into(),
+                    track_id: "T1".into(),
+                    start: 20.0,
+                },
+            ],
+        })
+        .unwrap();
+        e.apply(Command::CloseTrackGaps {
+            track_id: "T1".into(),
+            locked_tracks: vec![],
+            at: None,
+        })
+        .unwrap();
+        assert_eq!(e.project().active().clip("c1").unwrap().start, 3.0);
+        assert_eq!(e.project().active().clip("c2").unwrap().start, 13.0);
+        e.apply(Command::SetTimelineMagnetic { enabled: true })
+            .unwrap();
+        let saved = e.to_document(&settings());
+        let reopened = Editor::from_document(&saved).unwrap();
+        assert_eq!(reopened.project().active().extra["magnetic"], true);
+    }
+}
+
+#[cfg(test)]
+mod safety_tests {
+    use super::*;
+    #[test]
+    fn scope_guards_linked_tracks_and_preserves_tail_links() {
+        let mut p = Project::new();
+        p.media.push(MediaItem {
+            id: "m1".into(),
+            kind: MediaKind::Video,
+            duration: Some(10.0),
+            ..Default::default()
+        });
+        let mut video = Clip::blank("v1", "T1", ClipKind::Video, "V", 0.0, 10.0);
+        video.media_id = "m1".into();
+        let mut audio = Clip::blank("a1", "T3", ClipKind::Audio, "A", 0.0, 10.0);
+        audio.media_id = "m1".into();
+        audio.detached_from = Some("v1".into());
+        p.active_mut().clips = vec![Arc::new(video), Arc::new(audio)];
+        let mut mint = IdMint::default();
+        mint.adopt_project(&p);
+        let cmd = |tracks| Command::InsertMedia {
+            media_id: "m1".into(),
+            track_id: "T1".into(),
+            tracks,
+            locked_tracks: vec![],
+            time: 4.0,
+            overwrite: false,
+        };
+        assert!(apply(&mut p, &mut mint, cmd(vec!["T1".into()])).is_err());
+        assert_eq!(p.active().clips.len(), 2);
+        apply(&mut p, &mut mint, cmd(vec!["T1".into(), "T3".into()])).unwrap();
+        let vt = p
+            .active()
+            .clips
+            .iter()
+            .find(|c| c.track_id == "T1" && c.start == 14.0)
+            .unwrap();
+        let at = p
+            .active()
+            .clips
+            .iter()
+            .find(|c| c.track_id == "T3" && c.start == 14.0)
+            .unwrap();
+        assert_eq!(at.detached_from.as_deref(), Some(vt.id.as_str()));
+        assert_eq!(vt.source_start, 4.0);
+        assert_eq!(at.source_start, 4.0);
+    }
+    #[test]
+    fn selected_gap_and_many_clips_are_non_destructive() {
+        let mut p = Project::new();
+        for i in 0..1000 {
+            p.active_mut().clips.push(Arc::new(Clip::blank(
+                format!("c{i}"),
+                "T1",
+                ClipKind::Image,
+                "still",
+                3.0 + i as f64 * 2.0,
+                1.0,
+            )));
+        }
+        let mut mint = IdMint::default();
+        mint.adopt_project(&p);
+        apply(
+            &mut p,
+            &mut mint,
+            Command::CloseTrackGaps {
+                track_id: "T1".into(),
+                locked_tracks: vec![],
+                at: Some(4.5),
+            },
+        )
+        .unwrap();
+        assert_eq!(p.active().clip("c0").unwrap().start, 3.0);
+        assert_eq!(p.active().clip("c1").unwrap().start, 4.0);
+        assert_eq!(p.active().clip("c999").unwrap().start, 2000.0);
+        apply(
+            &mut p,
+            &mut mint,
+            Command::CloseTrackGaps {
+                track_id: "T1".into(),
+                locked_tracks: vec![],
+                at: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(p.active().clip("c999").unwrap().start, 1002.0);
+    }
+}

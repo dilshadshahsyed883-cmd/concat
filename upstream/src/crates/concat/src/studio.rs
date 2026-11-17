@@ -3923,11 +3923,10 @@ impl Studio {
                 ripple: true,
             })
         } else {
-            self.apply(Command::AddClip {
-                media_id: plan.media.clone(),
-                track_id,
-                start: f64::from(plan.start),
-                ripple: true,
+            let (tracks, locked_tracks) = self.edit_scope(&track_id);
+            self.apply(Command::InsertMedia {
+                media_id: plan.media.clone(), track_id, tracks, locked_tracks,
+                time: f64::from(plan.start), overwrite: false,
             })
         };
         if let Some(id) = created {
@@ -4017,17 +4016,20 @@ impl Studio {
             let clip = self.clip(&id)?;
             let original = clip.text.as_ref()?;
             let mut next = style.clone();
-            next.content = original.content.clone();
+            next.content = if preset == "cuda-caption.preset-2-yellow-bar" { original.content.to_uppercase() } else { original.content.clone() };
             if &next == original {
                 return None;
             }
-            Some(Command::UpdateClip {
-                clip_id: id,
-                patch: ClipPatch {
-                    text: Some(Some(next)),
-                    ..ClipPatch::default()
-                },
-            })
+            let mut commands = vec![Command::UpdateClip {
+                clip_id: id.clone(),
+                patch: ClipPatch { text: Some(Some(next)), ..ClipPatch::default() },
+            }];
+            if preset == "cuda-caption.preset-2-yellow-bar" {
+                commands.push(Command::SetClipTransform { clip_id: id,
+                    scale: None, offset_x: None, offset_y: Some(-0.35), rotation: None,
+                    stretch_x: None, stretch_y: None });
+            }
+            Some(Command::Batch { commands })
         }).collect();
         if !commands.is_empty() {
             self.apply(Command::Batch { commands });
@@ -4990,7 +4992,7 @@ impl Studio {
                 let speed = self.clip(&id).map_or(1.0, |clip| clip.speed as f32);
                 // A plain trim stops at the neighbours, as the command will;
                 // a magnetic one moves them, so the lane is all its room.
-                let (floor, ceiling) = if self.prefs.magnetic {
+                let (floor, ceiling) = if self.magnetic() {
                     (0.0, f32::INFINITY)
                 } else {
                     self.timeline()
@@ -5122,7 +5124,7 @@ impl Studio {
                         delta,
                         // Magnetic: the lane closes behind the edge.
                         // https://github.com/jub0t/Concat/issues/106
-                        ripple: self.prefs.magnetic,
+                        ripple: self.magnetic(),
                     });
                     // Trim follow: a magnetic head trim slides the clip back
                     // into the gap, and the playhead goes with its first
@@ -7691,7 +7693,7 @@ impl Studio {
             &ids,
             at,
             side,
-            self.prefs.magnetic,
+            self.magnetic(),
         ) else {
             self.notify(&t("studio.parkPlayheadInsideClip"), true);
             return;
@@ -7881,7 +7883,7 @@ impl Studio {
             self.remove_transition();
             return;
         }
-        let magnetic = self.prefs.magnetic;
+        let magnetic = self.magnetic();
         self.remove_selected(magnetic);
     }
 
@@ -8952,6 +8954,8 @@ impl Studio {
         editor.set_cb_scan_done(self.c_builder.scan_done.min(i32::MAX as usize) as i32);
         editor.set_cb_scan_total(self.c_builder.scan_total.min(i32::MAX as usize) as i32);
         editor.set_cb_busy(self.c_builder.scanning);
+        editor.set_cb_profile(self.c_builder.profile_json.clone().into());
+        editor.set_cb_preview(self.c_builder.preview.clone().into());
         editor.set_keys_undo(hint("undo").into());
         editor.set_keys_redo(hint("redo").into());
         editor.set_keys_split(hint("split").into());
@@ -9254,7 +9258,7 @@ impl Studio {
         editor.set_frame_rate(self.frame_rate());
         editor.set_tool(self.lanes.tool);
         editor.set_snap(self.lanes.snap);
-        editor.set_magnetic(self.prefs.magnetic);
+        editor.set_magnetic(self.magnetic());
         editor.set_trim_follow(self.prefs.trim_follow);
         editor.set_meters_shown(self.prefs.meters_shown());
         editor.set_preview_axis(self.prefs.preview_axis);
@@ -11483,6 +11487,8 @@ impl Studio {
             clip.volume <= 0.0,
             !locked && audible,
         ));
+        rows.push(action("close-gap", "Close Gap at Playhead".into(), Glyph::None, "", !locked));
+        rows.push(action("close-gaps", "Close All Internal Gaps on Track".into(), Glyph::None, "", !locked));
         rows.push(check("lock", &t("studio.lockTrack"), "", locked, true));
         rows.push(rule());
         rows.push(MenuItemData {
@@ -11547,6 +11553,11 @@ impl Studio {
         };
         let mut rows = vec![
             action("add", t("studio.addAtPlayhead"), Glyph::Plus, false),
+            action("insert-ripple", "Ripple Insert at Playhead (selected tracks)".into(), Glyph::Plus, false),
+            action("insert-overwrite", "Overwrite at Playhead (destination track)".into(), Glyph::Plus, false),
+            action("replace-slot", "Replace Selected Clip — Keep Duration and Edits".into(), Glyph::None, false),
+            action("replace-reset", "Replace Selected Clip — Keep Duration, Reset Edits".into(), Glyph::None, false),
+            action("replace-ripple", "Replace Selected Clip — Source Duration (Ripple)".into(), Glyph::None, false),
             rule(),
         ];
         if item.kind != model::MediaKind::Audio
@@ -11580,6 +11591,20 @@ impl Studio {
     }
 
     /// A row of a bin card's menu, for the media it was opened on.
+    /// The project's override of the user's default magnetic editing preference.
+    pub fn magnetic(&self) -> bool {
+        self.timeline().extra.get("magnetic").and_then(serde_json::Value::as_bool)
+            .unwrap_or(self.prefs.magnetic)
+    }
+
+    fn edit_scope(&self, destination: &str) -> (Vec<String>, Vec<String>) {
+        let mut tracks: Vec<String> = self.selection.iter().filter_map(|id| self.clip(id))
+            .map(|c| c.track_id.clone()).collect();
+        tracks.push(destination.to_owned()); tracks.sort(); tracks.dedup();
+        let locked = self.timeline().tracks.iter().filter(|t| self.locked(&t.id)).map(|t|t.id.clone()).collect();
+        (tracks, locked)
+    }
+
     pub fn media_action(&mut self, id: &str, action: &str) {
         log::info!("media menu: {action} on {id}");
         let Some(row) = self.media.row_of(id) else {
@@ -11593,6 +11618,26 @@ impl Studio {
             range,
         };
         match action {
+            "insert-ripple" | "insert-overwrite" => {
+                let destination = self.selection.first().and_then(|id| self.clip(id)).map(|c| c.track_id.clone())
+                    .or_else(|| self.timeline().tracks.iter().find(|t| !self.locked(&t.id)).map(|t| t.id.clone()));
+                if let Some(track_id) = destination {
+                    let (mut tracks, locked_tracks) = self.edit_scope(&track_id);
+                    if action == "insert-overwrite" { tracks = vec![track_id.clone()]; }
+                    self.apply(Command::InsertMedia { media_id: id.to_owned(), track_id, tracks, locked_tracks,
+                        time: f64::from(self.playhead), overwrite: action == "insert-overwrite" });
+                }
+            }
+            "replace-slot" | "replace-reset" | "replace-ripple" => {
+                if let Some(clip_id) = self.sole_selection() {
+                    if let Some(track_id) = self.clip(&clip_id).map(|c| c.track_id.clone()) {
+                        let (tracks, locked_tracks) = self.edit_scope(&track_id);
+                        self.apply(Command::ReplaceMediaInSlot { clip_id, media_id: id.to_owned(),
+                            use_source_duration: action == "replace-ripple", keep_edits: action != "replace-reset",
+                            tracks, locked_tracks });
+                    }
+                } else { self.notify("Select one timeline clip to replace", true); }
+            }
             "add" => self.place_at_playhead(&format!("media:{row}")),
             "remove" => self.handle(crate::panes::Msg::Media(
                 crate::panes::media_bin::MediaMsg::Remove(row),
@@ -11838,7 +11883,7 @@ impl Studio {
                     enabled: true,
                     danger: false,
                     checkable: true,
-                    checked: self.prefs.magnetic,
+                    checked: self.magnetic(),
                 },
             ],
             2 => vec![
@@ -12245,11 +12290,16 @@ impl Studio {
                     },
                 });
             }
+            "close-gap" | "close-gaps" => {
+                let (_, locked_tracks) = self.edit_scope(&clip.track_id);
+                self.apply(Command::CloseTrackGaps { track_id: clip.track_id.clone(), locked_tracks,
+                    at: if action == "close-gap" { Some(f64::from(self.playhead)) } else { None } });
+            }
             "lock" => self.toggle_lock(&clip.track_id),
             // A clip that is part of the selection takes the selection with
             // it: Delete on one of five selected clips means the five.
             "delete" | "ripple-delete" => {
-                let ripple = action == "ripple-delete" || self.prefs.magnetic;
+                let ripple = action == "ripple-delete" || self.magnetic();
                 if self.selection.len() > 1 && self.selection.iter().any(|held| held == id) {
                     self.remove_selected(ripple);
                 } else {

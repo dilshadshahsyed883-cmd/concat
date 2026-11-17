@@ -28,6 +28,7 @@ pub mod model;
 pub mod motion_preset;
 pub mod physics_motion;
 pub mod placement;
+pub mod planning;
 pub mod speed;
 pub mod srt;
 
