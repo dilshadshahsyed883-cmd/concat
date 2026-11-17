@@ -30,6 +30,10 @@ jobs:
           docker run --rm --entrypoint python3 "$image" -c "from cloud_render.concat.gpu.worker import RenderWorker; from cloud_render.concat.hybrid.project import validate_gpu_manifest; print('Cuda worker and compatibility validator import PASS')"
           docker run --rm --entrypoint python3 -e EXPECTED_SOURCE_SHA="$GITHUB_SHA" -v "$PWD:/src:ro" "$image" /src/tools/release_image_smoke.py > image-smoke.json
           docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image" | grep -Fx "$GITHUB_SHA"
+          export SMOKE_TOKEN="$(openssl rand -hex 32)"
+          docker run -d --name concat-release-smoke -p 127.0.0.1:18080:8080 -e RENDERER_API_TOKEN="$SMOKE_TOKEN" "$image"
+          trap 'docker logs concat-release-smoke --tail 30 >&2 || true; docker rm -f concat-release-smoke >/dev/null 2>&1 || true' EXIT
+          python3 tools/verify_container_entrypoint.py
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker push "$image"
           docker logout ghcr.io
