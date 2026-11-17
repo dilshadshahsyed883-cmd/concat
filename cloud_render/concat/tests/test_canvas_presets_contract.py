@@ -48,6 +48,23 @@ class CanvasPresetContracts(unittest.TestCase):
         files=list(Path(directory).glob('canvas-*.json'))
         self.assertEqual(len(files),6)
         for file in files:
-            with self.subTest(file=file.name):validate_gpu_manifest(json.loads(file.read_text()))
+            with self.subTest(file=file.name):
+                document = json.loads(file.read_text())
+                validate_gpu_manifest(document)
+                timeline = document['timelines'][0]
+                clips = timeline['clips']
+                # These fixtures come from the native Canvas preset application,
+                # not from a reconstructed preview. The GPU project consumer
+                # must see compositing layers and user-authored text only.
+                self.assertFalse(any(c.get('canvasRole') in ('headline', 'headlineText')
+                                     for c in clips))
+                self.assertFalse(any(t.get('canvasRole') in ('banner', 'headline')
+                                     for t in timeline['tracks']))
+                self.assertTrue(any(c.get('canvasRole') == 'backdrop' for c in clips))
+                self.assertTrue(any(c.get('canvasRole') == 'frame' for c in clips)
+                                if 'canvas-3-' not in file.name else True)
+                self.assertEqual(len([c for c in clips if c.get('canvasRole') == 'badgeText']), 1)
+                plan = load_fixture(document)
+                self.assertGreaterEqual(len(plan.lanes), 2)
 
 if __name__=='__main__':unittest.main()
