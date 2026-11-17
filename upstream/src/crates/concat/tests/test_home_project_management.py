@@ -81,7 +81,7 @@ class HomeProjectManagement(unittest.TestCase):
 
     def test_no_independent_editor_c_builder_tab_is_added(self):
         app = (ROOT / "concat/ui/app.slint").read_text(encoding="utf-8")
-        self.assertIn("if (root.on-start && !root.c-builder-home): StartScreen", app)
+        self.assertIn("if root.on-start && !root.c-builder-home: StartScreen", app)
 
 
 if __name__ == "__main__":
