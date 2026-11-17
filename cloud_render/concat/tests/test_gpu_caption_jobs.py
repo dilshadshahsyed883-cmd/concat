@@ -178,7 +178,10 @@ class CaptionJobsTests(unittest.TestCase):
         self.assertEqual(modern["position"], {"x": .5, "y": .86})
         self.assertFalse(validate_request(REQUEST)["renderAfter"])
         dockerfile = (Path(__file__).resolve().parents[1] / "gpu/Dockerfile").read_text()
-        self.assertIn("COPY cloud_render/concat/gpu/caption_jobs.py", dockerfile)
+        self.assertTrue(
+            "COPY cloud_render/concat/gpu/ /opt/app/cloud_render/concat/gpu/" in dockerfile
+            or "COPY cloud_render/concat/gpu/caption_jobs.py /opt/app/cloud_render/concat/gpu/caption_jobs.py" in dockerfile,
+            "caption engine must ship individually or with the complete worker directory")
         self.assertIn("COPY upstream/src/crates/concat/text-presets/", dockerfile)
 
 
