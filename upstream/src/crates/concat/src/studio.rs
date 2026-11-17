@@ -3958,7 +3958,7 @@ impl Studio {
             let (tracks, locked_tracks) = self.edit_scope(&track_id);
             self.apply(Command::InsertMedia {
                 media_id: plan.media.clone(), track_id, tracks, locked_tracks,
-                time: f64::from(plan.start), overwrite: false,
+                time: f64::from(plan.start), overwrite: false, linked_audio: false,
             })
         };
         if let Some(id) = created {
@@ -11627,7 +11627,7 @@ impl Studio {
         };
         let mut rows = vec![
             action("add", t("studio.addAtPlayhead"), Glyph::Plus, false),
-            action("insert-ripple", "Ripple Insert at Playhead (selected tracks)".into(), Glyph::Plus, false),
+            action("insert-ripple", "Ripple Insert at Playhead (visual tracks only)".into(), Glyph::Plus, false),
             action("insert-overwrite", "Overwrite at Playhead (destination track)".into(), Glyph::Plus, false),
             action("replace-slot", "Replace Selected Clip — Keep Duration and Edits".into(), Glyph::None, false),
             action("replace-reset", "Replace Selected Clip — Keep Duration, Reset Edits".into(), Glyph::None, false),
@@ -11718,7 +11718,7 @@ impl Studio {
                             match result {
                                 Ok(item)=>if let Some(track_id)=studio.clip(&clip_id).map(|c|c.track_id.clone()) {
                                     let(tracks,locked_tracks)=studio.edit_scope(&track_id);
-                                    studio.apply(Command::ReplaceMediaFromFile {clip_id,item,use_source_duration:false,keep_edits:true,tracks,locked_tracks});
+                                    studio.apply(Command::ReplaceMediaFromFile {clip_id,item,use_source_duration:false,keep_edits:true,tracks,locked_tracks,linked_audio:false});
                                 },
                                 Err(e)=>studio.notify(&e,true),
                             }
@@ -11731,6 +11731,21 @@ impl Studio {
     pub fn magnetic(&self) -> bool {
         self.timeline().extra.get("magnetic").and_then(serde_json::Value::as_bool)
             .unwrap_or(self.prefs.magnetic)
+    }
+
+    /// Audio lanes may be empty at the playhead while still containing a
+    /// continuous narration elsewhere. They are never a default visual target.
+    fn visual_lane(&self, id: &str) -> bool {
+        !self.timeline().clips.iter().any(|clip|
+            clip.track_id == id && clip.kind == model::ClipKind::Audio)
+            && self.timeline().track(id).is_some_and(|track| {
+                track.extra.get("audioOnly").and_then(serde_json::Value::as_bool) != Some(true)
+                    && !["kind", "type", "mediaKind", "contentType"].iter().any(|key| {
+                        track.extra.get(*key).and_then(serde_json::Value::as_str)
+                            .is_some_and(|value| matches!(value.to_ascii_lowercase().as_str(),
+                                "audio" | "audio-only" | "audio_only" | "sound"))
+                    })
+            })
     }
 
     fn edit_scope(&self, destination: &str) -> (Vec<String>, Vec<String>) {
@@ -11755,13 +11770,21 @@ impl Studio {
         };
         match action {
             "insert-ripple" | "insert-overwrite" => {
-                let destination = self.selection.first().and_then(|id| self.clip(id)).map(|c| c.track_id.clone())
-                    .or_else(|| self.timeline().tracks.iter().find(|t| !self.locked(&t.id)).map(|t| t.id.clone()));
+                let visual = self.project().media_by_id(id)
+                    .is_some_and(|item| item.kind != model::MediaKind::Audio);
+                let destination = self.selection.iter().filter_map(|id| self.clip(id))
+                    .find(|clip| !self.locked(&clip.track_id)
+                        && (!visual || (clip.kind.is_visual() && self.visual_lane(&clip.track_id))))
+                    .map(|clip| clip.track_id.clone())
+                    .or_else(|| self.timeline().tracks.iter()
+                        .find(|t| !self.locked(&t.id) && (!visual || self.visual_lane(&t.id)))
+                        .map(|t| t.id.clone()));
                 if let Some(track_id) = destination {
                     let (mut tracks, locked_tracks) = self.edit_scope(&track_id);
                     if action == "insert-overwrite" { tracks = vec![track_id.clone()]; }
                     self.apply(Command::InsertMedia { media_id: id.to_owned(), track_id, tracks, locked_tracks,
-                        time: f64::from(self.playhead), overwrite: action == "insert-overwrite" });
+                        time: f64::from(self.playhead), overwrite: action == "insert-overwrite",
+                        linked_audio: false });
                 }
             }
             "replace-slot" | "replace-reset" | "replace-ripple" => {
@@ -11770,7 +11793,7 @@ impl Studio {
                         let (tracks, locked_tracks) = self.edit_scope(&track_id);
                         self.apply(Command::ReplaceMediaInSlot { clip_id, media_id: id.to_owned(),
                             use_source_duration: action == "replace-ripple", keep_edits: action != "replace-reset",
-                            tracks, locked_tracks });
+                            tracks, locked_tracks, linked_audio: false });
                     }
                 } else { self.notify("Select one timeline clip to replace", true); }
             }

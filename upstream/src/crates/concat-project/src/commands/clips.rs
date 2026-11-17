@@ -29,6 +29,11 @@ pub(super) fn apply(
             if timeline.track(&track_id).is_none() {
                 return Err(CommandError::TrackGone);
             }
+            if media.kind != MediaKind::Audio && super::editing::audio_lane(timeline, &track_id) {
+                return Err(CommandError::UnsafeEdit {
+                    reason: "Cannot place visual media on a narration track".into(),
+                });
+            }
             // Magnetic, the lane makes room; otherwise the clip takes the
             // nearest gap it fits, never the top of another clip.
             let start = if ripple {
@@ -53,7 +58,11 @@ pub(super) fn apply(
                 .clone();
             let duration = clip_length(&media);
             let timeline = project.active_mut();
-            let track_id = first_free_track(timeline, start, duration)
+            let track_id = timeline.tracks.iter()
+                .find(|track| (media.kind == MediaKind::Audio
+                    || !super::editing::audio_lane(timeline, &track.id))
+                    && timeline.is_free(&track.id, start, duration, &[]))
+                .map(|track| track.id.clone())
                 .unwrap_or_else(|| fresh_track(timeline, mint));
             let id = mint.next("c");
             timeline
@@ -88,12 +97,21 @@ pub(super) fn apply(
             }
             let start = start.max(0.0);
             let total: f64 = items.iter().map(clip_length).sum();
+            let has_visual = items.iter().any(|item| item.kind != MediaKind::Audio);
             let timeline = project.active_mut();
             let free_range = track_id.is_none();
             let track_id = match track_id {
                 Some(id) if timeline.track(&id).is_none() => return Err(CommandError::TrackGone),
+                Some(id) if has_visual && super::editing::audio_lane(timeline, &id) => {
+                    return Err(CommandError::UnsafeEdit {
+                        reason: "Cannot ripple visual media through narration".into(),
+                    });
+                }
                 Some(id) => id,
-                None => first_free_track(timeline, start, total)
+                None => timeline.tracks.iter()
+                    .find(|track| (!has_visual || !super::editing::audio_lane(timeline, &track.id))
+                        && timeline.is_free(&track.id, start, total, &[]))
+                    .map(|track| track.id.clone())
                     .unwrap_or_else(|| fresh_track(timeline, mint)),
             };
             let mut at = start;

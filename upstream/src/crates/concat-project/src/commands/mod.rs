@@ -527,17 +527,22 @@ pub enum Command {
         /// The stroke, in source fractions.
         stroke: Stroke,
     },
-    /// Inserts at a frame-aligned playhead; splits intersecting clips and ripples an explicit scope.
+    /// Frame-aligned insert. Visual inserts never edit independent audio by default.
+    /// Set linked_audio only for an intentional multi-lane linked A/V edit.
     InsertMedia {
         media_id: String, track_id: String, tracks: Vec<String>, locked_tracks: Vec<String>,
         time: f64, overwrite: bool,
+        #[serde(default)]
+        linked_audio: bool,
     },
     /// Probe/import a replacement source and update the slot atomically, retaining one Undo.
-    ReplaceMediaFromFile { clip_id:String, item:NewMedia, use_source_duration:bool, keep_edits:bool, tracks:Vec<String>, locked_tracks:Vec<String> },
+    ReplaceMediaFromFile { clip_id:String, item:NewMedia, use_source_duration:bool, keep_edits:bool, tracks:Vec<String>, locked_tracks:Vec<String>, #[serde(default)] linked_audio:bool },
     /// Replaces a visual source, optionally resizing its slot and rippling the explicit scope.
     ReplaceMediaInSlot {
         clip_id: String, media_id: String, use_source_duration: bool, keep_edits: bool,
         tracks: Vec<String>, locked_tracks: Vec<String>,
+        #[serde(default)]
+        linked_audio: bool,
     },
     /// Closes internal visual gaps only. `at` selects the gap under the playhead; None closes all.
     CloseTrackGaps { track_id: String, locked_tracks: Vec<String>, at: Option<f64> },

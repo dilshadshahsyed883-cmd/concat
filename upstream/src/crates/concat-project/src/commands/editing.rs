@@ -15,6 +15,22 @@ fn refused(reason: &str) -> CommandError {
         reason: reason.into(),
     }
 }
+
+/// A narration lane can be marked audio-only, or simply contain sound.
+/// Never place a visual clip there, even during a gap in the waveform.
+pub(super) fn audio_lane(timeline: &Timeline, id: &str) -> bool {
+    timeline.clips.iter().any(|c| c.track_id == id && c.kind == ClipKind::Audio)
+        || timeline.track(id).is_some_and(|track| {
+            track.extra.get("audioOnly").and_then(serde_json::Value::as_bool) == Some(true)
+                || ["kind", "type", "mediaKind", "contentType"].iter().any(|key| {
+                    track.extra.get(*key).and_then(serde_json::Value::as_str)
+                        .is_some_and(|kind| matches!(
+                            kind.to_ascii_lowercase().as_str(),
+                            "audio" | "audio-only" | "audio_only" | "sound"
+                        ))
+                })
+        })
+}
 fn scope(project: &Project, tracks: &[String], locked: &[String]) -> Result<(), CommandError> {
     if tracks.is_empty() {
         return Err(refused("Select at least one track"));
@@ -70,20 +86,29 @@ pub(super) fn apply(
         Command::InsertMedia {
             media_id,
             track_id,
-            tracks,
+            mut tracks,
             locked_tracks,
             time,
             overwrite,
+            linked_audio,
         } => {
+            let media = staged
+                .media_by_id(&media_id)
+                .ok_or(CommandError::MediaGone)?
+                .clone();
+            if media.kind != MediaKind::Audio && !linked_audio {
+                if audio_lane(staged.active(), &track_id) {
+                    return Err(refused("Cannot insert visual media onto a narration track"));
+                }
+                // UI selection can contain narration; selection alone never
+                // opts that sound into a visual ripple or split.
+                tracks.retain(|id| !audio_lane(staged.active(), id));
+            }
             scope(&staged, &tracks, &locked_tracks)?;
             if !tracks.contains(&track_id) {
                 return Err(refused("Destination must be in the selected scope"));
             }
             links(&staged, &tracks, time)?;
-            let media = staged
-                .media_by_id(&media_id)
-                .ok_or(CommandError::MediaGone)?
-                .clone();
             let duration = super::clips::clip_length(&media);
             if !duration.is_finite() || duration < MIN_CLIP_DURATION {
                 return Err(refused("Invalid source duration"));
@@ -192,6 +217,7 @@ pub(super) fn apply(
             keep_edits,
             tracks,
             locked_tracks,
+            linked_audio,
         } => {
             let media_id = if let Some(existing) = staged.media.iter().find(|m| m.path == item.path)
             {
@@ -211,6 +237,7 @@ pub(super) fn apply(
                     keep_edits,
                     tracks,
                     locked_tracks,
+                    linked_audio,
                 },
             )?
         }
@@ -219,9 +246,13 @@ pub(super) fn apply(
             media_id,
             use_source_duration,
             keep_edits,
-            tracks,
+            mut tracks,
             locked_tracks,
+            linked_audio,
         } => {
+            if !linked_audio {
+                tracks.retain(|id| !audio_lane(staged.active(), id));
+            }
             scope(&staged, &tracks, &locked_tracks)?;
             let before = staged
                 .active()
@@ -619,6 +650,7 @@ mod tests {
             locked_tracks: if locked { vec!["T1".into()] } else { vec![] },
             time,
             overwrite: false,
+            linked_audio: false,
         }
     }
     #[test]
@@ -653,6 +685,7 @@ mod tests {
             keep_edits: true,
             tracks: vec!["T1".into()],
             locked_tracks: vec![],
+            linked_audio: false,
         })
         .unwrap();
         assert_eq!(e.project().active().clip("c1").unwrap().duration, 10.0);
@@ -711,17 +744,20 @@ mod safety_tests {
         p.active_mut().clips = vec![Arc::new(video), Arc::new(audio)];
         let mut mint = IdMint::default();
         mint.adopt_project(&p);
-        let cmd = |tracks| Command::InsertMedia {
+        let cmd = |tracks, linked_audio| Command::InsertMedia {
             media_id: "m1".into(),
             track_id: "T1".into(),
             tracks,
             locked_tracks: vec![],
             time: 4.0,
             overwrite: false,
+            linked_audio,
         };
-        assert!(apply(&mut p, &mut mint, cmd(vec!["T1".into()])).is_err());
+        assert!(apply(&mut p, &mut mint, cmd(vec!["T1".into()], false)).is_err());
         assert_eq!(p.active().clips.len(), 2);
-        apply(&mut p, &mut mint, cmd(vec!["T1".into(), "T3".into()])).unwrap();
+        assert!(apply(&mut p, &mut mint, cmd(vec!["T1".into(), "T3".into()], false)).is_err());
+        assert_eq!(p.active().clips.len(), 2);
+        apply(&mut p, &mut mint, cmd(vec!["T1".into(), "T3".into()], true)).unwrap();
         let vt = p
             .active()
             .clips
@@ -864,5 +900,157 @@ mod interaction_tests {
             assert_eq!(p.active().clips.len(), 2);
         }
         assert!(!p.extra.contains_key("gpuCaptionRequest"));
+    }
+}
+
+#[cfg(test)]
+mod visual_audio_protection_tests {
+    use super::*;
+    use crate::{DocumentSettings, Editor};
+
+    fn settings() -> DocumentSettings {
+        DocumentSettings {
+            name: "Narration regression".into(),
+            width: 1920,
+            height: 1080,
+            rate_num: 30,
+            rate_den: 1,
+        }
+    }
+
+    fn fixture() -> Editor {
+        let mut project = Project::new();
+        project.media.push(MediaItem {
+            id: "video".into(), kind: MediaKind::Video,
+            path: "visual.mp4".into(), duration: Some(8.0),
+            ..Default::default()
+        });
+        project.media.push(MediaItem {
+            id: "image".into(), kind: MediaKind::Image,
+            path: "still.png".into(), ..Default::default()
+        });
+        project.media.push(MediaItem {
+            id: "voice-media".into(), kind: MediaKind::Audio,
+            path: "voice.wav".into(), duration: Some(60.0),
+            ..Default::default()
+        });
+        let mut v1 = Clip::blank("v1", "T1", ClipKind::Video, "visual1", 0.0, 10.0);
+        v1.media_id = "video".into();
+        let mut v2 = Clip::blank("v2", "T1", ClipKind::Video, "visual2", 10.0, 10.0);
+        v2.media_id = "video".into();
+        let mut narration = Clip::blank("voice", "T3", ClipKind::Audio, "Narration", 0.0, 60.0);
+        narration.media_id = "voice-media".into();
+        narration.source_start = 0.5;
+        project.active_mut().clips.extend([Arc::new(v1), Arc::new(v2), Arc::new(narration)]);
+        Editor::from_document(&crate::doc::to_document(&settings(), &project)).unwrap()
+    }
+
+    fn voice(editor: &Editor) -> Clip {
+        editor.project().active().clip("voice").unwrap().clone()
+    }
+
+    #[test]
+    fn insert_at_playhead_preserves_narration_in_ripple_overwrite_and_locked_modes() {
+        for media in ["image", "video"] {
+            for overwrite in [false, true] {
+                let mut editor = fixture();
+                let narration = voice(&editor);
+                let before = editor.to_document(&settings());
+                editor.apply(Command::InsertMedia {
+                    media_id: media.into(),
+                    track_id: "T1".into(),
+                    // A stale UI selection may include narration and even its locked lane.
+                    tracks: vec!["T1".into(), "T3".into()],
+                    locked_tracks: vec!["T3".into()],
+                    time: 4.0,
+                    overwrite,
+                    linked_audio: false,
+                }).unwrap();
+                assert_eq!(voice(&editor), narration);
+                assert_eq!(editor.project().active().clips.iter()
+                    .filter(|c| c.kind == ClipKind::Audio).count(), 1);
+                assert!(editor.project().active().clips.iter()
+                    .any(|c| c.track_id == "T1" && c.start == 4.0 && c.media_id == media));
+                let saved = editor.to_document(&settings());
+                let reopened = Editor::from_document(&saved).unwrap();
+                assert_eq!(voice(&reopened), narration);
+                assert!(editor.undo());
+                assert_eq!(editor.to_document(&settings()), before);
+                assert!(editor.redo());
+                assert_eq!(voice(&editor), narration);
+                assert_eq!(editor.to_document(&settings()), saved);
+            }
+        }
+    }
+
+    #[test]
+    fn visual_replace_and_magnet_moves_leave_waveform_and_id_untouched() {
+        for magnetic in [false, true] {
+            let mut editor = fixture();
+            let narration = voice(&editor);
+            editor.apply(Command::SetTimelineMagnetic { enabled: magnetic }).unwrap();
+            editor.apply(Command::ReplaceMediaInSlot {
+                clip_id: "v1".into(), media_id: "image".into(),
+                use_source_duration: true, keep_edits: false,
+                tracks: vec!["T1".into(), "T3".into()],
+                locked_tracks: vec!["T3".into()],
+                linked_audio: false,
+            }).unwrap();
+            assert_eq!(voice(&editor), narration);
+            editor.apply(Command::ScopedMoveClips {
+                moves: vec![ClipMove {
+                    clip_id: "v2".into(), track_id: "T2".into(), start: 22.0,
+                }],
+                locked_tracks: vec!["T3".into()], magnetic,
+            }).unwrap();
+            assert_eq!(voice(&editor), narration);
+            assert!(editor.undo());
+            assert_eq!(voice(&editor), narration);
+            assert!(editor.redo());
+            assert_eq!(voice(&editor), narration);
+        }
+    }
+
+    #[test]
+    fn visual_drop_cannot_use_audio_lane_but_first_free_avoids_it() {
+        let mut editor = fixture();
+        let narration = voice(&editor);
+        let before = editor.to_document(&settings());
+        for command in [
+            Command::AddClip { media_id: "image".into(), track_id: "T3".into(),
+                start: 3.0, ripple: true },
+            Command::AddClipsInSequence { media_ids: vec!["image".into(), "video".into()],
+                track_id: Some("T3".into()), start: 3.0, ripple: true },
+            Command::InsertMedia { media_id: "image".into(), track_id: "T3".into(),
+                tracks: vec!["T3".into()], locked_tracks: vec![],
+                time: 3.0, overwrite: false, linked_audio: false },
+        ] {
+            assert!(editor.apply(command).is_err());
+            assert_eq!(editor.to_document(&settings()), before);
+        }
+        let inserted = editor.apply(Command::AddClipAtFirstFree {
+            media_id: "image".into(), start: 30.0,
+        }).unwrap().created_id.unwrap();
+        assert_ne!(editor.project().active().clip(&inserted).unwrap().track_id, "T3");
+        assert_eq!(voice(&editor), narration);
+    }
+
+    #[test]
+    fn visual_batch_ripple_only_retimes_its_own_track() {
+        let mut editor = fixture();
+        let narration = voice(&editor);
+        editor.apply(Command::AddClipsInSequence {
+            media_ids: vec!["image".into(), "video".into()],
+            track_id: Some("T1".into()), start: 10.0, ripple: true,
+        }).unwrap();
+        assert_eq!(voice(&editor), narration);
+        assert_eq!(editor.project().active().clips.iter()
+            .filter(|c| c.kind == ClipKind::Audio).count(), 1);
+        let saved = editor.to_document(&settings());
+        assert_eq!(voice(&Editor::from_document(&saved).unwrap()), narration);
+        assert!(editor.undo());
+        assert_eq!(voice(&editor), narration);
+        assert!(editor.redo());
+        assert_eq!(voice(&editor), narration);
     }
 }

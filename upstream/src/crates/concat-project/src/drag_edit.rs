@@ -565,6 +565,17 @@ fn calculate(
     {
         staged = project.clone();
     }
+    // Preview and commit share this invariant: an unselected narration clip
+    // must remain byte-for-byte the same, even if magnet/ripple touches its lane.
+    if has_visual {
+        for clip in timeline.clips.iter().filter(|c|
+            c.kind == ClipKind::Audio && !selected.contains(&c.id))
+        {
+            if staged.active().clip(&clip.id) != Some(clip.as_ref()) {
+                return Err(refuse("Visual drag would retime independent narration"));
+            }
+        }
+    }
     let ripple_count = staged
         .active()
         .clips
@@ -735,6 +746,41 @@ mod tests {
         );
         assert_eq!(p.active().clip("a").unwrap().keys, keys);
     }
+
+    #[test]
+    fn free_and_ripple_drag_preserve_independent_locked_narration_and_undo() {
+        for mode in [DragMode::Free, DragMode::Ripple] {
+            for magnetic in [false, true] {
+                let mut p = fixture();
+                let mut narration = Clip::blank(
+                    "voice", "T3", ClipKind::Audio, "Narration", 0.0, 50.0,
+                );
+                narration.source_start = 2.0;
+                narration.media_id = "voice-media".into();
+                p.media.push(MediaItem {
+                    id: "voice-media".into(), path: "voice.wav".into(),
+                    kind: MediaKind::Audio, duration: Some(60.0),
+                    ..Default::default()
+                });
+                p.active_mut().clips.push(Arc::new(narration.clone()));
+                let before = to_document(&settings(), &p);
+                let mut editor = Editor::from_document(&before).unwrap();
+                let mut move_request = request("b", 10.0, "T2", mode);
+                move_request.magnetic = magnetic;
+                move_request.locked_tracks.push("T3".into());
+                editor.apply(Command::DragClips { request: move_request }).unwrap();
+                assert_eq!(editor.project().active().clip("voice").unwrap(), &narration);
+                let saved = editor.to_document(&settings());
+                let reopened = Editor::from_document(&saved).unwrap();
+                assert_eq!(reopened.project().active().clip("voice").unwrap(), &narration);
+                assert!(editor.undo());
+                assert_eq!(editor.to_document(&settings()), before);
+                assert!(editor.redo());
+                assert_eq!(editor.project().active().clip("voice").unwrap(), &narration);
+            }
+        }
+    }
+
     #[test]
     fn explicit_audio_lane_and_locked_track_are_protected() {
         let mut p = fixture();
