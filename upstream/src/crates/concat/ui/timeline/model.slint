@@ -387,6 +387,8 @@ export enum ClipTextField {
 /// for it; `present: false` when none is.
 export struct SelectedTransitionData {
     present: bool,
+    /// Incoming clip identity, so a draft duration follows its selected cut.
+    id: string,
     /// its package's name, in the interface's language
     name: string,
     /// seconds it covers

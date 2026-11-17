@@ -2023,17 +2023,17 @@ export component MediaPane inherits Rectangle {
                             current: root.tab == 5;
                             clicked => { root.tab = 5; }
                         }
-                        LibraryTab {
-                            glyph: Glyph.slot;
-                            label: I18n.t("mediaPane.templates");
-                            current: root.tab == 6;
-                            clicked => { root.tab = 6; }
-                        }
                         if GpuCompatibility.video-effects: LibraryTab {
                             glyph: Glyph.sparkle;
                             label: I18n.t("common.effects");
                             current: root.tab == 4;
                             clicked => { root.tab = 4; }
+                        }
+                        LibraryTab {
+                            glyph: Glyph.slot;
+                            label: I18n.t("mediaPane.templates");
+                            current: root.tab == 6;
+                            clicked => { root.tab = 6; }
                         }
                         // Legacy non-GPU editing features remain reachable.
                         if !GpuCompatibility.enabled: LibraryTab {

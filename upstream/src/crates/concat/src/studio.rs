@@ -51,6 +51,7 @@ pub(crate) mod c_builder_home;
 pub(crate) mod caption_preview;
 mod bulk_presets;
 mod particle_bulk;
+mod transition_duration;
 use bulk_presets::{BulkEffects, BulkMotion, BulkTransitions};
 mod consolidate;
 use consolidate::MergeJob;
@@ -4470,6 +4471,29 @@ impl Studio {
             return;
         };
         self.set_clip_transition_duration(&clip_id, seconds);
+    }
+
+    /// Duration-only edits are one transaction across existing project cuts.
+    pub fn apply_transition_duration_to_all(&mut self, seconds: f64) {
+        self.flush_commit();
+        let plan = match transition_duration::plan(
+            self.project(),
+            seconds,
+            |track| self.locked(track),
+            |id| gpu_catalogue_has("transitions", id)
+                || matches!(id, "cross-fade" | "fade-black" | "push" | "zoom" | "wipe-left" | "wipe-right"),
+        ) {
+            Ok(plan) => plan,
+            Err(why) => { self.notify(why, true); return; }
+        };
+        let summary = plan.summary();
+        if !plan.commands.is_empty() {
+            let token = self.toast.token;
+            self.apply(Command::Batch { commands: plan.commands });
+            // Keep an engine error truthful instead of replacing it with success.
+            if self.toast.token != token && self.toast.failed { return; }
+        }
+        self.notify(&summary, false);
     }
 
     /// Sets `clip_id`'s transition to `seconds`, clamped to what the cut can
@@ -10567,6 +10591,7 @@ impl Studio {
             .unwrap_or_else(|| label_of(&transition.id));
         crate::ui::SelectedTransitionData {
             present: true,
+            id: clip.id.as_str().into(),
             name: name.into(),
             duration: transition.duration as f32,
             intensity: transition.intensity.unwrap_or(

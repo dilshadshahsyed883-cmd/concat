@@ -12,6 +12,7 @@ jobs:
     timeout-minutes: 25
     env:
       CONCAT_CANVAS_FIXTURE_DIR: /tmp/concat-canvas-fixtures
+      CONCAT_TRANSITION_FIXTURE_DIR: /tmp/concat-transition-fixtures
     steps:
       - uses: actions/checkout@v4
         with:

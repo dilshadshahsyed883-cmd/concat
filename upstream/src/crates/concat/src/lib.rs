@@ -1858,6 +1858,9 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     editor.on_transition_duration_set(on_window!(|state, seconds: f32| {
         state.set_transition_duration(seconds as f64);
     }));
+    editor.on_transition_duration_all(on_window!(|state, seconds: f32| {
+        state.apply_transition_duration_to_all(seconds as f64);
+    }));
     editor.on_transition_intensity_set(on_window!(|state, amount: f32| {
         state.set_transition_intensity(amount as f64);
     }));
