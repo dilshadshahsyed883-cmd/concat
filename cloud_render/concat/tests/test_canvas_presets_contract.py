@@ -2,10 +2,11 @@
 from copy import deepcopy
 import json
 import os
+import tempfile
 from pathlib import Path
 import unittest
 from cloud_render.concat.hybrid.canvas_shapes import parse_shape, parse_mask, mask_coverage
-from cloud_render.concat.hybrid.project import validate_gpu_manifest
+from cloud_render.concat.hybrid.project import load_project, validate_gpu_manifest
 from cloud_render.concat.tests.test_gpu_compat_validation import minimal_project, load_fixture
 
 class CanvasPresetContracts(unittest.TestCase):
@@ -64,7 +65,15 @@ class CanvasPresetContracts(unittest.TestCase):
                 self.assertTrue(any(c.get('canvasRole') == 'frame' for c in clips)
                                 if 'canvas-3-' not in file.name else True)
                 self.assertEqual(len([c for c in clips if c.get('canvasRole') == 'badgeText']), 1)
-                plan = load_fixture(document)
+                # Native fixtures point to source.mp4. The worker's manifest
+                # loader resolves real ZIP-relative paths; supply the expected
+                # placeholder in this isolated test rather than changing the
+                # worker's safe media-path validation.
+                with tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    (root / 'concat.json').write_text(json.dumps(document))
+                    (root / 'source.mp4').write_bytes(b'canvas fixture placeholder')
+                    plan = load_project(root, lambda _: None)
                 self.assertGreaterEqual(len(plan.lanes), 2)
 
 if __name__=='__main__':unittest.main()
