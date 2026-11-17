@@ -853,12 +853,15 @@ component RecentMenuRow inherits Rectangle {
     in property <Glyph> glyph;
     in property <string> label;
     in property <bool> danger;
+    in property <bool> enabled: true;
 
     callback clicked();
 
     height: 26px;
     border-radius: Theme.r-xs;
-    background: touch.has-hover ? (root.danger ? Theme.danger-soft : Theme.field) : Colors.transparent;
+    opacity: root.enabled ? 1.0 : 0.45;
+    background: root.enabled && touch.has-hover
+        ? (root.danger ? Theme.danger-soft : Theme.field) : Colors.transparent;
 
     property <brush> ink: (root.danger && touch.has-hover) ? Theme.danger
         : touch.has-hover ? Theme.fg
@@ -889,6 +892,7 @@ component RecentMenuRow inherits Rectangle {
     }
 
     touch := TouchArea {
+        enabled: root.enabled;
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
     }
@@ -1102,6 +1106,7 @@ component PosterCard inherits Pressable {
                     glyph: Glyph.trash;
                     label: "Delete Project";
                     danger: true;
+                    enabled: !root.project.missing;
                     clicked => {
                         menu.close();
                         root.delete-requested();
@@ -1148,13 +1153,17 @@ component PosterCard inherits Pressable {
     }
 
     // This is a child hit target, independent of the card's Open action.
+    // Absolute-positioned Slint rectangles otherwise fill their parent height,
+    // stretching the button/touch target far below its project card.
     Button {
         x: root.width - 94px;
         y: poster.y + poster.height + 63px;
         width: 82px;
+        height: 28px;
         glyph: Glyph.trash;
         label: "Delete";
         danger: true;
+        enabled: !root.project.missing;
         clicked => { root.delete-requested(); }
     }
 }
@@ -1304,6 +1313,7 @@ component ProjectRow inherits Pressable {
             glyph: Glyph.trash;
             label: "Delete";
             danger: true;
+            enabled: !root.project.missing;
             clicked => { root.delete-requested(); }
         }
     }
