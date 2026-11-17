@@ -45,7 +45,17 @@ impl Artifact {
         {
             return Err("Invalid GPU caption artifact version, source or cue count".into());
         }
-        if !matches!(self.preset.as_str(), "purple-word" | "yellow-bar") {
+        // Returned artifacts can carry any native gallery ID. Legacy worker
+        // aliases remain supported for retrying previously rendered ZIPs.
+        if !matches!(self.preset.as_str(),
+            "purple-word" | "yellow-bar" | "classic" |
+            "cuda-caption.classic-subtitle" | "cuda-caption.bold-highlight" |
+            "cuda-caption.cinematic-title" | "cuda-caption.minimal-clean" |
+            "cuda-caption.news-alert" | "cuda-caption.modern-accent" |
+            "cuda-caption.karaoke-highlight" |
+            "cuda-caption.preset-1-purple-word" |
+            "cuda-caption.preset-2-yellow-bar"
+        ) {
             return Err("Unsupported GPU caption preset".into());
         }
         let mut previous = 0;
@@ -61,16 +71,20 @@ impl Artifact {
                     return Err("Invalid or overlapping GPU caption interval".into());
                 }
                 previous = cue.end_ms;
-                let purple = self.preset == "purple-word";
+                let purple = matches!(self.preset.as_str(),
+                    "purple-word" | "cuda-caption.preset-1-purple-word" |
+                    "cuda-caption.karaoke-highlight");
+                let yellow = matches!(self.preset.as_str(),
+                    "yellow-bar" | "cuda-caption.preset-2-yellow-bar");
                 let mut style = TextStyle {
                     content: cue.text.to_uppercase(),
                     font_family: "Inter".into(),
                     font_weight: 900.0,
                     font_size: 0.053,
-                    color: if purple { "#ffffff" } else { "#000000" }.into(),
-                    background: if purple { "" } else { "#ffff00" }.into(),
-                    stroke_width: if purple { 0.004 } else { 0.0 },
-                    shadow: purple,
+                    color: if yellow { "#000000" } else { "#ffffff" }.into(),
+                    background: if yellow { "#ffff00" } else { "" }.into(),
+                    stroke_width: if yellow { 0.0 } else { 0.004 },
+                    shadow: !yellow,
                     karaoke: purple,
                     karaoke_background: if purple { "#a020f0" } else { "" }.into(),
                     ..TextStyle::default()
@@ -104,7 +118,7 @@ impl Artifact {
                     above: true,
                     start: (self.timeline_start_ms + cue.start_ms) as f64 / 1000.0,
                     duration: Some((cue.end_ms - cue.start_ms) as f64 / 1000.0),
-                    offset_y: Some(if purple { 0.28 } else { -0.35 }),
+                    offset_y: Some(0.35),
                     style: Some(style),
                 })
             })
@@ -132,6 +146,36 @@ mod tests {
         assert_eq!(style.karaoke_words[1].start_ms, 400);
         assert_eq!(style.karaoke_background, "#a020f0");
     }
+    #[test]
+    fn native_caption_artifacts_use_safe_bottom_position() {
+        for preset in [
+            "yellow-bar", "cuda-caption.preset-2-yellow-bar",
+            "classic", "cuda-caption.classic-subtitle",
+            "cuda-caption.news-alert", "cuda-caption.bold-highlight",
+        ] {
+            let result = Artifact {
+                version: 1,
+                source_clip_id: "voice1".into(),
+                timeline_start_ms: 0,
+                preset: preset.into(),
+                cues: vec![ArtifactCue {
+                    start_ms: 0,
+                    end_ms: 1000,
+                    text: "Example".into(),
+                    words: vec![],
+                }],
+            };
+            let commands = result.commands().expect("native GPU preset supported");
+            let Command::AddTextClip { offset_y, style: Some(style), .. } = &commands[0]
+                else { panic!("one editable caption clip") };
+            assert_eq!(*offset_y, Some(0.35));
+            if preset.contains("yellow") {
+                assert_eq!(style.background, "#ffff00");
+                assert_eq!(style.color, "#000000");
+            }
+        }
+    }
+
     #[test]
     fn purple_rejects_guessed_missing_and_overlapping_words() {
         let mut result = Artifact {
