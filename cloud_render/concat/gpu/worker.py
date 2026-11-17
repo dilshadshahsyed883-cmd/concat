@@ -368,13 +368,16 @@ class RenderWorker:
         }
 
     def cancel(self, job):
-        item = self.status(job)
-        if item["state"] in ("rendered", "delivered", "delivery_failed", "failed", "cancelled", "captions_ready"):
-            return item
+        # Serialize cancellation with publishing a completed result. Otherwise
+        # a late request can overwrite rendered/captions_ready after the worker
+        # has already committed success, leaving a permanently pending cancel.
         with self.lock:
+            item = self.status(job)
+            if item["state"] in ("rendered", "delivered", "delivery_failed", "failed", "cancelled", "captions_ready"):
+                return item
             self.cancellations.setdefault(job, threading.Event()).set()
-        self._change(job, state="cancellation_requested")
-        return self.status(job)
+            self._change(job, state="cancellation_requested")
+            return self.status(job)
 
     def retry(self, job, *, render=False):
         item = self.status(job)
@@ -444,7 +447,10 @@ class RenderWorker:
                 self._change(job, caption_artifacts={extension: {"size": path.stat().st_size,
                     "sha256": digest_file(path)} for extension, path in caption_files.items()})
                 if not caption_result["render_after"]:
-                    self._change(job, state="captions_ready", error="")
+                    with self.lock:
+                        if cancel.is_set():
+                            raise CaptionCancelled("Job cancelled before publishing captions; source bundle retained")
+                        self._change(job, state="captions_ready", error="")
                     return
                 mode = HYBRID_MODE
                 self._change(job, caption_state="rendering")
@@ -458,15 +464,21 @@ class RenderWorker:
             else:
                 report = self._cuda_render(extracted, output)
             elapsed = time.perf_counter() - render_started
+            if cancel.is_set():
+                raise CaptionCancelled("Job cancelled during rendering; source bundle and output retained")
             if not output.is_file() or output.is_symlink() or output.stat().st_size < 12:
                 raise RuntimeError("Concat did not produce an MP4")
             with output.open("rb") as handle:
                 header = handle.read(12)
             if header[4:8] != MP4_SIGNATURE:
                 raise RuntimeError("Concat output MP4 signature invalid")
-            self._change(job, state="rendered", output_size=output.stat().st_size,
-                         output_sha256=digest_file(output),
-                         **self._performance_metrics(report, elapsed))
+            checksum = digest_file(output)
+            with self.lock:
+                if cancel.is_set():
+                    raise CaptionCancelled("Job cancelled before publishing render; source bundle and output retained")
+                self._change(job, state="rendered", output_size=output.stat().st_size,
+                             output_sha256=checksum,
+                             **self._performance_metrics(report, elapsed))
             if self.receiver:
                 self._change(job, state="delivering")
                 self.deliver(job, output)

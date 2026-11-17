@@ -114,23 +114,10 @@ impl Studio {
             || index.timeline != self.timeline().id
             || index.selection != selected
         {
-            let lane =
-                concat_project::caption_preview::caption_lane(self.timeline(), Some(&selected));
-            let mut clips: Vec<_> = self
-                .timeline()
-                .clips
-                .iter()
-                .filter(|c| {
-                    c.kind == ClipKind::Text
-                        && lane.as_deref() == Some(c.track_id.as_str())
-                        && self
-                            .timeline()
-                            .track(&c.track_id)
-                            .is_some_and(|t| t.visible)
-                })
-                .cloned()
-                .collect();
-            clips.sort_by(|a, b| a.start.total_cmp(&b.start));
+            let clips = concat_project::caption_preview::caption_candidates(
+                self.timeline(),
+                Some(&selected),
+            );
             let mut end = 0.0_f64;
             let latest_ends = clips
                 .iter()

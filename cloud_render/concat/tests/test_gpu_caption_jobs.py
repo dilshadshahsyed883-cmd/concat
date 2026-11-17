@@ -139,7 +139,7 @@ class WorkerCaptionTests(unittest.TestCase):
         # Wait through the submitted future without closing the executor used for explicit continuation.
         import time
         for _ in range(100):
-            if self.worker.status('captionjob')['state'] in ('captions_ready','failed','waiting_for_gpu'): return
+            if self.worker.status('captionjob')['state'] in ('captions_ready','failed','cancelled','waiting_for_gpu'): return
             time.sleep(.01)
         self.fail('caption fixture did not finish')
 
@@ -154,6 +154,21 @@ class WorkerCaptionTests(unittest.TestCase):
         self.assertEqual(self.worker.status('captionjob')['state'],'rendered')
         self.assertEqual(len(self.renders),1)
         self.assertTrue((self.worker.inputs/'captionjob/project.zip').exists())
+
+    def test_cancel_at_caption_completion_does_not_publish_success(self):
+        engine = self.worker.caption_engine
+        class CompletingAfterCancel:
+            def run(inner, *args, cancel=None, **kwargs):
+                result = engine.run(*args, cancel=cancel, **kwargs)
+                self.worker.cancel('captionjob')
+                return result
+        self.worker.caption_engine = CompletingAfterCancel()
+        self.add()
+        self.worker.pool.shutdown(wait=True)
+        self.assertEqual(self.worker.status('captionjob')['state'], 'cancelled')
+        self.assertEqual(self.renders, [])
+        self.assertTrue((self.worker.inputs/'captionjob/project.zip').is_file())
+        self.assertTrue(self.worker.caption_artifact('captionjob','json').is_file())
 
     def test_authenticated_artifact_endpoint(self):
         self.add()

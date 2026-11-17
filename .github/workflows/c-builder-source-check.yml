@@ -142,3 +142,5 @@ jobs:
           cargo test -p concat --lib --locked -j 2 c_builder::tests
           cargo test -p concat --lib --locked -j 2 studio::bulk_presets::tests
           cargo test -p concat --lib --locked -j 2 studio::backdrop::tests
+          cargo test -p concat --lib --locked -j 2 presets::tests
+          cargo test -p concat --lib --locked -j 2 studio::caption_preview::tests

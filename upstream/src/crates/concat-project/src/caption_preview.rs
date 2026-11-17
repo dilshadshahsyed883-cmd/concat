@@ -49,6 +49,29 @@ pub fn caption_lane(timeline: &Timeline, selected: Option<&str>) -> Option<Strin
         .map(|(id, _)| id)
 }
 
+/// Caption cues eligible for live audition, in chronological order.
+/// The lane chooser and the interval index must agree about generated headlines:
+/// a canvas-owned title is never a speech cue even when it shares the caption lane.
+pub fn caption_candidates(
+    timeline: &Timeline,
+    selected: Option<&str>,
+) -> Vec<std::sync::Arc<Clip>> {
+    let lane = caption_lane(timeline, selected);
+    let mut clips: Vec<_> = timeline
+        .clips
+        .iter()
+        .filter(|clip| {
+            clip.kind == ClipKind::Text
+                && !clip.extra.contains_key("canvasOwner")
+                && lane.as_deref() == Some(clip.track_id.as_str())
+                && timeline.track(&clip.track_id).is_some_and(|t| t.visible)
+        })
+        .cloned()
+        .collect();
+    clips.sort_by(|a, b| a.start.total_cmp(&b.start));
+    clips
+}
+
 /// Copy a preset onto the real caption, retaining text and exact word timings.
 /// This returns the same style used by explicit Apply; it never modifies `source`.
 pub fn style_for_clip(
@@ -378,6 +401,38 @@ mod tests {
             .clips
             .push(std::sync::Arc::new(untimed));
         assert_eq!(caption_lane(project.active(), None).as_deref(), Some("T1"));
+    }
+
+    #[test]
+    fn live_candidates_never_audition_canvas_headlines_on_the_caption_lane() {
+        let mut project = crate::model::Project::new();
+        let speech = phrase();
+        let mut headline = speech.clone();
+        headline.id = "canvas-headline".into();
+        headline.start = 4.5;
+        headline
+            .extra
+            .insert("canvasOwner".into(), serde_json::json!("video"));
+        headline.text.as_mut().unwrap().content = "SPORTS HEADLINE".into();
+        project
+            .active_mut()
+            .clips
+            .extend([std::sync::Arc::new(headline), std::sync::Arc::new(speech)]);
+        let candidates = caption_candidates(project.active(), Some("canvas-headline"));
+        let active = candidates
+            .iter()
+            .rev()
+            .find(|c| c.start <= 5.0 && 5.0 < c.start + c.duration);
+        assert_eq!(active.map(|c| c.id.as_str()), Some("cap"));
+        assert_eq!(candidates.len(), 1);
+        project
+            .active_mut()
+            .tracks
+            .iter_mut()
+            .find(|t| t.id == "T4")
+            .unwrap()
+            .visible = false;
+        assert!(caption_candidates(project.active(), None).is_empty());
     }
 
     #[test]

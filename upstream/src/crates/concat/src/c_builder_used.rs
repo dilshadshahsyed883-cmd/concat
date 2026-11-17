@@ -298,6 +298,21 @@ mod tests {
         assert_eq!(recover(&f.root).unwrap().rolled_back,1);assert!(!target.exists());assert!(f.paths[0].exists());verify_document(&before).unwrap();
     }
     #[test]
+    fn completed_archive_reports_remaining_inventory_refresh_failures(){
+        let f=fixture(1);
+        // This new remaining candidate has no cache and the source-check probe is unavailable.
+        // An archive can commit successfully while this independent inventory refresh fails.
+        let remaining=f.root.join("unreadable.jpg");fs::write(&remaining,b"not a decodable picture").unwrap();
+        let cache=f.root.join("catalog.json");
+        let finish=finish(&f.root,&f.project,&f.paths,&cache,&AtomicBool::new(false));
+        assert_eq!(finish.result.unwrap().entries.len(),1);
+        let refreshed=finish.refresh.unwrap();assert_eq!(refreshed.failures.len(),1);
+        assert!(finish.cache_warning.unwrap().contains("1 remaining media could not be refreshed"));
+        assert!(remaining.is_file());
+        assert_eq!(excluded_paths(&f.root).unwrap().len(),1);
+        verify_document(&fs::read(f.project.join("concat.json")).unwrap()).unwrap();
+    }
+    #[test]
     fn library_lock_prevents_two_windows_consuming_the_same_sources(){
         let f=fixture(1);let _lease=lock(&f.root).unwrap();assert!(relocate_used(&f.root,&f.project,&f.paths).unwrap_err().contains("Another C Builder"));
     }
@@ -322,7 +337,13 @@ pub fn finish(library:&Path,project:&Path,consumed:&[PathBuf],cache:&Path,cancel
     if result.is_ok(){
         let names:Vec<_>=consumed.iter().map(|p|p.to_string_lossy().into_owned()).collect();
         if let Err(e)=crate::c_builder::mark_used(cache,&names){warnings.push(e);}
-        match crate::c_builder::scan(library,cache,|_,_|{}) {Ok(report)=>refresh=Some(report),Err(e)=>warnings.push(e)}
+        match crate::c_builder::scan(library,cache,|_,_|{}) {
+            Ok(report)=>{
+                if !report.failures.is_empty(){warnings.push(format!("{} remaining media could not be refreshed: {}",report.failures.len(),report.failures.join("; ")));}
+                refresh=Some(report);
+            },
+            Err(e)=>warnings.push(e),
+        }
     }
     Finish {result,refresh,cache_warning:(!warnings.is_empty()).then(||warnings.join("; "))}
 }
