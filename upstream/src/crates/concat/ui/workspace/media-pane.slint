@@ -2744,8 +2744,8 @@ export component MediaPane inherits Rectangle {
                 }
 
                 // Caption cards stage a local monitor preview. Only explicit Apply edits the document.
-                if root.tab == 1 && GpuCompatibility.enabled && root.text-category == 1: PaneScroll {
-                    CaptionPresetPreviewPanel { padding: 8px; }
+                if root.tab == 1 && GpuCompatibility.enabled && root.text-category == 1: CaptionPresetPreviewPanel {
+                    padding: 8px;
                 }
                 if root.tab == 1 && !GpuCompatibility.enabled && root.text-category >= 1: VerticalLayout {
                     padding: 8px;
@@ -2839,8 +2839,8 @@ export component MediaPane inherits Rectangle {
 
                 // Dedicated Animations page. Inspector knobs are shared
                 // through Keyframes; no second motion format is introduced.
-                if root.tab == 10 && GpuCompatibility.enabled: PaneScroll {
-                VerticalLayout {
+                if root.tab == 10 && GpuCompatibility.enabled: VerticalLayout {
+                    spacing: 8px;
                 if root.animation-page == 0: VerticalLayout {
                     padding: 8px;
                     spacing: 8px;
@@ -2938,7 +2938,7 @@ export component MediaPane inherits Rectangle {
                             clicked => {
                                 Keyframes.apply-physics-bulk(root.physics-preset, 0,
                                     root.physics-images, root.physics-videos,
-                                    root.physics-scope == 1,
+                                    false,
                                     Keyframes.physics-strength, Keyframes.physics-duration,
                                     Keyframes.physics-speed, Keyframes.physics-intensity);
                             }
@@ -2966,9 +2966,16 @@ export component MediaPane inherits Rectangle {
                     }
                 }
                 }
-                if root.animation-page == 1: MediaLayoutPanel {canvas:false;}
-                if root.animation-page == 2: VerticalLayout {spacing:8px; canvas-layout := MediaLayoutPanel {canvas:true;} CanvasPresetPanel {padding:8px; images:canvas-layout.images; videos:canvas-layout.videos;} }
-                }
+                    if root.animation-page == 1: MediaLayoutPanel { canvas: false; }
+                    if root.animation-page == 2: VerticalLayout {
+                        spacing: 8px;
+                        canvas-layout := MediaLayoutPanel { canvas: true; }
+                        CanvasPresetPanel {
+                            padding: 8px;
+                            images: canvas-layout.images;
+                            videos: canvas-layout.videos;
+                        }
+                    }
                 }
 
 
