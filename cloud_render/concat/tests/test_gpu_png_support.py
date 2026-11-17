@@ -122,9 +122,9 @@ class StillImageDecodeTests(unittest.TestCase):
                 raise
             self.skipTest(str(exc))
         path = self.root / "cutout.png"
-        image = Image.new("RGBA", (2, 2))
-        # Fully transparent red must not bleed into adjacent blue while resizing.
-        image.putdata([(255, 0, 0, 0), (0, 0, 255, 128)] * 2)
+        image = Image.new("RGBA", (2, 1))
+        # Upscaling a partially transparent edge must not interpolate hidden red.
+        image.putdata([(255, 0, 0, 0), (0, 0, 255, 128)])
         image.save(path)
         with patch.object(render, "WIDTH", 4), patch.object(render, "HEIGHT", 2):
             source = render.Sources(self.root)
