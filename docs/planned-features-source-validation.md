@@ -14,7 +14,7 @@ Integration branch: `integration/planned-features-source-20261117`; draft PR #56
 
 ## Verification
 
-Local Rust source tests: concat-project schema/commands/serialization (183), real C Builder harness (10), concat-text glyph tests (27), concat-effects unit tests (75) plus creative-pack integration test (1). Full Slint tree compiles in a dedicated source harness. Worker suite: 180 tests executed with 11 explicit hardware/runtime skips. Source fixture assertions are not measured GPU output.
+Local Rust source tests: concat-project schema/commands/serialization (183), real C Builder harness (10), concat-text glyph tests (27), concat-effects unit tests (75) plus creative-pack integration test (1). Full Slint tree compiles in a dedicated source harness. Worker suite: 180 tests executed with 12 explicit hardware/runtime skips. Source fixture assertions are not measured GPU output.
 
 Source-only GitHub checks also typecheck the complete native Rust/Slint library and test PowerShell contracts. Record their final run results in PR #56; earlier successful runs on the initial snapshot do not verify later commits.
 

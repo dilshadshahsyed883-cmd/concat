@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
-      CONCAT_CANVAS_FIXTURE_DIR: ${{ runner.temp }}/concat-canvas-fixtures
+      CONCAT_CANVAS_FIXTURE_DIR: /tmp/concat-canvas-fixtures
     steps:
       - uses: actions/checkout@v4
         with:
