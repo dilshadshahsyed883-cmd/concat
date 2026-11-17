@@ -42,6 +42,20 @@ fn links(project: &Project, tracks: &[String], from: f64) -> Result<(), CommandE
                 ));
             }
         }
+        for key in ["gpuCaptionSource", "canvasOwner"] {
+            if let Some(parent) = clip
+                .extra
+                .get(key)
+                .and_then(serde_json::Value::as_str)
+                .and_then(|id| timeline.clip(id))
+            {
+                if tracks.contains(&clip.track_id) != tracks.contains(&parent.track_id) {
+                    return Err(refused(
+                        "Include source and linked caption/canvas tracks in the ripple scope",
+                    ));
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -170,6 +184,35 @@ pub(super) fn apply(
                 created_id: Some(id),
                 applied: true,
             }
+        }
+        Command::ReplaceMediaFromFile {
+            clip_id,
+            item,
+            use_source_duration,
+            keep_edits,
+            tracks,
+            locked_tracks,
+        } => {
+            let media_id = if let Some(existing) = staged.media.iter().find(|m| m.path == item.path)
+            {
+                existing.id.clone()
+            } else {
+                super::apply(&mut staged, mint, Command::AddMedia { item })?
+                    .created_id
+                    .ok_or(CommandError::MediaGone)?
+            };
+            apply(
+                &mut staged,
+                mint,
+                Command::ReplaceMediaInSlot {
+                    clip_id,
+                    media_id,
+                    use_source_duration,
+                    keep_edits,
+                    tracks,
+                    locked_tracks,
+                },
+            )?
         }
         Command::ReplaceMediaInSlot {
             clip_id,
@@ -315,6 +358,205 @@ pub(super) fn apply(
                 }
             }
             super::apply(&mut staged, mint, Command::MoveClips { moves: commands })?
+        }
+        Command::SetPlanningProfile { profile } => {
+            crate::planning::Profile::from_json(&profile.to_string()).map_err(|e| refused(&e))?;
+            let previous = staged
+                .extra
+                .insert("cBuilderPlanning".into(), profile.clone());
+            Outcome {
+                created_id: None,
+                applied: previous.as_ref() != Some(&profile),
+            }
+        }
+        Command::SetGpuCaptionRequest { request } => {
+            if let Some(value) = &request {
+                let object = value
+                    .as_object()
+                    .ok_or_else(|| refused("Invalid GPU caption request"))?;
+                if object.get("version").and_then(serde_json::Value::as_u64) != Some(1)
+                    || object.get("model").and_then(serde_json::Value::as_str) != Some("small")
+                    || object
+                        .get("wordTimestamps")
+                        .and_then(serde_json::Value::as_bool)
+                        != Some(true)
+                    || !matches!(
+                        object.get("preset").and_then(serde_json::Value::as_str),
+                        Some("purple-word" | "yellow-bar")
+                    )
+                {
+                    return Err(refused(
+                        "Unsupported GPU caption request version/model/preset",
+                    ));
+                }
+                let id = object
+                    .get("sourceClipId")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or_else(|| refused("Select a narration clip"))?;
+                let source = staged.active().clip(id).ok_or(CommandError::MediaGone)?;
+                if !matches!(source.kind, ClipKind::Audio | ClipKind::Video) {
+                    return Err(refused("GPU captions need audio or video"));
+                }
+            }
+            let previous = match request.clone() {
+                Some(value) => staged.extra.insert("gpuCaptionRequest".into(), value),
+                None => staged.extra.remove("gpuCaptionRequest"),
+            };
+            Outcome {
+                created_id: None,
+                applied: previous != request,
+            }
+        }
+        Command::ImportGpuCaptions { artifact } => {
+            let artifact: crate::gpu_captions::Artifact =
+                serde_json::from_value(artifact).map_err(|e| refused(&e.to_string()))?;
+            let source = staged
+                .active()
+                .clip(&artifact.source_clip_id)
+                .ok_or(CommandError::MediaGone)?;
+            if (source.start * 1000. - artifact.timeline_start_ms as f64).abs() > 1.
+                || artifact
+                    .cues
+                    .iter()
+                    .any(|c| c.end_ms as f64 > source.duration * 1000. + 1.)
+            {
+                return Err(refused(
+                    "Caption source timing changed since this result was generated",
+                ));
+            }
+            let commands = artifact.commands().map_err(|e| refused(&e))?;
+            staged.active_mut().clips.retain(|c| {
+                c.extra
+                    .get("gpuCaptionSource")
+                    .and_then(serde_json::Value::as_str)
+                    != Some(artifact.source_clip_id.as_str())
+            });
+            let mut created = None;
+            for command in commands {
+                let outcome = super::apply(&mut staged, mint, command)?;
+                if let Some(id) = &outcome.created_id {
+                    if let Some(index) = staged.active().clips.iter().position(|c| &c.id == id) {
+                        staged.active_mut().clip_at_mut(index).extra.insert(
+                            "gpuCaptionSource".into(),
+                            serde_json::Value::String(artifact.source_clip_id.clone()),
+                        );
+                    }
+                }
+                created = outcome.created_id;
+            }
+            staged.extra.remove("gpuCaptionRequest");
+            Outcome {
+                created_id: created,
+                applied: true,
+            }
+        }
+        Command::ScopedMoveClips {
+            mut moves,
+            locked_tracks,
+            magnetic,
+        } => {
+            let originals = staged.active().clips.clone();
+            let mut gaps = Vec::new();
+            for wanted in moves.clone() {
+                let before = staged
+                    .active()
+                    .clip(&wanted.clip_id)
+                    .ok_or(CommandError::MediaGone)?;
+                if locked_tracks.contains(&before.track_id)
+                    || locked_tracks.contains(&wanted.track_id)
+                {
+                    return Err(refused("Drag touches a locked track"));
+                }
+                let delta = wanted.start - before.start;
+                if let Some(parent) = before
+                    .detached_from
+                    .as_deref()
+                    .or_else(|| {
+                        before
+                            .extra
+                            .get("gpuCaptionSource")
+                            .and_then(serde_json::Value::as_str)
+                    })
+                    .and_then(|id| staged.active().clip(id))
+                {
+                    if delta.abs() > 1e-8
+                        && !moves.iter().any(|m| {
+                            m.clip_id == parent.id && (m.start - parent.start - delta).abs() < 1e-6
+                        })
+                    {
+                        return Err(refused(
+                            "Select the linked source before moving its sound/captions",
+                        ));
+                    }
+                }
+                for linked in &originals {
+                    if linked
+                        .extra
+                        .get("canvasOwner")
+                        .and_then(serde_json::Value::as_str)
+                        == Some(before.id.as_str())
+                    {
+                        if wanted.track_id != before.track_id {
+                            return Err(refused(
+                                "Reapply canvas after moving its foreground to another lane",
+                            ));
+                        }
+                        if locked_tracks.contains(&linked.track_id) {
+                            return Err(refused("A canvas companion is locked"));
+                        }
+                        if !moves.iter().any(|m| m.clip_id == linked.id) {
+                            moves.push(ClipMove {
+                                clip_id: linked.id.clone(),
+                                track_id: linked.track_id.clone(),
+                                start: linked.start + delta,
+                            });
+                        }
+                    }
+                    let parent = linked.detached_from.as_deref().or_else(|| {
+                        linked
+                            .extra
+                            .get("gpuCaptionSource")
+                            .and_then(serde_json::Value::as_str)
+                    });
+                    if parent == Some(before.id.as_str())
+                        && delta.abs() > 1e-8
+                        && !moves.iter().any(|m| {
+                            m.clip_id == linked.id && (m.start - linked.start - delta).abs() < 1e-6
+                        })
+                    {
+                        return Err(refused(
+                            "Select linked sound/captions before moving their source",
+                        ));
+                    }
+                }
+                if magnetic
+                    && before.kind.is_visual()
+                    && !before.extra.contains_key("canvasOwner")
+                    && originals.iter().any(|c| {
+                        c.track_id == before.track_id
+                            && (c.start + c.duration - before.start).abs() < 1e-6
+                    })
+                    && originals.iter().any(|c| {
+                        c.track_id == before.track_id && (c.start - before.end()).abs() < 1e-6
+                    })
+                {
+                    gaps.push((before.track_id.clone(), before.start));
+                }
+            }
+            let mut outcome = super::apply(&mut staged, mint, Command::MoveClips { moves })?;
+            for (track_id, at) in gaps {
+                let closed = apply(
+                    &mut staged,
+                    mint,
+                    Command::CloseTrackGaps {
+                        track_id,
+                        locked_tracks: locked_tracks.clone(),
+                        at: Some(at),
+                    },
+                )?;
+                outcome.applied |= closed.applied;
+            }
+            outcome
         }
         Command::SetTimelineMagnetic { enabled } => {
             let old = staged
@@ -535,5 +777,92 @@ mod safety_tests {
         )
         .unwrap();
         assert_eq!(p.active().clip("c999").unwrap().start, 1002.0);
+    }
+}
+
+#[cfg(test)]
+mod interaction_tests {
+    use super::*;
+    use crate::{DocumentSettings, Editor};
+    fn settings() -> DocumentSettings {
+        DocumentSettings {
+            name: "Interactions".into(),
+            width: 1920,
+            height: 1080,
+            rate_num: 30,
+            rate_den: 1,
+        }
+    }
+    #[test]
+    fn magnetic_drag_closes_only_the_new_internal_gap_and_is_one_undo() {
+        for magnetic in [true, false] {
+            let mut p = Project::new();
+            p.media.push(MediaItem {
+                id: "m1".into(),
+                path: "still.jpg".into(),
+                kind: MediaKind::Image,
+                ..Default::default()
+            });
+            for i in 0..3 {
+                let mut shot = Clip::blank(
+                    format!("c{i}"),
+                    "T1",
+                    ClipKind::Image,
+                    "shot",
+                    3.0 + i as f64 * 5.0,
+                    5.0,
+                );
+                shot.media_id = "m1".into();
+                p.active_mut().clips.push(Arc::new(shot));
+            }
+            let mut e = Editor::from_document(&crate::doc::to_document(&settings(), &p)).unwrap();
+            e.apply(Command::ScopedMoveClips {
+                moves: vec![ClipMove {
+                    clip_id: "c1".into(),
+                    track_id: "T1".into(),
+                    start: 30.0,
+                }],
+                locked_tracks: vec![],
+                magnetic,
+            })
+            .unwrap();
+            assert_eq!(e.project().active().clip("c0").unwrap().start, 3.0);
+            assert_eq!(
+                e.project().active().clip("c2").unwrap().start,
+                if magnetic { 8.0 } else { 13.0 }
+            );
+            assert!(e.undo());
+            assert_eq!(e.project().active().clip("c2").unwrap().start, 13.0);
+            assert_eq!(e.project().active().clip("c1").unwrap().start, 8.0);
+        }
+    }
+    #[test]
+    fn caption_import_is_idempotent_and_clears_recognition_request() {
+        let mut p = Project::new();
+        let mut voice = Clip::blank("voice", "T3", ClipKind::Audio, "voice", 2.0, 3.0);
+        voice.media_id = "m1".into();
+        p.media.push(MediaItem {
+            id: "m1".into(),
+            path: "voice.wav".into(),
+            kind: MediaKind::Audio,
+            duration: Some(3.0),
+            ..Default::default()
+        });
+        p.active_mut().clips.push(Arc::new(voice));
+        let mut mint = IdMint::default();
+        mint.adopt_project(&p);
+        let artifact = serde_json::json!({"version":1,"sourceClipId":"voice","timelineStartMs":2000,"preset":"yellow-bar","cues":[{"text":"Hello","startMs":0,"endMs":1000,"words":[{"text":"Hello","startMs":0,"endMs":1000}]}]});
+        for _ in 0..2 {
+            apply(
+                &mut p,
+                &mut mint,
+                Command::ImportGpuCaptions {
+                    artifact: artifact.clone(),
+                },
+            )
+            .unwrap();
+            assert_eq!(p.active().clips.len(), 2);
+        }
+        assert!(!p.extra.contains_key("gpuCaptionRequest"));
     }
 }

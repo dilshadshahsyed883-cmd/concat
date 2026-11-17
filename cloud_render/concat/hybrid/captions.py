@@ -112,6 +112,9 @@ class CaptionStyle:
     font_size: int = 48
     fill: _RGBA = (255, 255, 255, 255)
     highlight: _RGBA = (255, 218, 51, 255)
+    word_background: _RGBA = (0, 0, 0, 0)
+    max_width: int = 0
+    max_height: int = 0
     outline: _RGBA = (0, 0, 0, 255)
     background: _RGBA = (0, 0, 0, 170)
     outline_width: int = 2
@@ -130,7 +133,7 @@ class CaptionStyle:
     track_rank: int = 0
 
     def __post_init__(self):
-        for color in (self.fill, self.highlight, self.outline, self.background):
+        for color in (self.fill, self.highlight, self.outline, self.background, self.word_background):
             if (not isinstance(color, tuple) or len(color) != 4
                     or any(type(c) is not int or not 0 <= c <= 255 for c in color)):
                 raise ValueError("Caption colors must be 8-bit RGBA tuples")
@@ -143,6 +146,8 @@ class CaptionStyle:
         if any(type(size) is not int or not low <= size <= high
                for size, (low, high) in zip(sizes, limits)):
             raise ValueError("Caption font size, outline, padding, or margin is out of range")
+        if any(type(value) is not int or not 0 <= value <= 16384 for value in (self.max_width, self.max_height)):
+            raise ValueError("Invalid native caption box size")
         if self.placement not in ("top", "bottom"):
             raise ValueError("Caption placement must be top or bottom")
         if self.anchor is not None and (not isinstance(self.anchor, tuple) or len(self.anchor) != 2
@@ -199,7 +204,9 @@ def _glyph_texture(cue: Cue, active: int | None, style: CaptionStyle,
     px = style.padding if style.padding_x is None else style.padding_x
     py = style.padding if style.padding_y is None else style.padding_y
     safe_width = frame_width if style.anchor is None else int(2 * min(style.anchor[0], 1-style.anchor[0]) * frame_width)
-    available = safe_width - 2 * (style.margin + px + style.outline_width)
+    if style.max_width > safe_width - 2*style.margin:
+        raise ValueError("Caption box exceeds safe frame bounds")
+    available = (style.max_width or safe_width) - 2 * (style.margin + px + style.outline_width)
     if available < 1:
         raise ValueError("Frame too narrow for the caption style")
     lines = _wrapped_lines(cue.text, font, available, native=style.anchor is not None)
@@ -220,7 +227,10 @@ def _glyph_texture(cue: Cue, active: int | None, style: CaptionStyle,
         ascent = max(ascent, *(-top for _, top, _, _ in boxes))
         descent = max(descent, *(bottom for _, _, _, bottom in boxes))
         line_height = round(style.font_size * 1.2)
-    height = (len(lines) - 1) * line_height + ascent + descent + 2 * pad_y
+    natural_height = (len(lines) - 1) * line_height + ascent + descent + 2 * pad_y
+    width = max(width, style.max_width)
+    height = max(natural_height, style.max_height)
+    vertical_extra = (height-natural_height)//2
     if (width - 2 * extra > frame_width - 2 * style.margin
             or height - 2 * extra > frame_height - 2 * style.margin):
         raise ValueError("Caption exceeds the available frame area")
@@ -238,7 +248,7 @@ def _glyph_texture(cue: Cue, active: int | None, style: CaptionStyle,
     outline_draw, fill_draw = ImageDraw.Draw(outline_mask), ImageDraw.Draw(fill_mask)
     for row, ((line, first, count), (left, _, right, _)) in enumerate(zip(lines, boxes)):
         x = (width - (right - left)) // 2 - left
-        y = pad_y + ascent + row * line_height
+        y = pad_y + ascent + row * line_height + vertical_extra
         outline_draw.text((x, y), line, fill=255, stroke_fill=255,
                           stroke_width=style.outline_width, font=font, anchor="ls")
         fill_draw.text((x, y), line, fill=255, font=font, anchor="ls")
@@ -262,6 +272,10 @@ def _glyph_texture(cue: Cue, active: int | None, style: CaptionStyle,
         layer.putalpha(mask.point(lambda value: value * color[3] // 255))
         return layer
 
+    if highlight_box is not None and style.word_background[3]:
+        ImageDraw.Draw(texture).rounded_rectangle(highlight_box,
+            radius=min(max(2, style.plate_radius), (highlight_box[2]-highlight_box[0])//2,
+                       (highlight_box[3]-highlight_box[1])//2), fill=style.word_background)
     if style.shadow:
         shade = Image.new("L", texture.size)
         shade.paste(fill_mask, shadow_offset)

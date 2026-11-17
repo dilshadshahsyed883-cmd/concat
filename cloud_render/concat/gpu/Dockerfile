@@ -21,9 +21,10 @@ RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/pip install --no-cache-dir --only-binary=:all: \
        -r /opt/app/cloud_render/concat/hybrid/requirements-codec.txt \
        -r /opt/app/cloud_render/concat/hybrid/requirements-captions.txt \
+       -r /opt/app/cloud_render/concat/hybrid/requirements-asr.txt \
        nvidia-cuda-runtime-cu12==12.8.90 nvidia-cuda-nvrtc-cu12==12.8.93
 ENV PATH=/opt/venv/bin:$PATH
-ENV LD_LIBRARY_PATH=/opt/venv/lib/python3.12/site-packages/nvidia/cuda_runtime/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cuda_nvrtc/lib:/usr/local/nvidia/lib64
+ENV LD_LIBRARY_PATH=/opt/venv/lib/python3.12/site-packages/nvidia/cublas/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cudnn/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cuda_runtime/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cuda_nvrtc/lib:/usr/local/nvidia/lib64
 COPY cloud_render/concat/project_bundle.py /opt/app/cloud_render/concat/project_bundle.py
 COPY cloud_render/concat/gpu/worker.py /opt/app/cloud_render/concat/gpu/worker.py
 COPY cloud_render/concat/gpu/resumable.py /opt/app/cloud_render/concat/gpu/resumable.py

@@ -1,0 +1,57 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+import { Theme } from "../theme/theme.slint";
+import { Check, Param, ParamFormat } from "../inspector/controls.slint";
+export struct CBuilderKeywordData {
+    keyword: string, available: int, selected: bool, weight: float,
+}
+component KeywordRow inherits VerticalLayout {
+    in property <CBuilderKeywordData> entry;
+    in property <bool> busy;
+    property <float> weight: root.entry.weight;
+    callback changed(selected: bool, weight: int);
+    changed entry => { root.weight = root.entry.weight; }
+    spacing: 5px;
+    HorizontalLayout {
+        spacing: 8px;
+        Check { checked: root.entry.selected; enabled: !root.busy;
+            toggled(on) => { root.changed(on, Math.round(root.weight)); } }
+        Text { text: root.entry.keyword + " — " + root.entry.available + " available";
+            color: Theme.fg; font-size: Theme.fs; wrap: word-wrap; vertical-alignment: center; }
+    }
+    Param { label: "Selection weight"; value <=> root.weight;
+        minimum: 0; maximum: 100; step: 1; unit: "%"; fmt: ParamFormat.steps;
+        enabled: !root.busy;
+        changed(v) => { root.changed(v > 0 ? true : root.entry.selected, Math.round(v)); } }
+    Rectangle { height: 1px; background: Theme.line; }
+}
+export component CBuilderSelectionPanel inherits VerticalLayout {
+    in property <[CBuilderKeywordData]> images;
+    in property <[CBuilderKeywordData]> videos;
+    in property <bool> videos-enabled;
+    in property <bool> busy;
+    in property <string> image-summary;
+    in property <string> video-summary;
+    callback changed(video: bool, keyword: string, selected: bool, weight: int);
+    callback videos-toggled(on: bool);
+    spacing: 12px;
+    Text { text: "Media Selection"; color: Theme.fg; font-size: Theme.fs-lg; font-weight: Theme.weight-title; }
+    Text { text: "Select keyword groups and drag their 0–100% sliders. Unchecked groups and 0% weights are excluded. Weights are normalized within images and videos separately; the planning profile controls their overall mix.";
+        color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
+    Text { text: "Images"; color: Theme.fg; font-size: Theme.fs; font-weight: Theme.weight-title; }
+    Text { text: root.image-summary; color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
+    for entry in root.images: KeywordRow { entry: entry; busy: root.busy;
+        changed(selected, weight) => { root.changed(false, entry.keyword, selected, weight); } }
+    if root.images.length == 0: Text { text: "Import a media folder to list image keywords."; color: Theme.fg-muted; wrap: word-wrap; }
+    HorizontalLayout {
+        spacing: 8px;
+        Check { checked: root.videos-enabled; enabled: !root.busy; toggled(on) => { root.videos-toggled(on); } }
+        Text { text: "Enable Video Selection"; color: Theme.fg; font-size: Theme.fs; }
+    }
+    if root.videos-enabled: Text { text: root.video-summary; color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
+    if root.videos-enabled: VerticalLayout {
+        spacing: 12px;
+        for entry in root.videos: KeywordRow { entry: entry; busy: root.busy;
+            changed(selected, weight) => { root.changed(true, entry.keyword, selected, weight); } }
+        if root.videos.length == 0: Text { text: "No video keywords are available in this folder."; color: Theme.fg-muted; wrap: word-wrap; }
+    }
+}

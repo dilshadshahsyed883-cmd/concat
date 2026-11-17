@@ -30,6 +30,8 @@ from cloud_render.concat.hybrid.contract import (
 )
 from cloud_render.concat.project_bundle import restore, MAX_PROJECT_MANIFEST_BYTES
 from cloud_render.concat.gpu.resumable import ResumableUpload, UploadError
+from cloud_render.concat.gpu.caption_jobs import (CaptionEngine, CaptionCancelled,
+    FasterWhisperCuda, GpuSpeechUnavailable, read_document, atomic_json, validate_request)
 
 IDS = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 DIGESTS = re.compile(r"^[a-f0-9]{64}$")
@@ -200,7 +202,7 @@ def concat_stage1_plan(project: Path) -> Path:
 class RenderWorker:
     def __init__(self, root: Path, *, token: str,
                  receiver: str = "", receiver_token: str = "", renderer=None,
-                 deliver=None):
+                 deliver=None, caption_engine=None):
         if len(token) < 32:
             raise RuntimeError("RENDERER_API_TOKEN must have at least 32 characters")
         self.root = root.resolve()
@@ -233,13 +235,15 @@ class RenderWorker:
             except (OSError, ValueError, AttributeError):
                 pass
         self.spool = ResumableUpload(self)
+        self.caption_engine = caption_engine or CaptionEngine(self.root / "caption-cache")
+        self.cancellations = {}
         # Do not pretend a stopped or interrupted render succeeded.
         for path in self.state.glob("*.json"):
             if not IDS.fullmatch(path.stem) or path.is_symlink():
                 continue
             try:
                 item = json.loads(path.read_text())
-                if item.get("state") in ("queued", "running", "delivering"):
+                if item.get("state") in ("queued", "running", "delivering", "cancellation_requested"):
                     self._save(path.stem, {**item, "state": "failed",
                         "error": "Interrupted by worker restart; source bundle retained"})
             except (OSError, ValueError):
@@ -362,7 +366,41 @@ class RenderWorker:
             "speed_multiplier": round(seconds / elapsed, 2),
         }
 
-    def _process(self, job: str):
+    def cancel(self, job):
+        item = self.status(job)
+        if item["state"] in ("rendered", "delivered", "delivery_failed", "failed", "cancelled", "captions_ready"):
+            return item
+        with self.lock:
+            self.cancellations.setdefault(job, threading.Event()).set()
+        self._change(job, state="cancellation_requested")
+        return self.status(job)
+
+    def retry(self, job, *, render=False):
+        item = self.status(job)
+        allowed = ("captions_ready",) if render else ("failed", "cancelled", "waiting_for_gpu")
+        if item["state"] not in allowed:
+            raise WorkerError(409, "Job is not ready for this operation")
+        if render:
+            path, document = read_document(self.inputs/job/"project")
+            request = validate_request(document.get("gpuCaptionRequest"))
+            document["gpuCaptionRequest"] = {**request, "renderAfter": True}
+            atomic_json(path, document)
+        with self.lock:
+            self.cancellations[job] = threading.Event()
+        self._change(job, state="queued", error="")
+        self.pool.submit(self._process, job, render)
+        return self.status(job)
+
+    def caption_artifact(self, job, extension):
+        self.status(job)  # validates identity and existence
+        if extension not in ("json", "srt", "vtt"):
+            raise WorkerError(404, "Unknown caption artifact")
+        path = self.outputs/"captions"/check_id(job)/("captions."+extension)
+        if not path.is_file() or path.is_symlink():
+            raise WorkerError(404, "Caption artifact unavailable")
+        return path
+
+    def _process(self, job: str, reuse_project=False):
         # A queued task may occupy a thread, but cannot enter the renderer
         # until a slot is available. Lowering 2 -> 1 never kills an active job.
         with self.slots:
@@ -370,22 +408,45 @@ class RenderWorker:
                 self.slots.wait()
             self.active_renders += 1
         try:
-            self._process_active(job)
+            self._process_active(job, reuse_project)
         finally:
             with self.slots:
                 self.active_renders -= 1
                 self.slots.notify_all()
 
-    def _process_active(self, job: str):
+    def _process_active(self, job: str, reuse_project=False):
         directory = self.inputs / job
         output = self.outputs / (job + ".mp4")
         try:
             self._change(job, state="running")
             extracted = directory / "project"
-            restore(directory / "project.zip", extracted)
+            cancel = self.cancellations.setdefault(job, threading.Event())
+            if cancel.is_set():
+                raise CaptionCancelled("Job cancelled before processing; source bundle retained")
+            if not reuse_project:
+                if extracted.exists():
+                    if extracted.is_symlink():
+                        raise ValueError("Restored project must not be a symlink")
+                    shutil.rmtree(extracted)
+                restore(directory / "project.zip", extracted)
             mode = self.status(job).get("render_mode", "native")
             if mode not in RENDER_MODES:
                 raise RuntimeError("Legacy native Vulkan jobs are retired. Source bundle retained")
+            caption_result = self.caption_engine.run(extracted,
+                self.outputs/"captions"/job,
+                status=lambda **fields: self._change(job, **fields), cancel=cancel)
+            if caption_result is not None:
+                caption_files = {extension: self.outputs/"captions"/job/("captions."+extension)
+                                 for extension in ("json", "srt", "vtt")}
+                self._change(job, caption_artifacts={extension: {"size": path.stat().st_size,
+                    "sha256": digest_file(path)} for extension, path in caption_files.items()})
+                if not caption_result["render_after"]:
+                    self._change(job, state="captions_ready", error="")
+                    return
+                mode = HYBRID_MODE
+                self._change(job, caption_state="rendering")
+            if cancel.is_set():
+                raise CaptionCancelled("Job cancelled before rendering; source bundle retained")
             render_started = time.perf_counter()
             if self.renderer is not None:
                 report = self.renderer(extracted, output)
@@ -410,6 +471,10 @@ class RenderWorker:
                 # GPU side cache only: VPS has confirmed the complete file.
                 output.unlink()
                 shutil.rmtree(directory)
+        except CaptionCancelled as exc:
+            self._change(job, state="cancelled", error=str(exc))
+        except GpuSpeechUnavailable as exc:
+            self._change(job, state="waiting_for_gpu", caption_state="unsupported_gpu_asr", error=str(exc))
         except Exception as exc:
             # Source bundle and output, if any, remain for diagnosis/retry.
             prior = self.status(job)
@@ -557,6 +622,7 @@ class Handler(BaseHTTPRequestHandler):
                                     "bundle_versions": [BUNDLE_VERSION],
                                     "render_modes": list(RENDER_MODES),
                                     "validation_version": 1,
+                                    "gpu_captions": {"request_version": 1, **FasterWhisperCuda.capability()},
                                     "max_project_manifest_bytes": MAX_PROJECT_MANIFEST_BYTES})
         if path == "/api/config/concurrency":
             if action == "GET":
@@ -644,7 +710,20 @@ class Handler(BaseHTTPRequestHandler):
             if action == "POST" and complete is not None:
                 return self._json(202, self.worker.spool.complete(job))
             raise WorkerError(405, "Method not allowed")
-        m = re.fullmatch(r"/api/jobs/([A-Za-z0-9_-]{1,80})(/output|/retry-delivery)?", path)
+        caption = re.fullmatch(r"/api/jobs/([A-Za-z0-9_-]{1,80})/captions/(json|srt|vtt)", path)
+        if action == "GET" and caption:
+            job, extension = caption.groups()
+            artifact = self.worker.caption_artifact(job, extension)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json" if extension == "json" else "text/vtt" if extension == "vtt" else "application/x-subrip")
+            self.send_header("Content-Length", str(artifact.stat().st_size))
+            self.send_header("Cache-Control", "private, no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            with artifact.open("rb") as handle:
+                shutil.copyfileobj(handle, self.wfile, CHUNK)
+            return
+        m = re.fullmatch(r"/api/jobs/([A-Za-z0-9_-]{1,80})(/output|/retry-delivery|/retry|/render|/cancel)?", path)
         if not m:
             raise WorkerError(404, "Unknown route")
         job, suffix = m.groups()
@@ -661,6 +740,10 @@ class Handler(BaseHTTPRequestHandler):
                                        self.headers.get("X-Content-SHA256", ""),
                                        self.headers.get("X-Render-Mode", "cuda-stage1"))
             return self._json(202, entry)
+        if action == "POST" and suffix == "/cancel":
+            return self._json(202, self.worker.cancel(job))
+        if action == "POST" and suffix in ("/retry", "/render"):
+            return self._json(202, self.worker.retry(job, render=suffix == "/render"))
         if action == "POST" and suffix == "/retry-delivery":
             return self._json(202, self.worker.retry_delivery(job))
         if action == "GET" and suffix == "/output":

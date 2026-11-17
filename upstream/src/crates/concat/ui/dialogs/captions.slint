@@ -42,6 +42,9 @@ export struct CaptionsSheetData {
     /// Row in the installed transcriber list.
     model: int,
     karaoke: bool,
+    gpu: bool,
+    render-after: bool,
+    preset: int,
     /// 0 Bottom, 1 Centre, 2 Top
     placement: int,
     /// 0 Small, 1 Medium, 2 Large
@@ -74,6 +77,10 @@ export component CaptionsDialog inherits Modal {
     callback text-edited(text: string);
     callback model-changed(index: int);
     callback karaoke-toggled(on: bool);
+    callback gpu-toggled(on: bool);
+    callback gpu-render-toggled(on: bool);
+    callback preset-changed(index: int);
+    callback import-gpu-json();
     callback placement-changed(index: int);
     callback size-changed(index: int);
     callback begin();
@@ -200,6 +207,21 @@ export component CaptionsDialog inherits Modal {
             }
 
             DialogRow {
+                label: "Generate on GPU";
+                Switch { checked: root.data.gpu; toggled(on) => { root.gpu-toggled(on); } }
+            }
+            if root.data.gpu: DialogRow {
+                label: "Caption Preset";
+                Select { options: ["Preset 1 — Purple Word Highlight", "Preset 2 — Yellow Caption Bar"];
+                    current: root.data.preset; changed(index) => { root.preset-changed(index); } }
+            }
+            if root.data.gpu: DialogRow {
+                label: "Render in same GPU task";
+                Switch { checked: root.data.render-after; toggled(on) => { root.gpu-render-toggled(on); } }
+            }
+            if root.data.gpu: Text { text: "Uses the existing GPU project package and manual queue. Accurate editable words return as JSON; no local model is required.";
+                color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
+            if !root.data.gpu: DialogRow {
                 label: I18n.t("common.model");
                 Select {
                     options: root.models;
@@ -210,7 +232,7 @@ export component CaptionsDialog inherits Modal {
                 }
             }
 
-            DialogRow {
+            if !root.data.gpu: DialogRow {
                 label: "Voice-synced Karaoke (word by word)";
                 Switch {
                     checked: root.data.karaoke;
@@ -357,10 +379,13 @@ export component CaptionsDialog inherits Modal {
                 primary: true;
                 large: true;
                 glyph: Glyph.text-mark;
-                label: root.from-voice ? I18n.t("captions.generateCaptions") : I18n.t("captions.addCaptions");
+                label: root.data.gpu && root.from-voice ? "Prepare GPU Caption Task" : root.from-voice ? I18n.t("captions.generateCaptions") : I18n.t("captions.addCaptions");
                 enabled: root.from-voice ? root.data.ready && root.data.source >= 0 : root.draft != "";
                 clicked => { root.begin(); }
             }
+
+            if !root.data.running: Button { label: "Import GPU Caption JSON"; ghost: true;
+                clicked => { root.import-gpu-json(); } }
 
             // Captions as a SubRip file: one read in as titles with the
             // look above, timed as the file says; or a lane of titles

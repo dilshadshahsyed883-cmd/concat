@@ -1096,6 +1096,7 @@ fn fades_and_wipes_reach_the_picture() {
                     id: kind.to_owned(),
                     duration: 1.0,
                     intensity: None,
+                    params: Default::default(),
                 })),
                 ..ClipPatch::default()
             },
@@ -1584,6 +1585,7 @@ fn every_edit_still_exports() {
                     id: kind.to_owned(),
                     duration: 0.5,
                     intensity: None,
+                    params: Default::default(),
                 })),
                 ..ClipPatch::default()
             },

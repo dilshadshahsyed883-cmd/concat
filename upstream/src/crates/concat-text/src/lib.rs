@@ -1278,6 +1278,44 @@ pub fn render_frame(
     })
 }
 
+/// Paints an active-word backing beneath the unchanged phrase glyphs.
+/// The caller supplies a speech-derived word index; no timing is guessed here.
+pub fn render_word_frame(fonts: &Fonts, style: &TitleStyle, width: u32, height: u32,
+    active: usize, background: &str) -> Result<RenderedFrame, Error> {
+    let (canvas, block, words) = paint(fonts, style, width, height)?;
+    let canvas = word_backing(canvas, &words, active, background, style.font_size as f32 * height as f32)?;
+    Ok(RenderedFrame { rgba: straight_rgba(&canvas), width, height,
+        block_width: block.0, block_height: block.1, block_dx: block.2, block_dy: block.3, words })
+}
+
+/// PNG counterpart of [`render_word_frame`] for native export/title caching.
+pub fn render_word(fonts: &Fonts, style: &TitleStyle, width: u32, height: u32,
+    active: usize, background: &str) -> Result<Rendered, Error> {
+    let (canvas, block, words) = paint(fonts, style, width, height)?;
+    let canvas = word_backing(canvas, &words, active, background, style.font_size as f32 * height as f32)?;
+    let png = canvas.encode_png().map_err(|error| Error::Encode(error.to_string()))?;
+    Ok(Rendered { png, width, height, block_width: block.0, block_height: block.1,
+        block_dx: block.2, block_dy: block.3, words })
+}
+
+fn word_backing(canvas: Pixmap, words: &[WordRect], active: usize, background: &str, em: f32)
+    -> Result<Pixmap, Error> {
+    let Some(word) = words.get(active) else { return Err(Error::Encode("Active word exceeds the shaped phrase".into())); };
+    let Some(color) = colour(background) else { return Err(Error::Encode("Invalid active word backing color".into())); };
+    let mut result = Pixmap::new(canvas.width(), canvas.height()).ok_or(Error::Canvas(canvas.width(), canvas.height()))?;
+    let padding = (em * 0.12).max(1.0);
+    if let Some(rect) = Rect::from_xywh(word.x as f32-padding, word.y as f32-padding,
+        word.width as f32+2.0*padding, word.height as f32+2.0*padding) {
+        let mut builder = PathBuilder::new(); push_rounded_rect(&mut builder, rect, em*0.15);
+        if let Some(path) = builder.finish() {
+            let mut paint = Paint { anti_alias: true, ..Paint::default() }; paint.set_color(color);
+            result.fill_path(&path, &paint, FillRule::Winding, Transform::identity(), None);
+        }
+    }
+    result.draw_pixmap(0, 0, canvas.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
+    Ok(result)
+}
+
 /// A painted block: (width, height, dx, dy), on [`Rendered`]'s terms.
 type Block = (u32, u32, i32, i32);
 
@@ -1659,6 +1697,12 @@ pub struct ShapeStyle {
     pub figure: Figure,
     /// The figure's longer side.
     pub size: f64,
+    /// Explicit rectangle dimensions in canvas fractions; zero preserves the legacy size.
+    pub width: f64,
+    /// Explicit rectangle height in canvas fractions.
+    pub height: f64,
+    /// Rounded rectangle corner radius in frame-height fractions.
+    pub corner_radius: f64,
     /// The inside's colour, `#rrggbb[aa]`; empty for an outline alone.
     pub fill: String,
     /// The outline's colour; a line or an arrow is drawn in this, falling
@@ -1739,7 +1783,11 @@ fn paint_shape(style: &ShapeStyle, width: u32, height: u32) -> Result<(Pixmap, B
 
     // The figure's own box, before any outline: (w, h), centred.
     let (w, h) = match style.figure {
-        Figure::Square | Figure::Circle => (size, size),
+        Figure::Square => (
+            if style.width > 0.0 { style.width.min(2.0) as f32 * width as f32 } else { size },
+            if style.height > 0.0 { style.height.min(2.0) as f32 * frame_h } else { size },
+        ),
+        Figure::Circle => (size, size),
         Figure::Triangle => (size, size * 0.866),
         Figure::Parallelogram | Figure::Trapezoid => (size, size * 0.6),
         Figure::Line => (size, rule),
@@ -1751,9 +1799,8 @@ fn paint_shape(style: &ShapeStyle, width: u32, height: u32) -> Result<(Pixmap, B
     let mut path = PathBuilder::new();
     let closed = match style.figure {
         Figure::Square => {
-            path.push_rect(
-                Rect::from_ltrb(left, top, right, bottom).ok_or(Error::Canvas(width, height))?,
-            );
+            let rect = Rect::from_ltrb(left, top, right, bottom).ok_or(Error::Canvas(width, height))?;
+            push_rounded_rect(&mut path, rect, style.corner_radius.max(0.0) as f32 * frame_h);
             true
         }
         Figure::Circle => {
@@ -1904,6 +1951,23 @@ mod tests {
             lowered, sorted,
             "sorted without regard to case, and once each"
         );
+    }
+
+    #[test]
+    fn render_word_backing_moves_without_reflow_and_preserves_glyphs() {
+        let fonts = Fonts::new();
+        let look = style("BUT WHAT HAPPENED");
+        let first = render_word_frame(&fonts, &look, 960, 540, 0, "#a020f0").unwrap();
+        let last = render_word_frame(&fonts, &look, 960, 540, 2, "#a020f0").unwrap();
+        assert_eq!(first.words, last.words);
+        assert_eq!((first.block_width, first.block_height), (last.block_width, last.block_height));
+        assert_ne!(first.rgba, last.rgba);
+        let purple = |frame: &RenderedFrame| frame.rgba.chunks_exact(4)
+            .filter(|p| p[0] == 160 && p[1] == 32 && p[2] == 240 && p[3] == 255).count();
+        assert!(purple(&first) > 100);
+        assert!(purple(&last) > purple(&first));
+        assert!(render_word_frame(&fonts, &look, 960, 540, 99, "#a020f0").is_err());
+        assert!(render_word_frame(&fonts, &look, 960, 540, 0, "invalid").is_err());
     }
 
     fn style(content: &str) -> TitleStyle {
@@ -2493,6 +2557,7 @@ mod tests {
         let square = ShapeStyle {
             figure: Figure::Square,
             size: 0.5,
+            width: 0.0, height: 0.0, corner_radius: 0.0,
             fill: "#ff0000".to_owned(),
             stroke: String::new(),
             stroke_width: 0.0,
@@ -2510,6 +2575,7 @@ mod tests {
         let line = ShapeStyle {
             figure: Figure::Line,
             size: 0.5,
+            width: 0.0, height: 0.0, corner_radius: 0.0,
             fill: "#00ff00".to_owned(),
             stroke: String::new(),
             stroke_width: 0.05,

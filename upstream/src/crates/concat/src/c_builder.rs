@@ -218,20 +218,38 @@ pub fn plan_profile(assets: &[Asset], seconds: f64, image_weights: &str, video_w
     }
     let images: Vec<_> = assets.iter().filter(|a| a.kind == "image").collect();
     let videos: Vec<_> = assets.iter().filter(|a| a.kind == "video").collect();
-    let iw = if images.is_empty() { HashMap::new() } else { strengths(image_weights, &images)? };
-    let vw = if videos.is_empty() { HashMap::new() } else { strengths(video_weights, &videos)? };
+    let (iw,vw)=if let Some(selection)=&profile.media_selection {
+        let weights=|map:&BTreeMap<String,concat_project::planning::KeywordSelection>|map.iter().filter(|(_,v)|v.selected&&v.weight>0).map(|(k,v)|(k.clone(),v.weight)).collect::<HashMap<_,_>>();
+        (weights(&selection.images),if selection.videos_enabled {weights(&selection.videos)}else{HashMap::new()})
+    } else {
+        (if images.is_empty(){HashMap::new()}else{strengths(image_weights,&images)?},if videos.is_empty(){HashMap::new()}else{strengths(video_weights,&videos)?})
+    };
+    let mut group_totals=HashMap::<(String,String),f64>::new();
+    for asset in assets { *group_totals.entry((asset.kind.clone(),asset.keyword.clone())).or_default()+=1.0/(1.0+f64::from(asset.used_count)); }
     let sources: Vec<_> = assets.iter().map(|a| concat_project::planning::Source {
-        id: a.path.clone(), video: a.kind == "video",
+        id: a.path.clone(), group:a.keyword.clone(), video: a.kind == "video",
         duration_us: a.duration.filter(|d| d.is_finite() && *d > 0.0)
             .map(|d| (d*1e6) as u64).unwrap_or(0),
         weight: f64::from(*if a.kind == "video" { vw.get(&a.keyword) } else { iw.get(&a.keyword) }.unwrap_or(&0))
-            / (1.0 + f64::from(a.used_count)),
+            / (1.0 + f64::from(a.used_count)) / group_totals[&(a.kind.clone(),a.keyword.clone())],
     }).collect();
+    if !sources.iter().any(|s|s.weight>0.) {return Err("Select at least one image keyword with a positive slider weight, or enable and select videos".into());}
+    if profile.pins.iter().any(|p|sources.iter().find(|s|s.id==p.source_id).is_none_or(|s|s.weight<=0.)){return Err("A pinned shot belongs to an excluded keyword; clear that pin or enable its media group".into());}
     let result = concat_project::planning::generate(&sources, (seconds*1e6).round() as u64, profile)?;
     let stats = result.stats(&sources);
     let count = stats.images+stats.videos;
     let mut summary = format!("{} shots; video {:.1}% by count / {:.1}% by seconds. Seed {}.",
         count, stats.videos as f64/count as f64*100.0, stats.video_us as f64/(seconds*1e6)*100.0, profile.seed);
+    for pair in profile.curve.windows(2) {
+        let lo=(pair[0].at*seconds*1e6).round() as u64;let hi=(pair[1].at*seconds*1e6).round() as u64;
+        let(mut video_us,mut image_us,mut videos,mut images)=(0_u64,0_u64,0_u64,0_u64);
+        for shot in &result.shots {let overlap=(shot.start_us+shot.duration_us).min(hi).saturating_sub(shot.start_us.max(lo));
+            if sources[shot.source].video {video_us+=overlap;if shot.start_us>=lo&&shot.start_us<hi{videos+=1;}}
+            else{image_us+=overlap;if shot.start_us>=lo&&shot.start_us<hi{images+=1;}}
+        }
+        summary.push_str(&format!("\nZone {:.0}–{:.0}%: {videos} videos / {images} images; video {:.1}% by count, {:.1}% by seconds",pair[0].at*100.,pair[1].at*100.,
+            if videos+images>0{videos as f64/(videos+images) as f64*100.}else{0.},if video_us+image_us>0{video_us as f64/(video_us+image_us) as f64*100.}else{0.}));
+    }
     for warning in result.warnings { summary.push_str(&format!("\n{warning}")); }
     let shots: Vec<_> = result.shots.into_iter().map(|s| Shot { asset: assets[s.source].clone(),
         start_us: s.start_us, duration_us: s.duration_us, trim_us: s.trim_us }).collect();
@@ -277,6 +295,12 @@ fn media_item(asset: &Asset, id: String) -> MediaItem {
 }
 pub fn write_native(shots: &[Shot], narration: &Path, duration: f64,
     parent: &Path, name: &str) -> Result<PathBuf, String> {
+    write_native_with_profile(shots,narration,duration,parent,name,None)
+}
+pub fn write_native_with_profile(shots:&[Shot],narration:&Path,duration:f64,parent:&Path,name:&str,
+    profile:Option<&concat_project::planning::Profile>)->Result<PathBuf,String>{
+    if let Some(profile)=profile {profile.validate()?;}
+
     let name = name.trim();
     if name.is_empty() || name == "." || name == ".."
         || name.chars().any(|c| "\\/:*?\"<>|".contains(c)) {
@@ -289,6 +313,7 @@ pub fn write_native(shots: &[Shot], narration: &Path, duration: f64,
     fs::create_dir(&root).map_err(|e| format!("Project already exists or cannot be created: {e}"))?;
     let outcome = (|| -> Result<(), String> {
         let mut project = Project::new();
+        if let Some(profile)=profile {project.extra.insert("cBuilderPlanning".into(),serde_json::to_value(profile).map_err(|e|e.to_string())?);}
         let mut media_ids: HashMap<String, String> = HashMap::new();
         for shot in shots {
             let source = Path::new(&shot.asset.path);
@@ -478,6 +503,35 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
+    fn slider_selection_excludes_unchecked_zero_and_disabled_video_groups() {
+        use concat_project::planning::{KeywordSelection,MediaSelection,Profile};
+        let mut first=image("first");first.keyword="Antonia".into();
+        let mut other=image("other");other.keyword="Maria Sakkari".into();
+        let mut video=first.clone();video.path="/fake/clip.mp4".into();video.kind="video".into();video.duration=Some(20.);
+        let mut selection=MediaSelection::default();selection.images.insert("Antonia".into(),KeywordSelection {selected:true,weight:100});
+        selection.images.insert("Maria Sakkari".into(),KeywordSelection {selected:false,weight:100});
+        selection.videos.insert("Antonia".into(),KeywordSelection {selected:true,weight:100});
+        let mut profile=Profile::default();profile.media_selection=Some(selection);
+        let assets=[first,other,video];
+        let(shots,_)=plan_profile(&assets,120.,"","",&profile).unwrap();
+        assert!(shots.iter().all(|s|s.asset.keyword=="Antonia"&&s.asset.kind=="image"));
+        profile.media_selection.as_mut().unwrap().images.get_mut("Antonia").unwrap().weight=0;
+        assert!(plan_profile(&assets,120.,"","",&profile).is_err());
+        assert_eq!(profile,Profile::from_json(&serde_json::to_string(&profile).unwrap()).unwrap());
+    }
+    #[test]
+    fn keyword_slider_shares_do_not_depend_on_group_library_size() {
+        use concat_project::planning::{Anchor,KeywordSelection,MediaSelection,Profile};
+        let mut assets=Vec::new();
+        for(group,count)in [("Antonia",113),("Maria Sakkari",10)] {for n in 0..count {let mut a=image(&format!("{group}{n}"));a.keyword=group.into();assets.push(a);}}
+        let mut selection=MediaSelection::default();
+        selection.images.insert("Antonia".into(),KeywordSelection {selected:true,weight:70});selection.images.insert("Maria Sakkari".into(),KeywordSelection {selected:true,weight:30});
+        let mut profile=Profile::default();profile.curve=vec![Anchor {at:0.,video:0.},Anchor {at:1.,video:0.}];profile.media_selection=Some(selection);
+        let(shots,_)=plan_profile(&assets,1200.,"","",&profile).unwrap();
+        let ratio=shots.iter().filter(|s|s.asset.keyword=="Antonia").count() as f64/shots.len() as f64;
+        assert!((ratio-0.70).abs()<0.10,"actual share {ratio}");
+    }
+    #[test]
     fn validates_gaps() {
         let bad = vec![Shot { asset: image("one"), start_us: 2, duration_us: 1_000_000, trim_us: 0 }];
         assert!(validate(&bad, 1_000_002).is_err());
@@ -501,6 +555,9 @@ pub struct State {
     pub removed: usize,
     pub profile_json: String,
     pub preview: String,
+    pub preview_shots: Vec<Shot>,
+    pub stored_profiles: Vec<concat_project::planning::Profile>,
+    pub active_profile_name: String,
 }
 impl State {
     pub fn images(&self) -> usize { self.assets.iter().filter(|a| a.kind == "image").count() }
@@ -532,4 +589,46 @@ pub fn save_profile(path: &Path, source: &str) -> Result<(), String> {
     }
     if existed { let _ = fs::remove_file(backup); }
     Ok(())
+}
+
+/// Managed profile filenames never interpret a profile name as a filesystem path.
+pub fn profile_file(folder:&Path,name:&str)->PathBuf {
+    let hash=name.bytes().fold(0xcbf29ce484222325_u64,|h,b|(h^u64::from(b)).wrapping_mul(0x100000001b3));
+    folder.join(format!("profile-{hash:016x}.json"))
+}
+pub fn load_profiles(folder:&Path)->Vec<concat_project::planning::Profile> {
+    let mut profiles=Vec::new();
+    if let Ok(entries)=fs::read_dir(folder){for entry in entries.flatten().take(500){
+        if entry.file_type().is_ok_and(|t|t.is_file())&&entry.path().extension().is_some_and(|e|e=="json"){
+            if let Ok(source)=fs::read_to_string(entry.path()){
+                if let Ok(profile)=concat_project::planning::Profile::from_json(&source){profiles.push(profile);}
+            }
+        }
+    }}
+    profiles.sort_by(|a,b|a.name.cmp(&b.name));profiles
+}
+pub fn store_profile(folder:&Path,source:&str)->Result<(),String> {
+    let profile=concat_project::planning::Profile::from_json(source)?;
+    fs::create_dir_all(folder).map_err(|e|e.to_string())?;
+    let path=profile_file(folder,&profile.name);
+    if path.is_symlink(){return Err("Managed profile cannot be a symbolic link".into());}
+    if path.exists(){let old=concat_project::planning::Profile::from_json(&fs::read_to_string(&path).map_err(|e|e.to_string())?)?;
+        if old.name!=profile.name{return Err("Profile filename collision; choose another name".into());}}
+    save_profile(&path,source)
+}
+
+#[cfg(test)]
+mod profile_tests {
+    use super::*;
+    #[test]
+    fn managed_profiles_replace_atomically_and_preserve_sources() {
+        let root=std::env::temp_dir().join(format!("concat-profile-test-{}",random_seed()));
+        let mut profile=concat_project::planning::Profile::default();profile.name="Custom / profile".into();
+        let mut json=serde_json::to_string(&profile).unwrap();store_profile(&root,&json).unwrap();
+        profile.max_videos=3;json=serde_json::to_string(&profile).unwrap();store_profile(&root,&json).unwrap();
+        let profiles=load_profiles(&root);assert_eq!(profiles.len(),1);assert_eq!(profiles[0].max_videos,3);
+        assert!(save_profile(&profile_file(&root,&profile.name),"{}").is_err());
+        assert_eq!(load_profiles(&root)[0].max_videos,3);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

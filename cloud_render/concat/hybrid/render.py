@@ -15,6 +15,8 @@ from pathlib import Path
 
 from .animations import apply_transform
 from .canvas import make_background
+from .canvas_shapes import render_shape, apply_mask
+from .particles import ParticleEffect, apply as apply_particles
 from .cuda_audio import mux_cuda_audio
 from .captions import CaptionRenderer
 from .codec import Nvdec, Nvenc, nv12_from_rgba
@@ -47,6 +49,14 @@ class Sources:
         self.rates = {}
         self.sizes = {}
         self.backgrounds = OrderedDict()
+        self.shapes = OrderedDict()
+
+    def shape(self, spec):
+        value = self.shapes.pop(spec, None)
+        if value is None: value = render_shape(spec, WIDTH, HEIGHT)
+        self.shapes[spec] = value
+        while len(self.shapes) > 4: self.shapes.popitem(last=False)
+        return value
 
     def backdrop(self, clip, pixels):
         """Reuse still-image Canvas textures across frames without a reblur."""
@@ -165,7 +175,8 @@ NATIVE_COLOR_PASSES = {EXPOSURE: apply_exposure, CONTRAST: apply_contrast}
 
 def picture(sources, clip, index, tail=False, *, force_opacity=False, placement_index=None,
             return_background=False):
-    pixels = sources.image(clip.path) if clip.kind == "image" else sources.video(clip, index, tail)
+    pixels = (sources.shape(clip.shape) if clip.kind == "shape" else
+              sources.image(clip.path) if clip.kind == "image" else sources.video(clip, index, tail))
     if clip.flip_h:
         pixels = pixels[:, ::-1]
     if clip.flip_v:
@@ -177,13 +188,17 @@ def picture(sources, clip, index, tail=False, *, force_opacity=False, placement_
     transform = clip.transform(index if placement_index is None else placement_index)
     if force_opacity:
         transform = replace(transform, opacity=1)
+    if clip.mask is not None:
+        pixels = apply_mask(pixels, clip.mask, sources.dimensions(clip.path), transform.scale)
     # Native packages run on the fitted picture before placement. Preserve
     # the old post-placement order for clips with only legacy filters.
-    native_chain = any(isinstance(settings, NativeColorEffect) for settings in clip.filters)
+    native_chain = any(isinstance(settings, (NativeColorEffect, ParticleEffect)) for settings in clip.filters)
     if not native_chain:
         pixels = apply_transform(pixels, transform)
     for settings in clip.filters:
-        if isinstance(settings, NativeColorEffect):
+        if isinstance(settings, ParticleEffect):
+            pixels = apply_particles(pixels, settings, index)
+        elif isinstance(settings, NativeColorEffect):
             handler = NATIVE_COLOR_PASSES[settings.id]
             pixels = handler(pixels, settings.at_frame(index))
         else:
@@ -250,12 +265,13 @@ def timeline_frames(plan, temporary, log, profiler=None):
                         below = composite(layers, width=WIDTH, height=HEIGHT, background=(0,0,0,1))
                         effect = below
                         for settings in clip.filters:
-                            effect = filter_picture(effect, settings)
+                            effect = (apply_particles(effect, settings, index) if isinstance(settings, ParticleEffect)
+                                      else filter_picture(effect, settings))
                         layers = [Layer(below), Layer(effect, opacity=clip.transform(index).opacity)]
                     continue
                 clip_layers = picture_layers(
                     sources, clip, index,
-                    with_canvas=(rank == plan.background_rank and clip.kind in ("image", "video")))
+                    with_canvas=((rank == plan.background_rank or clip.canvas_backdrop) and clip.kind in ("image", "video")))
                 if clip.transition and clip.transition.span.contains(index):
                     outgoing = picture(sources, clip.outgoing, index, tail=True)
                     pixels = render_transition(outgoing, clip_layers[-1].texture,

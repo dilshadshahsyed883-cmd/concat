@@ -1,3 +1,4 @@
+import { CBuilderKeywordData } from "workspace/c-builder-selection.slint";
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
 
@@ -99,6 +100,14 @@ export global Editor {
     in-out property <int> cb-scan-total;
     in-out property <bool> cb-busy;
     in-out property <string> cb-profile;
+    in-out property <[string]> cb-profile-names;
+    in-out property <[CBuilderKeywordData]> cb-image-keywords;
+    in-out property <[CBuilderKeywordData]> cb-video-keywords;
+    in-out property <bool> cb-videos-enabled;
+    in-out property <string> cb-image-selection-summary;
+    in-out property <string> cb-video-selection-summary;
+    callback cb-keyword-changed(json: string, video: bool, keyword: string, selected: bool, weight: int);
+    callback cb-videos-toggled(json: string, on: bool);
     in-out property <string> cb-preview;
     callback cb-plan-profile(json: string, images: string, videos: string, action: string);
     callback cb-import-folder();

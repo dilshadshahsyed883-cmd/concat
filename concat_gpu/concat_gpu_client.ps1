@@ -2,7 +2,7 @@
 # Embedded in the actual Concat Windows EXE. No additional desktop editor.
 # Use only the existing SaladCloud Gateway and existing VPS receiver.
 param(
-    [ValidateSet("Submit","Save","Test","Prepare","Upload","Status","OfflineBundle")][string]$Operation="Submit",
+    [ValidateSet("Submit","Save","Test","Prepare","Upload","Status","Retry","OfflineBundle")][string]$Operation="Submit",
     [string]$ProjectDir,
     [string]$Job,
     [string]$SnapshotID,
@@ -381,6 +381,31 @@ function Get-Output([string]$domain,[string]$job,$status,$headers,[string]$outpu
     }
 }
 
+function Get-Captions([string]$domain,[string]$job,$status,$headers,[string]$outputs) {
+    if ($job -cnotmatch '^concat-cuda-[a-f0-9]{16}$') {throw "Invalid caption job identity."}
+    $directory=Join-Path $outputs $job
+    New-Item -ItemType Directory -Force -Path $directory | Out-Null
+    foreach ($extension in @("json","srt","vtt")) {
+        $record=$status.caption_artifacts.$extension
+        if (!$record -or [long]$record.size -le 0 -or [long]$record.size -gt 16777216 -or
+            $record.sha256 -cnotmatch '^[a-f0-9]{64}$') {throw "Invalid caption integrity metadata."}
+        $target=Join-Path $directory ("captions."+$extension)
+        if (Test-Path -LiteralPath $target) {
+            if ((SHA-File $target) -eq $record.sha256) {continue}
+            throw "Existing captions differ; move the edited caption file before downloading again."
+        }
+        $partial=$target+"."+[Guid]::NewGuid().ToString("N")+".part"
+        try {
+            Invoke-WebRequest -UseBasicParsing -MaximumRedirection 0 -Uri "$domain/api/jobs/$job/captions/$extension" -Headers $headers -TimeoutSec 120 -OutFile $partial
+            if ((Get-Item -LiteralPath $partial).Length -ne [long]$record.size -or (SHA-File $partial) -ne $record.sha256) {
+                throw "Caption artifact checksum verification failed."
+            }
+            [IO.File]::Move($partial,$target)
+        } finally {Remove-Item -LiteralPath $partial -ErrorAction SilentlyContinue}
+    }
+    return (Join-Path $directory "captions.json")
+}
+
 function Send-Project([string]$root,[string]$gpuDataDir,[string]$domain,$headers,$capabilities) {
     $projectManifest=Join-Path $root "concat.json"
     if (!(Test-Path -LiteralPath $projectManifest -PathType Leaf)) {$projectManifest=Join-Path $root "wolfcut.json"}
@@ -419,6 +444,13 @@ function Send-Project([string]$root,[string]$gpuDataDir,[string]$domain,$headers
             $lastState=$status.state
         }
         switch ($status.state) {
+            "captions_ready" {
+                $output=Get-Captions $domain $job $status $headers (Join-Path $gpuDataDir "Outputs")
+                Report "Captions downloaded and verified. Import this JSON in Text > Captions to edit." 100 $output $false "completed"
+                return
+            }
+            "waiting_for_gpu" {throw ("Waiting for GPU speech recognition: "+[string]$status.error)}
+            "cancelled" {throw "GPU caption task cancelled. The source bundle is retained."}
             "delivered" {
                 Report "Render delivered and verified." 100 "VPS Cloud Render · $job.mp4"
                 break
@@ -458,10 +490,22 @@ function Queue-Status([string]$job,[string]$domain,$headers,[string]$gpuDataDir)
     $metrics=Format-RenderMetrics $status
     switch ($status.state) {
         "queued" {Report "Uploaded. Waiting in the worker queue." 100 "" $false "queued" $metrics}
-        "running" {Report "GPU rendering." 100 "" $false "rendering" $metrics}
+        "running" {
+            $detail=if ($status.caption_state) {"GPU captions: "+[string]$status.caption_state} else {"GPU rendering."}
+            Report $detail 100 "" $false "rendering" $metrics
+        }
+        "captions_ready" {
+            $output=Get-Captions $domain $job $status $headers (Join-Path $gpuDataDir "Outputs")
+            Report "Editable captions verified. Use Text > Captions > Import GPU JSON to review." 100 $output $false "completed" $metrics
+        }
+        "waiting_for_gpu" {Report ("GPU ASR unavailable: "+[string]$status.error) 100 "" $true "render_failed" $metrics}
+        "cancelled" {Report "Worker job cancelled; source retained." 100 "" $true "render_failed" $metrics}
         "delivering" {Report "Delivering the rendered MP4." 100 "" $false "rendering" $metrics}
         "delivered" {Report "Render delivered and verified." 100 "VPS Cloud Render - $job.mp4" $false "completed" $metrics}
         {$_ -in "rendered","delivery_failed"} {
+            if ($status.caption_artifacts) {
+                $captions=Get-Captions $domain $job $status $headers (Join-Path $gpuDataDir "Outputs")
+            }
             Report "Downloading and verifying the MP4." 100
             try {$output=Get-Output $domain $job $status $headers (Join-Path $gpuDataDir "Outputs")}
             catch {
@@ -537,7 +581,7 @@ $headers=$null
 try {
     if (!$env:LOCALAPPDATA) {throw "Windows did not provide a local application data directory."}
     $gpuDataDir=Join-Path $env:LOCALAPPDATA "Concat\GPU"
-    if ($Operation -in "Prepare","Upload","Status") {
+    if ($Operation -in "Prepare","Upload","Status","Retry") {
         if ($Job -cnotmatch '^concat-cuda-[a-f0-9]{16}$' -or
             $SnapshotID -cnotmatch '^concat-cuda-[a-f0-9]{16}$') {throw "Invalid queue job identifier."}
         $queueDir=Join-Path $gpuDataDir "Queue"
@@ -587,6 +631,7 @@ try {
                 Report "Upload verified. Waiting for GPU rendering ($formatted)." 100 "" $false "uploaded" "" $zipSize $zipSize
             } finally {$lease.Dispose()}
         } else {
+            if ($Operation -eq "Retry") {Invoke-RestMethod -Method Post -MaximumRedirection 0 -Uri "$($config.domain)/api/jobs/$Job/retry" -Headers $headers -TimeoutSec 20 | Out-Null}
             Queue-Status $Job $config.domain $headers $gpuDataDir
         }
         return

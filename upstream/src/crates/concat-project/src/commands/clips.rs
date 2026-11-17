@@ -299,6 +299,7 @@ pub(super) fn apply(
                     let applied = assign(&mut clip.duration, duration);
                     if applied {
                         clip.rewindow_keys(old, 0.0, duration);
+                        clip.rewindow_caption(0.0,duration);
                     }
                     (applied, duration - old, old_end - JOIN_EPSILON)
                 }
@@ -327,6 +328,7 @@ pub(super) fn apply(
                         | assign(&mut clip.source_start, source_start);
                     if applied {
                         clip.rewindow_keys(old, moved, old);
+                        clip.rewindow_caption(moved,old);
                     }
                     if ripple {
                         // The in-point moved; the clip stays put, and the
@@ -389,12 +391,14 @@ pub(super) fn apply(
                 tail.transition_in = None;
                 tail.fade_in = 0.0;
                 tail.rewindow_keys(whole, offset, whole);
+                tail.rewindow_caption(offset,whole);
                 created = Some(tail.id.clone());
                 let head = timeline.clip_at_mut(index);
                 head.duration = offset;
                 head.source_start = head_source;
                 head.fade_out = 0.0;
                 head.rewindow_keys(whole, 0.0, offset);
+                head.rewindow_caption(0.0,offset);
                 timeline.clips.insert(index + 1, Arc::new(tail));
             }
             // A split always mints the tail, so "minted anything" and

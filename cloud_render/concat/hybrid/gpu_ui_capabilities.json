@@ -1,7 +1,19 @@
 {
   "video_effects": [
     "concat.exposure",
-    "concat.contrast"
+    "concat.contrast",
+    "concat.particles-stars",
+    "concat.particles-gold-sparkles",
+    "concat.particles-embers",
+    "concat.particles-fireflies",
+    "concat.particles-bokeh",
+    "concat.particles-dust-motes",
+    "concat.particles-snow",
+    "concat.particles-rain",
+    "concat.particles-ash",
+    "concat.particles-light-leaks",
+    "concat.particles-shooting-stars",
+    "concat.particles-confetti"
   ],
   "transitions": [
     "concat.fade-black",
@@ -25,7 +37,16 @@
     "concat.burning-flame",
     "concat.pulse-wipe",
     "concat.twinkle-zoom",
-    "concat.wispy-wipe"
+    "concat.wispy-wipe",
+    "concat.diagonal-wipe",
+    "concat.door-reveal",
+    "concat.paper-rip-vertical",
+    "concat.paper-rip-diagonal",
+    "concat.double-paper-tear",
+    "concat.paper-unfold",
+    "concat.brush-stroke",
+    "concat.page-curl",
+    "concat.clock-wipe"
   ],
   "filters": [
     "concat.look.crystal-honey",

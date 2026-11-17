@@ -1,0 +1,18 @@
+id = "cuda-caption.preset-1-purple-word"
+name = "Caption Preset 1 — Purple Word Highlight"
+order = 1080
+language = "Latin"
+sample = "BUT WHAT HAPPENED"
+offsetY = 0.28
+[style]
+content = "BUT WHAT HAPPENED"
+fontFamily = "Inter"
+fontSize = 0.053
+fontWeight = 900
+color = "#ffffff"
+strokeColor = "#000000"
+strokeWidth = 0.004
+shadow = true
+karaoke = true
+karaokeColor = "#ffffff"
+karaokeBackground = "#a020f0"

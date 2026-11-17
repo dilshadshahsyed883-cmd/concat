@@ -1,0 +1,43 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+import { Theme } from "../theme/theme.slint";
+import { Button } from "../primitives/modal.slint";
+import { Select } from "../primitives/select.slint";
+import { Param, ParamFormat, Check } from "../inspector/controls.slint";
+import { Keyframes, CanvasMotionData } from "../timeline/model.slint";
+export component CanvasMotionPanel inherits VerticalLayout {
+    in property <bool> images: true;
+    in property <bool> videos: true;
+    in property <bool> selected-only: false;
+    property <int> preset: 0;
+    property <CanvasMotionData> settings <=> Keyframes.canvas-motion;
+    spacing: 8px;
+    Text { text: "Canvas Motion"; color: Theme.fg; font-size: Theme.fs; }
+    Select { options: ["Top-left to Center", "Top-right to Center", "Bottom-left to Center", "Bottom-right to Center", "Center Pop", "Zoom at Left", "Zoom at Center", "Zoom at Right", "Reverse to Corner", "Slide from Left", "Slide from Right", "Slide from Top", "Slide from Bottom", "Diagonal Fly-in", "Spring Settle", "Documentary Pan", "Fade and Scale", "Alternating Inset"]; current <=> root.preset; }
+    Button { label: Keyframes.physics-favourites[9 + root.preset] ? "★ Favorite" : "☆ Favorite";
+        clicked => { Keyframes.toggle-physics-favourite(9 + root.preset); } }
+    Param { label: "Start Scale"; value <=> root.settings.start-scale; minimum: 0.05; maximum: 1; step: 0.01; fmt: ParamFormat.steps; }
+    Param { label: "End Scale"; value <=> root.settings.end-scale; minimum: 0.05; maximum: 1; step: 0.01; fmt: ParamFormat.steps; }
+    Param { label: "Motion Duration (seconds)"; value <=> root.settings.duration; minimum: 0.05; maximum: 60; step: 0.1; fmt: ParamFormat.steps; }
+    Param { label: "Delay (seconds)"; value <=> root.settings.delay; minimum: 0; maximum: 60; step: 0.1; fmt: ParamFormat.steps; }
+    Param { label: "Speed"; value <=> root.settings.speed; minimum: 0.25; maximum: 3; step: 0.05; fmt: ParamFormat.steps; }
+    Param { label: "Strength"; value <=> root.settings.strength; minimum: 0.1; maximum: 2; step: 0.05; fmt: ParamFormat.steps; }
+    Param { label: "Physics Intensity"; value <=> root.settings.intensity; minimum: 0.2; maximum: 2; step: 0.05; fmt: ParamFormat.steps; }
+    Param { label: "Background Blur"; value <=> root.settings.blur; minimum: 0; maximum: 1; step: 0.05; fmt: ParamFormat.steps; }
+    Param { label: "Foreground Corners"; value <=> root.settings.corner-radius; minimum: 0; maximum: 0.2; step: 0.005; fmt: ParamFormat.steps; }
+    Param { label: "Random Seed"; value: root.settings.seed; changed(v) => { root.settings.seed = Math.round(v); } minimum: 0; maximum: 65535; step: 1; fmt: ParamFormat.steps; }
+    Param { label: "Start X"; value <=> root.settings.start-x; minimum: -0.5; maximum: 0.5; step: 0.01; fmt: ParamFormat.steps; }
+    Param { label: "Start Y"; value <=> root.settings.start-y; minimum: -0.5; maximum: 0.5; step: 0.01; fmt: ParamFormat.steps; }
+    Param { label: "End X"; value <=> root.settings.end-x; minimum: -0.5; maximum: 0.5; step: 0.01; fmt: ParamFormat.steps; }
+    Param { label: "End Y"; value <=> root.settings.end-y; minimum: -0.5; maximum: 0.5; step: 0.01; fmt: ParamFormat.steps; }
+    HorizontalLayout {
+        Check { checked: root.settings.reverse; toggled(on) => { root.settings.reverse = on; } }
+        Text { text: "Reverse"; color: Theme.fg; }
+        Check { checked: root.settings.custom-anchors; toggled(on) => { root.settings.custom-anchors = on; } }
+        Text { text: "Use custom X/Y anchors"; color: Theme.fg; }
+    }
+    Select { options: ["Linear", "Smooth"]; current: root.settings.easing; changed(index) => { root.settings.easing = index; } }
+    Button { label: "Apply Selected"; clicked => { Keyframes.apply-canvas-motion(root.preset, 0, root.images, root.videos, true, root.settings); } }
+    Button { label: "Apply All in Scope"; clicked => { Keyframes.apply-canvas-motion(root.preset, 0, root.images, root.videos, root.selected-only, root.settings); } }
+    Button { label: "Apply Randomly"; clicked => { Keyframes.apply-canvas-motion(root.preset, 2, root.images, root.videos, root.selected-only, root.settings); } }
+    Button { label: "Apply Favorites Randomly"; clicked => { Keyframes.apply-canvas-motion(root.preset, 3, root.images, root.videos, root.selected-only, root.settings); } }
+}

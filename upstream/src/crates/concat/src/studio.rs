@@ -48,6 +48,7 @@ use concat_project::{Command, PlayheadSide};
 
 mod backdrop;
 mod bulk_presets;
+mod particle_bulk;
 use bulk_presets::{BulkEffects, BulkMotion, BulkTransitions};
 mod consolidate;
 use consolidate::MergeJob;
@@ -615,6 +616,8 @@ pub struct DropPlan {
 /// every instance behind it - mid-gesture, that includes the TouchArea
 /// holding the pointer.
 pub struct Models {
+    pub cb_image_keywords: Rc<VecModel<crate::ui::CBuilderKeywordData>>,
+    pub cb_video_keywords: Rc<VecModel<crate::ui::CBuilderKeywordData>>,
     pub tabs: Rc<VecModel<TimelineTabData>>,
     pub tracks: Rc<VecModel<TrackData>>,
     pub clips: Rc<VecModel<ClipData>>,
@@ -709,6 +712,8 @@ pub struct Models {
 impl Models {
     pub fn new() -> Self {
         Self {
+            cb_image_keywords: Rc::new(VecModel::default()),
+            cb_video_keywords: Rc::new(VecModel::default()),
             tabs: Rc::new(VecModel::default()),
             tracks: Rc::new(VecModel::default()),
             clips: Rc::new(VecModel::default()),
@@ -2304,7 +2309,10 @@ impl Studio {
             bulk_effects: BulkEffects::default(),
             bulk_transitions: BulkTransitions::default(),
             media: crate::panes::media_bin::MediaBin::default(),
-            c_builder: crate::c_builder::State::default(),
+            c_builder: crate::c_builder::State {
+                stored_profiles: crate::c_builder::load_profiles(&host.dirs.config.join("c-builder-profiles")),
+                ..Default::default()
+            },
             peaks: HashMap::new(),
             strips: HashMap::new(),
             windows: HashMap::new(),
@@ -3969,6 +3977,20 @@ impl Studio {
         }
     }
 
+    /// Compose a canvas from native editable media, rectangle and title clips.
+    pub fn apply_canvas_preset(&mut self, json: &str, all: bool) {
+        let config = match concat_project::canvas_preset::Config::from_json(json) {
+            Ok(config) => config, Err(e) => { self.notify(&e, true); return; }
+        };
+        let targets: Vec<String> = self.timeline().clips.iter().filter(|c|
+            c.kind.is_visual() && !c.extra.contains_key("canvasOwner")
+            && !self.locked(&c.track_id)
+            && self.timeline().track(&c.track_id).is_some_and(|t| t.visible)
+            && (all || self.selection.contains(&c.id))).map(|c|c.id.clone()).collect();
+        let locked_tracks = self.timeline().tracks.iter().filter(|t|self.locked(&t.id)).map(|t|t.id.clone()).collect();
+        self.apply(Command::ApplyCanvasPreset { config, targets, locked_tracks });
+    }
+
     /// Apply a CUDA caption look to a selection, or to every unlocked title
     /// in the active timeline. Preserve each caption's words, duration,
     /// position, keys, and track; one batch is one Undo step.
@@ -4016,7 +4038,11 @@ impl Studio {
             let clip = self.clip(&id)?;
             let original = clip.text.as_ref()?;
             let mut next = style.clone();
-            next.content = if preset == "cuda-caption.preset-2-yellow-bar" { original.content.to_uppercase() } else { original.content.clone() };
+            next.content = if preset == "cuda-caption.preset-2-yellow-bar" || preset == "cuda-caption.preset-1-purple-word" { original.content.to_uppercase() } else { original.content.clone() };
+            next.karaoke_words = original.karaoke_words.clone();
+            if preset == "cuda-caption.preset-2-yellow-bar" || preset == "cuda-caption.preset-1-purple-word" {
+                for word in &mut next.karaoke_words { word.text = word.text.to_uppercase(); }
+            }
             if &next == original {
                 return None;
             }
@@ -4208,7 +4234,7 @@ impl Studio {
                 || !gpu_catalogue_has("video_effects", id)
                 || !matches!(
                     clip.kind,
-                    model::ClipKind::Video | model::ClipKind::Image
+                    model::ClipKind::Video | model::ClipKind::Image | model::ClipKind::Layer
                 ))
         {
             self.notify(&t("studio.unsupportedGpuControl"), true);
@@ -4361,6 +4387,7 @@ impl Studio {
                     id: id.to_owned(),
                     duration,
                     intensity: None,
+                    params: Default::default(),
                 })),
                 ..ClipPatch::default()
             },
@@ -4437,6 +4464,21 @@ impl Studio {
 
     /// Controls the GPU transition effect strength at the selected cut.
     /// Optional override keeps historical projects' preset defaults intact.
+    /// Validate each explicit package control before recording a single undo step.
+    pub fn set_transition_controls(&mut self, json:&str) {
+        let Some(clip)=self.selected_transition().cloned() else {self.notify("Select a transition first",true);return;};
+        if self.locked(&clip.track_id){self.notify("Track is locked",true);return;}
+        let Some(mut transition)=clip.transition_in else{return;};
+        if json.len()>8192 {self.notify("Transition settings exceed 8 KiB",true);return;}
+        let params:std::collections::BTreeMap<String,f64>=match serde_json::from_str(json){Ok(v)=>v,Err(e)=>{self.notify(&e.to_string(),true);return;}};
+        let catalogue=Catalogue::builtin();
+        let valid=catalogue.get(&transition.id).is_some_and(|p|params.iter().all(|(key,value)|
+            key!="intensity" && value.is_finite() && p.manifest.params.iter().any(|q|&q.key==key&&*value>=q.min&&*value<=q.max)));
+        if !valid {self.notify("Unsupported transition control or value outside its package range",true);return;}
+        transition.params=params;
+        self.apply(Command::UpdateClip {clip_id:clip.id,patch:ClipPatch {transition_in:Some(Some(transition)),..Default::default()}});
+    }
+
     pub fn set_transition_intensity(&mut self, amount: f64) {
         if !amount.is_finite() {
             return;
@@ -5096,7 +5138,8 @@ impl Studio {
                 // through the drop's rules, which can put a clip elsewhere.
                 // https://github.com/jub0t/Concat/issues/247
                 if moved_any(&moves, |id| self.clip(id)) {
-                    self.apply(Command::MoveClips { moves });
+                    let locked_tracks=self.timeline().tracks.iter().filter(|t|self.locked(&t.id)).map(|t|t.id.clone()).collect();
+                    self.apply(Command::ScopedMoveClips { moves, locked_tracks, magnetic:self.magnetic() });
                 }
             }
             Gesture::Trim {
@@ -8954,8 +8997,23 @@ impl Studio {
         editor.set_cb_scan_done(self.c_builder.scan_done.min(i32::MAX as usize) as i32);
         editor.set_cb_scan_total(self.c_builder.scan_total.min(i32::MAX as usize) as i32);
         editor.set_cb_busy(self.c_builder.scanning);
-        editor.set_cb_profile(self.c_builder.profile_json.clone().into());
+        let planning = self.project().extra.get("cBuilderPlanning")
+            .and_then(|p| serde_json::to_string_pretty(p).ok())
+            .unwrap_or_else(|| self.c_builder.profile_json.clone());
+        editor.set_cb_profile(planning.into());
         editor.set_cb_preview(self.c_builder.preview.clone().into());
+        let names: Vec<SharedString> = ["Balanced", "Video-Heavy Opening", "Image-Heavy Outro", "Fully Custom"]
+            .into_iter().map(SharedString::from).chain(self.c_builder.stored_profiles.iter().map(|p|SharedString::from(p.name.as_str()))).collect();
+        editor.set_cb_profile_names(slint::ModelRc::new(VecModel::from(names)));
+        let selection_profile=self.c_builder_profile("").unwrap_or_default();
+        let(images,image_summary)=self.c_builder_keyword_rows(false,&selection_profile);
+        let(videos,video_summary)=self.c_builder_keyword_rows(true,&selection_profile);
+        sync(&models.cb_image_keywords, images);
+        sync(&models.cb_video_keywords, videos);
+        editor.set_cb_image_keywords(models.cb_image_keywords.clone().into());
+        editor.set_cb_video_keywords(models.cb_video_keywords.clone().into());
+        editor.set_cb_image_selection_summary(image_summary.into());editor.set_cb_video_selection_summary(video_summary.into());
+        editor.set_cb_videos_enabled(selection_profile.media_selection.as_ref().is_some_and(|s|s.videos_enabled));
         editor.set_keys_undo(hint("undo").into());
         editor.set_keys_redo(hint("redo").into());
         editor.set_keys_split(hint("split").into());
@@ -9197,11 +9255,11 @@ impl Studio {
         }
         // The keyframe cluster's state, on its own global: every keyable row
         // in the inspector reads it, and none of them is threaded to.
+        let parameters=self.selected_transition().and_then(|c|c.transition_in.as_ref()).map(|t|&t.params);
+        app.global::<crate::ui::TransitionControls>().set_params(parameters.and_then(|p|serde_json::to_string_pretty(p).ok()).unwrap_or_else(||"{}".into()).into());
         let keys = app.global::<Keyframes>();
-        let physics_stars: Vec<bool> = PhysicsPreset::ALL
-            .into_iter()
-            .map(|preset| self.prefs.physics_motion_favourites
-                .iter().any(|id| id == preset.id()))
+        let physics_stars: Vec<bool> = (0..27).filter_map(bulk_presets::animation_favourite_id)
+            .map(|preset| self.prefs.physics_motion_favourites.iter().any(|id| id == preset))
             .collect();
         keys.set_physics_favourites(slint::ModelRc::new(VecModel::from(physics_stars)));
         // The Keyframes panel: set whole, since a row holds a model of its
@@ -10388,8 +10446,7 @@ impl Studio {
 
     /// Stars are user settings, not project data, and survive app restarts.
     pub fn toggle_physics_favourite(&mut self, index: i32) {
-        let Some(preset) = PhysicsPreset::from_index(index) else { return };
-        let id = preset.id();
+        let Some(id) = bulk_presets::animation_favourite_id(index) else { return };
         if self.prefs.physics_motion_favourites.iter().any(|entry| entry == id) {
             self.prefs.physics_motion_favourites.retain(|entry| entry != id);
         } else {
@@ -11487,6 +11544,7 @@ impl Studio {
             clip.volume <= 0.0,
             !locked && audible,
         ));
+        rows.push(action("replace-file", "Replace Media (Keep Slot)".into(), Glyph::None, &keymap::label(&self.prefs,"replace-media"), !locked && clip.kind.is_visual()));
         rows.push(action("close-gap", "Close Gap at Playhead".into(), Glyph::None, "", !locked));
         rows.push(action("close-gaps", "Close All Internal Gaps on Track".into(), Glyph::None, "", !locked));
         rows.push(check("lock", &t("studio.lockTrack"), "", locked, true));
@@ -11591,6 +11649,66 @@ impl Studio {
     }
 
     /// A row of a bin card's menu, for the media it was opened on.
+    fn c_builder_profile(&self,json:&str)->Result<concat_project::planning::Profile,String> {
+        if !json.trim().is_empty(){concat_project::planning::Profile::from_json(json)}else{
+            self.project().extra.get("cBuilderPlanning").map(|p|concat_project::planning::Profile::from_json(&p.to_string())).unwrap_or_else(||Ok(Default::default()))
+        }
+    }
+    pub fn set_c_builder_keyword(&mut self,json:&str,video:bool,keyword:&str,selected:bool,weight:i32) {
+        if self.c_builder.scanning{return;}
+        if !self.c_builder.assets.iter().any(|a|a.keyword==keyword&&(a.kind=="video")==video){self.notify("Media keyword is no longer available; refresh the library",true);return;}
+        let mut profile=match self.c_builder_profile(json){Ok(p)=>p,Err(e)=>{self.notify(&e,true);return;}};
+        let selection=profile.media_selection.get_or_insert_with(Default::default);
+        let map=if video{&mut selection.videos}else{&mut selection.images};
+        let previous=map.get(keyword).is_some_and(|v|v.selected);
+        let weight=if selected&&!previous&&weight==0{100}else{weight.clamp(0,100) as u32};
+        map.insert(keyword.to_owned(),concat_project::planning::KeywordSelection {selected,weight});
+        self.c_builder.profile_json=serde_json::to_string_pretty(&profile).unwrap_or_default();
+        self.c_builder.preview.clear();self.c_builder.preview_shots.clear();
+        self.apply_within("c-builder-media-selection",Command::SetPlanningProfile {profile:serde_json::to_value(profile).unwrap_or_default()});
+    }
+    pub fn set_c_builder_videos_enabled(&mut self,json:&str,on:bool) {
+        if self.c_builder.scanning{return;}
+        let mut profile=match self.c_builder_profile(json){Ok(p)=>p,Err(e)=>{self.notify(&e,true);return;}};
+        profile.media_selection.get_or_insert_with(Default::default).videos_enabled=on;
+        self.c_builder.profile_json=serde_json::to_string_pretty(&profile).unwrap_or_default();
+        self.c_builder.preview.clear();self.c_builder.preview_shots.clear();
+        self.apply_within("c-builder-media-selection",Command::SetPlanningProfile {profile:serde_json::to_value(profile).unwrap_or_default()});
+    }
+    fn c_builder_keyword_rows(&self,video:bool,profile:&concat_project::planning::Profile)->(Vec<crate::ui::CBuilderKeywordData>,String) {
+        let mut groups=std::collections::BTreeMap::<&str,usize>::new();
+        for asset in self.c_builder.assets.iter().filter(|a|(a.kind=="video")==video){*groups.entry(&asset.keyword).or_default()+=1;}
+        let selections=profile.media_selection.as_ref().map(|m|if video{&m.videos}else{&m.images});
+        let rows:Vec<_>=groups.into_iter().map(|(keyword,available)|{
+            let selected=selections.and_then(|s|s.get(keyword));
+            crate::ui::CBuilderKeywordData {keyword:keyword.into(),available:available.min(i32::MAX as usize) as i32,
+                selected:selected.is_some_and(|s|s.selected),weight:selected.map_or(0.,|s|s.weight as f32)}
+        }).collect();
+        let count=rows.iter().filter(|r|r.selected).count();
+        let total:f32=rows.iter().filter(|r|r.selected).map(|r|r.weight).sum();
+        let summary=format!("{count} selected keywords · Total {total:.0}%{}",if total>0.&&total!=100.{" · normalized to 100% for planning"}else if total==0.{" · select a keyword and give it a positive weight"}else{""});
+        (rows,summary)
+    }
+
+    /// File replacement reuses host probing and applies bin import plus source replacement as one edit.
+    fn replace_media_file(&mut self, clip_id:String) {
+        crate::host::pick_files_then("Replace clip media".into(),Some(("Images and Videos".into(), &["jpg","jpeg","png","webp","mp4","mov","mkv","webm"])),
+            move |_,_,_,paths| {
+                if let Some(path)=paths.into_iter().next() {
+                    crate::host::spawn_in_project(move || concat_host::media::probe(&path.to_string_lossy()).map(|s|s.to_new_media()),
+                        move |studio,_,_,result| {
+                            match result {
+                                Ok(item)=>if let Some(track_id)=studio.clip(&clip_id).map(|c|c.track_id.clone()) {
+                                    let(tracks,locked_tracks)=studio.edit_scope(&track_id);
+                                    studio.apply(Command::ReplaceMediaFromFile {clip_id,item,use_source_duration:false,keep_edits:true,tracks,locked_tracks});
+                                },
+                                Err(e)=>studio.notify(&e,true),
+                            }
+                        });
+                }
+            });
+    }
+
     /// The project's override of the user's default magnetic editing preference.
     pub fn magnetic(&self) -> bool {
         self.timeline().extra.get("magnetic").and_then(serde_json::Value::as_bool)
@@ -12091,6 +12209,14 @@ impl Studio {
     pub fn shortcut(&mut self, action: &str) {
         log::info!("shortcut: {action}");
         match action {
+            "insert-media" => {
+                if let Some(id)=self.project().media.iter().find(|m|self.media.selected.contains(&m.id)).map(|m|m.id.clone()) {self.media_action(&id,"insert-ripple");}
+                else {self.notify("Select a media-library item to insert",true);}
+            }
+            "replace-media"=>if let Some(id)=self.sole_selection(){self.replace_media_file(id);},
+            "close-gap" | "close-gaps"=>if let Some(id)=self.sole_selection(){self.clip_action(&id,action);},
+            "magnetic"=>{self.handle(crate::panes::Msg::Timeline(crate::panes::timeline::TimelineMsg::MagneticToggled));}
+
             // The selected clips when there are any, as the tray's button
             // and the menu split: the chord cut every track under the
             // playhead whatever was selected, titles and music with it.
@@ -12290,6 +12416,7 @@ impl Studio {
                     },
                 });
             }
+            "replace-file" => self.replace_media_file(id.to_owned()),
             "close-gap" | "close-gaps" => {
                 let (_, locked_tracks) = self.edit_scope(&clip.track_id);
                 self.apply(Command::CloseTrackGaps { track_id: clip.track_id.clone(), locked_tracks,

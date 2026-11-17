@@ -532,6 +532,8 @@ pub enum Command {
         media_id: String, track_id: String, tracks: Vec<String>, locked_tracks: Vec<String>,
         time: f64, overwrite: bool,
     },
+    /// Probe/import a replacement source and update the slot atomically, retaining one Undo.
+    ReplaceMediaFromFile { clip_id:String, item:NewMedia, use_source_duration:bool, keep_edits:bool, tracks:Vec<String>, locked_tracks:Vec<String> },
     /// Replaces a visual source, optionally resizing its slot and rippling the explicit scope.
     ReplaceMediaInSlot {
         clip_id: String, media_id: String, use_source_duration: bool, keep_edits: bool,
@@ -539,8 +541,18 @@ pub enum Command {
     },
     /// Closes internal visual gaps only. `at` selects the gap under the playhead; None closes all.
     CloseTrackGaps { track_id: String, locked_tracks: Vec<String>, at: Option<f64> },
+    /// Applies a declarative canvas composition to selected source clips in one undo step.
+    ApplyCanvasPreset { config: crate::canvas_preset::Config, targets: Vec<String>, locked_tracks: Vec<String> },
+    /// Import exact returned words once, replacing only the matching generated captions.
+    ImportGpuCaptions { artifact: serde_json::Value },
+    /// Selects or clears a GPU caption task in the existing project package.
+    SetGpuCaptionRequest { request: Option<serde_json::Value> },
+    /// Persists a validated per-project runtime C Builder profile.
+    SetPlanningProfile { profile: serde_json::Value },
     /// Persists the independent magnetic-edit setting with this timeline.
     SetTimelineMagnetic { enabled: bool },
+    /// Commit a timeline drag, guarding links/locks and magnetically closing only newly vacated contiguous slots.
+    ScopedMoveClips { moves: Vec<ClipMove>, locked_tracks: Vec<String>, magnetic: bool },
     /// Repositions any number of clips in one edit - one undo step for a
     /// whole multi-selection drag. Unknown clips and tracks are tolerated
     /// per [`ClipMove`].
@@ -1018,6 +1030,7 @@ impl Command {
             Command::InsertMedia { time, .. } => bad([*time]),
             Command::CloseTrackGaps { at, .. } => bad(*at),
             Command::AddMedia { item }
+            | Command::ReplaceMediaFromFile { item, .. }
             | Command::FillSlot { item, .. }
             | Command::ConsolidateClips { item, .. } => bad(item.duration) || bad(item.frame_rate),
             Command::AddClip { start, .. }
@@ -1033,7 +1046,7 @@ impl Command {
                     || bad(*duration)
                     || style
                         .iter()
-                        .any(|style| bad([style.size, style.stroke_width]))
+                        .any(|style| bad([style.size, style.stroke_width, style.width, style.height, style.corner_radius]))
             }
             Command::AddTextClip {
                 start,
@@ -1079,7 +1092,7 @@ impl Command {
             Command::SetClipStabilize { stabilize, .. } => stabilize
                 .as_ref()
                 .is_some_and(|stabilize| bad([stabilize.smoothness, stabilize.max_zoom])),
-            Command::MoveClips { moves } => bad(moves.iter().map(|wanted| wanted.start)),
+            Command::MoveClips { moves } | Command::ScopedMoveClips { moves, .. } => bad(moves.iter().map(|wanted| wanted.start)),
             Command::TrimClip { delta, .. } => bad([*delta]),
             Command::SplitClips { time, .. } => bad([*time]),
             Command::FreezeFrame { time, duration, .. } => bad([*time]) || bad(*duration),
@@ -1113,7 +1126,7 @@ impl Command {
                         .transition_in
                         .iter()
                         .flatten()
-                        .any(|tr| bad([tr.duration]))
+                        .any(|tr| bad([tr.duration]) || bad(tr.params.values().copied()))
                     || matches!(
                         patch.background,
                         Some(Some(Background::Blur { amount })) if !amount.is_finite()
@@ -1201,8 +1214,9 @@ pub fn apply(
             })
         }
 
+        Command::ApplyCanvasPreset { config, targets, locked_tracks } => crate::canvas_preset::apply(project, mint, config, targets, locked_tracks),
         command @ (Command::InsertMedia { .. } | Command::ReplaceMediaInSlot { .. }
-            | Command::CloseTrackGaps { .. } | Command::SetTimelineMagnetic { .. }) => editing::apply(project, mint, command),
+            | Command::CloseTrackGaps { .. } | Command::SetTimelineMagnetic { .. } | Command::SetGpuCaptionRequest { .. } | Command::SetPlanningProfile { .. } | Command::ImportGpuCaptions { .. } | Command::ScopedMoveClips { .. } | Command::ReplaceMediaFromFile { .. }) => editing::apply(project, mint, command),
         command @ (Command::AddMedia { .. }
         | Command::SetMediaPlaceholder { .. }
         | Command::FillSlot { .. }

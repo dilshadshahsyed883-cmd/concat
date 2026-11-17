@@ -1,3 +1,4 @@
+import { CBuilderKeywordData } from "c-builder-selection.slint";
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
 
@@ -17,6 +18,9 @@ import { ContextMenu, MenuItemData } from "../primitives/context-menu.slint";
 import { SourcePreview } from "source-preview.slint";
 import { Sounds, SoundList, VoiceList } from "audio-page.slint";
 import { CBuilderPane } from "c-builder.slint";
+import { CanvasPresetPanel } from "canvas-presets.slint";
+import { CanvasMotionPanel } from "canvas-motion.slint";
+import { ParticleEffectsPanel } from "particle-effects.slint";
 
 export { SourcePreview }
 
@@ -1745,6 +1749,14 @@ export component MediaPane inherits Rectangle {
     in property <int> cb-scan-total;
     in property <bool> cb-busy;
     in property <string> cb-profile;
+    in property <[string]> cb-profile-names;
+    in property <[CBuilderKeywordData]> cb-image-keywords;
+    in property <[CBuilderKeywordData]> cb-video-keywords;
+    in property <bool> cb-videos-enabled;
+    in property <string> cb-image-selection-summary;
+    in property <string> cb-video-selection-summary;
+    callback cb-keyword-changed(json: string, video: bool, keyword: string, selected: bool, weight: int);
+    callback cb-videos-toggled(json: string, on: bool);
     in property <string> cb-preview;
     callback cb-plan-profile(json: string, images: string, videos: string, action: string);
     callback cb-import-folder();
@@ -1850,6 +1862,7 @@ export component MediaPane inherits Rectangle {
     // 0 = full timeline, 1 = selected timeline clips.
     property <int> physics-scope: 0;
     property <int> physics-preset: 0;
+    property <bool> canvas-motion-page: false;
     // Bulk transforms share Animations' type switches and scope.
     property <float> bulk-scale: 1;
     property <float> bulk-position-x: 0;
@@ -2388,9 +2401,16 @@ export component MediaPane inherits Rectangle {
                     // to the sound is on the Effects page.
                     // The same checkboxes and scope also target scale and
                 // position edits. Animated properties stay untouched.
-                if root.tab == 10 && GpuCompatibility.enabled: VerticalLayout {
+                if root.tab == 10 && GpuCompatibility.enabled: PaneScroll {
+                    VerticalLayout {
                     padding: 8px;
                     spacing: 8px;
+                    Button { label: root.canvas-motion-page ? "Show Basic and Physics Animations" : "Show Canvas Motion Pack";
+                        clicked => { root.canvas-motion-page = !root.canvas-motion-page; } }
+                    if root.canvas-motion-page: CanvasMotionPanel {
+                        images: root.physics-images; videos: root.physics-videos; selected-only: root.physics-scope == 1;
+                    }
+                    if !root.canvas-motion-page: VerticalLayout { spacing: 8px;
                     Text {
                         text: "Bulk Transform";
                         font-size: Theme.fs;
@@ -2452,6 +2472,8 @@ export component MediaPane inherits Rectangle {
                                 root.physics-videos, root.physics-scope == 1,
                                 root.bulk-scale, root.bulk-position-x, root.bulk-position-y);
                         }
+                    }
+                    }
                     }
                 }
 
@@ -2521,7 +2543,8 @@ export component MediaPane inherits Rectangle {
                 width: Math.max(0px, parent.width - root.sidebar - 1px);
                 height: parent.height;
 
-                if root.tab == 9: CBuilderPane {
+                if root.tab == 9: PaneScroll {
+                    CBuilderPane {
                     media-folder: root.cb-media-folder;
                     narration: root.cb-narration;
                     narration-duration: root.cb-duration;
@@ -2535,6 +2558,12 @@ export component MediaPane inherits Rectangle {
                     scan-total: root.cb-scan-total;
                     busy: root.cb-busy;
                     profile: root.cb-profile;
+                    profile-names: root.cb-profile-names;
+                    image-keywords: root.cb-image-keywords; video-keywords: root.cb-video-keywords;
+                    videos-enabled: root.cb-videos-enabled;
+                    image-selection-summary: root.cb-image-selection-summary; video-selection-summary: root.cb-video-selection-summary;
+                    keyword-changed(json, video, keyword, selected, weight) => { root.cb-keyword-changed(json, video, keyword, selected, weight); }
+                    videos-toggled(json, on) => { root.cb-videos-toggled(json, on); }
                     preview: root.cb-preview;
                     plan-profile(json, images, videos, action) => { root.cb-plan-profile(json, images, videos, action); }
                     import-folder => { root.cb-import-folder(); }
@@ -2542,6 +2571,7 @@ export component MediaPane inherits Rectangle {
                     choose-narration => { root.cb-choose-narration(); }
                     generate-project(name, images, videos, coverage, profile) => {
                         root.cb-generate-project(name, images, videos, coverage, profile);
+                    }
                     }
                 }
 
@@ -2890,6 +2920,7 @@ export component MediaPane inherits Rectangle {
                 }
 
                 if root.tab == 4: VerticalLayout {
+                    ParticleEffectsPanel { }
                     padding: 8px;
 
                     // A package folder written while the app runs - the
@@ -3126,20 +3157,13 @@ export component MediaPane inherits Rectangle {
 
                 // Templates: the save affordance, then the gallery of saved
                 // templates, which shows its empty state until one is saved.
-                if root.tab == 6: HorizontalLayout {
-                    padding: 8px;
-
-                    ImportButton {
-                        label: I18n.t("mediaPane.saveProjectTemplate");
-                        glyph: Glyph.slot;
-                        clicked => { root.save-template(); }
+                if root.tab == 6: PaneScroll {
+                    HorizontalLayout { padding: 8px;
+                        ImportButton { label: I18n.t("mediaPane.saveProjectTemplate"); glyph: Glyph.slot; clicked => { root.save-template(); } }
                     }
+                    CanvasPresetPanel { padding: 8px; }
                 }
 
-                if root.tab == 6: Empty {
-                    glyph: Glyph.slot;
-                    text: I18n.t("mediaPane.noTemplatesYetMark");
-                }
             }
         }
     }

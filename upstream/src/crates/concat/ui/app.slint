@@ -42,6 +42,10 @@ import { PhoneEditor } from "phone/editor.slint";
 import {
     AppliedEntryData, AppliedParamData, CatalogueEntryData, Library, LibraryViewData,
 } from "inspector/clip-inspector.slint";
+import { CBuilderKeywordData } from "workspace/c-builder-selection.slint";
+import { TransitionControls } from "inspector/creative-transition-controls.slint";
+import { ParticleBulk } from "workspace/particle-effects.slint";
+import { CanvasPresets } from "workspace/canvas-presets.slint";
 import { ParamFormat } from "inspector/controls.slint";
 import { ToastData, ToastLayer } from "primitives/toast.slint";
 import { TooltipLayer } from "primitives/tooltip.slint";
@@ -49,7 +53,7 @@ import { FontSearch } from "inspector/font-picker.slint";
 import { Meters } from "timeline/vu-meter.slint";
 import { Workspace } from "workspace/workspace.slint";
 import {
-    Backdrop, BackdropData, ClipData, ClipField, ClipKeyData, ClipKind, ClipTextField, DropData, Keyframes,
+    CanvasMotionData, Backdrop, BackdropData, ClipData, ClipField, ClipKeyData, ClipKind, ClipTextField, DropData, Keyframes,
     SelectedClipData, SelectedTransitionData, StageGuideData, StageItemData, TextAlignment, TimelineTabData,
     TimelineTool, TrackData, TrackSize,
 } from "timeline/model.slint";
@@ -58,11 +62,11 @@ import {
 import { KeyEditor, KeyMarkData, KeyRowData } from "workspace/keyframes-pane.slint";
 
 export {
-    Curves, Fmt, Focus, Payload, Theme, Bezier, Editor, I18n, CloudGpu, GpuQueueDialog, GpuQueueRow, GpuCompatibility,
+    CBuilderKeywordData, TransitionControls, ParticleBulk, CanvasPresets, Curves, Fmt, Focus, Payload, Theme, Bezier, Editor, I18n, CloudGpu, GpuQueueDialog, GpuQueueRow, GpuCompatibility,
     AppliedEntryData, AppliedParamData, CatalogueEntryData, Library, LibraryViewData, ParamFormat,
     DockDivider, DockSide, PaneKind, SeatBox,
     EffectData, FontSearch, Meters, MediaFilter, MediaItemData, MediaKind, SourcePreview, TextPresetData,
-    Backdrop, BackdropData, ClipData, ClipField, ClipKeyData, ClipKind, ClipTextField, DropData, Keyframes,
+    CanvasMotionData, Backdrop, BackdropData, ClipData, ClipField, ClipKeyData, ClipKind, ClipTextField, DropData, Keyframes,
     KeyEditor, KeyMarkData, KeyRowData,
     SelectedClipData, SelectedTransitionData, StageGuideData, StageItemData, TextAlignment, TimelineTabData,
     TimelineTool, TrackData, TrackSize, MenuItemData, MenuRow, ExportData, ExportPhase, ModelData, SettingsData,
@@ -323,6 +327,10 @@ export component App inherits Window {
     callback captions-text-edited(text: string);
     callback captions-model-changed(index: int);
     callback captions-karaoke-toggled(on: bool);
+    callback captions-gpu-toggled(on: bool);
+    callback captions-gpu-render-toggled(on: bool);
+    callback captions-preset-changed(index: int);
+    callback captions-import-gpu-json();
     callback captions-placement-changed(index: int);
     callback captions-size-changed(index: int);
     callback captions-begin();
@@ -707,6 +715,10 @@ export component App inherits Window {
             text-edited(text) => { root.captions-text-edited(text); }
             model-changed(index) => { root.captions-model-changed(index); }
             karaoke-toggled(on) => { root.captions-karaoke-toggled(on); }
+            gpu-toggled(on) => { root.captions-gpu-toggled(on); }
+            gpu-render-toggled(on) => { root.captions-gpu-render-toggled(on); }
+            preset-changed(index) => { root.captions-preset-changed(index); }
+            import-gpu-json => { root.captions-import-gpu-json(); }
             placement-changed(index) => { root.captions-placement-changed(index); }
             size-changed(index) => { root.captions-size-changed(index); }
             begin => { root.captions-begin(); }

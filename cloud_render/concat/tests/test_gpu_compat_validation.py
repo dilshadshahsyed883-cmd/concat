@@ -245,8 +245,9 @@ class GpuManifestValidationTests(unittest.TestCase):
         capabilities = json.loads((Path(__file__).parents[1] / "hybrid"
                                    / "gpu_ui_capabilities.json").read_text())
         from cloud_render.concat.hybrid.capcut_transitions import CAPCUT_IDS
+        from cloud_render.concat.hybrid.creative_transitions import CREATIVE_IDS
         self.assertEqual(set(capabilities["transitions"]),
-                         {"concat.fade-black", "concat.fade-white", *CAPCUT_IDS})
+                         {"concat.fade-black", "concat.fade-white", *CAPCUT_IDS, *CREATIVE_IDS})
         for native_id in ("concat.dissolve", "concat.push", "concat.zoom-transition"):
             with self.subTest(transition=native_id):
                 document = minimal_project()
@@ -335,7 +336,8 @@ class GpuManifestValidationTests(unittest.TestCase):
     def test_rejects_inexact_packaged_filters_in_preflight(self):
         capabilities = json.loads((Path(__file__).parents[1] / "hybrid"
                                    / "gpu_ui_capabilities.json").read_text())
-        self.assertEqual(capabilities["video_effects"], ["concat.exposure", "concat.contrast"])
+        from cloud_render.concat.hybrid.particles import PARTICLE_IDS
+        self.assertEqual(set(capabilities["video_effects"]), {"concat.exposure", "concat.contrast", *PARTICLE_IDS})
         for effect_id in ("concat.saturation", "concat.sharpen"):
             with self.subTest(effect=effect_id):
                 document = minimal_project()

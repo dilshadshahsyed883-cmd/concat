@@ -1,0 +1,25 @@
+# Analytic boundary/invariant probes; requires real GPU execution for pixel verification.
+
+[[probe]]
+name = "uniform white invariant default"
+at = "default"
+input = [1.0,1.0,1.0,1.0]
+to = [1.0,1.0,1.0,1.0]
+progress = 0.37
+expect = [1.0,1.0,1.0,1.0]
+
+[[probe]]
+name = "uniform white invariant min"
+at = "min"
+input = [1.0,1.0,1.0,1.0]
+to = [1.0,1.0,1.0,1.0]
+progress = 0.37
+expect = [1.0,1.0,1.0,1.0]
+
+[[probe]]
+name = "uniform white invariant max"
+at = "max"
+input = [1.0,1.0,1.0,1.0]
+to = [1.0,1.0,1.0,1.0]
+progress = 0.37
+expect = [1.0,1.0,1.0,1.0]

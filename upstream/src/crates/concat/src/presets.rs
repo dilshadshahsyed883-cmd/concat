@@ -99,6 +99,7 @@ struct PresetStyle {
     color: Option<String>,
     karaoke: Option<bool>,
     karaoke_color: Option<String>,
+    karaoke_background: Option<String>,
     align: Option<String>,
     opacity: Option<f64>,
     stroke_width: Option<f64>,
@@ -131,6 +132,9 @@ impl PresetStyle {
             color: self.color.unwrap_or(base.color),
             karaoke: self.karaoke.unwrap_or(false),
             karaoke_color: self.karaoke_color.unwrap_or_default(),
+            karaoke_background: self.karaoke_background.unwrap_or_default(),
+            karaoke_words: Vec::new(),
+            karaoke_word: None,
             align: match self.align.as_deref() {
                 Some("left") => TextAlign::Left,
                 Some("right") => TextAlign::Right,

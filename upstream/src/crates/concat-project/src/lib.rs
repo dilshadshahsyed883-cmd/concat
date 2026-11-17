@@ -29,6 +29,9 @@ pub mod motion_preset;
 pub mod physics_motion;
 pub mod placement;
 pub mod planning;
+pub mod gpu_captions;
+pub mod canvas_motion;
+pub mod canvas_preset;
 pub mod speed;
 pub mod srt;
 
@@ -1473,6 +1476,7 @@ mod tests {
             id: "cross-fade".into(),
             duration: 0.4,
             intensity: None,
+                    params: Default::default(),
         });
         assert!(
             crate::consolidation_clips(
@@ -1953,6 +1957,7 @@ mod tests {
                     id: "cross-fade".to_owned(),
                     duration: f64::NAN,
                     intensity: None,
+                    params: Default::default(),
                 })),
                 ..Default::default()
             },
@@ -2936,6 +2941,7 @@ mod tests {
                         id: "cross-fade".to_owned(),
                         duration: 1.5,
                         intensity: None,
+                    params: Default::default(),
                     })),
                     ..ClipPatch::default()
                 },

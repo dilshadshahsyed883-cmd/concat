@@ -11,6 +11,31 @@ pub struct Anchor {
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Pin {
+    pub source_id: String,
+    pub start_us: u64,
+    pub duration_us: u64,
+    #[serde(default)]
+    pub trim_us: u64,
+}
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct KeywordSelection {
+    pub selected: bool,
+    pub weight: u32,
+}
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MediaSelection {
+    #[serde(default)]
+    pub images: std::collections::BTreeMap<String, KeywordSelection>,
+    #[serde(default)]
+    pub videos: std::collections::BTreeMap<String, KeywordSelection>,
+    #[serde(default)]
+    pub videos_enabled: bool,
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Profile {
     pub version: u32,
     pub name: String,
@@ -25,6 +50,10 @@ pub struct Profile {
     /// Correct probabilities for differing shot durations when targeting seconds.
     pub ratio_by_seconds: bool,
     pub seed: u64,
+    #[serde(default)]
+    pub pins: Vec<Pin>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media_selection: Option<MediaSelection>,
 }
 impl Default for Profile {
     fn default() -> Self {
@@ -57,10 +86,53 @@ impl Default for Profile {
             allow_repeats: true,
             ratio_by_seconds: true,
             seed: 1,
+            pins: Vec::new(),
+            media_selection: None,
         }
     }
 }
 impl Profile {
+    pub fn builtin(index: usize) -> Option<Self> {
+        let mut profile = Self::default();
+        match index {
+            0 => {
+                profile.name = "Balanced".into();
+                profile.curve = vec![
+                    Anchor {
+                        at: 0.0,
+                        video: 0.2,
+                    },
+                    Anchor {
+                        at: 1.0,
+                        video: 0.2,
+                    },
+                ];
+            }
+            1 => {}
+            2 => {
+                profile.name = "Image-Heavy Outro".into();
+                profile.curve = vec![
+                    Anchor {
+                        at: 0.0,
+                        video: 0.4,
+                    },
+                    Anchor {
+                        at: 0.7,
+                        video: 0.2,
+                    },
+                    Anchor {
+                        at: 1.0,
+                        video: 0.0,
+                    },
+                ];
+            }
+            3 => {
+                profile.name = "Fully Custom".into();
+            }
+            _ => return None,
+        }
+        Some(profile)
+    }
     pub fn validate(&self) -> Result<(), String> {
         if self.version != 1 {
             return Err("Unsupported planning profile version".into());
@@ -98,6 +170,35 @@ impl Profile {
         if self.cooldown > 10000 || self.max_videos > 10000 || self.max_images > 10000 {
             return Err("Sequence controls exceed safety limits".into());
         }
+        if let Some(selection) = &self.media_selection {
+            if selection.images.len() + selection.videos.len() > 20000
+                || selection
+                    .images
+                    .iter()
+                    .chain(selection.videos.iter())
+                    .any(|(key, value)| {
+                        key.trim().is_empty() || key.len() > 256 || value.weight > 100
+                    })
+            {
+                return Err("Keyword selections require names and weights from 0 to 100".into());
+            }
+        }
+        if self.pins.len() > 10000 {
+            return Err("Too many pinned shots".into());
+        }
+        let mut end = 0;
+        for pin in &self.pins {
+            if pin.source_id.is_empty() || pin.duration_us == 0 || pin.start_us < end {
+                return Err(
+                    "Pinned shots must be ordered, non-overlapping and have positive durations"
+                        .into(),
+                );
+            }
+            end = pin
+                .start_us
+                .checked_add(pin.duration_us)
+                .ok_or("Pinned interval overflow")?;
+        }
         Ok(())
     }
     pub fn from_json(source: &str) -> Result<Self, String> {
@@ -121,6 +222,7 @@ impl Profile {
 #[derive(Clone, Debug)]
 pub struct Source {
     pub id: String,
+    pub group: String,
     pub video: bool,
     pub duration_us: u64,
     pub weight: f64,
@@ -186,6 +288,22 @@ pub fn generate(sources: &[Source], total_us: u64, profile: &Profile) -> Result<
     {
         return Err("Missing sources or invalid relevance weight".into());
     }
+    let ids: std::collections::HashSet<_> = sources.iter().map(|s| &s.id).collect();
+    if ids.len() != sources.len() {
+        return Err("Duplicate source identities".into());
+    }
+    for pin in &profile.pins {
+        let source = sources
+            .iter()
+            .find(|s| s.id == pin.source_id)
+            .ok_or("Pinned source is unavailable")?;
+        if pin.start_us + pin.duration_us > total_us
+            || (source.video && pin.trim_us.saturating_add(pin.duration_us) > source.duration_us)
+            || (!source.video && pin.trim_us != 0)
+        {
+            return Err("Pinned shot exceeds timeline or source bounds".into());
+        }
+    }
     let mut rng = Random(if profile.seed == 0 {
         0x9e3779b97f4a7c15
     } else {
@@ -202,6 +320,37 @@ pub fn generate(sources: &[Source], total_us: u64, profile: &Profile) -> Result<
     while at < total_us {
         if plan.shots.len() >= 1_000_000 {
             return Err("Plan exceeds one million shots".into());
+        }
+        if let Some(pin) = profile.pins.iter().find(|p| p.start_us == at) {
+            let index = sources
+                .iter()
+                .position(|s| s.id == pin.source_id)
+                .ok_or("Pinned source missing")?;
+            let video = sources[index].video;
+            if (!profile.allow_repeats && uses[index] > 0)
+                || (video && profile.max_videos > 0 && video_run >= profile.max_videos)
+                || (!video && profile.max_images > 0 && image_run >= profile.max_images)
+            {
+                return Err(
+                    "Pinned shot violates hard repetition/run limits; adjust profile".into(),
+                );
+            }
+            plan.shots.push(Placement {
+                source: index,
+                start_us: at,
+                duration_us: pin.duration_us,
+                trim_us: pin.trim_us,
+            });
+            at += pin.duration_us;
+            uses[index] += 1;
+            if video {
+                video_run += 1;
+                image_run = 0;
+            } else {
+                image_run += 1;
+                video_run = 0;
+            }
+            continue;
         }
         let available = |video: bool| -> Vec<usize> {
             sources
@@ -263,6 +412,29 @@ pub fn generate(sources: &[Source], total_us: u64, profile: &Profile) -> Result<
                 plan.warnings.push(warning);
             }
         }
+        // Pick keyword groups before assets. Library size must not silently
+        // multiply a group's selected percentage, nor should anti-repeat usage.
+        let available_groups: std::collections::HashSet<_> = candidates
+            .iter()
+            .map(|i| sources[*i].group.as_str())
+            .collect();
+        let mut groups = std::collections::BTreeMap::<&str, f64>::new();
+        for source in sources
+            .iter()
+            .filter(|s| s.video == video && available_groups.contains(s.group.as_str()))
+        {
+            *groups.entry(&source.group).or_default() += source.weight;
+        }
+        let mut group_ticket = rng.unit() * groups.values().sum::<f64>();
+        let mut selected_group = *groups.keys().last().ok_or("No selected keyword group")?;
+        for (group, weight) in groups {
+            group_ticket -= weight;
+            if group_ticket < 0. {
+                selected_group = group;
+                break;
+            }
+        }
+        candidates.retain(|i| sources[*i].group == selected_group);
         let sum: f64 = candidates
             .iter()
             .map(|i| sources[*i].weight / (1.0 + uses[*i] as f64))
@@ -285,7 +457,13 @@ pub fn generate(sources: &[Source], total_us: u64, profile: &Profile) -> Result<
         if video {
             duration = duration.min(sources[picked].duration_us);
         }
-        let remaining = total_us - at;
+        let next_pin = profile
+            .pins
+            .iter()
+            .find(|p| p.start_us > at)
+            .map(|p| p.start_us)
+            .unwrap_or(total_us);
+        let remaining = next_pin - at;
         // Avoid a tiny final sliver by splitting the last two shots evenly.
         let min_us = (range[0] * 1e6) as u64;
         if remaining > duration && remaining - duration < min_us {
@@ -323,6 +501,7 @@ mod tests {
         (0..100)
             .map(|i| Source {
                 id: i.to_string(),
+                group: "all".into(),
                 video: i % 2 == 0,
                 duration_us: 15_000_000,
                 weight: 1.0,
@@ -421,5 +600,56 @@ mod tests {
             generate(&sources(), 600_000_000, &p).unwrap().shots,
             generate(&sources(), 600_000_000, &q).unwrap().shots
         );
+    }
+}
+
+#[cfg(test)]
+mod pin_tests {
+    use super::*;
+    #[test]
+    fn regeneration_preserves_pinned_source_timing_and_trims() {
+        let sources = vec![
+            Source {
+                id: "photo".into(),
+                group: "all".into(),
+                video: false,
+                duration_us: 0,
+                weight: 1.0,
+            },
+            Source {
+                id: "video".into(),
+                group: "all".into(),
+                video: true,
+                duration_us: 20_000_000,
+                weight: 1.0,
+            },
+        ];
+        let mut p = Profile::default();
+        p.max_videos = 0;
+        p.pins = vec![Pin {
+            source_id: "video".into(),
+            start_us: 10_000_000,
+            duration_us: 3_000_000,
+            trim_us: 7_000_000,
+        }];
+        for seed in 1..4 {
+            p.seed = seed;
+            let plan = generate(&sources, 60_000_000, &p).unwrap();
+            let pin = plan
+                .shots
+                .iter()
+                .find(|s| s.start_us == 10_000_000)
+                .unwrap();
+            assert_eq!(
+                (pin.source, pin.duration_us, pin.trim_us),
+                (1, 3_000_000, 7_000_000)
+            );
+            assert_eq!(
+                plan.shots.last().map(|s| s.start_us + s.duration_us),
+                Some(60_000_000)
+            );
+        }
+        p.pins[0].trim_us = 19_000_000;
+        assert!(generate(&sources, 60_000_000, &p).is_err());
     }
 }

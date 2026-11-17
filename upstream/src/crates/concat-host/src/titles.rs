@@ -26,7 +26,7 @@ use concat_core::shader::RevealMap;
 
 use concat_export::{ClipKind, ExportClip};
 use concat_project::model::{
-    ClipKind as ModelClipKind, Project, ShapeKind, ShapeStyle, TextAlign, TextStyle,
+    Clip, ClipKind as ModelClipKind, Project, ShapeKind, ShapeStyle, TextAlign, TextStyle,
 };
 use concat_text::{Align, Figure, Fonts, TitleStyle, WordRect};
 
@@ -226,7 +226,12 @@ impl Titles {
         }
         let timeline = project.active();
         let mut out = Vec::new();
-        for clip in &timeline.clips {
+        for original in &timeline.clips {
+            let segments = match concat_project::gpu_captions::render_segments(original) {
+                Ok(segments) => segments,
+                Err(error) => { log::warn!("caption {}: {error}", original.id); continue; }
+            };
+            for clip in &segments {
             let (text, shape);
             let painting = match clip.kind {
                 ModelClipKind::Text => {
@@ -313,6 +318,7 @@ impl Titles {
                 offset: art.offset,
                 frame,
             });
+            }
         }
         out
     }
@@ -336,8 +342,10 @@ impl Titles {
                 let title = title_style(style);
                 let mut fonts = self.fonts.lock().unwrap_or_else(|e| e.into_inner());
                 let fonts = self.fonts_for(project, &mut fonts);
-                concat_text::render_frame(fonts, &title, width, height)
-                    .map_err(|error| error.to_string())?
+                match style.karaoke_word {
+                    Some(active) => concat_text::render_word_frame(fonts, &title, width, height, active, &style.karaoke_background),
+                    None => concat_text::render_frame(fonts, &title, width, height),
+                }.map_err(|error| error.to_string())?
             }
             Painting::Shape(style) => {
                 concat_text::render_shape_frame(&shape_style(style), width, height)
@@ -398,8 +406,10 @@ impl Titles {
                 let title = title_style(style);
                 let mut fonts = self.fonts.lock().unwrap_or_else(|e| e.into_inner());
                 let fonts = self.fonts_for(project, &mut fonts);
-                concat_text::render(fonts, &title, width, height)
-                    .map_err(|error| error.to_string())?
+                match style.karaoke_word {
+                    Some(active) => concat_text::render_word(fonts, &title, width, height, active, &style.karaoke_background),
+                    None => concat_text::render(fonts, &title, width, height),
+                }.map_err(|error| error.to_string())?
             }
             Painting::Shape(style) => concat_text::render_shape(&shape_style(style), width, height)
                 .map_err(|error| error.to_string())?,
@@ -466,6 +476,7 @@ fn key_of(project: &Project, painting: Painting<'_>, width: u32, height: u32) ->
     match painting {
         Painting::Title(style) => {
             bytes.extend_from_slice(serde_json::to_string(style).unwrap_or_default().as_bytes());
+            bytes.extend_from_slice(&(style.karaoke_word.map(|i| i as u64 + 1).unwrap_or(0)).to_le_bytes());
         }
         Painting::Shape(style) => {
             bytes.extend_from_slice(b"shape:");
@@ -599,6 +610,7 @@ fn shape_style(style: &ShapeStyle) -> concat_text::ShapeStyle {
             ShapeKind::Arrow => Figure::Arrow,
         },
         size: style.size,
+        width: style.width, height: style.height, corner_radius: style.corner_radius,
         fill: style.fill.clone(),
         stroke: style.stroke.clone(),
         stroke_width: style.stroke_width,

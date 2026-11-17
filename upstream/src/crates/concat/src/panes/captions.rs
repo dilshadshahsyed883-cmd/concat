@@ -58,6 +58,14 @@ pub enum CaptionsMsg {
     TextEdited(String),
     ModelChanged(i32),
     KaraokeToggled(bool),
+    /// Use the existing GPU queue instead of local speech inference.
+    GpuToggled(bool),
+    GpuRenderToggled(bool),
+    /// Purple word backing or yellow phrase bar.
+    PresetChanged(i32),
+    /// Import the accurate editable result returned by the worker.
+    ImportGpuJson,
+    ImportGpuJsonFrom(PathBuf),
     PlacementChanged(i32),
     SizeChanged(i32),
     /// Run the pass the sheet describes.
@@ -106,6 +114,9 @@ pub struct CaptionsPane {
     pub from_voice: bool,
     /// Opt in to audio-aligned, one-word caption clips.
     pub karaoke: bool,
+    pub gpu: bool,
+    pub render_after: bool,
+    pub preset: usize,
     /// The clip whose voice is transcribed: one with sound, chosen from the
     /// timeline's. Kept while the switch is off, so turning it back on
     /// returns to the same clip. The panel floats over a live editor, so
@@ -175,10 +186,39 @@ impl CaptionsPane {
             CaptionsMsg::TextEdited(text) => self.text = text,
             CaptionsMsg::ModelChanged(index) => self.model = index.max(0) as usize,
             CaptionsMsg::KaraokeToggled(on) => self.karaoke = on,
+            CaptionsMsg::GpuToggled(on) => { self.gpu = on; self.message.clear(); },
+            CaptionsMsg::GpuRenderToggled(on) => self.render_after=on,
+            CaptionsMsg::PresetChanged(index) => self.preset = (index.max(0) as usize).min(1),
+            CaptionsMsg::ImportGpuJson => {
+                crate::host::pick_files_then("Import GPU caption JSON".into(), Some(("GPU Caption JSON".into(), &["json"])),
+                    |studio, _, _, paths| { if let Some(path) = paths.into_iter().next() {
+                        studio.handle(Msg::Captions(CaptionsMsg::ImportGpuJsonFrom(path)));
+                    }});
+            }
+            CaptionsMsg::ImportGpuJsonFrom(path) => {
+                let result = std::fs::metadata(&path).map_err(|e| e.to_string()).and_then(|meta| {
+                    if meta.len()>16*1024*1024 { return Err("Caption artifact exceeds 16 MiB".into()); }
+                    let source=std::fs::read_to_string(path).map_err(|e|e.to_string())?;
+                    let artifact: serde_json::Value = serde_json::from_str(&source).map_err(|e|e.to_string())?;
+                    Ok(Command::ImportGpuCaptions { artifact })
+                });
+                match result { Ok(command) => { studio.apply(command); self.open=false; },
+                    Err(error) => self.message=error }
+            }
             CaptionsMsg::PlacementChanged(index) => {
                 self.placement = (index.max(0) as usize).min(2);
             }
             CaptionsMsg::SizeChanged(index) => self.size = (index.max(0) as usize).min(2),
+            CaptionsMsg::Begin if self.gpu && self.from_voice => {
+                let available = sources(studio);
+                if let Some(source_id) = self.subject_clip(studio, &available) {
+                    let request = serde_json::json!({"version":1,"sourceClipId":source_id,
+                        "model":"small","language":null,"wordTimestamps":true,
+                        "preset":if self.preset==0 {"purple-word"} else {"yellow-bar"},"renderAfter":self.render_after});
+                    studio.apply(Command::SetGpuCaptionRequest { request: Some(request) });
+                    self.message="GPU caption task prepared. Save this project, use File → Send to GPU, then Start Queue. Import the returned caption JSON to edit and preview before rendering.".into();
+                } else { self.message="Select an audio/video source before preparing GPU captions".into(); }
+            }
             CaptionsMsg::Begin => {
                 if self.from_voice {
                     self.run_sound(studio);
@@ -586,6 +626,9 @@ impl CaptionsPane {
             placement: self.placement as i32,
             size: self.size as i32,
             karaoke: self.karaoke,
+            gpu: self.gpu,
+            render_after: self.render_after,
+            preset: self.preset as i32,
             running: self.running,
             progress: self.pace.floor,
             ceiling: self.pace.ceiling,
@@ -597,7 +640,7 @@ impl CaptionsPane {
                 _ => t("captions.readingTheSound"),
             }
             .into(),
-            ready: !installed(&studio.settings.transcribers).is_empty(),
+            ready: self.gpu || !installed(&studio.settings.transcribers).is_empty(),
             message: self.message.as_str().into(),
         }
     }

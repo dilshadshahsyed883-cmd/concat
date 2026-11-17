@@ -1,3 +1,4 @@
+import { CreativeTransitionEditor } from "creative-transition-controls.slint";
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
 
@@ -2276,8 +2277,9 @@ export component TransitionPanel inherits VerticalLayout {
                 unit-scale: 100;
                 changed(v) => { root.intensity-set(v); }
             }
+            if root.transition.intensity-supported: CreativeTransitionEditor { }
             if GpuCompatibility.enabled: Text {
-                text: "Intensity affects the Salad GPU render. Desktop preview may differ.";
+                text: "Controls are saved with the cut and shared with native preview and GPU export.";
                 color: Theme.fg-muted;
                 wrap: word-wrap;
             }

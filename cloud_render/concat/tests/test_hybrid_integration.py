@@ -31,7 +31,12 @@ class CompatibilityTests(unittest.TestCase):
                                    headers={"Authorization": "Bearer " + token})
                     response = client.getresponse()
                     self.assertEqual(response.status, 200)
-                    self.assertEqual(json.loads(response.read()), {
+                    capabilities = json.loads(response.read())
+                    speech = capabilities.pop("gpu_captions")
+                    self.assertEqual(speech["device"], "cuda")
+                    self.assertIsInstance(speech["available"], bool)
+                    self.assertEqual(speech["request_version"], 1)
+                    self.assertEqual(capabilities, {
                         "api_version": 1, "bundle_versions": [1],
                         "render_modes": ["cuda-stage1", "cuda-hybrid-v1"],
                         "validation_version": 1,

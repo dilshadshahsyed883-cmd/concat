@@ -213,6 +213,14 @@ export struct ClipKeyData {
 /// that can be keyed asks the same question about a different field, and the
 /// answer is built in one place in Rust either way. The panels only say
 /// which field a row is.
+/// Canvas Motion settings are declarative authoring inputs; renderers read ordinary generated keys.
+export struct CanvasMotionData {
+    start-scale: float, end-scale: float, duration: float, delay: float,
+    speed: float, strength: float, intensity: float, blur: float, reverse: bool,
+    custom-anchors: bool, start-x: float, start-y: float, end-x: float, end-y: float,
+    easing: int, seed: int, corner-radius: float,
+}
+
 export global Keyframes {
     /// One row per keyable property, in the order `row` indexes them. Empty
     /// when the selection cannot carry keys at all.
@@ -241,6 +249,13 @@ export global Keyframes {
     in-out property <float> physics-intensity: 1;
     // Physics presets resolve into ordinary GPU-compatible transform keyframes.
     in property <[bool]> physics-favourites;
+    in-out property <CanvasMotionData> canvas-motion: {
+        start-scale:0.3,end-scale:0.92,duration:3,delay:0,speed:1,strength:1,intensity:1,
+        blur:0.65,reverse:false,custom-anchors:false,start-x:-0.32,start-y:-0.32,end-x:0,end-y:0,
+        easing:1,seed:1,corner-radius:0.04,
+    };
+    callback apply-canvas-motion(preset: int, mode: int, images: bool, videos: bool,
+        selected-only: bool, settings: CanvasMotionData);
     callback apply-physics-motion(preset: int, strength: float, duration: float, speed: float, intensity: float);
     callback toggle-physics-favourite(preset: int);
     callback apply-random-favourite-motion();

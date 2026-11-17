@@ -10,6 +10,8 @@ jobs:
   source-tests:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
+    env:
+      CONCAT_CANVAS_FIXTURE_DIR: ${{ runner.temp }}/concat-canvas-fixtures
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,7 +26,12 @@ jobs:
       - run: python -m pip install -r cloud_render/concat/hybrid/requirements-captions.txt numpy==2.2.6
       - name: Rust project, compatibility and undo tests
         working-directory: upstream/src
-        run: cargo test --locked -p concat-project --lib
+        run: cargo test --locked -p concat-project --features schema --lib
+      - name: Native glyph rendering and complete effect catalogue fixtures
+        working-directory: upstream/src
+        run: |
+          cargo test --locked -p concat-text --lib
+          cargo test --locked -p concat-effects --lib --test creative_pack
       - name: Real C Builder cached planner and document-writing tests (probe IO unavailable)
         run: cargo test --locked --manifest-path tools/cbuilder-source-check/Cargo.toml
       - name: Compile complete Slint tree without linking the application

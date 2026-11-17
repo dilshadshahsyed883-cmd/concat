@@ -7,15 +7,17 @@ from math import isfinite
 
 from .contract import FrameSpan, cuda, rgba
 from .capcut_transitions import CAPCUT_IDS, CAPCUT_KINDS, render_capcut_transition
+from .creative_transitions import CREATIVE_IDS, CREATIVE_KINDS, render_creative_transition
 
 
 _KINDS = {"dissolve": 0, "fade": 1, "wipe": 2, "slide": 3, "zoom": 4,
           "native-fade-black": 5, "native-fade-white": 6}
 _KINDS.update({slug: index + 7 for slug, index in CAPCUT_KINDS.items()})
+_KINDS.update({slug: index + 100 for slug, index in CREATIVE_KINDS.items()})
 _DIRECTIONS = {"left": 0, "right": 1, "up": 2, "down": 3}
 NATIVE_FADES = {"concat.fade-black": "native-fade-black",
                 "concat.fade-white": "native-fade-white"}
-NATIVE_TRANSITIONS = {**NATIVE_FADES, **CAPCUT_IDS}
+NATIVE_TRANSITIONS = {**NATIVE_FADES, **CAPCUT_IDS, **CREATIVE_IDS}
 
 
 @dataclass(frozen=True)
@@ -26,8 +28,13 @@ class Transition:
     span: FrameSpan
     direction: str = "left"
     intensity: float | None = None
+    params: tuple = ()
 
     def __post_init__(self) -> None:
+        if self.params:
+            from .creative_transitions import controls
+            if self.kind not in CREATIVE_KINDS or self.kind=="clock-wipe":raise ValueError("Unsupported transition controls")
+            controls(dict(self.params))
         if type(self.kind) is not str or self.kind not in _KINDS:
             raise ValueError("Unknown transition kind")
         if not isinstance(self.span, FrameSpan):
@@ -45,7 +52,7 @@ class Transition:
             raise ValueError("Frame index must be a nonnegative integer")
         if frame_index < self.span.start:
             return 0.0
-        if self.kind in NATIVE_FADES.values():
+        if self.kind in NATIVE_FADES.values() or self.kind in CREATIVE_KINDS:
             return min((frame_index - self.span.start) / (self.span.end - self.span.start), 1.0)
         last = self.span.end - 1
         if frame_index >= last:
@@ -146,6 +153,10 @@ def render_transition(outgoing, incoming, transition: Transition, frame_index: i
         return source
     if progress == 1:
         return destination
+
+    if transition.kind in CREATIVE_KINDS:
+        return render_creative_transition(source, destination, transition.kind, progress,
+            .7 if transition.intensity is None else transition.intensity, dict(transition.params) or None)
 
     if transition.kind in CAPCUT_KINDS:
         if transition.intensity is None:

@@ -269,6 +269,13 @@ impl Controller {
         let phase = self.data.jobs[index].phase;
         match action {
             "retry" if phase.can_retry() => {
+                if phase == Phase::RenderFailed && self.data.jobs[index].detail.starts_with("GPU ASR unavailable:") {
+                    let job=self.data.jobs[index].clone();
+                    self.data.jobs[index].phase=Phase::Queued;
+                    self.launch_operation(Action::Status,"Retry",job);
+                    self.save();
+                    return;
+                }
                 let new_id = self.next_id();
                 let job = &mut self.data.jobs[index];
                 job.phase = match phase {
@@ -347,6 +354,10 @@ impl Controller {
     }
 
     fn launch(&mut self, action: Action, job: Job) {
+        self.launch_operation(action, action.operation(), job);
+    }
+
+    fn launch_operation(&mut self, action: Action, operation: &'static str, job: Job) {
         let id = job.id.clone();
         let abort = new_abort_handle();
         self.active_transfers.insert((id.clone(), action), abort.clone());
@@ -354,7 +365,7 @@ impl Controller {
         std::thread::spawn(move || {
             let result = run_script(
                 &Task::Queue {
-                    operation: action.operation(),
+                    operation,
                     job,
                 },
                 None,

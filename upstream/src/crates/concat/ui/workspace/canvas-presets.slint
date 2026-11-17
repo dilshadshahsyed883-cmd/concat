@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+import { Theme } from "../theme/theme.slint";
+import { Button } from "../primitives/modal.slint";
+export global CanvasPresets {
+    in-out property <string> profile;
+    callback choose(preset: int);
+    callback apply(profile: string, all: bool);
+}
+export component CanvasPresetPanel inherits VerticalLayout {
+    spacing: 8px;
+    Text { text: "Canvas Presets"; color: Theme.fg; font-size: Theme.fs; }
+    HorizontalLayout {
+        Button { label: "Sports Frame"; clicked => { CanvasPresets.choose(1); } }
+        Button { label: "Orange Frame"; clicked => { CanvasPresets.choose(2); } }
+        Button { label: "Blurred Fill"; clicked => { CanvasPresets.choose(3); } }
+    }
+    Text { text: "Edit headline, badge, fonts, colors, inset, border, blur and safe-area positions below. Layout layers stay editable in the timeline.";
+        color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
+    Rectangle {
+        height: 220px; background: Theme.field; border-radius: Theme.r;
+        TextInput { x: 6px; y: 6px; width: parent.width - 12px; height: parent.height - 12px;
+            text <=> CanvasPresets.profile; color: Theme.fg; font-size: Theme.fs-sm; wrap: word-wrap; }
+    }
+    HorizontalLayout {
+        Button { label: "Apply Selected"; clicked => { CanvasPresets.apply(CanvasPresets.profile, false); } }
+        Button { label: "Apply Timeline"; clicked => { CanvasPresets.apply(CanvasPresets.profile, true); } }
+    }
+}
