@@ -101,6 +101,14 @@ try {
             $a.project_file -ne "concat.json" -or $b.project_file -ne "concat.json") {
             throw "Worker bundle contract changed"
         }
+        foreach ($control in @($a,$b)) {
+            if ($control.render_contract.id -cne "concat-cuda-hybrid-v1" -or
+                ($control.render_contract.version -isnot [int] -and
+                 $control.render_contract.version -isnot [long]) -or
+                $control.render_contract.version -ne 1) {
+                throw "Offline and queue ZIPs must declare the exact worker render contract"
+            }
+        }
         $refA=@($a.references | ForEach-Object {"$($_.index):$($_.member):$($_.size):$($_.sha256)"})
         $refB=@($b.references | ForEach-Object {"$($_.index):$($_.member):$($_.size):$($_.sha256)"})
         if (($refA -join "|") -cne ($refB -join "|") -or $refA.Count -ne 3) {
@@ -109,6 +117,15 @@ try {
     } finally {
         $gpuZip.Dispose()
         $localZip.Dispose()
+    }
+    # Restore the real Windows-produced archive with the worker's Python code.
+    # Media are transfer fixtures; no rendering/decoding or GPU is involved.
+    $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot "../../../../..")).ProviderPath
+    $restored=Join-Path $temp "WorkerRestore"
+    & python -c "import sys; from pathlib import Path; sys.path.insert(0, sys.argv[3]); from cloud_render.concat.project_bundle import restore; restore(Path(sys.argv[1]), Path(sys.argv[2]))" $target $restored $repoRoot
+    if ($LASTEXITCODE -ne 0 -or
+        (Get-FileHash -LiteralPath (Join-Path $restored "concat.json.original")).Hash -ne $sourceHashes[$manifest]) {
+        throw "Worker could not restore the actual Windows ZIP or changed its source manifest"
     }
     if ((Get-FileHash -LiteralPath $queueZip).Hash -ne $queueHash) {
         throw "Offline ZIP modified the existing GPU queue archive"

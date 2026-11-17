@@ -16,6 +16,8 @@ The Windows Concat GPU client authenticates to the worker and checks
 `bundle.json`. The Concat worker validates any declared render contract
 during package restore and rejects unknown or mismatched identifiers/versions.
 The offline Python packer writes the same value.
+The ID is case-sensitive and the version is an integer; null, boolean, string
+and floating-point declarations are rejected by both clients and restore.
 
 Older saved **v1 ZIPs without `render_contract`** remain recoverable by
 the current worker for retry/backward compatibility. This does **not** imply

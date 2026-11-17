@@ -384,7 +384,10 @@ function Test-Worker([string]$domain,$headers) {
     }
     # The EXE and Salad image negotiate directly; VPS_1 never decides render features.
     if ($null -eq $capabilities.render_contract -or
-        $capabilities.render_contract.id -ne "concat-cuda-hybrid-v1" -or
+        $capabilities.render_contract.id -isnot [string] -or
+        $capabilities.render_contract.id -cne "concat-cuda-hybrid-v1" -or
+        ($capabilities.render_contract.version -isnot [int] -and
+         $capabilities.render_contract.version -isnot [long]) -or
         $capabilities.render_contract.version -ne 1) {
         throw "Concat EXE / Salad image render contract mismatch. Use a matching GPU image."
     }

@@ -124,7 +124,7 @@ def restore(archive: Path, destination: Path) -> dict:
             # Older stored v1 ZIPs had no contract field: retain recovery/retry support.
             # New ZIPs must identify this worker's exact render manifest contract.
             declared = control.get("render_contract")
-            if declared is not None and (not isinstance(declared, dict)
+            if "render_contract" in control and (not isinstance(declared, dict)
                     or declared.get("id") != RENDER_CONTRACT_ID
                     or type(declared.get("version")) is not int
                     or declared["version"] != RENDER_CONTRACT_VERSION):
