@@ -1,19 +1,7 @@
 name: Salad CUDA worker — candidate image
 
 on:
-  pull_request:
-    paths:
-      - 'cloud_render/concat/gpu/**'
-      - 'cloud_render/concat/hybrid/**'
-      - 'cloud_render/concat/project_bundle.py'
-      - '.github/workflows/concat-salad-cuda-image.yml'
-  push:
-    branches: [main]
-    paths:
-      - 'cloud_render/concat/gpu/**'
-      - 'cloud_render/concat/hybrid/**'
-      - 'cloud_render/concat/project_bundle.py'
-      - '.github/workflows/concat-salad-cuda-image.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
