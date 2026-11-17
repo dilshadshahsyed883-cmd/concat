@@ -4116,6 +4116,20 @@ impl Studio {
                 fields.remove("karaokeWords");
                 fields.remove("karaokeWord");
             }
+            // Keep the complete editable native style in captionPreset, but
+            // transmit only renderer-supported fields to the Salad worker.
+            // The worker's v1 validator rejects native-only fields such as
+            // italic, align, tracking and lineHeight.
+            let mut gpu_style = wire_style.clone();
+            if let Some(fields) = gpu_style.as_object_mut() {
+                fields.retain(|field, _| matches!(field.as_str(),
+                    "fontFamily" | "fontSize" | "fontWeight" | "color" |
+                    "strokeColor" | "strokeWidth" | "shadow" | "opacity" |
+                    "background" | "backgroundRadius" | "backgroundPaddingX" |
+                    "backgroundPaddingY" | "karaoke" | "karaokeColor" |
+                    "karaokeBackground" | "maxWidth" | "maxHeight"
+                ));
+            }
             let position = self.project().extra.get("captionPreset")
                 .filter(|old| old.get("presetId").and_then(|p| p.as_str()) == Some(preset))
                 .and_then(|old| old.get("position")).cloned()
@@ -4123,6 +4137,14 @@ impl Studio {
                     "anchor": "bottom-center", "offsetX": 0.0,
                     "offsetY": 0.35, "safeMargin": 0.08
                 }));
+            // The worker takes normalized frame coordinates rather than the
+            // native offset-from-centre representation of the saved preset.
+            let gpu_position = serde_json::json!({
+                "x": (0.5 + position.get("offsetX")
+                    .and_then(serde_json::Value::as_f64).unwrap_or(0.0)).clamp(0.0, 1.0),
+                "y": (0.5 + position.get("offsetY")
+                    .and_then(serde_json::Value::as_f64).unwrap_or(0.35)).clamp(0.0, 1.0)
+            });
             let existing_source = self.project().extra.get("gpuCaptionRequest")
                 .and_then(|req| req.get("sourceClipId"))
                 .and_then(|id| id.as_str())
@@ -4146,17 +4168,15 @@ impl Studio {
                 }),
             });
             if let Some(source_id) = source_id {
-                let legacy_preset = match preset {
-                    "cuda-caption.preset-1-purple-word" => "purple-word",
-                    "cuda-caption.preset-2-yellow-bar" => "yellow-bar",
-                    _ => "classic",
-                };
+                // Preserve the exact one-of-nine gallery selection. PR #76
+                // supports native IDs; collapsing them to classic loses style.
                 commands.push(Command::SetGpuCaptionRequest {
                     request: Some(serde_json::json!({
                         "version": 1, "sourceClipId": source_id,
                         "model": "small", "language": null,
-                        "wordTimestamps": true, "preset": legacy_preset,
-                        "renderAfter": true, "style": wire_style
+                        "wordTimestamps": true, "preset": preset,
+                        "renderAfter": true, "style": gpu_style,
+                        "position": gpu_position
                     })),
                 });
             } else {
