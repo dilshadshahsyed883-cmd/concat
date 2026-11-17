@@ -27,6 +27,7 @@ from pathlib import Path
 
 from cloud_render.concat.hybrid.contract import (
     BUNDLE_VERSION, HYBRID_MODE, RENDER_MODES, WORKER_API_VERSION,
+    RENDER_CONTRACT_ID, RENDER_CONTRACT_VERSION,
 )
 from cloud_render.concat.project_bundle import restore, MAX_PROJECT_MANIFEST_BYTES
 from cloud_render.concat.hybrid.naming import read_project_names, content_disposition, mp4_name
@@ -637,6 +638,7 @@ class Handler(BaseHTTPRequestHandler):
                                     "bundle_versions": [BUNDLE_VERSION],
                                     "render_modes": list(RENDER_MODES),
                                     "validation_version": 1,
+                                    "render_contract": {"id": RENDER_CONTRACT_ID, "version": RENDER_CONTRACT_VERSION},
                                     "gpu_captions": {"request_version": 1, **FasterWhisperCuda.capability()},
                                     "max_project_manifest_bytes": MAX_PROJECT_MANIFEST_BYTES})
         if path == "/api/config/concurrency":
