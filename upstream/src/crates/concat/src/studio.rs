@@ -4049,9 +4049,16 @@ impl Studio {
             self.notify("Unknown CUDA caption preset", true);
             return;
         };
+        let selected_caption_lane = self.selection.iter()
+            .filter_map(|id| self.clip(id))
+            .find(|c| c.kind == model::ClipKind::Text
+                && !c.extra.contains_key("canvasOwner")
+                && !self.locked(&c.track_id))
+            .map(|c| c.track_id.clone());
         let ids: Vec<String> = if all {
-            // Only known caption cues: unrelated titles and canvas headlines
-            // never become implicit transcription targets.
+            // Existing imported SRT/plain caption clips may not carry generated
+            // markers. A user-selected caption makes its own lane eligible;
+            // otherwise style only positively identified captions, never titles.
             self.timeline().clips.iter()
                 .filter(|clip| clip.kind == model::ClipKind::Text
                     && !self.locked(&clip.track_id)
@@ -4059,7 +4066,8 @@ impl Studio {
                     && self.timeline().track(&clip.track_id).is_some_and(|t| t.visible)
                     && (clip.extra.contains_key("gpuCaptionSource")
                         || clip.extra.contains_key("captionWords")
-                        || clip.text.as_ref().is_some_and(|t| !t.karaoke_words.is_empty())))
+                        || clip.text.as_ref().is_some_and(|t| !t.karaoke_words.is_empty())
+                        || selected_caption_lane.as_deref() == Some(clip.track_id.as_str())))
                 .map(|clip| clip.id.clone())
                 .collect()
         } else {
