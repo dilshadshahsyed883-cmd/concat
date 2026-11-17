@@ -221,11 +221,23 @@ export struct CanvasMotionData {
     easing: int, seed: int, corner-radius: float,
 }
 
-export struct LayoutSelectionData { present: bool, count: int, kind: ClipKind, scale: float, offset-x: float, offset-y: float, rotation: float }
+export struct LayoutSelectionData { present: bool, editable: bool, count: int, kind: ClipKind, scale: float, offset-x: float, offset-y: float, rotation: float }
+
+export struct DragFeedbackData {
+    active: bool, valid: bool, start: float, duration: float, row: int, label: string,
+}
+export global TimelineDrag {
+    in property <DragFeedbackData> feedback;
+    in property <bool> ripple;
+    in property <bool> duplicate;
+    in-out property <bool> copy-modifier;
+    callback modes-changed(ripple: bool, duplicate: bool);
+}
 
 export global Keyframes {
     in property <LayoutSelectionData> layout-clip;
     callback layout-set(field: ClipField, value: float);
+    callback layout-frame(fill: bool);
     /// One row per keyable property, in the order `row` indexes them. Empty
     /// when the selection cannot carry keys at all.
     in property <[ClipKeyData]> rows;

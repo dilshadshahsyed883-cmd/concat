@@ -172,7 +172,7 @@ pub fn render_segments(clip: &Clip) -> Result<Vec<Clip>, String> {
     let Some(mut style) = clip
         .text
         .clone()
-        .filter(|s| !s.karaoke_background.is_empty())
+        .filter(|s| !s.karaoke_background.is_empty() || (s.karaoke && (!s.karaoke_words.is_empty() || clip.extra.contains_key("captionWords"))))
     else {
         return Ok(vec![clip.clone()]);
     };

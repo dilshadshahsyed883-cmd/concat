@@ -220,14 +220,14 @@ impl Controller {
             self.changed = true;
             return;
         }
+        let display_name = fs::read_to_string(snapshot.join("concat.json")).ok()
+            .and_then(|text|serde_json::from_str::<Value>(text.trim_start_matches('\u{feff}')).ok())
+            .and_then(|doc|doc.get("name").and_then(Value::as_str).filter(|name|!name.trim().is_empty()).map(str::to_owned))
+            .unwrap_or_else(||path.file_name().and_then(|n|n.to_str()).unwrap_or(project).to_owned());
         self.data.enqueue(Job {
             remote: id.clone(),
             id,
-            label: path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or(project)
-                .into(),
+            label: concat_project::naming::basename(&display_name),
             project: project.into(),
             domain: String::new(),
             phase: Phase::Preparing,

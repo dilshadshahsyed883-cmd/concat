@@ -26,6 +26,19 @@ fn mode_of(background: &Background) -> i32 {
 }
 
 impl Studio {
+    pub fn can_edit_layout(&self)->bool {
+        self.sole_selection().and_then(|id|self.clip(&id)).is_some_and(|c|
+            self.timeline().track(&c.track_id).is_some_and(|t|layout_source_allowed(c,t,self.locked(&c.track_id))))
+    }
+    pub fn layout_set(&mut self,field:crate::ui::ClipField,value:f32) {
+        if !self.can_edit_layout(){self.notify("Choose one unlocked visible image/video clip",true);return;}
+        self.clip_set(field,value);self.clip_commit();
+    }
+    pub fn layout_frame(&mut self,fill:bool) {
+        if !self.can_edit_layout(){self.notify("Choose one unlocked visible image/video clip",true);return;}
+        self.frame_selected(fill);
+    }
+
     /// Apply backgrounds only to explicitly chosen editable media, without changing timeline defaults.
     pub fn apply_bulk_canvas_background(&mut self, mode:i32, amount:f32, colour:slint::Color, images:bool, videos:bool, selected_only:bool) {
         if !images && !videos {self.notify("Choose Images, Video Clips, or both",true);return;}
@@ -323,6 +336,10 @@ impl Studio {
     }
 }
 
+fn layout_source_allowed(clip:&Clip,track:&model::Track,locked:bool)->bool {
+    clip.kind.is_visual() && !clip.extra.contains_key("canvasOwner") && track.visible && !locked
+}
+
 fn canvas_background_commands(
     timeline:&model::Timeline, locked:&std::collections::HashSet<String>, selected:&std::collections::HashSet<String>,
     images:bool,videos:bool,selected_only:bool,background:&Background,
@@ -346,10 +363,26 @@ mod tests {
     use std::{collections::HashSet,sync::Arc};
     use concat_project::{Editor,doc::{to_document,DocumentSettings},model::{ClipKind,Project}};
     #[test]
+    fn live_layout_enforces_visibility_locks_media_kind_and_companion_protection() {
+        let mut clip=Clip::blank("i","T1",ClipKind::Image,"image",0.0,2.0);
+        let mut track=model::Track {id:"T1".into(),..Default::default()};
+        assert!(layout_source_allowed(&clip,&track,false));
+        assert!(!layout_source_allowed(&clip,&track,true));
+        track.visible=false;assert!(!layout_source_allowed(&clip,&track,false));track.visible=true;
+        clip.extra.insert("canvasOwner".into(),serde_json::json!("owner"));
+        assert!(!layout_source_allowed(&clip,&track,false));clip.extra.clear();
+        clip.kind=ClipKind::Audio;assert!(!layout_source_allowed(&clip,&track,false));
+    }
+
+    #[test]
     fn typed_canvas_application_preserves_unselected_media_defaults_and_undo() {
         let mut p=Project::new();
+        for (id,kind) in [("mi",MediaKind::Image),("mv",MediaKind::Video),("ma",MediaKind::Audio)] {
+            p.media.push(model::MediaItem {id:id.into(),kind,path:format!("{id}.fixture"),duration:Some(20.0),width:Some(1920),height:Some(1080),..Default::default()});
+        }
         for (id,kind,start) in [("i",ClipKind::Image,0.0),("v",ClipKind::Video,2.0),("a",ClipKind::Audio,0.0)] {
-            p.active_mut().clips.push(Arc::new(Clip::blank(id,if kind==ClipKind::Audio {"T3"}else{"T1"},kind,id,start,2.0)));
+            let mut c=Clip::blank(id,if kind==ClipKind::Audio {"T3"}else{"T1"},kind,id,start,2.0);
+            c.media_id=format!("m{id}"); p.active_mut().clips.push(Arc::new(c));
         }
         let settings=DocumentSettings {name:"layout".into(),width:1920,height:1080,rate_num:30,rate_den:1};
         let mut editor=Editor::from_document(&to_document(&settings,&p)).unwrap();

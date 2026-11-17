@@ -267,7 +267,7 @@ fn run_script(
         command.arg("-BundlePath").arg(destination);
     }
     if let Task::Queue { operation, job } = task {
-        command.args(["-Job", &job.remote, "-SnapshotID", &job.id]);
+        command.args(["-Job", &job.remote, "-SnapshotID", &job.id, "-DisplayName", &job.label]);
         if *operation == "Prepare" {
             command.args(["-ProjectDir", &job.project]);
         } else {

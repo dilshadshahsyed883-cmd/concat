@@ -1,0 +1,51 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+import { Theme } from "../theme/theme.slint";
+import { Button } from "../primitives/modal.slint";
+import { PaneScroll } from "pane.slint";
+import { Editor } from "../editor.slint";
+import { CBuilderPane } from "c-builder.slint";
+export component CBuilderHome inherits Rectangle {
+    in property <string> generated-project;
+    in property <string> output-folder;
+    in property <bool> generating;
+    in property <bool> used-pending;
+    callback cancel-generation();
+    callback retry-used();
+    callback return-home(profile:string);
+    callback open-generated();
+    callback choose-output();
+    background:Theme.launch-page;
+    VerticalLayout {
+        padding:12px;spacing:8px;
+        HorizontalLayout {
+            spacing:8px;
+            Button {label:"Home";enabled:!Editor.cb-busy;clicked=>{root.return-home(builder.draft-profile);} }
+            Text {text:"C Builder";color:Theme.fg;font-size:Theme.fs-lg;vertical-alignment:center;horizontal-stretch:1;}
+            if root.generating: Button {label:"Cancel Generation";clicked=>{root.cancel-generation();}}
+            if root.used-pending: Button {label:"Retry used-media step";enabled:!Editor.cb-busy;clicked=>{root.retry-used();}}
+            Button {label:"Output Folder";enabled:!Editor.cb-busy;clicked=>{root.choose-output();}}
+            Button {label:"Open in Editor";primary:true;enabled:!Editor.cb-busy && root.generated-project!="";clicked=>{root.open-generated();}}
+        }
+        Text {text:"Output: " + root.output-folder;color:Theme.fg-muted;font-size:Theme.fs-sm;wrap:word-wrap;}
+        if root.generated-project!="": Text {text:"Generated: " + root.generated-project;color:Theme.fg-muted;wrap:word-wrap;font-size:Theme.fs-sm;}
+        PaneScroll {
+            builder := CBuilderPane {
+                can-generate:!root.used-pending;generating:root.generating;
+                project-name:Editor.cb-project-name;name-overridden:Editor.cb-name-overridden;name-preview:Editor.cb-name-preview;
+                project-name-edited(name)=>{Editor.cb-project-name-edited(name);}reset-project-name=>{Editor.cb-reset-project-name();}
+                media-folder:Editor.cb-media-folder;narration:Editor.cb-narration;narration-duration:Editor.cb-duration;
+                status:Editor.cb-status;keywords:Editor.cb-keywords;image-count:Editor.cb-image-count;video-count:Editor.cb-video-count;
+                cache-probed:Editor.cb-probed;cache-reused:Editor.cb-reused;scan-done:Editor.cb-scan-done;scan-total:Editor.cb-scan-total;
+                busy:Editor.cb-busy;profile:Editor.cb-profile;profile-names:Editor.cb-profile-names;preview:Editor.cb-preview;
+                image-keywords:Editor.cb-image-keywords;video-keywords:Editor.cb-video-keywords;videos-enabled:Editor.cb-videos-enabled;
+                image-selection-summary:Editor.cb-image-selection-summary;video-selection-summary:Editor.cb-video-selection-summary;
+                keyword-changed(json,video,keyword,selected,weight)=>{Editor.cb-keyword-changed(json,video,keyword,selected,weight);}
+                videos-toggled(json,on)=>{Editor.cb-videos-toggled(json,on);}
+                plan-profile(json,images,videos,action)=>{Editor.cb-plan-profile(json,images,videos,action);}
+                import-folder=>{Editor.cb-import-folder();} refresh-folder=>{Editor.cb-refresh-folder();}
+                choose-narration=>{Editor.cb-choose-narration();}
+                generate-project(name,images,videos,coverage,profile)=>{Editor.cb-generate-project(name,images,videos,coverage,profile);}
+            }
+        }
+    }
+}

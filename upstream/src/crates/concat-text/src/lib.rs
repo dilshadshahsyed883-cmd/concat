@@ -1298,6 +1298,33 @@ pub fn render_word(fonts: &Fonts, style: &TitleStyle, width: u32, height: u32,
         block_dx: block.2, block_dy: block.3, words })
 }
 
+/// Paint an accurately selected karaoke word in its highlight foreground colour.
+/// Layout, outline and shadow are shared with the normal title painter.
+pub fn render_word_color_frame(fonts:&Fonts,style:&TitleStyle,width:u32,height:u32,active:usize,color:&str)->Result<RenderedFrame,Error> {
+    let (canvas,block,words)=word_colored(fonts,style,width,height,active,color)?;
+    Ok(RenderedFrame{rgba:straight_rgba(&canvas),width,height,block_width:block.0,block_height:block.1,block_dx:block.2,block_dy:block.3,words})
+}
+/// PNG counterpart of [`render_word_color_frame`] for the normal title cache/export.
+pub fn render_word_color(fonts:&Fonts,style:&TitleStyle,width:u32,height:u32,active:usize,color:&str)->Result<Rendered,Error> {
+    let (canvas,block,words)=word_colored(fonts,style,width,height,active,color)?;
+    let png=canvas.encode_png().map_err(|error|Error::Encode(error.to_string()))?;
+    Ok(Rendered{png,width,height,block_width:block.0,block_height:block.1,block_dx:block.2,block_dy:block.3,words})
+}
+fn word_colored(fonts:&Fonts,style:&TitleStyle,width:u32,height:u32,active:usize,color:&str)->Result<(Pixmap,Block,Vec<WordRect>),Error> {
+    let (mut canvas,block,words)=paint(fonts,style,width,height)?;
+    let word=words.get(active).ok_or_else(||Error::Encode("Active word exceeds the shaped phrase".into()))?;
+    let mut highlighted=style.clone();
+    highlighted.color=if color.is_empty(){"#ffe13c".into()}else{color.into()};
+    if colour(&highlighted.color).is_none(){return Err(Error::Encode("Invalid karaoke text color".into()));}
+    let (alternate,_,_)=paint(fonts,&highlighted,width,height)?;
+    for y in word.y.max(0) as u32..(word.y.max(0) as u32+word.height).min(height) {
+        let start=((y*width+word.x.max(0) as u32)*4) as usize;
+        let end=((y*width+(word.x.max(0) as u32+word.width).min(width))*4) as usize;
+        canvas.data_mut()[start..end].copy_from_slice(&alternate.data()[start..end]);
+    }
+    Ok((canvas,block,words))
+}
+
 fn word_backing(canvas: Pixmap, words: &[WordRect], active: usize, background: &str, em: f32)
     -> Result<Pixmap, Error> {
     let Some(word) = words.get(active) else { return Err(Error::Encode("Active word exceeds the shaped phrase".into())); };
@@ -1968,6 +1995,22 @@ mod tests {
         assert!(purple(&last) > purple(&first));
         assert!(render_word_frame(&fonts, &look, 960, 540, 99, "#a020f0").is_err());
         assert!(render_word_frame(&fonts, &look, 960, 540, 0, "invalid").is_err());
+    }
+
+    #[test]
+    fn karaoke_foreground_changes_only_the_chosen_word_without_reflow() {
+        let fonts=Fonts::new();let mut look=style("HELLO WORLD");look.font_size=0.14;look.shadow=false;
+        let first=render_word_color_frame(&fonts,&look,640,360,0,"#ffe13c").unwrap();
+        let second=render_word_color_frame(&fonts,&look,640,360,1,"#ffe13c").unwrap();
+        let plain=render_frame(&fonts,&look,640,360).unwrap();
+        assert_eq!(first.words,second.words);assert_eq!(first.block_width,second.block_width);
+        assert_ne!(first.rgba,second.rgba);
+        let outside=first.words[1];
+        for y in outside.y.max(0) as u32..(outside.y.max(0) as u32+outside.height).min(360) {
+            let left=((y*640+outside.x.max(0) as u32)*4) as usize;
+            let right=((y*640+(outside.x.max(0) as u32+outside.width).min(640))*4) as usize;
+            assert_eq!(&first.rgba[left..right],&plain.rgba[left..right]);
+        }
     }
 
     fn style(content: &str) -> TitleStyle {

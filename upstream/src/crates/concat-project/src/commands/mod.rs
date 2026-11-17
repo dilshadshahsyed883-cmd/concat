@@ -553,6 +553,8 @@ pub enum Command {
     SetTimelineMagnetic { enabled: bool },
     /// Commit a timeline drag, guarding links/locks and magnetically closing only newly vacated contiguous slots.
     ScopedMoveClips { moves: Vec<ClipMove>, locked_tracks: Vec<String>, magnetic: bool },
+    /// Exact, previewable native drag/reorder; never relocates silently to a nearby gap.
+    DragClips { request: crate::drag_edit::DragRequest },
     /// Repositions any number of clips in one edit - one undo step for a
     /// whole multi-selection drag. Unknown clips and tracks are tolerated
     /// per [`ClipMove`].
@@ -1093,6 +1095,7 @@ impl Command {
                 .as_ref()
                 .is_some_and(|stabilize| bad([stabilize.smoothness, stabilize.max_zoom])),
             Command::MoveClips { moves } | Command::ScopedMoveClips { moves, .. } => bad(moves.iter().map(|wanted| wanted.start)),
+            Command::DragClips {request} => bad(request.moves.iter().map(|wanted|wanted.start)),
             Command::TrimClip { delta, .. } => bad([*delta]),
             Command::SplitClips { time, .. } => bad([*time]),
             Command::FreezeFrame { time, duration, .. } => bad([*time]) || bad(*duration),
@@ -1214,6 +1217,7 @@ pub fn apply(
             })
         }
 
+        Command::DragClips {request} => crate::drag_edit::apply(project,mint,request),
         Command::ApplyCanvasPreset { config, targets, locked_tracks } => crate::canvas_preset::apply(project, mint, config, targets, locked_tracks),
         command @ (Command::InsertMedia { .. } | Command::ReplaceMediaInSlot { .. }
             | Command::CloseTrackGaps { .. } | Command::SetTimelineMagnetic { .. } | Command::SetGpuCaptionRequest { .. } | Command::SetPlanningProfile { .. } | Command::ImportGpuCaptions { .. } | Command::ScopedMoveClips { .. } | Command::ReplaceMediaFromFile { .. }) => editing::apply(project, mint, command),

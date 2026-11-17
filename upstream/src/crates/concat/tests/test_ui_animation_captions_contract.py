@@ -17,20 +17,25 @@ PHYSICS = (
     "Elastic Pop", "Inertia Glide", "Damped Shake",
 )
 TABS = (
-    '"common.media"', '"C Builder"', '"common.text"',
+    '"common.media"', '"common.text"',
     '"mediaPane.transitions"', '"Animations"', '"mediaPane.filters"',
     '"mediaPane.templates"', '"common.effects"',
 )
 
 
 class DesktopUiContractTests(unittest.TestCase):
-    def test_exact_eight_gpu_tabs_without_audio(self):
+    def test_exact_seven_editor_tabs_with_home_only_builder(self):
         start = MEDIA.index("                        LibraryTab {")
         end = MEDIA.index("// The end buttons", start)
         strip = MEDIA[start:end]
         indices = [strip.index(tab) for tab in TABS]
         self.assertEqual(indices, sorted(indices))
         self.assertNotIn('label: I18n.t("common.audio");', strip)
+        self.assertNotIn('label: "C Builder";', strip)
+        self.assertNotIn('CBuilderPane', MEDIA)
+        home=(ROOT/'ui/workspace/c-builder-home.slint').read_text(encoding="utf-8")
+        self.assertIn('CBuilderPane',home)
+        self.assertIn('open-c-builder',APP)
         self.assertIn('label: "Sounds & Voices";', MEDIA)
         self.assertIn('root.tab == 0 && root.media-audio-view', MEDIA)
         self.assertIn("Sounds.mine", MEDIA)

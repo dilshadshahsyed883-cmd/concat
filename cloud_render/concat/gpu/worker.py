@@ -29,6 +29,7 @@ from cloud_render.concat.hybrid.contract import (
     BUNDLE_VERSION, HYBRID_MODE, RENDER_MODES, WORKER_API_VERSION,
 )
 from cloud_render.concat.project_bundle import restore, MAX_PROJECT_MANIFEST_BYTES
+from cloud_render.concat.hybrid.naming import read_project_names, content_disposition, mp4_name
 from cloud_render.concat.gpu.resumable import ResumableUpload, UploadError
 from cloud_render.concat.gpu.caption_jobs import (CaptionEngine, CaptionCancelled,
     FasterWhisperCuda, GpuSpeechUnavailable, read_document, atomic_json, validate_request)
@@ -429,6 +430,8 @@ class RenderWorker:
                         raise ValueError("Restored project must not be a symlink")
                     shutil.rmtree(extracted)
                 restore(directory / "project.zip", extracted)
+            # Friendly names are metadata only; retained ZIP/output paths remain job-ID based.
+            self._change(job, **read_project_names(extracted, fallback=job))
             mode = self.status(job).get("render_mode", "native")
             if mode not in RENDER_MODES:
                 raise RuntimeError("Legacy native Vulkan jobs are retired. Source bundle retained")
@@ -538,7 +541,7 @@ class RenderWorker:
             for index in range((length + CHUNK - 1) // CHUNK):
                 chunk = stream.read(CHUNK)
                 url = base + "?" + urllib.parse.urlencode({
-                    "index": index, "name": job + ".mp4", "size": length, "sha256": checksum})
+                    "index": index, "name": mp4_name(self.status(job).get("output_filename", job)), "size": length, "sha256": checksum})
                 request = urllib.request.Request(url, data=chunk, method="POST",
                     headers={"X-Cloud-Render-Token": self.receiver_token,
                              "Content-Type": "application/octet-stream"})
@@ -754,6 +757,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "video/mp4")
             self.send_header("Content-Length", str(output.stat().st_size))
+            self.send_header("Content-Disposition", content_disposition(item.get("output_filename",job)))
             self.send_header("Cache-Control", "private, no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
             self.end_headers()

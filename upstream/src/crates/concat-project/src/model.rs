@@ -2853,7 +2853,9 @@ impl Timeline {
 
     /// The lane whose pictures have a background: the lowest lane holding a
     /// video or a still - the main picture of the cut, where CapCut has its
-    /// main track. Lowest rather than simply the first lane, so a cut whose
+    /// main track. Generated canvas companion pictures do not claim this
+    /// lane; their explicitly owned backdrops are handled by `background_on`.
+    /// Lowest rather than simply the first lane, so a cut whose
     /// bottom lane holds only music still has one. None for a timeline
     /// without a picture.
     pub fn background_lane(&self) -> Option<&str> {
@@ -2862,7 +2864,8 @@ impl Timeline {
             .find(|track| {
                 self.clips
                     .iter()
-                    .any(|clip| clip.track_id == track.id && clip.kind.is_visual())
+                    .any(|clip| clip.track_id == track.id && clip.kind.is_visual()
+                        && !clip.extra.contains_key("canvasOwner"))
             })
             .map(|track| track.id.as_str())
     }

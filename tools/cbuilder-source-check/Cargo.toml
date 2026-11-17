@@ -5,6 +5,7 @@ edition = "2024"
 publish = false
 [workspace]
 [dependencies]
+sha2 = "0.10"
 concat-project = { path = "../../upstream/src/crates/concat-project" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

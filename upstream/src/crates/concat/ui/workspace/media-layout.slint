@@ -15,7 +15,7 @@ export component MediaLayoutPanel inherits VerticalLayout {
     property <BackdropData> background: Backdrop.clip-has && Backdrop.clip.mode >= 0 ? Backdrop.clip : Backdrop.timeline;
     changed background => { root.seed-background(); }
     property <bool> live-selected: false;
-    property <bool> can-edit: root.scope == 1 && root.selected.present && root.selected.count == 1
+    property <bool> can-edit: root.scope == 1 && root.selected.present && root.selected.editable && root.selected.count == 1
         && ((root.selected.kind == ClipKind.image && root.images) || (root.selected.kind == ClipKind.video && root.videos));
     property <float> scale: 1;
     property <float> position-x: 0;
@@ -67,8 +67,8 @@ export component MediaLayoutPanel inherits VerticalLayout {
         Param { label: "Rotation"; keyable:root.live-selected && root.can-edit; field:ClipField.rotation; changed(v)=>{root.edit(ClipField.rotation,v);} value <=> root.rotation; minimum: -180; maximum: 180; step: 1; unit: "°"; fmt: ParamFormat.degrees; }
         Button { label: "Apply Rotation"; enabled: root.images || root.videos; clicked => { root.apply(2, root.scope == 1); } }
         HorizontalLayout {
-            Button { label: "Fit"; enabled: root.images || root.videos; clicked => { if root.live-selected && root.can-edit {Backdrop.frame(false);} else {root.apply(4, root.scope == 1);} } }
-            Button { label: "Fill"; enabled: root.images || root.videos; clicked => { if root.live-selected && root.can-edit {Backdrop.frame(true);} else {root.apply(5, root.scope == 1);} } }
+            Button { label: "Fit"; enabled: root.images || root.videos; clicked => { if root.live-selected && root.can-edit {Keyframes.layout-frame(false);} else {root.apply(4, root.scope == 1);} } }
+            Button { label: "Fill"; enabled: root.images || root.videos; clicked => { if root.live-selected && root.can-edit {Keyframes.layout-frame(true);} else {root.apply(5, root.scope == 1);} } }
         }
         Button { label: "Apply All Transform Values"; primary: true; enabled: root.images || root.videos; clicked => { root.apply(3, root.scope == 1); } }
     }

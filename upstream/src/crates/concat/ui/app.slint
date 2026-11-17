@@ -42,10 +42,12 @@ import { PhoneEditor } from "phone/editor.slint";
 import {
     AppliedEntryData, AppliedParamData, CatalogueEntryData, Library, LibraryViewData,
 } from "inspector/clip-inspector.slint";
+import { CBuilderHome } from "workspace/c-builder-home.slint";
 import { CBuilderKeywordData } from "workspace/c-builder-selection.slint";
 import { TransitionControls } from "inspector/creative-transition-controls.slint";
 import { ParticleBulk } from "workspace/particle-effects.slint";
 import { CanvasPresets } from "workspace/canvas-presets.slint";
+import { CaptionPresetPreview, CaptionPreviewCard } from "workspace/caption-preset-preview.slint";
 import { ParamFormat } from "inspector/controls.slint";
 import { ToastData, ToastLayer } from "primitives/toast.slint";
 import { TooltipLayer } from "primitives/tooltip.slint";
@@ -53,7 +55,7 @@ import { FontSearch } from "inspector/font-picker.slint";
 import { Meters } from "timeline/vu-meter.slint";
 import { Workspace } from "workspace/workspace.slint";
 import {
-    CanvasMotionData, LayoutSelectionData, Backdrop, BackdropData, ClipData, ClipField, ClipKeyData, ClipKind, ClipTextField, DropData, Keyframes,
+    CanvasMotionData, LayoutSelectionData, TimelineDrag, DragFeedbackData, Backdrop, BackdropData, ClipData, ClipField, ClipKeyData, ClipKind, ClipTextField, DropData, Keyframes,
     SelectedClipData, SelectedTransitionData, StageGuideData, StageItemData, TextAlignment, TimelineTabData,
     TimelineTool, TrackData, TrackSize,
 } from "timeline/model.slint";
@@ -62,11 +64,11 @@ import {
 import { KeyEditor, KeyMarkData, KeyRowData } from "workspace/keyframes-pane.slint";
 
 export {
-    CBuilderKeywordData, TransitionControls, ParticleBulk, CanvasPresets, Curves, Fmt, Focus, Payload, Theme, Bezier, Editor, I18n, CloudGpu, GpuQueueDialog, GpuQueueRow, GpuCompatibility,
+    CaptionPresetPreview, CaptionPreviewCard, CBuilderKeywordData, TransitionControls, ParticleBulk, CanvasPresets, Curves, Fmt, Focus, Payload, Theme, Bezier, Editor, I18n, CloudGpu, GpuQueueDialog, GpuQueueRow, GpuCompatibility,
     AppliedEntryData, AppliedParamData, CatalogueEntryData, Library, LibraryViewData, ParamFormat,
     DockDivider, DockSide, PaneKind, SeatBox,
     EffectData, FontSearch, Meters, MediaFilter, MediaItemData, MediaKind, SourcePreview, TextPresetData,
-    CanvasMotionData, Backdrop, BackdropData, ClipData, ClipField, ClipKeyData, ClipKind, ClipTextField, DropData, Keyframes,
+    CanvasMotionData, LayoutSelectionData, TimelineDrag, DragFeedbackData, Backdrop, BackdropData, ClipData, ClipField, ClipKeyData, ClipKind, ClipTextField, DropData, Keyframes,
     KeyEditor, KeyMarkData, KeyRowData,
     SelectedClipData, SelectedTransitionData, StageGuideData, StageItemData, TextAlignment, TimelineTabData,
     TimelineTool, TrackData, TrackSize, MenuItemData, MenuRow, ExportData, ExportPhase, ModelData, SettingsData,
@@ -144,6 +146,17 @@ export component App inherits Window {
     // the workspace, when it does arrive, arrives with every callback already
     // bound rather than during the window's own construction.
     in property <bool> on-start: true;
+    in property <bool> c-builder-home: false;
+    in property <bool> cb-generating;
+    in property <bool> cb-used-pending;
+    callback c-builder-cancel-generation();
+    callback c-builder-retry-used();
+    in property <string> cb-generated-project;
+    in property <string> cb-output-folder;
+    callback start-c-builder();
+    callback c-builder-return-home(profile: string);
+    callback c-builder-open-generated();
+    callback c-builder-choose-output();
     in property <StartData> start;
     in property <[ChipOption]> start-aspects;
     in property <[ChipOption]> start-sizes;
@@ -599,7 +612,18 @@ export component App inherits Window {
                 export-clicked => { root.export-clicked(); }
             }
 
-            if root.on-start: StartScreen {
+            if root.c-builder-home: CBuilderHome {
+                vertical-stretch:1;
+                generated-project:root.cb-generated-project;
+                output-folder:root.cb-output-folder;
+                generating:root.cb-generating;used-pending:root.cb-used-pending;
+                cancel-generation=>{root.c-builder-cancel-generation();}
+                retry-used=>{root.c-builder-retry-used();}
+                return-home(profile)=>{root.c-builder-return-home(profile);}
+                open-generated=>{root.c-builder-open-generated();}
+                choose-output=>{root.c-builder-choose-output();}
+            }
+            if root.on-start && !root.c-builder-home: StartScreen {
                 vertical-stretch: 1;
 
                 recents: root.recents;
@@ -615,6 +639,7 @@ export component App inherits Window {
                 open => { root.start-open(); }
                 open-settings => { root.open-settings(); }
                 open-gpu-queue => { CloudGpu.queue-open = true; }
+                open-c-builder => {root.start-c-builder();}
                 open-recent(path) => { root.start-open-recent(path); }
                 forget-recent(path) => { root.start-forget-recent(path); }
                 reveal-recent(path) => { root.start-reveal-recent(path); }
@@ -629,7 +654,7 @@ export component App inherits Window {
             // nothing is passed to it: it is a box with four seats in it, and
             // the views inside those seats reach the state directly. See
             // editor.slint.
-            if !root.on-start && !root.phone: Workspace {
+            if !root.on-start && !root.c-builder-home && !root.phone: Workspace {
                 vertical-stretch: 1;
             }
 

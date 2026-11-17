@@ -1,0 +1,11 @@
+# Native timeline drag editing (#57)
+
+Drag existing clips to move them; use the Duplicate Drag toolbar toggle or Ctrl/Alt-drag to copy explicitly. Ctrl-click still toggles selection when there is no drag. Shift/Ctrl selection and the existing selection rectangle support groups. Selected images/videos retain relative visual lanes and time spacing; explicitly selected linked sound/captions keep their own lanes and follow the time shift.
+
+The toolbar keeps three separate choices: Snap, Magnet and Ripple Drag. Free mode uses the exact frame-aligned destination or refuses collisions with a reason. It never relocates a clip to a guessed nearby gap. Ripple mode removes the moved source slots and inserts the selected block while shifting following clips. Its pointer coordinate refers to the original arrangement; removing an earlier source slot adjusts the resulting insertion time, which the caret/status displays before release. A reorder from [2,4] to the old endpoint 8 therefore lands at 6 after source removal.
+
+Every pointer sample uses the unchanged session project and the same pure native planner used by the atomic commit. The echo, ghost, target caret, timestamp/frame and downstream-shift count preview the result. The saved project changes only on a valid release. Escape, pointer cancellation, leaving the timeline or an invalid drop discard the preview. Horizontal and vertical edge scrolling preserve the pointer delta through the viewport change.
+
+Locks, hidden tracks, declared audio-only lanes, invalid sources, partial linked selections, collisions, sub-frame splits and incompatible transition seams fail explicitly. No narration or unrelated layer is silently dragged along. Source files, IDs on moves, trims, speed, keys and effects remain native; copies get new IDs with selected links remapped. Each drag is one Undo/Redo transaction and uses the normal project serializer. #54's automatic consolidation and compound/flatten operations remain excluded.
+
+Source-level geometry, alignment, group, link, lock, duplicate, split, save/reopen and undo tests use deterministic native fixtures. Interactive Windows pointer behavior and real GPU output require subsequent hardware verification; no EXE/image build or deployment is part of this work.

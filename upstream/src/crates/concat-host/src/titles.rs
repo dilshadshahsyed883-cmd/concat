@@ -343,6 +343,7 @@ impl Titles {
                 let mut fonts = self.fonts.lock().unwrap_or_else(|e| e.into_inner());
                 let fonts = self.fonts_for(project, &mut fonts);
                 match style.karaoke_word {
+                    Some(active) if style.karaoke_background.is_empty() => concat_text::render_word_color_frame(fonts, &title, width, height, active, &style.karaoke_color),
                     Some(active) => concat_text::render_word_frame(fonts, &title, width, height, active, &style.karaoke_background),
                     None => concat_text::render_frame(fonts, &title, width, height),
                 }.map_err(|error| error.to_string())?
@@ -407,6 +408,7 @@ impl Titles {
                 let mut fonts = self.fonts.lock().unwrap_or_else(|e| e.into_inner());
                 let fonts = self.fonts_for(project, &mut fonts);
                 match style.karaoke_word {
+                    Some(active) if style.karaoke_background.is_empty() => concat_text::render_word_color(fonts, &title, width, height, active, &style.karaoke_color),
                     Some(active) => concat_text::render_word(fonts, &title, width, height, active, &style.karaoke_background),
                     None => concat_text::render(fonts, &title, width, height),
                 }.map_err(|error| error.to_string())?

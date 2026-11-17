@@ -17,7 +17,7 @@ import { Wave } from "../primitives/wave.slint";
 import { ContextMenu, MenuItemData } from "../primitives/context-menu.slint";
 import { SourcePreview } from "source-preview.slint";
 import { Sounds, SoundList, VoiceList } from "audio-page.slint";
-import { CBuilderPane } from "c-builder.slint";
+import { CaptionPresetPreview, CaptionPresetPreviewPanel } from "caption-preset-preview.slint";
 import { CanvasPresetPanel } from "canvas-presets.slint";
 import { MediaLayoutPanel } from "media-layout.slint";
 import { CanvasMotionPanel } from "canvas-motion.slint";
@@ -1195,7 +1195,7 @@ component PresetCard inherits Rectangle {
 
     /// One size for every sample, a good third of the tile: large enough
     /// that a stroke and a face are told apart at a glance.
-    property <length> sample-size: root.width * 0.36;
+    property <length> sample-size: root.width * 0.20;
 
     drag := DragArea {
         data: Payload.of("text:\{root.preset.id}:\{root.preset.name}");
@@ -1240,7 +1240,7 @@ component PresetCard inherits Rectangle {
                     stroke: root.preset.stroke;
                     stroke-width: root.preset.stroke-width > 0 ? 1px : 0px;
                     horizontal-alignment: center;
-                    overflow: elide;
+                    wrap: word-wrap;
                 }
 
                 if touch.has-hover: Rectangle {
@@ -1808,6 +1808,7 @@ export component MediaPane inherits Rectangle {
     // Opens the existing speech/captions dialog (including SRT and Whisper).
     callback generate-captions();
     property <string> active-caption-preset: "cuda-caption.classic-subtitle";
+    changed text-category => { CaptionPresetPreview.scope(root.tab == 1 && root.text-category == 1 && GpuCompatibility.enabled); }
     /// Stickers page: add the figure `shape` names at the playhead, as a
     /// clip called `label`.
     callback add-shape(shape: string, label: string);
@@ -1856,7 +1857,10 @@ export component MediaPane inherits Rectangle {
     // Audio is a Media sub-view, not a ninth top-level tab. Keep the existing
     // sounds, voice and import implementation accessible from the Media sidebar.
     property <bool> media-audio-view: false;
-    changed tab => { Sounds.shown(root.tab == 0 && root.media-audio-view); }
+    changed tab => {
+        Sounds.shown(root.tab == 0 && root.media-audio-view);
+        CaptionPresetPreview.scope(root.tab == 1 && root.text-category == 1 && GpuCompatibility.enabled);
+    }
     changed media-audio-view => { Sounds.shown(root.tab == 0 && root.media-audio-view); }
     property <bool> physics-images: true;
     property <bool> physics-videos: true;
@@ -1907,7 +1911,7 @@ export component MediaPane inherits Rectangle {
     /// pane, which has the same problem for the same reason. A library
     /// dropped into a narrow seat would otherwise hand the card grid a
     /// negative width.
-    property <length> sidebar: root.tab == 9 || root.tab == 10 ? 0px : Math.max(0px,
+    property <length> sidebar: Math.max(0px,
         Math.min(root.sidebar-w, root.width / 2));
 
     // The catalogues. The ids are written into project files, so they are
@@ -1994,12 +1998,6 @@ export component MediaPane inherits Rectangle {
                             label: I18n.t("common.media");
                             current: root.tab == 0;
                             clicked => { root.tab = 0; root.media-audio-view = false; }
-                        }
-                        LibraryTab {
-                            glyph: Glyph.film;
-                            label: "C Builder";
-                            current: root.tab == 9;
-                            clicked => { root.tab = 9; }
                         }
                         LibraryTab {
                             glyph: Glyph.text-mark;
@@ -2473,38 +2471,6 @@ export component MediaPane inherits Rectangle {
                 width: Math.max(0px, parent.width - root.sidebar - 1px);
                 height: parent.height;
 
-                if root.tab == 9: PaneScroll {
-                    CBuilderPane {
-                    media-folder: root.cb-media-folder;
-                    narration: root.cb-narration;
-                    narration-duration: root.cb-duration;
-                    status: root.cb-status;
-                    keywords: root.cb-keywords;
-                    image-count: root.cb-image-count;
-                    video-count: root.cb-video-count;
-                    cache-probed: root.cb-probed;
-                    cache-reused: root.cb-reused;
-                    scan-done: root.cb-scan-done;
-                    scan-total: root.cb-scan-total;
-                    busy: root.cb-busy;
-                    profile: root.cb-profile;
-                    profile-names: root.cb-profile-names;
-                    image-keywords: root.cb-image-keywords; video-keywords: root.cb-video-keywords;
-                    videos-enabled: root.cb-videos-enabled;
-                    image-selection-summary: root.cb-image-selection-summary; video-selection-summary: root.cb-video-selection-summary;
-                    keyword-changed(json, video, keyword, selected, weight) => { root.cb-keyword-changed(json, video, keyword, selected, weight); }
-                    videos-toggled(json, on) => { root.cb-videos-toggled(json, on); }
-                    preview: root.cb-preview;
-                    plan-profile(json, images, videos, action) => { root.cb-plan-profile(json, images, videos, action); }
-                    import-folder => { root.cb-import-folder(); }
-                    refresh-folder => { root.cb-refresh-folder(); }
-                    choose-narration => { root.cb-choose-narration(); }
-                    generate-project(name, images, videos, coverage, profile) => {
-                        root.cb-generate-project(name, images, videos, coverage, profile);
-                    }
-                    }
-                }
-
                 if root.tab == 0 && !root.media-audio-view: HorizontalLayout {
                     padding: 8px;
                     spacing: 8px;
@@ -2777,33 +2743,16 @@ export component MediaPane inherits Rectangle {
                     }
                 }
 
-                // The looks. Each card is a title in that look, placed at
-                // the playhead on a click or dragged onto a lane; a preset
-                // that brings a font installs it on the way.
-                if root.tab == 1 && ((GpuCompatibility.enabled && root.text-category == 1)
-                        || (!GpuCompatibility.enabled && root.text-category >= 1)): VerticalLayout {
+                // Caption cards stage a local monitor preview. Only explicit Apply edits the document.
+                if root.tab == 1 && GpuCompatibility.enabled && root.text-category == 1: PaneScroll {
+                    CaptionPresetPreviewPanel { padding: 8px; }
+                }
+                if root.tab == 1 && !GpuCompatibility.enabled && root.text-category >= 1: VerticalLayout {
                     padding: 8px;
-                    if GpuCompatibility.enabled: Text {
-                        text: "Select a preset to style selected captions, or add one at the playhead.";
-                        color: Theme.fg-muted;
-                        font-size: Theme.fs-sm;
-                        wrap: word-wrap;
-                    }
-                    if GpuCompatibility.enabled: Button {
-                        label: "Apply Selected Preset to All Captions";
-                        clicked => { root.apply-caption-preset(root.active-caption-preset, true); }
-                    }
                     PresetGrid {
                         horizontal-stretch: 1;
                         items: root.text-category == 2 ? root.language-presets : root.presets;
-                        applied(id) => {
-                            if (GpuCompatibility.enabled) {
-                                root.active-caption-preset = id;
-                                root.apply-caption-preset(id, false);
-                            } else {
-                                root.add-text(id);
-                            }
-                        }
+                        applied(id) => { root.add-text(id); }
                     }
                 }
 

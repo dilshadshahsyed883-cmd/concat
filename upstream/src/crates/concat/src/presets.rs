@@ -238,7 +238,11 @@ fn parse(text: &str, folder: Option<&Path>) -> Option<(i64, TextPreset)> {
         .map(|language| language.trim().to_owned())
         .filter(|language| !language.is_empty())
         .unwrap_or_else(|| "Latin".to_owned());
-    let style = file.style.over(&file.name);
+    let mut style = file.style.over(&file.name);
+    if id.starts_with("cuda-caption.") && style.max_width == 0.0 {
+        // Use the same safe wrapping box in local audition, saved captions and GPU export.
+        style.max_width = 0.88;
+    }
     let sample = file
         .sample
         .map(|sample| sample.trim().to_owned())
@@ -255,6 +259,9 @@ fn parse(text: &str, folder: Option<&Path>) -> Option<(i64, TextPreset)> {
                     .collect()
             }
         });
+    let sample = if id.starts_with("cuda-caption.") { "Hello".to_owned() }
+        else if language.eq_ignore_ascii_case("latin") && sample.chars().count() > 6 { "Aa".to_owned() }
+        else { sample };
     Some((
         order,
         TextPreset {
@@ -408,7 +415,11 @@ mod tests {
             "##,
         )
         .expect("parses");
-        let style = file.style.over(&file.name);
+        let mut style = file.style.over(&file.name);
+    if id.starts_with("cuda-caption.") && style.max_width == 0.0 {
+        // Use the same safe wrapping box in local audition, saved captions and GPU export.
+        style.max_width = 0.88;
+    }
         assert_eq!(style.color, "#ff0000");
         assert_eq!(style.align, TextAlign::Left);
         assert_eq!(style.content, "Red");

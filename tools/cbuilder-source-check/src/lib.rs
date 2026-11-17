@@ -19,3 +19,6 @@ pub mod media {
 }
 #[path = "../../../upstream/src/crates/concat/src/c_builder.rs"]
 pub mod c_builder;
+
+#[path = "../../../upstream/src/crates/concat/src/c_builder_used.rs"]
+pub mod c_builder_used;

@@ -61,3 +61,6 @@ jobs:
       - name: Verify authenticated GPU caption retry/cancel without network
         shell: pwsh
         run: ./upstream/src/crates/concat/tests/test_gpu_caption_queue_controls.ps1
+      - name: Verify friendly names and collision-safe downloads without network
+        shell: pwsh
+        run: ./upstream/src/crates/concat/tests/test_friendly_names.ps1

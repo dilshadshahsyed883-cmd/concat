@@ -115,7 +115,8 @@ fn collect(folder: &Path) -> Result<Vec<PathBuf>, String> {
 pub fn scan(folder: &Path, cache_path: &Path, mut progress: impl FnMut(usize, usize))
     -> Result<ScanReport, String> {
     let root = folder.canonicalize().map_err(|e| e.to_string())?;
-    let files = collect(&root)?;
+    let excluded=crate::c_builder_used::excluded_paths(&root)?;
+    let files:Vec<_>=collect(&root)?.into_iter().filter(|p|!excluded.contains(p)).collect();
     let mut cache = read_cache(cache_path)?;
     let mut assets = Vec::with_capacity(files.len());
     let mut seen = HashSet::new();
@@ -301,16 +302,21 @@ pub fn write_native_with_profile(shots:&[Shot],narration:&Path,duration:f64,pare
     profile:Option<&concat_project::planning::Profile>)->Result<PathBuf,String>{
     if let Some(profile)=profile {profile.validate()?;}
 
-    let name = name.trim();
-    if name.is_empty() || name == "." || name == ".."
-        || name.chars().any(|c| "\\/:*?\"<>|".contains(c)) {
-        return Err("Enter a valid project name".into());
-    }
+    let base_name=concat_project::naming::basename(name);
     let total = (duration * 1_000_000.0).round() as u64;
     validate(shots, total)?;
-    let root = parent.join(format!("C Builder - {name}"));
-    // Never overwrite projects (or any existing folder). Source media is never moved.
-    fs::create_dir(&root).map_err(|e| format!("Project already exists or cannot be created: {e}"))?;
+    // Claim a unique directory atomically; neither old projects nor arbitrary folders are overwritten.
+    let mut chosen=None;
+    for n in 1..10000 {
+        let name=concat_project::naming::numbered(&base_name,n);
+        let root=parent.join(&name);
+        match fs::create_dir(&root) {
+            Ok(())=>{chosen=Some((root,name));break;}
+            Err(e) if e.kind()==std::io::ErrorKind::AlreadyExists=>continue,
+            Err(e)=>return Err(format!("Could not create project directory: {e}")),
+        }
+    }
+    let (root,name)=chosen.ok_or("Too many project name collisions")?;
     let outcome = (|| -> Result<(), String> {
         let mut project = Project::new();
         if let Some(profile)=profile {project.extra.insert("cBuilderPlanning".into(),serde_json::to_value(profile).map_err(|e|e.to_string())?);}
@@ -446,9 +452,42 @@ mod tests {
         assert_eq!(reopened.active().clips.len(), shots.len() + 1);
         assert!(picture.exists());
         assert!(narration.exists());
-        assert!(write_native(&shots, &narration, 17.4, &root, "Demo").is_err());
+        let second=write_native(&shots,&narration,17.4,&root,"Demo").unwrap();
+        assert_ne!(second,project_dir);
+        assert_eq!(second.file_name().unwrap(),"Demo (2)");
+        assert_eq!(fs::read_to_string(project_dir.join("concat.json")).unwrap(),raw);
+        let next:serde_json::Value=serde_json::from_slice(&fs::read(second.join("concat.json")).unwrap()).unwrap();
+        assert_eq!(next["name"],"Demo (2)");
+        assert_eq!(doc::from_document(&next).unwrap().active().name,"Demo (2)");
         fs::remove_dir_all(root).unwrap();
     }
+    #[test]
+    fn narration_name_defaults_manual_override_and_reset_are_independent_of_media() {
+        let mut state=State::default();
+        state.choose_narration_name(Path::new("/voice/s2.mp3"));assert_eq!(state.effective_name(),"s2");
+        assert!(state.naming_preview().contains("s2.zip"));assert!(state.naming_preview().contains("s2.mp4"));
+        state.choose_narration_name(Path::new("/voice/story.v2.wav"));assert_eq!(state.effective_name(),"story.v2");
+        state.edit_project_name("Episode 03");state.choose_narration_name(Path::new("/voice/another.wav"));
+        assert_eq!(state.effective_name(),"Episode 03");assert!(state.name_overridden);
+        state.reset_project_name();assert_eq!(state.effective_name(),"another");assert!(!state.name_overridden);
+    }
+    #[test]
+    fn archived_compatibility_paths_leave_inventory_without_reprobing_remaining_files() {
+        let root=std::env::temp_dir().join(format!("c-builder-archive-cache-{}",random_seed()));
+        let library=root.join("library");let outputs=root.join("projects");fs::create_dir_all(&library).unwrap();fs::create_dir(&outputs).unwrap();
+        let library=library.canonicalize().unwrap();let voice=root.join("narration.wav");fs::write(&voice,b"voice").unwrap();
+        let mut cache=Cache::default();let mut sources=Vec::new();
+        for index in 0..2 {let path=library.join(format!("Eala {index}.jpg"));fs::write(&path,format!("source {index}")).unwrap();
+            let mut asset=image("fixture");let m=fs::metadata(&path).unwrap();asset.path=path.to_string_lossy().into_owned();asset.size=m.len();asset.modified_ns=stamp(&m);cache.entries.insert(asset.path.clone(),asset.clone());sources.push(asset);}
+        let cache_path=root.join("cache.json");save_cache(&cache_path,&cache).unwrap();
+        let shots=vec![Shot{asset:sources[0].clone(),start_us:0,duration_us:1_000_000,trim_us:0}];
+        let project=write_native(&shots,&voice,1.0,&outputs,"Story").unwrap();
+        crate::c_builder_used::relocate_used(&library,&project,&[PathBuf::from(&sources[0].path)]).unwrap();
+        let report=scan(&library,&cache_path,|_,_|{}).unwrap();assert_eq!(report.assets.len(),1);assert_eq!(report.probed,0);assert_eq!(report.reused,1);
+        assert_eq!(report.assets[0].path,sources[1].path);assert!(Path::new(&sources[0].path).is_file());
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn mixed_visual_sequence_reopens_on_one_track_with_separate_narration() {
         let root = std::env::temp_dir().join(format!("c-builder-mixed-test-{}", random_seed()));
@@ -541,6 +580,9 @@ mod tests {
 /// Live desktop panel view; the cache itself is kept outside project files.
 #[derive(Default)]
 pub struct State {
+    pub project_name:String,
+    pub name_overridden:bool,
+    pub auto_name:String,
     pub folder: String,
     pub assets: Vec<Asset>,
     pub keyword_summary: String,
@@ -560,6 +602,16 @@ pub struct State {
     pub active_profile_name: String,
 }
 impl State {
+    pub fn choose_narration_name(&mut self,path:&Path) {
+        let next=concat_project::naming::audio_stem(path);
+        if !self.name_overridden || self.project_name.trim().is_empty() {self.project_name=next.clone();}
+        self.auto_name=next;
+    }
+    pub fn edit_project_name(&mut self,name:&str){self.project_name=name.to_owned();self.name_overridden=true;}
+    pub fn reset_project_name(&mut self){self.project_name=self.auto_name.clone();self.name_overridden=false;}
+    pub fn effective_name(&self)->String {concat_project::naming::basename(if self.project_name.trim().is_empty(){&self.auto_name}else{&self.project_name})}
+    pub fn naming_preview(&self)->String {let name=self.effective_name();format!("Project: {name} · ZIP: {} · MP4: {} (duplicate names receive a numbered suffix)",concat_project::naming::zip_name(&name),concat_project::naming::mp4_name(&name))}
+
     pub fn images(&self) -> usize { self.assets.iter().filter(|a| a.kind == "image").count() }
     pub fn videos(&self) -> usize { self.assets.iter().filter(|a| a.kind == "video").count() }
     pub fn keywords(&self) -> String {

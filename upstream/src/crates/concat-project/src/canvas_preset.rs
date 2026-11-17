@@ -759,6 +759,55 @@ mod tests {
         );
     }
     #[test]
+    fn mixed_canvas_presets_do_not_steal_the_main_background_lane() {
+        let (mut project, mut mint) = fixture();
+        let mut ordinary = Clip::blank("c2", "T1", ClipKind::Video, "ordinary", 6.0, 4.0);
+        ordinary.media_id = "m1".into();
+        ordinary.background = Some(Background::Blur { amount: 0.4 });
+        project.active_mut().clips.push(Arc::new(ordinary));
+        apply(
+            &mut project,
+            &mut mint,
+            Config::preset(3).unwrap(),
+            vec!["c1".into()],
+            vec![],
+        )
+        .unwrap();
+        let timeline = project.active();
+        let backdrop = timeline
+            .clips
+            .iter()
+            .find(|c| c.extra.get("canvasRole") == Some(&json!("backdrop")))
+            .unwrap();
+        assert_ne!(backdrop.track_id, "T1");
+        assert_eq!(timeline.background_lane(), Some("T1"));
+        assert_eq!(
+            timeline.background_of(timeline.clip("c2").unwrap()),
+            Some(&Background::Blur { amount: 0.4 })
+        );
+        assert_eq!(
+            timeline.background_of(backdrop),
+            Some(&Background::Blur { amount: 0.75 })
+        );
+        let settings = crate::doc::DocumentSettings {
+            name: "Mixed canvas".into(),
+            width: 1920,
+            height: 1080,
+            rate_num: 30,
+            rate_den: 1,
+        };
+        let reopened =
+            crate::doc::from_document(&crate::doc::to_document(&settings, &project)).unwrap();
+        assert_eq!(reopened.active().background_lane(), Some("T1"));
+        assert_eq!(
+            reopened
+                .active()
+                .background_of(reopened.active().clip("c2").unwrap()),
+            Some(&Background::Blur { amount: 0.4 })
+        );
+    }
+
+    #[test]
     fn generated_canvas_documents_reopen_with_editable_layers() {
         for number in 1..=3 {
             for portrait in [true, false] {

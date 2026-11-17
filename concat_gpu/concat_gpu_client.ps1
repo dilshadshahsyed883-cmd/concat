@@ -7,6 +7,7 @@ param(
     [string]$Job,
     [string]$SnapshotID,
     [string]$JobDomain,
+    [string]$DisplayName,
     [switch]$BundleOnly,
     [string]$BundlePath,
     [switch]$DefineOnly
@@ -36,6 +37,65 @@ function Gateway([string]$raw) {
     }
     return $value
 }
+# Friendly labels are metadata only. Queue/snapshot paths keep their validated unique IDs.
+function Friendly-Base([string]$value) {
+    $safe=([regex]::Replace($value.Trim(),'[\x00-\x1f\x7f-\x9f<>:"/\\|?*]','_')).TrimEnd([char[]]'. ')
+    if ($safe.Length -gt 120) {
+        $safe=$safe.Substring(0,120)
+        if ([char]::IsHighSurrogate($safe[$safe.Length-1])) {$safe=$safe.Substring(0,$safe.Length-1)}
+        $safe=$safe.TrimEnd([char[]]'. ')
+    }
+    if (-not $safe -or $safe -eq '.' -or $safe -eq '..') {$safe='Untitled'}
+    $head=($safe -split '\.',2)[0]
+    if ($head -match '^(CON|PRN|AUX|NUL|CLOCK\$|CONIN\$|CONOUT\$|COM[1-9\u00b9\u00b2\u00b3]|LPT[1-9\u00b9\u00b2\u00b3])$') {
+        if ($safe.Length -ge 120) {$safe=$safe.Substring(0,119);if ([char]::IsHighSurrogate($safe[$safe.Length-1])) {$safe=$safe.Substring(0,$safe.Length-1)}}
+        $safe='_'+$safe
+    }
+    return $safe
+}
+function Friendly-File([string]$value,[string]$extension) {
+    $value=$value.Trim()
+    if ($value.EndsWith($extension,[StringComparison]::OrdinalIgnoreCase)) {$value=$value.Substring(0,$value.Length-$extension.Length)}
+    return (Friendly-Base $value)+$extension
+}
+function Friendly-Numbered([string]$value,[int]$number) {
+    $safe=Friendly-Base $value
+    if ($number -le 1) {return $safe}
+    $suffix=" ($number)";$maximum=120-$suffix.Length
+    if ($safe.Length -gt $maximum) {
+        $safe=$safe.Substring(0,$maximum)
+        if ([char]::IsHighSurrogate($safe[$safe.Length-1])) {$safe=$safe.Substring(0,$safe.Length-1)}
+    }
+    return $safe.TrimEnd([char[]]'. ')+$suffix
+}
+function Project-Names($project,[string]$fallback) {
+    $name=[string]$project.name
+    if (-not $name.Trim()) {
+        $timeline=@($project.timelines | Where-Object {$_.id -eq $project.activeTimelineId}) | Select-Object -First 1
+        if (-not $timeline) {$timeline=@($project.timelines) | Select-Object -First 1}
+        $name=[string]$timeline.name
+    }
+    if (-not $name.Trim()) {$name=$fallback}
+    $chosen=[string]$project.outputBasename
+    if (-not $chosen.Trim()) {$chosen=$name}
+    $base=Friendly-Base $chosen
+    return @{project_name=$name;display_name=(Friendly-Base $name);output_basename=$base;
+        bundle_filename=(Friendly-File $base '.zip');output_filename=(Friendly-File $base '.mp4')}
+}
+function Archive-FriendlyName([string]$zip) {
+    $archive=[IO.Compression.ZipFile]::OpenRead($zip)
+    try {
+        $entry=$archive.GetEntry('bundle.json')
+        if ($entry) {
+            $reader=[IO.StreamReader]::new($entry.Open(),[Text.Encoding]::UTF8)
+            try {$metadata=$reader.ReadToEnd() | ConvertFrom-Json} finally {$reader.Dispose()}
+            if ($metadata.bundle_filename) {return (Friendly-File ([string]$metadata.bundle_filename) '.zip')}
+        }
+    } finally {$archive.Dispose()}
+    if ($DisplayName) {return (Friendly-File $DisplayName '.zip')}
+    return (Friendly-File ([IO.Path]::GetFileNameWithoutExtension($zip)) '.zip')
+}
+
 function Concat-Bundle([string]$dir,[string]$zip,[string]$snapshot="") {
     $manifest=Join-Path $dir "concat.json"
     if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { $manifest=Join-Path $dir "wolfcut.json" }
@@ -79,7 +139,10 @@ function Concat-Bundle([string]$dir,[string]$zip,[string]$snapshot="") {
     try {
         $archive=[IO.Compression.ZipArchive]::new($stream,[IO.Compression.ZipArchiveMode]::Create,$true)
         try {
-            $control=@{version=1;project_file=[IO.Path]::GetFileName($manifest);references=@($refs.ToArray())} | ConvertTo-Json -Depth 8 -Compress
+            $controlData=[ordered]@{version=1;project_file=[IO.Path]::GetFileName($manifest);references=@($refs.ToArray())}
+            $names=Project-Names $project ([IO.Path]::GetFileName($dir.TrimEnd([char[]]'\/')))
+            foreach ($key in @($names.Keys | Sort-Object)) {$controlData[$key]=$names[$key]}
+            $control=$controlData | ConvertTo-Json -Depth 8 -Compress
             $entry=$archive.CreateEntry("bundle.json",[IO.Compression.CompressionLevel]::Optimal)
             $writer=[IO.StreamWriter]::new($entry.Open(),[Text.UTF8Encoding]::new($false))
             try {$writer.Write($control)} finally {$writer.Dispose()}
@@ -119,7 +182,8 @@ function Format-UploadProgress([long]$transferred, [long]$total) {
 function Submit-Zip([string]$zip,[string]$job,[string]$domain,$headers) {
     $size=(Get-Item -LiteralPath $zip).Length
     # Surface the real package size even before worker negotiation or hashing.
-    Report "GPU upload package: $(Format-UploadProgress 0 $size)" 0 "" $false "" "" 0 $size
+    $friendlyZip=Archive-FriendlyName $zip
+    Report "GPU upload package: $friendlyZip · $(Format-UploadProgress 0 $size)" 0 "" $false "" "" 0 $size
     $sha=SHA-File $zip
     $root="$domain/api/uploads/$job"
     $existing=$null
@@ -136,7 +200,7 @@ function Submit-Zip([string]$zip,[string]$job,[string]$domain,$headers) {
         Report "Resuming job $job ($($existing.state)). $formatted" 100 "" $false "" "" $size $size
         return
     }
-    $manifest=@{size=[long]$size;sha256=$sha;render_mode="cuda-hybrid-v1"} | ConvertTo-Json -Compress
+    $manifest=@{size=[long]$size;sha256=$sha;render_mode="cuda-hybrid-v1";bundle_filename=$friendlyZip} | ConvertTo-Json -Compress
     $session=Invoke-RestMethod -MaximumRedirection 0 -Method Post -Uri $root -Headers $headers -ContentType "application/json" -Body $manifest -TimeoutSec 30
     if ($session.render_mode -ne "cuda-hybrid-v1") {throw "This worker does not support the matching CUDA hybrid render mode"}
     $chunkSize=[long]$session.chunk_size
@@ -364,11 +428,19 @@ function Get-Output([string]$domain,[string]$job,$status,$headers,[string]$outpu
     if ($job -cnotmatch '^concat-cuda-[a-f0-9]{16}$' -or $status.output_sha256 -cnotmatch '^[a-f0-9]{64}$' -or
         [long]$status.output_size -le 0) {throw "The worker did not provide valid MP4 integrity metadata."}
     New-Item -ItemType Directory -Force -Path $outputs | Out-Null
-    $output=Join-Path $outputs "$job.mp4"
-    if (Test-Path -LiteralPath $output) {
-        if ((SHA-File $output) -eq $status.output_sha256) {return $output}
-        throw "The existing output has a different checksum. Move it before retrying."
+    $base=[string]$status.output_basename
+    if (-not $base) {
+        if ($status.output_filename) {$base=[IO.Path]::GetFileNameWithoutExtension([string]$status.output_filename)}
+        elseif ($DisplayName) {$base=$DisplayName} else {$base=$job}
     }
+    $base=Friendly-Base $base
+    $output=$null
+    for ($number=1;$number -le 10000;$number++) {
+        $candidate=Join-Path $outputs (Friendly-File (Friendly-Numbered $base $number) '.mp4')
+        if (-not (Test-Path -LiteralPath $candidate)) {$output=$candidate;break}
+        if ((Test-Path -LiteralPath $candidate -PathType Leaf) -and (SHA-File $candidate) -eq $status.output_sha256) {return $candidate}
+    }
+    if (-not $output) {throw "No unused friendly output filename is available."}
     $partial=$output+"."+[Guid]::NewGuid().ToString("N")+".part"
     try {
         Invoke-WebRequest -UseBasicParsing -MaximumRedirection 0 -Uri "$domain/api/jobs/$job/output" -Headers $headers -TimeoutSec 900 -OutFile $partial

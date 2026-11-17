@@ -12,6 +12,7 @@ import { Select } from "../primitives/select.slint";
 import { Pane, PaneHeader } from "pane.slint";
 import { PaneKind, PaneSwitcher } from "pane-switcher.slint";
 import { GpuCompatibility } from "../gpu-compatibility.slint";
+import { CaptionPreviewBadge } from "caption-preset-preview.slint";
 import { ClipKind, StageGuideData, StageItemData } from "../timeline/model.slint";
 import { ContextMenu, MenuMetrics, MenuRow } from "../primitives/context-menu.slint";
 
@@ -1054,6 +1055,8 @@ export component PreviewPane inherits Rectangle {
                     image-fit: contain;
                 }
             }
+
+            CaptionPreviewBadge { x: stage.x + 8px; y: stage.y + 8px; available-width: stage.width; }
 
             // The selection, over the stage and the same size as it. A
             // sibling rather than a child because the stage clips, and a grip

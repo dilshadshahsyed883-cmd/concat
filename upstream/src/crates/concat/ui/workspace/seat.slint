@@ -475,6 +475,7 @@ export component Seat inherits Rectangle {
             clip-volume(id, gain) => { Editor.clip-volume(id, gain); }
             clip-dragged(seconds, pixels) => { Editor.clip-dragged(seconds, pixels); }
             clip-released => { Editor.clip-released(); }
+            clip-cancelled => { Editor.clip-cancelled(); }
             menu-items: Editor.menu-items;
             menu-height: Editor.menu-height;
             menu-token: Editor.menu-token;

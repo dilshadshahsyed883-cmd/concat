@@ -99,6 +99,11 @@ export global Editor {
     in-out property <int> cb-scan-done;
     in-out property <int> cb-scan-total;
     in-out property <bool> cb-busy;
+    in-out property <string> cb-project-name;
+    in-out property <bool> cb-name-overridden;
+    in-out property <string> cb-name-preview;
+    callback cb-project-name-edited(name:string);
+    callback cb-reset-project-name();
     in-out property <string> cb-profile;
     in-out property <[string]> cb-profile-names;
     in-out property <[CBuilderKeywordData]> cb-image-keywords;
@@ -469,6 +474,7 @@ export global Editor {
     callback clip-volume(id: string, gain: float);
     callback clip-dragged(seconds: float, pixels: length);
     callback clip-released();
+    callback clip-cancelled();
     in-out property <[MenuItemData]> menu-items;
     in-out property <length> menu-height;
     in-out property <int> menu-token;

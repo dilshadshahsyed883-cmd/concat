@@ -47,6 +47,8 @@ use concat_project::physics_motion::{PhysicsControls, PhysicsPreset};
 use concat_project::{Command, PlayheadSide};
 
 mod backdrop;
+pub(crate) mod c_builder_home;
+pub(crate) mod caption_preview;
 mod bulk_presets;
 mod particle_bulk;
 use bulk_presets::{BulkEffects, BulkMotion, BulkTransitions};
@@ -828,6 +830,11 @@ pub struct Studio {
     // ── the bin ──
     pub media: crate::panes::media_bin::MediaBin,
     /// Native C Builder catalog, narration selection and background job status.
+    pub cb_generation_cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    pub cb_pending_used:Option<c_builder_home::PendingUsed>,
+    pub cb_home: bool,
+    pub cb_generated_project: String,
+    pub cb_output_folder: String,
     pub c_builder: crate::c_builder::State,
     /// Decoded art by media id, and the ids a worker is decoding for.
     pub peaks: HashMap<String, Arc<Pyramid>>,
@@ -923,7 +930,15 @@ pub struct Studio {
     pub compact: bool,
     pub workspace: (f32, f32),
     pub divider_press: Option<(usize, f32, f32)>,
+    pub(crate) caption_preview: caption_preview::CaptionPreview,
     pub gesture: Gesture,
+    pub drag_ripple: bool,
+    pub drag_duplicate: bool,
+    pub drag_copy_held: bool,
+    drag_copy: bool,
+    drag_click_deselect: Option<String>,
+    drag_request: Option<concat_project::drag_edit::DragRequest>,
+    drag_feedback: crate::ui::DragFeedbackData,
     /// The snap lines of a stage move in flight; empty between moves.
     pub stage_guides: Vec<StageGuideData>,
     /// Where the inspector should go, and a count that changes every time
@@ -2297,6 +2312,7 @@ impl Studio {
         let languages = i18n::languages(&host.dirs);
         let recents = projects::recents(&host.dirs.config);
         let text_presets = presets::all(&host.dirs);
+        let cb_output_folder=if start.location.trim().is_empty() {host.dirs.data.join("C Builder Projects").to_string_lossy().into_owned()}else{start.location.clone()};
         let mut studio = Self {
             prefs,
             library: Default::default(),
@@ -2309,6 +2325,8 @@ impl Studio {
             bulk_effects: BulkEffects::default(),
             bulk_transitions: BulkTransitions::default(),
             media: crate::panes::media_bin::MediaBin::default(),
+            cb_generation_cancel:None,cb_pending_used:None,
+            cb_home:false, cb_generated_project:String::new(), cb_output_folder,
             c_builder: crate::c_builder::State {
                 stored_profiles: crate::c_builder::load_profiles(&host.dirs.config.join("c-builder-profiles")),
                 ..Default::default()
@@ -2358,7 +2376,10 @@ impl Studio {
             compact: false,
             workspace: (0.0, 0.0),
             divider_press: None,
+            caption_preview:Default::default(),
             gesture: Gesture::None,
+            drag_ripple:false, drag_duplicate:false, drag_copy_held:false, drag_copy:false,
+            drag_click_deselect:None, drag_request:None, drag_feedback:Default::default(),
             stage_guides: Vec::new(),
             inspector_jump: (0, "", ""),
             media_jump: 0,
@@ -2822,6 +2843,7 @@ impl Studio {
     }
 
     pub fn undo(&mut self) {
+        self.caption_preview.clear();
         self.flush_commit();
         self.echo = None;
         if let Some(session) = self.session.as_mut()
@@ -2833,6 +2855,7 @@ impl Studio {
     }
 
     pub fn redo(&mut self) {
+        self.caption_preview.clear();
         self.flush_commit();
         self.echo = None;
         if let Some(session) = self.session.as_mut()
@@ -3075,6 +3098,7 @@ impl Studio {
                 flat.highlighted = true;
             }
         }
+        if let Some(preview)=self.caption_preview_overlay(own.as_deref().unwrap_or(clips.as_ref()),width,height) {own=Some(preview);}
         let clips = own.map(std::sync::Arc::new).unwrap_or(clips);
         Some((clips, session.settings()))
     }
@@ -4007,58 +4031,46 @@ impl Studio {
             // A timeline also contains title cards. "Apply to all captions"
             // means the active caption lane (or the busiest text lane),
             // not unrelated title tracks elsewhere in the project.
-            let lane = self.sole_selection()
-                .and_then(|id| self.clip(&id))
-                .filter(|clip| clip.kind == model::ClipKind::Text)
-                .map(|clip| clip.track_id.clone())
-                .or_else(|| concat_project::srt::busiest_title_lane(self.timeline()));
+            let chosen=self.sole_selection();
+            let lane=concat_project::caption_preview::caption_lane(self.timeline(),chosen.as_deref());
             self.timeline().clips.iter()
                 .filter(|clip| clip.kind == model::ClipKind::Text
                     && lane.as_deref() == Some(clip.track_id.as_str())
-                    && !self.locked(&clip.track_id))
+                    && !self.locked(&clip.track_id) && !clip.extra.contains_key("canvasOwner")
+                    && self.timeline().track(&clip.track_id).is_some_and(|t|t.visible))
                 .map(|clip| clip.id.clone())
                 .collect()
         } else {
             self.edit_targets().into_iter()
                 .filter(|id| self.clip(id).is_some_and(|clip|
-                    clip.kind == model::ClipKind::Text && !self.locked(&clip.track_id)))
+                    clip.kind == model::ClipKind::Text && !self.locked(&clip.track_id) && !clip.extra.contains_key("canvasOwner")
+                    && self.timeline().track(&clip.track_id).is_some_and(|t|t.visible)))
                 .collect()
         };
         if ids.is_empty() {
-            if all {
-                self.notify("No unlocked captions on this timeline", true);
-            } else {
-                // With no caption selected, a card places a new caption at
-                // the playhead just like the existing text preset shelf.
-                self.place_at_playhead(&format!("text:{preset}:Caption"));
-            }
+            self.notify(if all {"No unlocked captions on this timeline"} else {"Select caption clips before Apply"}, true);
             return;
         }
-        let commands: Vec<Command> = ids.into_iter().filter_map(|id| {
-            let clip = self.clip(&id)?;
-            let original = clip.text.as_ref()?;
-            let mut next = style.clone();
-            next.content = if preset == "cuda-caption.preset-2-yellow-bar" || preset == "cuda-caption.preset-1-purple-word" { original.content.to_uppercase() } else { original.content.clone() };
-            next.karaoke_words = original.karaoke_words.clone();
-            if preset == "cuda-caption.preset-2-yellow-bar" || preset == "cuda-caption.preset-1-purple-word" {
-                for word in &mut next.karaoke_words { word.text = word.text.to_uppercase(); }
+        // Validate the complete scope before any mutation; preview and Apply share this style model.
+        let mut commands=Vec::new();
+        for id in ids {
+            let Some(clip)=self.clip(&id) else {continue;};
+            let next=match concat_project::caption_preview::style_for_clip(clip,&style,preset) {
+                Ok(next)=>next,Err(error)=>{self.notify(&error,true);return;}
+            };
+            let move_y=preset=="cuda-caption.preset-2-yellow-bar" && (clip.offset_y+0.35).abs()>1e-9;
+            if clip.text.as_ref()!=Some(&next) {
+                commands.push(Command::UpdateClip {clip_id:id.clone(),patch:ClipPatch {text:Some(Some(next)),..Default::default()}});
             }
-            if &next == original {
-                return None;
+            if move_y {
+                commands.push(Command::SetClipTransform {clip_id:id,scale:None,offset_x:None,offset_y:Some(-0.35),rotation:None,stretch_x:None,stretch_y:None});
             }
-            let mut commands = vec![Command::UpdateClip {
-                clip_id: id.clone(),
-                patch: ClipPatch { text: Some(Some(next)), ..ClipPatch::default() },
-            }];
-            if preset == "cuda-caption.preset-2-yellow-bar" {
-                commands.push(Command::SetClipTransform { clip_id: id,
-                    scale: None, offset_x: None, offset_y: Some(-0.35), rotation: None,
-                    stretch_x: None, stretch_y: None });
-            }
-            Some(Command::Batch { commands })
-        }).collect();
+        }
         if !commands.is_empty() {
-            self.apply(Command::Batch { commands });
+            if let Some((family,path))=self.text_presets.iter().find(|p|p.id==preset).and_then(|p|presets::install_font(&self.host.dirs,p)) {
+                commands.insert(0,Command::AddFont {family,path});
+            }
+            self.apply(Command::Batch {commands});
         }
     }
 
@@ -4866,6 +4878,15 @@ impl Studio {
 
     /// A press resolves the selection before anything moves, so a drag that
     /// starts on an already-selected clip carries the whole set.
+    pub fn clip_cancelled(&mut self) {
+        self.echo=None; self.gesture=Gesture::None; self.drag_request=None;
+        self.drag_feedback=Default::default();self.drag_click_deselect=None;self.drag_copy=false;self.drag_copy_held=false;
+    }
+    pub fn drag_modes_changed(&mut self,ripple:bool,duplicate:bool) {
+        if !matches!(self.gesture,Gesture::None) {self.clip_cancelled();}
+        self.drag_ripple=ripple;self.drag_duplicate=duplicate;
+    }
+
     pub fn clip_pressed(&mut self, id: &str, additive: bool, edge: i32) {
         let Some(clip) = self.clip(id).cloned() else {
             return;
@@ -4892,9 +4913,12 @@ impl Studio {
             return;
         }
         self.transition_selected = None;
+        self.drag_request=None; self.drag_feedback=Default::default();
+        self.drag_copy=self.drag_duplicate || self.drag_copy_held;
         let already = self.selection.iter().any(|held| held == id);
+        self.drag_click_deselect=(already && additive && self.drag_copy).then(||id.to_owned());
         self.selection = if additive {
-            if already {
+            if already && self.drag_copy {self.selection.clone()} else if already {
                 self.selection
                     .iter()
                     .filter(|held| held.as_str() != id)
@@ -4959,65 +4983,46 @@ impl Studio {
                 origins,
                 lanes,
             } => {
-                let Some(anchor) = origins.iter().find(|origin| &origin.clip == primary) else {
-                    self.gesture = gesture;
-                    return;
-                };
-                let threshold = 8.0 * self.lanes.seconds_per_pixel;
-                // Every moving clip's two edges, where the pointer would
-                // put them, and the shift that lands the nearest on a target.
-                let moving: Vec<&str> = origins.iter().map(|origin| origin.clip.as_str()).collect();
-                let edges: Vec<f32> = origins
-                    .iter()
-                    .filter_map(|origin| {
-                        let clip = self.clip(&origin.clip)?;
-                        let start = origin.start + seconds;
-                        Some([start, start + clip.duration as f32])
-                    })
-                    .flatten()
-                    .collect();
-                let shift = seconds + self.snap_shift(&edges, threshold, &moving);
-                let rows = nearest_row(lanes, row_top(lanes, anchor.row) + pixels) - anchor.row;
-                let count = self.timeline().tracks.len() as i32;
-                let moves: Vec<ClipMove> = origins
-                    .iter()
-                    .filter_map(|origin| {
-                        let row = (origin.row + rows).clamp(0, count - 1);
-                        let track_id = self
-                            .row_track(row)
-                            .filter(|track| !self.locked(&track.id))
-                            .map(|track| track.id.clone())
-                            .or_else(|| {
-                                self.clip(&origin.clip).map(|clip| clip.track_id.clone())
-                            })?;
-                        Some(ClipMove {
-                            clip_id: origin.clip.clone(),
-                            start: f64::from((origin.start + shift).max(0.0)),
-                            track_id,
-                        })
-                    })
-                    .collect();
-                // The drop's own rule, asked of the timeline as it was before
-                // the drag: the echo shows where the clips will land, in the
-                // nearest gap rather than on top of a clip, or back where
-                // they started when they would cover each other.
-                let landed = self.timeline().resolve_moves(&moves).unwrap_or_else(|| {
-                    origins
-                        .iter()
-                        .filter_map(|origin| {
-                            let clip = self.clip(&origin.clip)?;
-                            Some(ClipMove {
-                                clip_id: clip.id.clone(),
-                                start: clip.start,
-                                track_id: clip.track_id.clone(),
-                            })
-                        })
-                        .collect()
-                });
-                for wanted in landed {
-                    if let Some(clip) = self.echo_clip_mut(&wanted.clip_id) {
-                        clip.start = wanted.start;
-                        clip.track_id = wanted.track_id;
+                // Every sample plans against the immutable saved project, never the previous echo.
+                self.echo=None;
+                self.drag_request=None;
+                let Some(anchor)=origins.iter().find(|o|&o.clip==primary) else {self.gesture=gesture;return;};
+                if !seconds.is_finite() || !pixels.is_finite() {self.gesture=gesture;self.clip_cancelled();return;}
+                let threshold=8.0*self.lanes.seconds_per_pixel;
+                let moving:Vec<&str>=origins.iter().map(|o|o.clip.as_str()).collect();
+                let edges:Vec<f32>=origins.iter().filter_map(|o|self.clip(&o.clip).map(|c|[c.start as f32+seconds,c.end() as f32+seconds])).flatten().collect();
+                let first=origins.iter().filter_map(|o|self.clip(&o.clip).map(|c|c.start)).fold(f64::INFINITY,f64::min);
+                let shift=(f64::from(seconds+self.snap_shift(&edges,threshold,&moving))).max(-first);
+                let rows=nearest_row(lanes,row_top(lanes,anchor.row)+pixels)-anchor.row;
+                let count=self.timeline().tracks.len() as i32;
+                let visual_group=origins.iter().any(|o|self.clip(&o.clip).is_some_and(|c|c.kind.is_visual()));
+                let mut moves=Vec::new();
+                let mut invalid=None;
+                for origin in origins {
+                    let Some(clip)=self.clip(&origin.clip) else {invalid=Some("A dragged clip no longer exists".to_owned());break;};
+                    let row=if visual_group && !clip.kind.is_visual(){origin.row}else{origin.row+rows};
+                    if row<0 || row>=count {invalid=Some("Drop outside the available tracks".to_owned());break;}
+                    let Some(track)=self.row_track(row) else {invalid=Some("Destination track no longer exists".to_owned());break;};
+                    moves.push(ClipMove {clip_id:clip.id.clone(),track_id:track.id.clone(),start:(clip.start+shift).max(0.0)});
+                }
+                let row=(anchor.row+rows).clamp(0,(count-1).max(0));
+                let duration=origins.iter().filter_map(|o|self.clip(&o.clip).map(|c|c.end())).fold(first,f64::max)-first;
+                self.drag_feedback=crate::ui::DragFeedbackData {active:true,valid:false,start:(first+shift) as f32,duration:duration as f32,row,label:invalid.clone().unwrap_or_default().into()};
+                if invalid.is_none() {
+                    let request=concat_project::drag_edit::DragRequest {moves,
+                        mode:if self.drag_ripple {concat_project::drag_edit::DragMode::Ripple}else{concat_project::drag_edit::DragMode::Free},
+                        duplicate:self.drag_copy,magnetic:self.magnetic(),
+                        locked_tracks:self.timeline().tracks.iter().filter(|t|self.locked(&t.id)).map(|t|t.id.clone()).collect()};
+                    match concat_project::drag_edit::plan(self.project(),&request) {
+                        Ok(preview)=>{
+                            let fps=self.frame_rate() as f64;
+                            self.drag_feedback.valid=true;self.drag_feedback.start=preview.destination_start as f32;
+                            self.drag_feedback.label=format!("{}{} · {} · {:.3}s · frame {} · {} downstream shifts",
+                                if self.drag_copy {"Copy / "}else{""},if self.drag_ripple {"Ripple"}else{"Free"},self.row_track(row).map(|t|t.id.as_str()).unwrap_or("track"),preview.destination_start,
+                                (preview.destination_start*fps).round() as u64,preview.ripple_count).into();
+                            self.echo=Some(preview.project);self.drag_request=Some(request);
+                        }
+                        Err(e)=>{self.drag_feedback.label=e.to_string().into();}
                     }
                 }
             }
@@ -5115,32 +5120,22 @@ impl Studio {
     /// The pointer let go: the whole gesture becomes one command.
     pub fn clip_released(&mut self) {
         let gesture = std::mem::replace(&mut self.gesture, Gesture::None);
-        let Some(echo) = self.echo.as_ref() else {
-            return;
-        };
+        let echo=self.echo.clone();
         match gesture {
             Gesture::Move { origins, .. } => {
-                let moves: Vec<ClipMove> = origins
-                    .iter()
-                    .filter_map(|origin| {
-                        let after = echo.active().clip(&origin.clip)?;
-                        Some(ClipMove {
-                            clip_id: origin.clip.clone(),
-                            start: after.start,
-                            track_id: after.track_id.clone(),
-                        })
-                    })
-                    .collect();
-                self.echo = None;
-                // A press and a release with no drag between them is a
-                // click: nothing moved, and a MoveClips of the clips onto
-                // their own places is still an undo step and still a pass
-                // through the drop's rules, which can put a clip elsewhere.
-                // https://github.com/jub0t/Concat/issues/247
-                if moved_any(&moves, |id| self.clip(id)) {
-                    let locked_tracks=self.timeline().tracks.iter().filter(|t|self.locked(&t.id)).map(|t|t.id.clone()).collect();
-                    self.apply(Command::ScopedMoveClips { moves, locked_tracks, magnetic:self.magnetic() });
-                }
+                self.echo=None;
+                let feedback=self.drag_feedback.clone();self.drag_feedback=Default::default();
+                if let Some(request)=self.drag_request.take() {
+                    let copy=request.duplicate;
+                    let revision=self.revision;
+                    let created=self.apply(Command::DragClips {request});
+                    if self.revision!=revision {
+                        if copy {if let Some(id)=created {self.selection=vec![id];}}
+                        else {self.selection=origins.iter().filter(|o|self.clip(&o.clip).is_some()).map(|o|o.clip.clone()).collect();}
+                    }
+                } else if feedback.active {self.notify(feedback.label.as_str(),true);}
+                else if let Some(id)=self.drag_click_deselect.take() {self.selection.retain(|held|held!=&id);}
+                self.drag_copy=false;self.drag_copy_held=false;self.drag_click_deselect=None;
             }
             Gesture::Trim {
                 clip,
@@ -5149,7 +5144,7 @@ impl Studio {
                 duration,
                 ..
             } => {
-                let after = echo.active().clip(&clip).cloned();
+                let after = echo.as_ref().and_then(|e|e.active().clip(&clip)).cloned();
                 self.echo = None;
                 let Some(after) = after else { return };
                 let delta = match edge {
@@ -5183,7 +5178,7 @@ impl Studio {
                 clip,
                 original_duration,
             } => {
-                let after = echo.active().clip(&clip).cloned();
+                let after = echo.as_ref().and_then(|e|e.active().clip(&clip)).cloned();
                 self.echo = None;
                 let Some(after) = after else { return };
                 let new_duration = after
@@ -8372,6 +8367,9 @@ impl Studio {
                 if swept > 0 {
                     log::info!("{swept} stale proxies swept from {}", project_dir.display());
                 }
+                self.caption_preview.clear();
+                self.clip_cancelled();
+                self.cb_home=false;
                 self.session = Some(session);
                 self.bulk_motion.clear();
                 self.bulk_effects.clear();
@@ -8384,7 +8382,7 @@ impl Studio {
                 self.echo = None;
                 self.dirty = false;
                 self.project_name = info.name.clone();
-                self.export.name = projects::folder_name(&info.name);
+                self.export.name = concat_project::naming::basename(&info.name);
                 self.selection.clear();
                 self.transition_selected = None;
                 self.media.selected.clear();
@@ -8562,6 +8560,7 @@ impl Studio {
         if let Some(session) = self.session.as_ref() {
             self.host.open_projects.release(session.path());
         }
+        self.caption_preview.clear();
         self.session = None;
         self.bulk_motion.clear();
                 self.bulk_effects.clear();
@@ -8586,7 +8585,7 @@ impl Studio {
         self.dirty = false;
         self.selection.clear();
         self.transition_selected = None;
-        self.gesture = Gesture::None;
+        self.clip_cancelled();
         self.handle(crate::panes::Msg::Monitor(
             crate::panes::monitor::MonitorMsg::Closed,
         ));
@@ -8971,6 +8970,12 @@ impl Studio {
     // ── publishing ──
 
     pub fn publish(&self, app: &App, models: &Models) {
+        app.set_c_builder_home(self.cb_home);
+        app.set_cb_generating(self.cb_generation_cancel.is_some());
+        app.set_cb_used_pending(self.cb_pending_used.is_some());
+        app.set_cb_generated_project(self.cb_generated_project.as_str().into());
+        app.set_cb_output_folder(self.cb_output_folder.as_str().into());
+        self.publish_caption_preview(app);
         // The tray's three menu labels and the tooltips' bare-letter
         // hints, spelled from the keymap so a rebind moves the words
         // with the key. An action left unbound shows an em dash rather
@@ -8997,6 +9002,9 @@ impl Studio {
         editor.set_cb_scan_done(self.c_builder.scan_done.min(i32::MAX as usize) as i32);
         editor.set_cb_scan_total(self.c_builder.scan_total.min(i32::MAX as usize) as i32);
         editor.set_cb_busy(self.c_builder.scanning);
+        editor.set_cb_project_name(self.c_builder.project_name.as_str().into());
+        editor.set_cb_name_overridden(self.c_builder.name_overridden);
+        editor.set_cb_name_preview(self.c_builder.naming_preview().into());
         let planning = self.project().extra.get("cBuilderPlanning")
             .and_then(|p| serde_json::to_string_pretty(p).ok())
             .unwrap_or_else(|| self.c_builder.profile_json.clone());
@@ -9086,6 +9094,7 @@ impl Studio {
     /// The monitor's picture alone: what a frame arriving during playback
     /// changes.
     pub fn publish_frame(&self, app: &App) {
+        self.publish_caption_preview(app);
         app.global::<Editor>()
             .set_preview_frame(self.monitor.image.clone());
     }
@@ -9236,10 +9245,13 @@ impl Studio {
             None => DropData::default(),
         });
 
+        app.global::<crate::ui::TimelineDrag>().set_feedback(self.drag_feedback.clone());
+        app.global::<crate::ui::TimelineDrag>().set_ripple(self.drag_ripple);
+        app.global::<crate::ui::TimelineDrag>().set_duplicate(self.drag_duplicate);
         editor.set_selected_clip(self.selected());
         let layout = self.selected();
         app.global::<crate::ui::Keyframes>().set_layout_clip(crate::ui::LayoutSelectionData {
-            present:layout.present, count:self.selection.len() as i32, kind:layout.kind, scale:layout.scale, offset_x:layout.offset_x, offset_y:layout.offset_y, rotation:layout.rotation,
+            present:layout.present, editable:self.can_edit_layout(), count:self.selection.len() as i32, kind:layout.kind, scale:layout.scale, offset_x:layout.offset_x, offset_y:layout.offset_y, rotation:layout.rotation,
         });
         editor.set_selected_transition(self.selected_transition_data());
         // The background and Fit and Fill, on their own global: the Details
@@ -11655,7 +11667,9 @@ impl Studio {
     /// A row of a bin card's menu, for the media it was opened on.
     fn c_builder_profile(&self,json:&str)->Result<concat_project::planning::Profile,String> {
         if !json.trim().is_empty(){concat_project::planning::Profile::from_json(json)}else{
-            self.project().extra.get("cBuilderPlanning").map(|p|concat_project::planning::Profile::from_json(&p.to_string())).unwrap_or_else(||Ok(Default::default()))
+            self.session.as_ref().and_then(|session|session.project().extra.get("cBuilderPlanning"))
+                .map(|p|concat_project::planning::Profile::from_json(&p.to_string()))
+                .unwrap_or_else(||if self.c_builder.profile_json.trim().is_empty(){Ok(Default::default())}else{concat_project::planning::Profile::from_json(&self.c_builder.profile_json)})
         }
     }
     pub fn set_c_builder_keyword(&mut self,json:&str,video:bool,keyword:&str,selected:bool,weight:i32) {

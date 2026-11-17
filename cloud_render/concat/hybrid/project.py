@@ -234,6 +234,7 @@ class Picture:
     shape: Rectangle | None = None
     mask: RectangleMask | None = None
     canvas_backdrop: bool = False
+    canvas_companion: bool = False
 
     def transform(self, index):
         fraction = min(max((index - self.span.start) / (self.span.end - self.span.start), 0), 1)
@@ -616,7 +617,8 @@ def _plan_project(document, timeline, resolve_media):
                                       else parse_background(clip["background"])),
                           shape=parse_shape(clip.get("shape")) if kind == "shape" else None,
                           mask=parse_mask(clip.get("mask")),
-                          canvas_backdrop=clip.get("canvasRole") == "backdrop")
+                          canvas_backdrop=clip.get("canvasRole") == "backdrop",
+                          canvas_companion="canvasOwner" in clip)
         lanes[clip["trackId"]].append(picture)
         media_durations[ident] = item.get("duration")
         if clip.get("transitionIn"):
@@ -677,9 +679,12 @@ def _plan_project(document, timeline, resolve_media):
                 raise ValueError(f"GPU caption {ident} overlaps video or effects on its track or above; "
                                  "move the caption to a higher track")
     # Concat draws Canvas only under the lowest track containing pictures,
-    # never under additional video layers or captions.
+    # never under additional video layers or captions. Generated canvas
+    # companion pictures must not claim the main lane for the whole timeline;
+    # their owned backdrops are still drawn through canvas_backdrop.
     background_rank = next((rank for rank, lane in enumerate(sorted_lanes)
-                            if any(clip.kind in ("image", "video") for clip in lane)), None)
+                            if any(clip.kind in ("image", "video") and not clip.canvas_companion
+                                   for clip in lane)), None)
     return Project(tuple(sorted_lanes), tuple(caption for _, _, _, caption in sorted(
         captions, key=lambda entry: (entry[0], entry[1].start))), tuple(sounds.values()), end_frame,
         tuple(native_cuts), background_rank)

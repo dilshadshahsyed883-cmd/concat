@@ -35,6 +35,7 @@ mod ui {
 mod batch_volume;
 mod chips;
 mod c_builder;
+mod c_builder_used;
 mod dock;
 mod fonts;
 mod format;
@@ -596,6 +597,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         }
     });
     app.set_own_window_buttons(platform::OWN_WINDOW_BUTTONS);
+    studio::caption_preview::install(&app);
 
     // Mutate, then republish. Every handler is one of these three: the whole
     // window, the lanes alone (for the handlers a pointer drives directly,
@@ -823,7 +825,17 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     }));
     app.global::<CanvasPresets>().set_profile(serde_json::to_string_pretty(
         &concat_project::canvas_preset::Config::preset(1).expect("sports canvas default")).unwrap_or_default().into());
-    // ── embedded C Builder (no separate EXE) ──
+    app.on_start_c_builder(on_window!(|studio| {studio.builder_home();}));
+    app.on_c_builder_return_home(on_window!(|studio,profile:SharedString| {studio.builder_return_home(&profile);}));
+    app.on_c_builder_open_generated(on_window!(|studio| {studio.builder_open_generated();}));
+    app.on_c_builder_cancel_generation(on_window!(|studio| {studio.builder_cancel_generation();}));
+    app.on_c_builder_retry_used(on_window!(|studio| {studio.builder_retry_used();}));
+    app.on_c_builder_choose_output(|| {
+        #[cfg(not(any(target_os="android",target_os="ios")))]
+        host::after_dialog(||rfd::FileDialog::new().set_title("C Builder output folder").pick_folder(),
+            |studio,_,_,folder|{if !studio.c_builder.scanning {studio.cb_output_folder=folder.to_string_lossy().into_owned();}});
+    });
+    // ── Home C Builder (no separate EXE or editor project required) ──
     editor.on_cb_import_folder(|| {
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         host::after_dialog(
@@ -837,6 +849,8 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             c_builder_scan(&mut studio, folder);
         }
     }));
+    editor.on_cb_project_name_edited(on_window!(|studio,name:SharedString|{studio.c_builder.edit_project_name(&name);}));
+    editor.on_cb_reset_project_name(on_window!(|studio|{studio.c_builder.reset_project_name();}));
     editor.on_cb_choose_narration(|| {
         host::pick_files_then("C Builder - Narration".into(),
             Some(("Audio".into(), &["mp3", "wav", "m4a", "aac", "flac", "ogg", "opus"])),
@@ -854,6 +868,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                         studio.c_builder.scanning = false;
                         match outcome {
                             Ok((path, duration)) => {
+                                studio.c_builder.choose_narration_name(&path);
                                 studio.c_builder.narration = path.to_string_lossy().into_owned();
                                 studio.c_builder.duration = Some(duration);
                                 studio.c_builder.status = format!("Narration ready: {duration:.2}s");
@@ -973,23 +988,17 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     editor.on_cb_generate_project(on_window!(
         |studio, name: SharedString, images: SharedString, videos: SharedString, coverage: i32, profile_json: SharedString| {
             if studio.c_builder.scanning { return; }
+            if studio.cb_pending_used.is_some(){studio.notify("Retry the blocked used-media step before generating another timeline",true);return;}
             let Some(duration) = studio.c_builder.duration else {
                 studio.notify("Select narration first", true);
                 return;
             };
-            let Some(session) = studio.session.as_ref() else {
-                studio.notify("Open a Concat project before generating", true);
-                return;
-            };
-            let output = std::path::Path::new(session.path()).parent()
-                .map(std::path::Path::to_path_buf);
-            let Some(output) = output else {
-                studio.notify("Could not determine project folder", true);
-                return;
-            };
+            let output=std::path::PathBuf::from(studio.cb_output_folder.clone());
+            if output.as_os_str().is_empty(){studio.notify("Choose an output folder",true);return;}
             let audio = std::path::PathBuf::from(studio.c_builder.narration.clone());
             let assets = studio.c_builder.assets.clone();
-            let project_name = name.to_string();
+            if !name.trim().is_empty() && name.as_str()!=studio.c_builder.project_name {studio.c_builder.edit_project_name(&name);}
+            let project_name = studio.c_builder.effective_name();
             let image_weights = images.to_string();
             let video_weights = videos.to_string();
             let _ = coverage; // retained callback parameter for older UI integrations
@@ -998,10 +1007,14 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             };
             profile.media_selection.get_or_insert_with(Default::default);
             let cache_path = studio.host.dirs.data.join("c-builder-media-cache.json");
+            let library=std::path::PathBuf::from(studio.c_builder.folder.clone());
+            let cancel=std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));studio.cb_generation_cancel=Some(cancel.clone());
             studio.c_builder.scanning = true;
             studio.c_builder.status = "Planning and verifying native Concat timeline...".into();
             host::spawn(
                 move || {
+                    if cancel.load(std::sync::atomic::Ordering::Relaxed){return Err("Generation cancelled before saving any project".into());}
+                    std::fs::create_dir_all(&output).map_err(|e|format!("Could not create output folder: {e}"))?;
                     let (shots, _) = c_builder::plan_profile(&assets, duration, &image_weights,
                         &video_weights, &profile)?;
                     let folder = c_builder::write_native_with_profile(&shots, &audio, duration, &output,
@@ -1011,25 +1024,15 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                         .map_err(|e| format!("Project created but profile snapshot failed: {e}"))?;
                     let used: Vec<String> = shots.iter().map(|s| s.asset.path.clone())
                         .collect::<std::collections::HashSet<_>>().into_iter().collect();
-                    let usage_warning = c_builder::mark_used(&cache_path, &used).err();
-                    Ok::<_, String>((folder, shots.len(), usage_warning))
+                    let sources=used.into_iter().map(std::path::PathBuf::from).collect::<Vec<_>>();
+                    let pending=crate::studio::c_builder_home::PendingUsed{library,project:folder,sources,cache:cache_path};
+                    let finish=c_builder_used::finish(&pending.library,&pending.project,&pending.sources,&pending.cache,&cancel);
+                    Ok::<_, String>((pending,finish))
                 },
                 |studio, _, _, result| {
-                    studio.c_builder.scanning = false;
                     match result {
-                        Ok((folder, clips, warning)) => {
-                            studio.c_builder.status = format!(
-                                "Created {clips} editable clips: {}{}",
-                                folder.display(),
-                                warning.map(|w| format!(" (usage cache warning: {w})"))
-                                    .unwrap_or_default()
-                            );
-                            studio.notify("C Builder project created. Use File > Open Project to edit it.", false);
-                        }
-                        Err(error) => {
-                            studio.c_builder.status = format!("Generation failed: {error}");
-                            studio.notify(&error, true);
-                        }
+                        Ok((pending,finish))=>studio.builder_archive_finished(pending,finish),
+                        Err(error)=>{studio.c_builder.scanning=false;studio.cb_generation_cancel=None;studio.c_builder.status=format!("Generation failed: {error}");studio.notify(&error,true);}
                     }
                 },
             );
@@ -1332,12 +1335,14 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     }));
 
     // ── the gestures ──
-    editor.on_clip_pressed(on_lanes!(|state,
-                                      id: SharedString,
-                                      additive: bool,
-                                      edge: i32| {
-        state.clip_pressed(id.as_str(), additive, edge);
-    }));
+    editor.on_clip_pressed(move |id:SharedString, additive:bool, edge:i32| {
+        Shell::with(|shell,app| {
+            {let mut state=shell.studio.borrow_mut();state.drag_copy_held=app.global::<crate::ui::TimelineDrag>().get_copy_modifier();state.clip_pressed(&id,additive,edge);}
+            shell.studio.borrow_mut().refresh_art();shell.studio.borrow().publish_lanes(&app,&shell.models);
+        });
+    });
+    app.global::<crate::ui::TimelineDrag>().on_modes_changed(on_window!(|state,ripple:bool,duplicate:bool| {state.drag_modes_changed(ripple,duplicate);}));
+    editor.on_clip_cancelled(on_window!(|state| {state.clip_cancelled();}));
     editor.on_clip_split(on_lanes!(|state, id: SharedString, seconds: f32| {
         state.split_clip_at(&id, seconds);
     }));
@@ -1459,8 +1464,9 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             );
         }));
         keys.on_layout_set(on_lanes!(|state, field:ClipField, value:f32| {
-            if state.selection.len()==1 {state.clip_set(field,value);state.clip_commit();}
+            state.layout_set(field,value);
         }));
+        keys.on_layout_frame(on_lanes!(|state,fill:bool| {state.layout_frame(fill);}));
         keys.on_apply_bulk_transform(on_lanes!(|state, mode: i32, images: bool,
             video_clips: bool, selected_only: bool, scale: f32, x: f32, y: f32, rotation: f32| {
             state.apply_bulk_gpu_transform(
@@ -1931,6 +1937,9 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             let Some(chord) = chord else {
                 return;
             };
+            if chord == "escape" && matches!(shell.studio.borrow().gesture, crate::studio::Gesture::Move {..} | crate::studio::Gesture::Trim {..} | crate::studio::Gesture::TransitionResize {..}) {
+                shell.studio.borrow_mut().clip_cancelled();shell.studio.borrow().publish(&app,&shell.models);handled=true;return;
+            }
             if on_start {
                 // The launch screen has no project to act on. Capture
                 // is handled above, so its keys work there too.
@@ -2473,11 +2482,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                             } else if let Some(project) = state.save_for_gpu() {
                                 // Reuse precisely the Send to GPU saved-project snapshot.
                                 // The picker runs later with Studio unborrowed.
-                                let label = std::path::Path::new(&project)
-                                    .file_name()
-                                    .and_then(|name| name.to_str())
-                                    .unwrap_or("Concat")
-                                    .to_string();
+                                let label = concat_project::naming::basename(&state.project_name);
                                 host::after_dialog(
                                     move || rfd::FileDialog::new()
                                         .set_title("Prepare ZIP Only - Offline")
