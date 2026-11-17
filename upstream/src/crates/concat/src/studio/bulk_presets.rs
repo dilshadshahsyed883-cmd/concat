@@ -253,8 +253,8 @@ fn varied_physics_controls(base: PhysicsControls, clip_id: &str) -> PhysicsContr
 
 fn chosen_media_type(clip: &Clip, images: bool, videos: bool) -> bool {
     match clip.kind {
-        ClipKind::Image => images,
-        ClipKind::Video => videos,
+        ClipKind::Image => images && !clip.extra.contains_key("canvasOwner"),
+        ClipKind::Video => videos && !clip.extra.contains_key("canvasOwner"),
         _ => false,
     }
 }
@@ -262,18 +262,20 @@ fn chosen_media_type(clip: &Clip, images: bool, videos: bool) -> bool {
 /// Return at most one transform edit per clip. A manually animated property
 /// is skipped independently; applying scale never overwrites animated X/Y.
 fn bulk_transform_command(
-    clip: &Clip, mode: i32, scale: f64, x: f64, y: f64,
+    clip: &Clip, mode: i32, scale: f64, x: f64, y: f64, rotation: f64,
 ) -> Option<Command> {
-    let scale = (mode == 0
+    let scale = (matches!(mode, 0 | 3)
         && !clip.is_keyed(KeyProperty::Scale)
         && (clip.scale - scale).abs() > 1e-9).then_some(scale);
-    let offset_x = (mode == 1
+    let offset_x = (matches!(mode, 1 | 3)
         && !clip.is_keyed(KeyProperty::OffsetX)
         && (clip.offset_x - x).abs() > 1e-9).then_some(x);
-    let offset_y = (mode == 1
+    let offset_y = (matches!(mode, 1 | 3)
         && !clip.is_keyed(KeyProperty::OffsetY)
         && (clip.offset_y - y).abs() > 1e-9).then_some(y);
-    if scale.is_none() && offset_x.is_none() && offset_y.is_none() {
+    let rotation = (matches!(mode, 2 | 3) && !clip.is_keyed(KeyProperty::Rotation)
+        && (clip.rotation - rotation).abs() > 1e-9).then_some(rotation);
+    if scale.is_none() && offset_x.is_none() && offset_y.is_none() && rotation.is_none() {
         return None;
     }
     Some(Command::SetClipTransform {
@@ -281,7 +283,7 @@ fn bulk_transform_command(
         scale,
         offset_x,
         offset_y,
-        rotation: None,
+        rotation,
         stretch_x: None,
         stretch_y: None,
     })
@@ -987,18 +989,19 @@ impl Studio {
     /// the single-clip inspector: scale=1 is 100%, X/Y=1 is 100% of canvas.
     pub fn apply_bulk_gpu_transform(
         &mut self, mode: i32, images: bool, videos: bool,
-        selected_only: bool, scale: f32, x: f32, y: f32,
+        selected_only: bool, scale: f32, x: f32, y: f32, rotation: f32,
     ) {
         if !images && !videos {
             self.notify("Choose Images, Video Clips, or both before bulk editing.", true);
             return;
         }
-        if !matches!(mode, 0 | 1) {
+        if !matches!(mode, 0..=5) {
             self.notify("Unknown bulk transform action.", true);
             return;
         }
-        let (scale, x, y) = (f64::from(scale), f64::from(x), f64::from(y));
-        if !scale.is_finite() || !x.is_finite() || !y.is_finite()
+        let (scale, x, y, rotation) = (f64::from(scale), f64::from(x), f64::from(y), f64::from(rotation));
+        if !scale.is_finite() || !x.is_finite() || !y.is_finite() || !rotation.is_finite()
+            || !(-180.0..=180.0).contains(&rotation)
             || !(0.05..=8.0).contains(&scale)
             || !(-1.0..=1.0).contains(&x) || !(-1.0..=1.0).contains(&y) {
             self.notify("Bulk scale/position values are out of range.", true);
@@ -1009,11 +1012,9 @@ impl Studio {
             self.notify("Select one or more timeline media clips first.", true);
             return;
         }
-        if !self.gpu_bulk_ready() {
-            return;
-        }
+        self.flush_commit();
         let timeline = self.timeline();
-        let media = self.gpu_picture_media();
+        let media: HashSet<_> = self.project().media.iter().filter(|m| !m.placeholder).map(|m| m.id.as_str()).collect();
         let tracks: HashSet<_> = timeline.tracks.iter()
             .filter(|track| track.visible && !self.locked(&track.id))
             .map(|track| track.id.as_str())
@@ -1023,7 +1024,14 @@ impl Studio {
                 && (!selected_only || selected.contains(&clip.id))
                 && tracks.contains(clip.track_id.as_str())
                 && media.contains(clip.media_id.as_str()))
-            .filter_map(|clip| bulk_transform_command(clip, mode, scale, x, y))
+            .filter_map(|clip| {
+                if mode >= 4 {
+                    let item=self.project().media_by_id(&clip.media_id)?;
+                    if [KeyProperty::Scale,KeyProperty::OffsetX,KeyProperty::OffsetY].into_iter().any(|k|clip.is_keyed(k))
+                        || item.width.unwrap_or(0)==0 || item.height.unwrap_or(0)==0 { return None; }
+                    Some(Command::FrameClip {clip_id:clip.id.clone(),framing:if mode==4 {concat_project::model::Framing::Fit}else{concat_project::model::Framing::Fill},at:0.0})
+                } else {bulk_transform_command(clip, mode, scale, x, y, rotation)}
+            })
             .collect();
         if commands.is_empty() {
             self.notify("No eligible media to transform (manual keyframes are protected).", true);
@@ -1128,23 +1136,36 @@ mod tests {
     #[test]
     fn transform_bulk_protects_authored_keys_per_property() {
         let mut clip = Clip::blank("c1", "t1", ClipKind::Image, "still", 0.0, 2.0);
-        assert!(matches!(bulk_transform_command(&clip, 0, 1.3, 0.0, 0.0),
+        assert!(matches!(bulk_transform_command(&clip, 0, 1.3, 0.0, 0.0, 0.0),
             Some(Command::SetClipTransform { scale: Some(_), .. })));
         let keyed = ClipKey {
             property: KeyProperty::Scale, at: 0.0, value: 1.0,
             ease: concat_project::model::KeyEase::LINEAR,
         };
         clip.keys.push(keyed);
-        assert!(bulk_transform_command(&clip, 0, 1.3, 0.0, 0.0).is_none());
-        assert!(matches!(bulk_transform_command(&clip, 1, 1.0, 0.2, -0.2),
+        assert!(bulk_transform_command(&clip, 0, 1.3, 0.0, 0.0, 0.0).is_none());
+        assert!(matches!(bulk_transform_command(&clip, 1, 1.0, 0.2, -0.2, 0.0),
             Some(Command::SetClipTransform {
                 offset_x: Some(_), offset_y: Some(_), scale: None, ..
             })));
         clip.keys.push(ClipKey { property: KeyProperty::OffsetX, ..keyed });
-        assert!(matches!(bulk_transform_command(&clip, 1, 1.0, 0.2, -0.2),
+        assert!(matches!(bulk_transform_command(&clip, 1, 1.0, 0.2, -0.2, 0.0),
             Some(Command::SetClipTransform {
                 offset_x: None, offset_y: Some(_), ..
             })));
+    }
+
+    #[test]
+    fn combined_transform_preserves_animated_rotation_and_typed_targeting() {
+        let mut clip=Clip::blank("i","T1",ClipKind::Image,"still",0.0,2.0);
+        clip.keys.push(ClipKey {property:KeyProperty::Rotation,at:0.0,value:15.0,ease:concat_project::model::KeyEase::LINEAR});
+        let command=bulk_transform_command(&clip,3,1.5,0.1,-0.2,90.0).unwrap();
+        assert!(matches!(command,Command::SetClipTransform {scale:Some(1.5),offset_x:Some(0.1),offset_y:Some(-0.2),rotation:None,..}));
+        assert!(bulk_transform_command(&clip,2,1.0,0.0,0.0,90.0).is_none());
+        clip.keys.clear();
+        assert!(matches!(bulk_transform_command(&clip,2,1.0,0.0,0.0,90.0),Some(Command::SetClipTransform {scale:None,rotation:Some(90.0),..})));
+        clip.extra.insert("canvasOwner".into(),serde_json::json!("original"));
+        assert!(!chosen_media_type(&clip,true,true));
     }
 
     #[test]

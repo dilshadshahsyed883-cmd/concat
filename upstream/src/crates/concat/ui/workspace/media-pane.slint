@@ -19,6 +19,7 @@ import { SourcePreview } from "source-preview.slint";
 import { Sounds, SoundList, VoiceList } from "audio-page.slint";
 import { CBuilderPane } from "c-builder.slint";
 import { CanvasPresetPanel } from "canvas-presets.slint";
+import { MediaLayoutPanel } from "media-layout.slint";
 import { CanvasMotionPanel } from "canvas-motion.slint";
 import { ParticleEffectsPanel } from "particle-effects.slint";
 
@@ -1863,10 +1864,7 @@ export component MediaPane inherits Rectangle {
     property <int> physics-scope: 0;
     property <int> physics-preset: 0;
     property <bool> canvas-motion-page: false;
-    // Bulk transforms share Animations' type switches and scope.
-    property <float> bulk-scale: 1;
-    property <float> bulk-position-x: 0;
-    property <float> bulk-position-y: 0;
+    property <int> animation-page: 0;
     /// The Audio page's shelf: 0 = Mine, 1 = Concat, 10 = Voices,
     /// 11 = Styles.
     property <int> audio-category;
@@ -2399,83 +2397,15 @@ export component MediaPane inherits Rectangle {
                     // Filters are colour looks, the way every video editor's
                     // users understand the word. What a voice or a room does
                     // to the sound is on the Effects page.
-                    // The same checkboxes and scope also target scale and
-                // position edits. Animated properties stay untouched.
-                if root.tab == 10 && GpuCompatibility.enabled: PaneScroll {
-                    VerticalLayout {
-                    padding: 8px;
-                    spacing: 8px;
-                    Button { label: root.canvas-motion-page ? "Show Basic and Physics Animations" : "Show Canvas Motion Pack";
-                        clicked => { root.canvas-motion-page = !root.canvas-motion-page; } }
-                    if root.canvas-motion-page: CanvasMotionPanel {
-                        images: root.physics-images; videos: root.physics-videos; selected-only: root.physics-scope == 1;
-                    }
-                    if !root.canvas-motion-page: VerticalLayout { spacing: 8px;
-                    Text {
-                        text: "Bulk Transform";
-                        font-size: Theme.fs;
-                        color: Theme.fg;
-                    }
-                    Text {
-                        text: "Use the Images/Video Clips checkboxes and scope above. Manual keyframes are protected per property.";
-                        color: Theme.fg-muted;
-                        wrap: word-wrap;
-                        font-size: Theme.fs-sm;
-                    }
-                    Param {
-                        label: "Bulk Scale";
-                        value <=> root.bulk-scale;
-                        minimum: 0.05;
-                        maximum: 8;
-                        step: 0.01;
-                        default-value: 1;
-                        fmt: ParamFormat.fraction;
-                        unit: "%";
-                        unit-scale: 100;
-                    }
-                    Button {
-                        label: "Apply Bulk Scale";
-                        enabled: root.physics-images || root.physics-videos;
-                        clicked => {
-                            Keyframes.apply-bulk-transform(0, root.physics-images,
-                                root.physics-videos, root.physics-scope == 1,
-                                root.bulk-scale, root.bulk-position-x, root.bulk-position-y);
+                    if root.tab == 10 && GpuCompatibility.enabled: VerticalLayout {
+                        spacing: 1px;
+                        for label[index] in ["Animations", "Transform", "Canvas"]: CategoryRow {
+                            label: label; height: 30px;
+                            current: root.animation-page == index;
+                            clicked => { root.animation-page = index; }
                         }
                     }
-                    Param {
-                        label: "Bulk Position X";
-                        value <=> root.bulk-position-x;
-                        minimum: -1;
-                        maximum: 1;
-                        step: 0.005;
-                        default-value: 0;
-                        fmt: ParamFormat.centred;
-                        unit: "%";
-                        unit-scale: 100;
-                    }
-                    Param {
-                        label: "Bulk Position Y";
-                        value <=> root.bulk-position-y;
-                        minimum: -1;
-                        maximum: 1;
-                        step: 0.005;
-                        default-value: 0;
-                        fmt: ParamFormat.centred;
-                        unit: "%";
-                        unit-scale: 100;
-                    }
-                    Button {
-                        label: "Apply Bulk Position X/Y";
-                        enabled: root.physics-images || root.physics-videos;
-                        clicked => {
-                            Keyframes.apply-bulk-transform(1, root.physics-images,
-                                root.physics-videos, root.physics-scope == 1,
-                                root.bulk-scale, root.bulk-position-x, root.bulk-position-y);
-                        }
-                    }
-                    }
-                    }
-                }
+
 
                 if root.tab == 5: VerticalLayout {
                         spacing: 1px;
@@ -2960,17 +2890,19 @@ export component MediaPane inherits Rectangle {
 
                 // Dedicated Animations page. Inspector knobs are shared
                 // through Keyframes; no second motion format is introduced.
-                if root.tab == 10 && GpuCompatibility.enabled: VerticalLayout {
+                if root.tab == 10 && GpuCompatibility.enabled: PaneScroll {
+                VerticalLayout {
+                if root.animation-page == 0: VerticalLayout {
                     padding: 8px;
                     spacing: 8px;
 
                     Text {
-                        text: "Physics Animations";
+                        text: "Animations";
                         font-size: Theme.fs;
                         color: Theme.fg;
                     }
                     Text {
-                        text: "Choose a preset below. Strength, Duration, Speed and Physics Intensity are in the right Inspector.";
+                        text: "Basic, physics and canvas motion presets all create editable animation keyframes.";
                         color: Theme.fg-muted;
                         font-size: Theme.fs-sm;
                         wrap: word-wrap;
@@ -3009,9 +2941,17 @@ export component MediaPane inherits Rectangle {
                             changed(index) => { root.physics-scope = index; }
                         }
                     }
+                    Button { label: root.canvas-motion-page ? "Basic / Physics" : "Canvas Motion"; clicked => {root.canvas-motion-page = !root.canvas-motion-page;} }
+                    if root.canvas-motion-page: CanvasMotionPanel {images:root.physics-images; videos:root.physics-videos; selected-only:root.physics-scope==1;}
+                    if !root.canvas-motion-page: VerticalLayout { spacing:8px;
+                    Param { label: "Strength"; value <=> Keyframes.physics-strength; minimum: 0.1; maximum: 2; step: 0.1; fmt: ParamFormat.fraction; }
+                    Param { label: "Duration (clip fraction)"; value <=> Keyframes.physics-duration; minimum: 0.1; maximum: 1; step: 0.05; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; }
+                    Param { label: "Speed"; value <=> Keyframes.physics-speed; minimum: 0.25; maximum: 3; step: 0.05; fmt: ParamFormat.fraction; }
+                    Param { label: "Physics Intensity"; value <=> Keyframes.physics-intensity; minimum: 0.2; maximum: 2; step: 0.1; fmt: ParamFormat.fraction; }
                     for label[index] in [
                         "Spring Zoom", "Pendulum Swing", "Gravity Bounce",
-                        "Elastic Pop", "Inertia Glide", "Damped Shake"
+                        "Elastic Pop", "Inertia Glide", "Damped Shake",
+                        "Push In", "Pan Right", "Fade In"
                     ]: HorizontalLayout {
                         spacing: 8px;
                         Button {
@@ -3076,6 +3016,12 @@ export component MediaPane inherits Rectangle {
                         }
                     }
                 }
+                }
+                if root.animation-page == 1: MediaLayoutPanel {canvas:false;}
+                if root.animation-page == 2: VerticalLayout {spacing:8px; canvas-layout := MediaLayoutPanel {canvas:true;} CanvasPresetPanel {padding:8px; images:canvas-layout.images; videos:canvas-layout.videos;} }
+                }
+                }
+
 
                 if root.tab == 5: VerticalLayout {
                     padding: 8px;
@@ -3161,7 +3107,7 @@ export component MediaPane inherits Rectangle {
                     HorizontalLayout { padding: 8px;
                         ImportButton { label: I18n.t("mediaPane.saveProjectTemplate"); glyph: Glyph.slot; clicked => { root.save-template(); } }
                     }
-                    CanvasPresetPanel { padding: 8px; }
+
                 }
 
             }

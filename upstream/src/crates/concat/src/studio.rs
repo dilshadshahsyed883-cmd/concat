@@ -3978,12 +3978,12 @@ impl Studio {
     }
 
     /// Compose a canvas from native editable media, rectangle and title clips.
-    pub fn apply_canvas_preset(&mut self, json: &str, all: bool) {
+    pub fn apply_canvas_preset(&mut self, json: &str, all: bool, images:bool, videos:bool) {
         let config = match concat_project::canvas_preset::Config::from_json(json) {
             Ok(config) => config, Err(e) => { self.notify(&e, true); return; }
         };
         let targets: Vec<String> = self.timeline().clips.iter().filter(|c|
-            c.kind.is_visual() && !c.extra.contains_key("canvasOwner")
+            ((c.kind==model::ClipKind::Image && images)||(c.kind==model::ClipKind::Video && videos)) && !c.extra.contains_key("canvasOwner")
             && !self.locked(&c.track_id)
             && self.timeline().track(&c.track_id).is_some_and(|t| t.visible)
             && (all || self.selection.contains(&c.id))).map(|c|c.id.clone()).collect();
@@ -9237,6 +9237,10 @@ impl Studio {
         });
 
         editor.set_selected_clip(self.selected());
+        let layout = self.selected();
+        app.global::<crate::ui::Keyframes>().set_layout_clip(crate::ui::LayoutSelectionData {
+            present:layout.present, count:self.selection.len() as i32, kind:layout.kind, scale:layout.scale, offset_x:layout.offset_x, offset_y:layout.offset_y, rotation:layout.rotation,
+        });
         editor.set_selected_transition(self.selected_transition_data());
         // The background and Fit and Fill, on their own global: the Details
         // panel, the Video panel and the phone all read it.

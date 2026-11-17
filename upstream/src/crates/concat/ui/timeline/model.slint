@@ -221,7 +221,11 @@ export struct CanvasMotionData {
     easing: int, seed: int, corner-radius: float,
 }
 
+export struct LayoutSelectionData { present: bool, count: int, kind: ClipKind, scale: float, offset-x: float, offset-y: float, rotation: float }
+
 export global Keyframes {
+    in property <LayoutSelectionData> layout-clip;
+    callback layout-set(field: ClipField, value: float);
     /// One row per keyable property, in the order `row` indexes them. Empty
     /// when the selection cannot carry keys at all.
     in property <[ClipKeyData]> rows;
@@ -268,9 +272,9 @@ export global Keyframes {
     // Explicit preset index into the 9 GPU-compatible native animations.
     callback apply-bulk-motion-preset(mode: int, preset: int, images: bool,
         video-clips: bool, selected-only: bool);
-    // mode: 0 scale, 1 position X/Y; values use native Concat units.
+    // mode: 0 scale, 1 position X/Y, 2 rotation, 3 combined, 4 fit, 5 fill; native units.
     callback apply-bulk-transform(mode: int, images: bool, video-clips: bool,
-        selected-only: bool, scale: float, position-x: float, position-y: float);
+        selected-only: bool, scale: float, position-x: float, position-y: float, rotation: float);
 
     /// The same three verbs for a knob named rather than enumerated - the
     /// Adjust panel's, whose rows come from the colour package's manifest
@@ -350,6 +354,7 @@ export global Backdrop {
     callback set-still(clip: bool, row: int);
     /// The selected clip's background for every picture on the main lane.
     callback apply-to-all();
+    callback apply-bulk(mode: int, amount: float, colour: color, images: bool, videos: bool, selected-only: bool);
     /// Sizes the selected picture to the frame: whole inside it, or
     /// covering it.
     callback frame(fill: bool);

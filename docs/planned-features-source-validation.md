@@ -23,3 +23,11 @@ Source-only GitHub checks also typecheck the complete native Rust/Slint library 
 No Windows interactive session or NVIDIA GPU is attached. Real ASR inference, CUDA kernel compilation, shader/native parity, NVENC rendering, interactive drag/undo/save/reopen and Windows queue integration require hardware validation. Preserve issues as open until their required acceptance checks are satisfied. The animation inventory is limited to source actually present in this repository; no external Animation Lab inventory was supplied. Page curl is a procedural curved-edge reveal.
 
 No EXE, Docker/image, installer or release builds, image publication, deployment, main merge or VPS changes were performed. Issue #54 remains excluded. Native canvas companion clips are editable components, never merged or flattened tracks.
+
+## Left-side layout controls follow-up
+
+The Animations library now has Animations, Transform and Canvas sub-tabs. Push In, Pan Right and Fade In share the existing animation/keyframe system and live beside the physics and canvas-motion families. Their parameter controls moved into the left panel.
+
+Transform supports independent image/video targeting, selected/whole-timeline scope, scale, X/Y, rotation and fit/fill. Bulk application protects authored keyframe fields, locks, hidden tracks and canvas companions. Optional single-clip live/keyframe editing preserves the original manual editing path. Canvas background and canvas-preset application share independent image/video targeting. Plain backgrounds affect the main picture lane; existing framed layouts are edited through their preset controls rather than silently changing an invisible foreground background.
+
+Issue #57 was explicitly requested as planning-only and has no implementation under this follow-up. Issue #54 remains excluded.

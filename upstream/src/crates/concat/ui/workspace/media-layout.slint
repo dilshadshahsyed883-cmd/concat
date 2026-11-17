@@ -1,0 +1,85 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+import { Theme } from "../theme/theme.slint";
+import { Button } from "../primitives/modal.slint";
+import { Select } from "../primitives/select.slint";
+import { Check, Param, ParamFormat, ColourField } from "../inspector/controls.slint";
+import { Keyframes, Backdrop, LayoutSelectionData, BackdropData, ClipKind, ClipField } from "../timeline/model.slint";
+
+// Authoring settings stay local until Apply: switching scope never changes media.
+export component MediaLayoutPanel inherits VerticalLayout {
+    in property <bool> canvas;
+    in-out property <bool> images: true;
+    in-out property <bool> videos: true;
+    property <int> scope: 1;
+    property <LayoutSelectionData> selected: Keyframes.layout-clip;
+    property <BackdropData> background: Backdrop.clip-has && Backdrop.clip.mode >= 0 ? Backdrop.clip : Backdrop.timeline;
+    changed background => { root.seed-background(); }
+    property <bool> live-selected: false;
+    property <bool> can-edit: root.scope == 1 && root.selected.present && root.selected.count == 1
+        && ((root.selected.kind == ClipKind.image && root.images) || (root.selected.kind == ClipKind.video && root.videos));
+    property <float> scale: 1;
+    property <float> position-x: 0;
+    property <float> position-y: 0;
+    property <float> rotation: 0;
+    property <int> background-mode: 1;
+    property <float> blur: 0.5;
+    property <color> colour: #ffffff;
+    init => { root.seed(); root.seed-background(); }
+    changed selected => { root.seed(); }
+    function seed() {
+        if root.selected.present && (root.selected.kind == ClipKind.video || root.selected.kind == ClipKind.image) {
+            root.scale = root.selected.scale; root.position-x = root.selected.offset-x;
+            root.position-y = root.selected.offset-y; root.rotation = root.selected.rotation;
+        }
+    }
+    function seed-background() {
+        root.background-mode = root.background.mode >= 0 && root.background.mode <= 2 ? root.background.mode : 0;
+        root.blur = root.background.amount; root.colour = root.background.colour;
+    }
+    function edit(field: ClipField, value: float) {
+        if root.live-selected && root.can-edit {Keyframes.layout-set(field,value);}
+    }
+    function apply(mode: int, selected: bool) {
+        Keyframes.apply-bulk-transform(mode, root.images, root.videos, selected, root.scale, root.position-x, root.position-y, root.rotation);
+    }
+    padding: 8px;
+    spacing: 10px;
+    Text { text: root.canvas ? "Canvas" : "Transform"; color: Theme.fg; font-size: Theme.fs-lg; font-weight: Theme.weight-title; }
+    HorizontalLayout {
+        spacing: 8px;
+        Check { checked: root.images; toggled(on) => { root.images = on; } }
+        Text { text: "Images"; color: Theme.fg; vertical-alignment: center; }
+        Check { checked: root.videos; toggled(on) => { root.videos = on; } }
+        Text { text: "Video Clips"; color: Theme.fg; vertical-alignment: center; }
+    }
+    Select { options: ["Whole timeline", "Selected media"]; current <=> root.scope; }
+    if !root.canvas: VerticalLayout {
+        spacing: 8px;
+        HorizontalLayout {
+            Check {checked:root.live-selected; enabled:root.can-edit; toggled(on)=>{root.live-selected=on;}}
+            Text {text:"Edit selected clip live / keyframes"; color:Theme.fg; wrap:word-wrap;}
+        }
+        Param { label: "Scale"; keyable:root.live-selected && root.can-edit; field:ClipField.scale; changed(v)=>{root.edit(ClipField.scale,v);} value <=> root.scale; minimum: 0.05; maximum: 8; step: 0.01; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; }
+        Button { label: "Apply Scale"; enabled: root.images || root.videos; clicked => { root.apply(0, root.scope == 1); } }
+        Param { label: "Position X"; keyable:root.live-selected && root.can-edit; field:ClipField.offset-x; changed(v)=>{root.edit(ClipField.offset-x,v);} value <=> root.position-x; minimum: -1; maximum: 1; step: 0.005; unit: "%"; unit-scale: 100; fmt: ParamFormat.centred; }
+        Param { label: "Position Y"; keyable:root.live-selected && root.can-edit; field:ClipField.offset-y; changed(v)=>{root.edit(ClipField.offset-y,v);} value <=> root.position-y; minimum: -1; maximum: 1; step: 0.005; unit: "%"; unit-scale: 100; fmt: ParamFormat.centred; }
+        Button { label: "Apply Position X/Y"; enabled: root.images || root.videos; clicked => { root.apply(1, root.scope == 1); } }
+        Param { label: "Rotation"; keyable:root.live-selected && root.can-edit; field:ClipField.rotation; changed(v)=>{root.edit(ClipField.rotation,v);} value <=> root.rotation; minimum: -180; maximum: 180; step: 1; unit: "°"; fmt: ParamFormat.degrees; }
+        Button { label: "Apply Rotation"; enabled: root.images || root.videos; clicked => { root.apply(2, root.scope == 1); } }
+        HorizontalLayout {
+            Button { label: "Fit"; enabled: root.images || root.videos; clicked => { if root.live-selected && root.can-edit {Backdrop.frame(false);} else {root.apply(4, root.scope == 1);} } }
+            Button { label: "Fill"; enabled: root.images || root.videos; clicked => { if root.live-selected && root.can-edit {Backdrop.frame(true);} else {root.apply(5, root.scope == 1);} } }
+        }
+        Button { label: "Apply All Transform Values"; primary: true; enabled: root.images || root.videos; clicked => { root.apply(3, root.scope == 1); } }
+    }
+    if root.canvas: VerticalLayout {
+        spacing: 8px;
+        Select { options: ["None", "Blur", "Solid color"]; current <=> root.background-mode; }
+        if root.background-mode == 1: Param { label: "Softness"; value <=> root.blur; minimum: 0; maximum: 1; step: 0.01; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; }
+        if root.background-mode == 2: ColourField { label: "Background color"; value: root.colour; alpha: false; changed(c) => { root.colour = c; } }
+        Button { label: "Apply Canvas Background"; primary: true; enabled: root.images || root.videos;
+            clicked => { Backdrop.apply-bulk(root.background-mode, root.blur, root.colour, root.images, root.videos, root.scope == 1); } }
+        Text { text: "Backgrounds apply to the main picture lane. For framed layouts, use the canvas presets below."; color: Theme.fg-muted; wrap: word-wrap; font-size: Theme.fs-sm; }
+    }
+    Text { text: "Images and Video Clips are independent targets. Locked/hidden tracks, canvas companion layers and manually animated transform fields are protected. Each Apply is one Undo step."; color: Theme.fg-muted; wrap: word-wrap; font-size: Theme.fs-sm; }
+}

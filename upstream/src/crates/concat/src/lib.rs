@@ -818,8 +818,8 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             }
         });
     });
-    app.global::<CanvasPresets>().on_apply(on_window!(|state, json: SharedString, all: bool| {
-        state.apply_canvas_preset(&json, all);
+    app.global::<CanvasPresets>().on_apply(on_window!(|state, json: SharedString, all: bool, images:bool, videos:bool| {
+        state.apply_canvas_preset(&json, all, images, videos);
     }));
     app.global::<CanvasPresets>().set_profile(serde_json::to_string_pretty(
         &concat_project::canvas_preset::Config::preset(1).expect("sports canvas default")).unwrap_or_default().into());
@@ -1458,10 +1458,13 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                 mode, preset, images, video_clips, selected_only,
             );
         }));
+        keys.on_layout_set(on_lanes!(|state, field:ClipField, value:f32| {
+            if state.selection.len()==1 {state.clip_set(field,value);state.clip_commit();}
+        }));
         keys.on_apply_bulk_transform(on_lanes!(|state, mode: i32, images: bool,
-            video_clips: bool, selected_only: bool, scale: f32, x: f32, y: f32| {
+            video_clips: bool, selected_only: bool, scale: f32, x: f32, y: f32, rotation: f32| {
             state.apply_bulk_gpu_transform(
-                mode, images, video_clips, selected_only, scale, x, y,
+                mode, images, video_clips, selected_only, scale, x, y, rotation,
             );
         }));
         // The same three verbs for the Adjust panel's knobs, which are
@@ -1491,6 +1494,9 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         }));
         backdrop.on_set_still(on_lanes!(|state, clip: bool, row: i32| {
             state.backdrop_set_still(clip, row);
+        }));
+        backdrop.on_apply_bulk(on_lanes!(|state, mode:i32, amount:f32, colour:slint::Color, images:bool, videos:bool, selected_only:bool| {
+            state.apply_bulk_canvas_background(mode,amount,colour,images,videos,selected_only);
         }));
         backdrop.on_apply_to_all(on_lanes!(|state| {
             state.backdrop_apply_to_all();

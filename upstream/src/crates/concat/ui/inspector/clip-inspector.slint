@@ -1169,7 +1169,7 @@ export component VideoPanel inherits VerticalLayout {
     init => { root.seed(); }
     changed selected => { root.seed(); }
 
-    Section {
+    if !GpuCompatibility.enabled || !root.canvas || (root.selected.kind != ClipKind.video && root.selected.kind != ClipKind.image): Section {
         first: true;
         transform := SectionHeader {
             title: I18n.t("clipInspector.transform");
@@ -1296,7 +1296,7 @@ export component VideoPanel inherits VerticalLayout {
         }
     }
 
-    if root.canvas && (root.selected.kind == ClipKind.video || root.selected.kind == ClipKind.image): Section {
+    if !GpuCompatibility.enabled && root.canvas && (root.selected.kind == ClipKind.video || root.selected.kind == ClipKind.image): Section {
         motion := SectionHeader {
             title: I18n.t("clipInspector.motionPresets");
             collapsible: true;
@@ -1324,62 +1324,8 @@ export component VideoPanel inherits VerticalLayout {
                     clicked => { Keyframes.apply-motion-preset(ClipField.opacity); }
                 }
             }
-            if GpuCompatibility.enabled: HorizontalLayout {
-                padding-left: Theme.pad;
-                padding-right: Theme.pad;
-                Button {
-                    block: true;
-                    label: I18n.t("common.applyAllRandomly");
-                    clicked => { Keyframes.apply-random-motion(); }
-                }
-            }
-            if GpuCompatibility.enabled: VerticalLayout {
-                padding-left: Theme.pad;
-                padding-right: Theme.pad;
-                Param {
-                    label: "Strength";
-                    value <=> Keyframes.physics-strength;
-                    minimum: 0.1;
-                    maximum: 2;
-                    step: 0.1;
-                    default-value: 1;
-                    fmt: ParamFormat.fraction;
-                }
-                Param {
-                    label: "Duration (clip fraction)";
-                    value <=> Keyframes.physics-duration;
-                    minimum: 0.1;
-                    maximum: 1;
-                    step: 0.05;
-                    default-value: 1;
-                    fmt: ParamFormat.fraction;
-                    unit: "%";
-                    unit-scale: 100;
-                }
-                Param {
-                    label: "Speed";
-                    value <=> Keyframes.physics-speed;
-                    minimum: 0.25;
-                    maximum: 3;
-                    step: 0.05;
-                    default-value: 1;
-                    fmt: ParamFormat.fraction;
-                }
-                Param {
-                    label: "Physics Intensity";
-                    value <=> Keyframes.physics-intensity;
-                    minimum: 0.2;
-                    maximum: 2;
-                    step: 0.1;
-                    default-value: 1;
-                    fmt: ParamFormat.fraction;
-                }
-                Text {
-                    text: "Choose an animation in the Library's Animations tab. These controls bake editable GPU-compatible keyframes.";
-                    color: Theme.fg-muted;
-                    wrap: word-wrap;
-                }
-            }
+
+
 
         }
     }
@@ -1387,11 +1333,8 @@ export component VideoPanel inherits VerticalLayout {
     // What fills the frame where this picture does not reach: the
     // timeline's background, or one of the clip's own. Only on the lowest
     // picture lane, which is where a background is drawn.
-    if GpuCompatibility.enabled && root.canvas && Backdrop.clip-has && Backdrop.clip.mode > 0: Button {
-        label: I18n.t("project.clearGpuBackground");
-        clicked => { Backdrop.set-mode(true, -1); }
-    }
-    if root.canvas && Backdrop.clip-has: Section {
+
+    if !GpuCompatibility.enabled && root.canvas && Backdrop.clip-has: Section {
         canvas := SectionHeader {
             title: I18n.t("phone.canvas");
             collapsible: true;

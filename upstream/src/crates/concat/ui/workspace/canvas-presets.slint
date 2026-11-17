@@ -4,9 +4,11 @@ import { Button } from "../primitives/modal.slint";
 export global CanvasPresets {
     in-out property <string> profile;
     callback choose(preset: int);
-    callback apply(profile: string, all: bool);
+    callback apply(profile: string, all: bool, images: bool, videos: bool);
 }
 export component CanvasPresetPanel inherits VerticalLayout {
+    in property <bool> images: true;
+    in property <bool> videos: true;
     spacing: 8px;
     Text { text: "Canvas Presets"; color: Theme.fg; font-size: Theme.fs; }
     HorizontalLayout {
@@ -22,7 +24,7 @@ export component CanvasPresetPanel inherits VerticalLayout {
             text <=> CanvasPresets.profile; color: Theme.fg; font-size: Theme.fs-sm; wrap: word-wrap; }
     }
     HorizontalLayout {
-        Button { label: "Apply Selected"; clicked => { CanvasPresets.apply(CanvasPresets.profile, false); } }
-        Button { label: "Apply Timeline"; clicked => { CanvasPresets.apply(CanvasPresets.profile, true); } }
+        Button { label: "Apply Selected"; enabled: root.images || root.videos; clicked => { CanvasPresets.apply(CanvasPresets.profile, false, root.images, root.videos); } }
+        Button { label: "Apply Timeline"; enabled: root.images || root.videos; clicked => { CanvasPresets.apply(CanvasPresets.profile, true, root.images, root.videos); } }
     }
 }

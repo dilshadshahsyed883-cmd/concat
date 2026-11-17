@@ -50,7 +50,7 @@ class DesktopUiContractTests(unittest.TestCase):
         self.assertIn("root.physics-scope == 1", MEDIA)
         self.assertIn("enabled: root.physics-images || root.physics-videos", MEDIA)
         for knob in ("strength", "duration", "speed", "intensity"):
-            self.assertIn("value <=> Keyframes.physics-" + knob + ";", INSPECTOR)
+            self.assertIn("value <=> Keyframes.physics-" + knob + ";", MEDIA)
             self.assertIn("in-out property <float> physics-" + knob + ": 1;", KEYFRAMES)
         self.assertIn("callback apply-physics-bulk(", KEYFRAMES)
         self.assertIn("keys.on_apply_physics_bulk(", LIB)
@@ -58,6 +58,21 @@ class DesktopUiContractTests(unittest.TestCase):
         self.assertIn("requested_picture(clip, images, videos)", BULK)
         self.assertIn("if selected_only && selected.is_empty()", BULK)
         self.assertIn("Command::Batch { commands }", BULK)
+
+    def test_left_layout_subtabs_and_consolidated_motion_presets(self):
+        layout = (ROOT / "ui/workspace/media-layout.slint").read_text(encoding="utf-8")
+        self.assertIn('["Animations", "Transform", "Canvas"]', MEDIA)
+        for name in ("Push In", "Pan Right", "Fade In"):
+            self.assertIn('"' + name + '"', MEDIA)
+        self.assertIn('if root.animation-page == 1: MediaLayoutPanel {canvas:false;}', MEDIA)
+        self.assertIn('if root.animation-page == 2:', MEDIA)
+        for field in ("Scale", "Position X", "Position Y", "Rotation"):
+            self.assertIn('label: "' + field + '"', layout)
+        self.assertIn("Backdrop.apply-bulk(", layout)
+        self.assertIn("root.images, root.videos", layout)
+        self.assertIn("root.scope == 1", layout)
+        self.assertIn("keys.on_apply_bulk_transform(", LIB)
+        self.assertIn("backdrop.on_apply_bulk(", LIB)
 
     def test_generate_captions_reuses_existing_sheet(self):
         self.assertIn('label: "Generate Captions";', MEDIA)
