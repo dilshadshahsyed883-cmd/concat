@@ -65,7 +65,7 @@ class FinalCaptionIntegration(unittest.TestCase):
                     self.assertAlmostEqual(clip['offsetY'], .35)
                     self.assertEqual(clip['captionWords'][1]['startMs'], 500)
                     # Feed the emitted native text into the actual CUDA caption planner.
-                    overlay = _caption(clip, 3, 57, 0, 1)
+                    overlay = _caption(clip, 3, 57, 1, 1)
                     self.assertIsNotNone(overlay)
                     self.assertEqual(manifest.read_bytes(), original)
                     self.assertEqual(result['result']['cues'], TIMED['cues'])
