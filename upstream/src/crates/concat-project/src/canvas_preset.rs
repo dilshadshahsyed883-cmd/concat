@@ -830,6 +830,7 @@ mod tests {
             second.media_id = "m1".into();
             project.active_mut().clips.push(Arc::new(second));
             add_real_caption(&mut project);
+            mint.adopt_project(&project);
             let original_caption =
                 serde_json::to_value(project.active().clip("real-caption").unwrap()).unwrap();
             let original_second =
