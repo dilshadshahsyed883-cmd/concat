@@ -48,6 +48,13 @@ class CaptionPresetRegression(unittest.TestCase):
             self.assertIn(token, body)
         self.assertIn('Some("purple-word" | "yellow-bar" | "classic")', EDITING)
 
+    def test_imported_srt_lane_is_eligible_only_when_explicitly_selected(self):
+        body = STUDIO.split("pub fn apply_caption_preset", 1)[1].split("fn add_title", 1)[0]
+        self.assertIn("selected_caption_lane", body)
+        self.assertIn("selected_caption_lane.as_deref() == Some(clip.track_id.as_str())", body)
+        self.assertIn('!clip.extra.contains_key("canvasOwner")', body)
+        self.assertIn('clip.extra.contains_key("gpuCaptionSource")', body)
+
     def test_stage_and_applied_state_are_separate(self):
         for token in ("on_style_font", "on_style_color", "applied_caption_id",
                       "caption_effective_style", "ui.set_applied",
