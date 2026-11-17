@@ -9014,6 +9014,18 @@ impl Studio {
             .into_iter().map(SharedString::from).chain(self.c_builder.stored_profiles.iter().map(|p|SharedString::from(p.name.as_str()))).collect();
         editor.set_cb_profile_names(slint::ModelRc::new(VecModel::from(names)));
         let selection_profile=self.c_builder_profile("").unwrap_or_default();
+        editor.set_cb_plan_name(selection_profile.name.as_str().into());
+        editor.set_cb_plan_opening(format!("{}",(selection_profile.curve.first().map_or(0.,|a|a.video)*100.).round() as i32).into());
+        editor.set_cb_plan_closing(format!("{}",(selection_profile.curve.last().map_or(0.,|a|a.video)*100.).round() as i32).into());
+        editor.set_cb_plan_image_min(format!("{}",selection_profile.image_seconds[0]).into());
+        editor.set_cb_plan_image_max(format!("{}",selection_profile.image_seconds[1]).into());
+        editor.set_cb_plan_video_min(format!("{}",selection_profile.video_seconds[0]).into());
+        editor.set_cb_plan_video_max(format!("{}",selection_profile.video_seconds[1]).into());
+        editor.set_cb_plan_max_videos(selection_profile.max_videos.to_string().into());
+        editor.set_cb_plan_max_images(selection_profile.max_images.to_string().into());
+        editor.set_cb_plan_cooldown(selection_profile.cooldown.to_string().into());
+        editor.set_cb_plan_seed(selection_profile.seed.to_string().into());
+
         let(images,image_summary)=self.c_builder_keyword_rows(false,&selection_profile);
         let(videos,video_summary)=self.c_builder_keyword_rows(true,&selection_profile);
         sync(&models.cb_image_keywords, images);
