@@ -274,5 +274,5 @@ jobs:
             echo "GPU RTX 3060 Ti acceptance is pending a live test; this release does not claim GPU acceptance."
           } > release-notes.txt
           gh release create "$tag" "Concat-Windows-x64-${GITHUB_SHA:0:12}.zip" release-sha256.txt matching-release.json \
-            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --latest=false \
             --title "Concat CUDA Desktop ${GITHUB_SHA:0:12}" --notes-file release-notes.txt
