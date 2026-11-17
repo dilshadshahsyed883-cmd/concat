@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Editable canvas compositions made from ordinary source, shape and text clips.
+//! Editable visual canvas compositions made from source and shape clips.
+//! Legacy headline fields remain in the JSON schema for old projects, but
+//! canvas application never generates text or lower-third headline bands.
 //! Generated companion layers are owned by one foreground clip and reroll/reapply
 //! replaces those companions in one transaction, preserving original media and IDs.
 #![allow(missing_docs)]
@@ -131,7 +133,8 @@ impl Config {
             ),
         };
         let headline = Label {
-            enabled: true,
+            // Lower-thirds belong exclusively to Text -> Captions, not Canvas.
+            enabled: false,
             text: String::new(),
             rect: if number == 3 {
                 Rect {
@@ -422,6 +425,37 @@ fn label(
     }
     result
 }
+/// Compare a legacy lower-third with the exact shape that an older Canvas
+/// preset generated. A shape the user edited is NOT safe to discard on reapply.
+/// Real Text captions are never canvas-owned and are not considered here.
+fn unedited_legacy_headline(piece: &Clip, owner: &Clip) -> bool {
+    if piece.extra.get("canvasRole") != Some(&json!("headline")) {
+        return false;
+    }
+    let Some(saved) = owner.extra.get("canvasPreset") else {
+        return false;
+    };
+    let Ok(previous) = serde_json::from_value::<Config>(saved.clone()) else {
+        return false;
+    };
+    if !previous.headline.enabled {
+        return false;
+    }
+    // Rebuild the old rectangle without consuming the project's real IdMint.
+    let mut test_mint = IdMint::default();
+    let mut expected = rectangle(
+        &mut test_mint,
+        owner,
+        &piece.track_id,
+        "headline",
+        previous.headline.rect,
+        &previous.headline.background,
+        previous.headline.radius,
+        previous.headline.opacity,
+    );
+    Arc::make_mut(&mut expected).id = piece.id.clone();
+    serde_json::to_value(piece).ok() == serde_json::to_value(expected.as_ref()).ok()
+}
 /// Apply to explicit unlocked visual targets. No media IO or source mutation.
 pub fn apply(
     project: &mut Project,
@@ -499,25 +533,31 @@ pub fn apply(
                 "Remove the existing authored mask before applying a canvas layout",
             ));
         }
+        // An older preset may have added a blue/white/yellow headline band.
+        // Remove only exact, unedited generated rectangles on explicit reapply.
+        // Refuse to overwrite edited banners or old generated headline text:
+        // the user can inspect and delete those clips explicitly in the editor.
+        for piece in &staged.active().clips {
+            if piece.extra.get("canvasOwner") == Some(&json!(&id))
+                && matches!(
+                    piece.extra.get("canvasRole").and_then(Value::as_str),
+                    Some("headline" | "headlineText")
+                )
+                && !unedited_legacy_headline(piece, &original)
+            {
+                return Err(error(format!(
+                    "Existing Canvas headline '{}' may be edited. Remove it explicitly in the timeline before reapplying Canvas; genuine Text captions will be preserved.",
+                    piece.name
+                )));
+            }
+        }
         staged
             .active_mut()
             .clips
             .retain(|c| c.extra.get("canvasOwner") != Some(&json!(&id)));
-        let bg_lane = track(&mut staged, mint, &original.track_id, "backdrop", true);
-        let tint_lane = track(&mut staged, mint, &original.track_id, "tint", true);
-        let frame_lane = track(&mut staged, mint, &original.track_id, "frame", true);
-        let banner_lane = track(&mut staged, mint, &original.track_id, "banner", false);
-        let badge_bg_lane = track(
-            &mut staged,
-            mint,
-            &original.track_id,
-            "badgeBackground",
-            false,
-        );
-        let text_lane = track(&mut staged, mint, &original.track_id, "headline", false);
-        let badge_text_lane = track(&mut staged, mint, &original.track_id, "badge", false);
         let mut layers = Vec::new();
         if config.background != "none" {
+            let bg_lane = track(&mut staged, mint, &original.track_id, "backdrop", true);
             let mut bg = base.clone();
             bg.id = mint.next("c");
             bg.track_id = bg_lane;
@@ -557,6 +597,7 @@ pub fn apply(
             layers.push(tagged(bg, &id, "backdrop"));
         }
         if config.tint_opacity > 0.0 {
+            let tint_lane = track(&mut staged, mint, &original.track_id, "tint", true);
             layers.push(rectangle(
                 mint,
                 &original,
@@ -574,6 +615,7 @@ pub fn apply(
             ));
         }
         if config.border_width > 0.0 {
+            let frame_lane = track(&mut staged, mint, &original.track_id, "frame", true);
             layers.push(rectangle(
                 mint,
                 &original,
@@ -590,38 +632,32 @@ pub fn apply(
                 1.0,
             ));
         }
-        // Labels keep independent canvas anchors while only the original media moves.
-        for (mut piece, lane) in label(mint, &original, &banner_lane, "headline", &config.headline)
-            .into_iter()
-            .map(|c| {
-                (
-                    c.clone(),
-                    if c.kind == ClipKind::Text {
-                        &text_lane
-                    } else {
-                        &banner_lane
-                    },
-                )
-            })
-        {
-            Arc::make_mut(&mut piece).track_id = lane.clone();
-            layers.push(piece);
-        }
-        for (mut piece, lane) in label(mint, &original, &badge_bg_lane, "badge", &config.badge)
-            .into_iter()
-            .map(|c| {
-                (
-                    c.clone(),
-                    if c.kind == ClipKind::Text {
-                        &badge_text_lane
-                    } else {
-                        &badge_bg_lane
-                    },
-                )
-            })
-        {
-            Arc::make_mut(&mut piece).track_id = lane.clone();
-            layers.push(piece);
+        // Canvas never generates a headline bar, fake caption text or even
+        // an empty headline track. The legacy config.headline JSON field is
+        // intentionally read but is not a rendering instruction.
+        // Optional stickers remain separate and disabled by default.
+        if config.badge.enabled {
+            let badge_bg_lane = track(
+                &mut staged,
+                mint,
+                &original.track_id,
+                "badgeBackground",
+                false,
+            );
+            let badge_text_lane = if config.badge.text.trim().is_empty() {
+                None
+            } else {
+                Some(track(&mut staged, mint, &original.track_id, "badge", false))
+            };
+            for mut piece in label(mint, &original, &badge_bg_lane, "badge", &config.badge) {
+                if piece.kind == ClipKind::Text {
+                    Arc::make_mut(&mut piece).track_id = badge_text_lane
+                        .as_ref()
+                        .expect("enabled badge text owns a text lane")
+                        .clone();
+                }
+                layers.push(piece);
+            }
         }
         let foreground = staged
             .active_mut()
@@ -648,6 +684,22 @@ pub fn apply(
         );
         foreground.extra.insert("canvasOriginal".into(), baseline);
         staged.active_mut().clips.extend(layers);
+        // Empty legacy banner/headline lanes can be removed without touching
+        // authored captions or clips that share those old tracks.
+        let occupied: std::collections::HashSet<String> = staged
+            .active()
+            .clips
+            .iter()
+            .map(|c| c.track_id.clone())
+            .collect();
+        staged.active_mut().tracks.retain(|lane| {
+            !(lane.extra.get("canvasTrack") == Some(&json!(&original.track_id))
+                && matches!(
+                    lane.extra.get("canvasRole").and_then(Value::as_str),
+                    Some("banner" | "headline")
+                )
+                && !occupied.contains(&lane.id))
+        });
         created = Some(id);
     }
     *project = staged;
