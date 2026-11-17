@@ -5,8 +5,11 @@ on:
     branches:
       - feature/c-builder-native-library-timeline-20261108
       - work/consolidated-concat-20261108
+      - fix/c-builder-ui-linked-sliders-20261117
     paths:
       - 'upstream/src/crates/concat/src/c_builder.rs'
+      - 'upstream/src/crates/concat-project/src/planning.rs'
+      - 'upstream/src/crates/concat/tests/test_c_builder_linked_ui_contract.py'
       - 'upstream/src/crates/concat/src/studio/bulk_presets.rs'
       - 'upstream/src/crates/concat/tests/test_ui_animation_captions_contract.py'
       - 'upstream/src/crates/concat/src/lib.rs'
@@ -41,6 +44,7 @@ jobs:
         shell: bash
         run: |
           rustfmt --edition 2024 --emit stdout upstream/src/crates/concat/src/c_builder.rs > /dev/null
+          rustfmt --edition 2024 --emit stdout upstream/src/crates/concat-project/src/planning.rs > /dev/null
           rustfmt --edition 2024 --emit stdout upstream/src/crates/concat/src/lib.rs > /dev/null
           rustfmt --edition 2024 --emit stdout upstream/src/crates/concat/src/studio.rs > /dev/null
           rustfmt --edition 2024 --emit stdout upstream/src/crates/concat/src/studio/bulk_presets.rs > /dev/null
@@ -78,6 +82,8 @@ jobs:
           assert 'std::process::Command' not in engine
           print('C Builder source contracts PASS — no Windows executable built')
           PY
+      - name: Validate C Builder linked sliders and planning form contracts
+        run: python3 upstream/src/crates/concat/tests/test_c_builder_linked_ui_contract.py
       - name: Validate Animations tab and Captions UI source contracts
         run: python3 upstream/src/crates/concat/tests/test_ui_animation_captions_contract.py
 
@@ -139,6 +145,7 @@ jobs:
       - name: Run native C Builder mixed-media and bulk editor regression tests
         working-directory: upstream/src
         run: |
+          cargo test -p concat-project --lib --locked -j 2 keyword_budget_tests
           cargo test -p concat --lib --locked -j 2 c_builder::tests
           cargo test -p concat --lib --locked -j 2 studio::bulk_presets::tests
           cargo test -p concat --lib --locked -j 2 studio::backdrop::tests
