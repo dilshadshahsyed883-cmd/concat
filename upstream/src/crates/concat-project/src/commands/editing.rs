@@ -1245,6 +1245,41 @@ mod caption_preset_settings_tests {
     }
 
     #[test]
+    fn native_gpu_caption_requests_preserve_worker_style_and_reopen() {
+        let mut project = crate::model::Project::new();
+        project.active_mut().clips.push(Arc::new(Clip::blank(
+            "voice1", "T1", ClipKind::Audio, "Narration", 0.0, 4.0,
+        )));
+        let mut mint = IdMint::default();
+        mint.adopt_project(&project);
+        let request = json!({
+            "version": 1, "sourceClipId": "voice1",
+            "model": "small", "wordTimestamps": true,
+            "renderAfter": true, "preset": "cuda-caption.preset-2-yellow-bar",
+            "style": {"fontFamily": "Inter", "fontWeight": 900,
+                      "color": "#000000", "background": "#ffff00",
+                      "backgroundRadius": 0.012, "maxWidth": 0.88},
+            "position": {"x": 0.5, "y": 0.85}
+        });
+        super::apply(&mut project, &mut mint,
+            Command::SetGpuCaptionRequest { request: Some(request.clone()) }).unwrap();
+        assert_eq!(project.extra.get("gpuCaptionRequest"), Some(&request));
+        assert_eq!(project.active().clips.iter()
+            .filter(|clip| clip.kind == ClipKind::Text).count(), 0);
+        let document = crate::to_document(&crate::DocumentSettings {
+            name: "Native caption request".into(), width: 1920, height: 1080,
+            rate_num: 30, rate_den: 1,
+        }, &project);
+        let reopened = crate::Editor::from_document(&document).unwrap();
+        assert_eq!(reopened.project().extra.get("gpuCaptionRequest"), Some(&request));
+        let bad = json!({ "version": 1, "sourceClipId": "voice1",
+            "model": "small", "wordTimestamps": true, "preset": "cuda-caption.fake" });
+        assert!(super::apply(&mut project, &mut mint,
+            Command::SetGpuCaptionRequest { request: Some(bad) }).is_err());
+        assert_eq!(project.extra.get("gpuCaptionRequest"), Some(&request));
+    }
+
+    #[test]
     fn sample_words_are_refused_in_project_settings() {
         let mut project = crate::model::Project::new();
         let settings = json!({
