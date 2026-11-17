@@ -163,6 +163,48 @@ fn refers_to(value: &serde_json::Value, other: &Path, target: &Path) -> bool {
     }
 }
 
+// Cloud GPU Queue stores the project path independently from the active
+// editor. A queued, uploading or rendering job is an external consumer of
+// this directory; closing the editor does not make its source disposable.
+#[cfg(windows)]
+fn protect_gpu_queue(target: &Path) -> Result<(), String> {
+    let Some(local) = std::env::var_os("LOCALAPPDATA") else {
+        return Err("Cannot verify active GPU Queue without LOCALAPPDATA".into());
+    };
+    let queue = PathBuf::from(local)
+        .join("Concat").join("GPU").join("Queue").join("queue.json");
+    let bytes = match fs::read(&queue) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(format!("Cannot inspect GPU Queue {}: {e}", queue.display())),
+    };
+    let data: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(|e| format!("Cannot safely read GPU Queue state: {e}"))?;
+    let jobs = data.get("jobs").and_then(serde_json::Value::as_array)
+        .ok_or("GPU Queue has no valid jobs list; deletion blocked")?;
+    for job in jobs {
+        let path = job.get("project").and_then(serde_json::Value::as_str)
+            .ok_or("GPU Queue has an invalid project path; deletion blocked")?;
+        let phase = job.get("phase").and_then(serde_json::Value::as_str)
+            .ok_or("GPU Queue has an invalid phase; deletion blocked")?;
+        if matches!(phase, "Completed" | "Cancelled") {
+            continue;
+        }
+        let path = fs::canonicalize(path).unwrap_or_else(|_| PathBuf::from(path));
+        if same_or_inside(&path, target) || same_or_inside(target, &path) {
+            return Err(format!(
+                "Project has an active or queued GPU job ({phase}). Cancel/finish the queue job first"
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn protect_gpu_queue(_target: &Path) -> Result<(), String> {
+    Ok(())
+}
+
 fn protect_other_projects(config: &Path, target: &Path, selected: &str) -> Result<(), String> {
     let mut paths = Vec::new();
     for recent in projects::recents(config) {
@@ -195,6 +237,9 @@ fn protect_other_projects(config: &Path, target: &Path, selected: &str) -> Resul
             continue;
         }
         if real == target {
+            if path != target && path.to_string_lossy() != selected {
+                return Err("Another project entry references the same physical folder; deletion blocked".into());
+            }
             continue;
         }
         if same_or_inside(&real, target) || same_or_inside(target, &real) {
@@ -250,6 +295,7 @@ pub fn prepare(
     }
     scan_tree(&root)?;
     protect_other_projects(config, &root, selected_path)?;
+    protect_gpu_queue(&root)?;
     Ok(DeleteTarget { path: root, name: expected_name.to_owned() })
 }
 
@@ -293,9 +339,23 @@ if ([String]::IsNullOrWhiteSpace($target)) { throw 'Missing project directory' }
     [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin,
     [Microsoft.VisualBasic.FileIO.UICancelOption]::ThrowException)
 "#;
+    // Rust canonicalization on Windows produces verbatim paths (\\?\\).
+    // Windows PowerShell 5.1/.NET FileIO is not consistently compatible with
+    // that prefix. Give the shell the ordinary absolute path only when it is
+    // short enough for its legacy APIs; otherwise fail rather than strip a
+    // prefix and accidentally target a different file.
+    let text = path.to_string_lossy();
+    let shell_path = if let Some(local) = text.strip_prefix(r"\\?\\") {
+        if local.len() >= 248 || local.starts_with("UNC\\") {
+            return Err("Windows Recycle Bin cannot safely handle this extended-length or UNC project path; no permanent delete attempted".into());
+        }
+        local.to_owned()
+    } else {
+        text.into_owned()
+    };
     let output = std::process::Command::new("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-Command", SCRIPT])
-        .env("CONCAT_DELETE_PROJECT_TARGET", path.as_os_str())
+        .env("CONCAT_DELETE_PROJECT_TARGET", shell_path)
         .output()
         .map_err(|e| format!("Cannot start Windows Recycle Bin service: {e}"))?;
     if !output.status.success() {
