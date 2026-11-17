@@ -759,7 +759,7 @@ mod tests {
                 narration.media_id = "voice-media".into();
                 p.media.push(MediaItem {
                     id: "voice-media".into(), path: "voice.wav".into(),
-                    kind: MediaKind::Audio, duration: Some(60.0),
+                    name: "voice.wav".into(), kind: MediaKind::Audio, duration: Some(60.0),
                     ..Default::default()
                 });
                 p.active_mut().clips.push(Arc::new(narration.clone()));
@@ -791,7 +791,8 @@ mod tests {
         narration.source_start = 2.0;
         p.media.push(MediaItem {
             id: "voice-media".into(), kind: MediaKind::Audio,
-            path: "voice.wav".into(), duration: Some(60.0),
+            path: "voice.wav".into(), name: "voice.wav".into(),
+            duration: Some(60.0),
             ..Default::default()
         });
         p.active_mut().clips.push(Arc::new(narration.clone()));
