@@ -137,9 +137,6 @@ pub fn stage_actual(source: &Clip, template: &TextStyle, preset_id: &str) -> Sta
     };
     let exact_words = !style.karaoke_words.is_empty();
     clip.text = Some(style);
-    if preset_id == "cuda-caption.preset-2-yellow-bar" {
-        clip.offset_y = -0.35;
-    }
     StagedCaption {
         clip,
         sample: false,
