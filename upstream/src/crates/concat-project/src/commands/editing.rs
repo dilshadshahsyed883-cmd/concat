@@ -414,6 +414,28 @@ pub(super) fn apply(
                 applied: previous.as_ref() != Some(&profile),
             }
         }
+        Command::SetCaptionPresetSettings { settings } => {
+            let obj = settings.as_object().ok_or_else(|| refused("Invalid caption preset configuration"))?;
+            let id = obj.get("presetId").and_then(serde_json::Value::as_str)
+                .ok_or_else(|| refused("Caption preset ID missing"))?;
+            let style = obj.get("style").and_then(serde_json::Value::as_object)
+                .ok_or_else(|| refused("Caption style missing"))?;
+            let position = obj.get("position").and_then(serde_json::Value::as_object)
+                .ok_or_else(|| refused("Caption position missing"))?;
+            if obj.get("version").and_then(serde_json::Value::as_u64) != Some(1)
+                || !id.starts_with("cuda-caption.")
+                || id.len() > 128
+                || obj.get("generateOnGpu").and_then(serde_json::Value::as_bool) != Some(true)
+                || style.contains_key("content") || style.contains_key("karaokeWords")
+                || position.get("anchor").and_then(serde_json::Value::as_str) != Some("bottom-center")
+                || !position.get("offsetY").and_then(serde_json::Value::as_f64)
+                    .is_some_and(|y| y.is_finite() && (0.0..=0.45).contains(&y))
+            {
+                return Err(refused("Unsupported caption preset configuration"));
+            }
+            let previous = staged.extra.insert("captionPreset".into(), settings.clone());
+            Outcome { created_id: None, applied: previous.as_ref() != Some(&settings) }
+        }
         Command::SetGpuCaptionRequest { request } => {
             if let Some(value) = &request {
                 let object = value
@@ -427,7 +449,7 @@ pub(super) fn apply(
                         != Some(true)
                     || !matches!(
                         object.get("preset").and_then(serde_json::Value::as_str),
-                        Some("purple-word" | "yellow-bar")
+                        Some("purple-word" | "yellow-bar" | "classic")
                     )
                 {
                     return Err(refused(
@@ -1143,5 +1165,50 @@ mod visual_audio_protection_tests {
         assert_eq!(voice(&editor), narration);
         assert!(editor.redo());
         assert_eq!(voice(&editor), narration);
+    }
+}
+
+#[cfg(test)]
+mod caption_preset_settings_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn can_apply_before_captions_and_roundtrip_through_undo_redo() {
+        let mut editor = crate::Editor::new();
+        let settings = json!({
+            "version": 1, "presetId": "cuda-caption.preset-2-yellow-bar",
+            "generateOnGpu": true, "sourceClipId": null,
+            "style": {"fontFamily": "Inter", "fontWeight": 900,
+                      "color": "#000000", "background": "#ffff00"},
+            "position": {"anchor": "bottom-center", "offsetX": 0.0,
+                         "offsetY": 0.35, "safeMargin": 0.08}
+        });
+        editor.apply(Command::SetCaptionPresetSettings { settings: settings.clone() }).unwrap();
+        assert!(editor.project().active().clips.is_empty());
+        assert_eq!(editor.project().extra.get("captionPreset"), Some(&settings));
+        assert!(editor.undo());
+        assert!(!editor.project().extra.contains_key("captionPreset"));
+        assert!(editor.redo());
+        let doc = crate::to_document(&crate::DocumentSettings {
+            name: "Caption metadata".into(), width: 1920, height: 1080,
+            rate_num: 30, rate_den: 1,
+        }, editor.project());
+        let reopened = crate::Editor::from_document(&doc).unwrap();
+        assert_eq!(reopened.project().extra.get("captionPreset"), Some(&settings));
+        assert!(reopened.project().active().clips.is_empty());
+    }
+
+    #[test]
+    fn sample_words_are_refused_in_project_settings() {
+        let mut project = crate::model::Project::new();
+        let settings = json!({
+            "version": 1, "presetId": "cuda-caption.preset-2-yellow-bar",
+            "generateOnGpu": true, "style": {"content": "Sample caption preview"},
+            "position": {"anchor": "bottom-center", "offsetY": 0.35}
+        });
+        assert!(super::apply(&mut project, &mut IdMint::default(),
+            Command::SetCaptionPresetSettings { settings }).is_err());
+        assert!(!project.extra.contains_key("captionPreset"));
     }
 }
