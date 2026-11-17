@@ -782,6 +782,36 @@ mod tests {
     }
 
     #[test]
+    fn same_lane_ripple_reorder_preserves_independent_audio_identity() {
+        let mut p = fixture();
+        let mut narration = Clip::blank(
+            "voice", "T3", ClipKind::Audio, "Narration", 0.0, 50.0,
+        );
+        narration.media_id = "voice-media".into();
+        narration.source_start = 2.0;
+        p.media.push(MediaItem {
+            id: "voice-media".into(), kind: MediaKind::Audio,
+            path: "voice.wav".into(), duration: Some(60.0),
+            ..Default::default()
+        });
+        p.active_mut().clips.push(Arc::new(narration.clone()));
+        let original = to_document(&settings(), &p);
+        let mut editor = Editor::from_document(&original).unwrap();
+        let request = request("b", 8.0, "T1", DragMode::Ripple);
+        editor.apply(Command::DragClips { request }).unwrap();
+        assert_eq!(editor.project().active().clip("voice").unwrap(), &narration);
+        assert_eq!(editor.project().active().clip("b").unwrap().id, "b");
+        assert_eq!(editor.project().active().clip("b").unwrap().start, 6.0);
+        let saved = editor.to_document(&settings());
+        assert_eq!(Editor::from_document(&saved).unwrap()
+            .project().active().clip("voice").unwrap(), &narration);
+        assert!(editor.undo());
+        assert_eq!(editor.to_document(&settings()), original);
+        assert!(editor.redo());
+        assert_eq!(editor.project().active().clip("voice").unwrap(), &narration);
+    }
+
+    #[test]
     fn explicit_audio_lane_and_locked_track_are_protected() {
         let mut p = fixture();
         let mut ids = mint(&p);

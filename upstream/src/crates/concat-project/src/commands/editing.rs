@@ -922,7 +922,7 @@ mod visual_audio_protection_tests {
         let mut project = Project::new();
         project.media.push(MediaItem {
             id: "video".into(), kind: MediaKind::Video,
-            path: "visual.mp4".into(), duration: Some(8.0),
+            path: "visual.mp4".into(), duration: Some(10.0),
             ..Default::default()
         });
         project.media.push(MediaItem {
@@ -931,7 +931,7 @@ mod visual_audio_protection_tests {
         });
         project.media.push(MediaItem {
             id: "voice-media".into(), kind: MediaKind::Audio,
-            path: "voice.wav".into(), duration: Some(60.0),
+            path: "voice.wav".into(), duration: Some(70.0),
             ..Default::default()
         });
         let mut v1 = Clip::blank("v1", "T1", ClipKind::Video, "visual1", 0.0, 10.0);
