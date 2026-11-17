@@ -69,7 +69,7 @@ class DesktopUiContractTests(unittest.TestCase):
         self.assertIn('["Animations", "Transform", "Canvas"]', MEDIA)
         for name in ("Push In", "Pan Right", "Fade In"):
             self.assertIn('"' + name + '"', MEDIA)
-        self.assertIn('if root.animation-page == 1: MediaLayoutPanel {canvas:false;}', MEDIA)
+        self.assertIn('if root.animation-page == 1: MediaLayoutPanel { canvas: false; }', MEDIA)
         self.assertIn('if root.animation-page == 2:', MEDIA)
         for field in ("Scale", "Position X", "Position Y", "Rotation"):
             self.assertIn('label: "' + field + '"', layout)
@@ -78,6 +78,36 @@ class DesktopUiContractTests(unittest.TestCase):
         self.assertIn("root.scope == 1", layout)
         self.assertIn("keys.on_apply_bulk_transform(", LIB)
         self.assertIn("backdrop.on_apply_bulk(", LIB)
+
+    def test_animation_and_caption_views_have_no_nested_scrollers(self):
+        # The outer pages viewport already owns vertical scrolling.
+        pages = MEDIA.split("pages := PaneScroll {", 1)[1]
+        self.assertNotIn("if root.tab == 10 && GpuCompatibility.enabled: PaneScroll {", pages)
+        self.assertNotIn("if root.tab == 1 && GpuCompatibility.enabled && root.text-category == 1: PaneScroll {", pages)
+        self.assertIn("if root.tab == 10 && GpuCompatibility.enabled: VerticalLayout {", pages)
+        self.assertIn("if root.tab == 1 && GpuCompatibility.enabled && root.text-category == 1: CaptionPresetPreviewPanel {", pages)
+        for page in ("root.animation-page == 0", "root.animation-page == 1", "root.animation-page == 2"):
+            self.assertIn(page, pages)
+        for panel in ("CanvasMotionPanel", "CanvasPresetPanel", "MediaLayoutPanel { canvas: false; }", "MediaLayoutPanel { canvas: true; }"):
+            self.assertIn(panel, pages)
+
+    def test_explicit_transform_canvas_scopes_and_selection_fallback(self):
+        layout = (ROOT / "ui/workspace/media-layout.slint").read_text(encoding="utf-8")
+        for item in ("root.selected.count == 0", "root.selected.count > 1",
+                     "root.apply(3, true);", "root.apply(3, false);",
+                     "root.videos, true);", "root.videos, false);",
+                     'label: "Fit";', 'label: "Fill";'):
+            self.assertIn(item, layout)
+
+    def test_caption_gallery_preview_staged_separately_from_apply(self):
+        gallery = (ROOT / "ui/workspace/caption-preset-preview.slint").read_text(encoding="utf-8")
+        for item in ("CaptionPresetPreview.cards.length == 0", "min-card: 144px",
+                     "CaptionPresetPreview.stage(card.id);",
+                     "CaptionPresetPreview.apply(false);", "CaptionPresetPreview.apply(true);",
+                     "CaptionPresetPreview.cancel();", "CaptionPresetPreview.demo-toggle();"):
+            self.assertIn(item, gallery)
+        preview = (ROOT / "ui/workspace/preview-pane.slint").read_text(encoding="utf-8")
+        self.assertIn("CaptionPreviewBadge", preview)
 
     def test_generate_captions_reuses_existing_sheet(self):
         self.assertIn('label: "Generate Captions";', MEDIA)
