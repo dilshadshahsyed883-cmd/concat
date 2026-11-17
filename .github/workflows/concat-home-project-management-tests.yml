@@ -13,6 +13,18 @@ on:
       - 'upstream/src/crates/concat/tests/test_*project*.py'
       - 'tools/home-project-source-check/**'
       - '.github/workflows/concat-home-project-management-tests.yml'
+  pull_request:
+    paths:
+      - 'upstream/src/crates/concat-host/src/projects.rs'
+      - 'upstream/src/crates/concat-host/src/project_delete.rs'
+      - 'upstream/src/crates/concat-host/src/lib.rs'
+      - 'upstream/src/crates/concat/src/panes/start.rs'
+      - 'upstream/src/crates/concat/src/studio.rs'
+      - 'upstream/src/crates/concat/ui/start.slint'
+      - 'upstream/src/crates/concat/ui/dialogs/confirm.slint'
+      - 'upstream/src/crates/concat/tests/test_*project*.py'
+      - 'tools/home-project-source-check/**'
+      - '.github/workflows/concat-home-project-management-tests.yml'
   workflow_dispatch:
 
 permissions:
