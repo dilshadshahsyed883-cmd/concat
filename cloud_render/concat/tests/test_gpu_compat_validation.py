@@ -142,10 +142,15 @@ class GpuManifestValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "source start"):
             validate_gpu_manifest(document)
 
-    def test_denies_non_jpeg_image_before_upload(self):
+    def test_accepts_png_and_jpeg_before_upload_and_rejects_other_images(self):
         document = minimal_project()
-        document["media"][0]["path"] = "picture.png"
-        with self.assertRaisesRegex(ValueError, "JPEG"):
+        for filename in ("picture.png", "PICTURE.PNG", "picture.jpg", "picture.jpeg"):
+            with self.subTest(filename=filename):
+                document["media"][0]["path"] = filename
+                self.assertEqual(validate_gpu_manifest(document)["id"], "timeline")
+        document["media"][0]["path"] = "picture.gif"
+        document["timelines"][0]["clips"][0]["id"] = "c200"
+        with self.assertRaisesRegex(ValueError, r"c200.*JPEG or PNG"):
             validate_gpu_manifest(document)
 
     def test_native_caption_preserves_font_position_shadow_and_frame_boundaries(self):
