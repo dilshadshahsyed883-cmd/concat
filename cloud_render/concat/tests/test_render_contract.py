@@ -55,6 +55,7 @@ class RenderContractTests(unittest.TestCase):
             ("case-changed-id", lambda c: c.update(render_contract={"id": RENDER_CONTRACT_ID.upper(), "version": 1})),
             ("missing-version", lambda c: c.update(render_contract={"id": RENDER_CONTRACT_ID})),
             ("null-contract", lambda c: c.update(render_contract=None)),
+            ("array-contract", lambda c: c.update(render_contract=[{"id": RENDER_CONTRACT_ID, "version": 1}])),
             ("invalid-type", lambda c: c.update(render_contract="invalid")),
         ):
             with self.subTest(name=name):

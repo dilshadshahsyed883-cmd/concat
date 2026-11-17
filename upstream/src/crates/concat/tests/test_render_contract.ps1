@@ -26,6 +26,16 @@ foreach ($version in @([int]1,[long]1)) {
     $caps = Test-Worker "https://fixture.invalid" $auth
     if ($caps.gpu_captions.available) {throw "Contract must not imply GPU ASR availability"}
 }
+function Assert-ContractRejected($bad) {
+    $script:contract = $bad
+    $rejected = $false
+    try {Test-Worker "https://fixture.invalid" $auth | Out-Null}
+    catch {
+        if ($_.Exception.Message -notlike "*render contract mismatch*") {throw}
+        $rejected = $true
+    }
+    if (!$rejected) {throw "Malformed or mismatched render contract accepted"}
+}
 foreach ($bad in @(
     $null,
     @{},
@@ -37,15 +47,11 @@ foreach ($bad in @(
     @{id="concat-cuda-hybrid-v1"; version=[double]1},
     @{id="concat-cuda-hybrid-v1"}
 )) {
-    $script:contract = $bad
-    $rejected = $false
-    try {Test-Worker "https://fixture.invalid" $auth | Out-Null}
-    catch {
-        if ($_.Exception.Message -notlike "*render contract mismatch*") {throw}
-        $rejected = $true
-    }
-    if (!$rejected) {throw "Malformed or mismatched render contract accepted"}
+    Assert-ContractRejected $bad
 }
+# PowerShell member enumeration can otherwise turn a one-element contract array
+# into valid-looking .id/.version values, whereas worker restore requires an object.
+Assert-ContractRejected -bad @(@{id="concat-cuda-hybrid-v1"; version=1})
 if (@($script:calls | Where-Object {$_ -notmatch '/(health/ready|api/diagnostics/gpu|api/capabilities)$'}).Count) {
     throw "Handshake attempted a render or upload"
 }
