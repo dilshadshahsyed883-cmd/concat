@@ -345,7 +345,7 @@ if ([String]::IsNullOrWhiteSpace($target)) { throw 'Missing project directory' }
     // short enough for its legacy APIs; otherwise fail rather than strip a
     // prefix and accidentally target a different file.
     let text = path.to_string_lossy();
-    let shell_path = if let Some(local) = text.strip_prefix(r"\\?\\") {
+    let shell_path = if let Some(local) = text.strip_prefix(r"\\?\") {
         if local.len() >= 248 || local.starts_with("UNC\\") {
             return Err("Windows Recycle Bin cannot safely handle this extended-length or UNC project path; no permanent delete attempted".into());
         }
