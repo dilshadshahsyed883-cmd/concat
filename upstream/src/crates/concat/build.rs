@@ -7,7 +7,11 @@
 fn main() {
     println!("cargo:rerun-if-env-changed=CONCAT_BUILD_SHA");
     let source_sha = std::env::var("CONCAT_BUILD_SHA").unwrap_or_else(|_| "unknown".into());
-    assert!(source_sha == "unknown" || (source_sha.len() == 40 && source_sha.bytes().all(|b| b.is_ascii_hexdigit())), "invalid source revision");
+    assert!(
+        source_sha == "unknown"
+            || (source_sha.len() == 40 && source_sha.bytes().all(|b| b.is_ascii_hexdigit())),
+        "invalid source revision"
+    );
     println!("cargo:rustc-env=BUILD_SOURCE_SHA={source_sha}");
     // Fonts and images are compiled into the binary rather than read off disk
     // at run time.
