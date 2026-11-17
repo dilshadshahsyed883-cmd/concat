@@ -22,6 +22,10 @@ jobs:
         with:
           toolchain: '1.93.0'
           components: rustfmt
+      - name: Install FFmpeg for real-media ZIP and caption audio fixtures
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'

@@ -25,6 +25,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Install FFmpeg for real-media ZIP and caption audio fixtures
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
