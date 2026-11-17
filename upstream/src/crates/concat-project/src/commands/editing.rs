@@ -449,7 +449,16 @@ pub(super) fn apply(
                         != Some(true)
                     || !matches!(
                         object.get("preset").and_then(serde_json::Value::as_str),
-                        Some("purple-word" | "yellow-bar" | "classic")
+                        Some("purple-word" | "yellow-bar" | "classic"
+                            | "cuda-caption.classic-subtitle"
+                            | "cuda-caption.bold-highlight"
+                            | "cuda-caption.cinematic-title"
+                            | "cuda-caption.minimal-clean"
+                            | "cuda-caption.news-alert"
+                            | "cuda-caption.modern-accent"
+                            | "cuda-caption.karaoke-highlight"
+                            | "cuda-caption.preset-1-purple-word"
+                            | "cuda-caption.preset-2-yellow-bar")
                     )
                 {
                     return Err(refused(
