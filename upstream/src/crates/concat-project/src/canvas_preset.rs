@@ -713,6 +713,58 @@ pub fn apply(
 mod tests {
     use super::*;
     use crate::model::{MediaItem, MediaKind};
+    fn assert_no_canvas_headline(project: &Project) {
+        assert!(project.active().clips.iter().all(|clip| {
+            !matches!(
+                clip.extra.get("canvasRole").and_then(Value::as_str),
+                Some("headline" | "headlineText")
+            )
+        }));
+        assert!(project.active().tracks.iter().all(|lane| {
+            !matches!(
+                lane.extra.get("canvasRole").and_then(Value::as_str),
+                Some("headline" | "banner")
+            )
+        }));
+    }
+    fn add_real_caption(project: &mut Project) {
+        let mut caption = Clip::blank(
+            "real-caption",
+            "T1",
+            ClipKind::Text,
+            "Real user caption",
+            2.5,
+            1.5,
+        );
+        caption.text = Some(TextStyle {
+            content: "Author's own caption".into(),
+            ..TextStyle::default()
+        });
+        project.active_mut().clips.push(Arc::new(caption));
+    }
+
+    fn legacy_bar(project: &mut Project, mint: &mut IdMint, cfg: &Config) -> String {
+        project
+            .active_mut()
+            .clip_mut("c1")
+            .unwrap()
+            .extra
+            .insert("canvasPreset".into(), serde_json::to_value(cfg).unwrap());
+        let lane = track(project, mint, "T1", "banner", false);
+        let bar = rectangle(
+            mint,
+            project.active().clip("c1").unwrap(),
+            &lane,
+            "headline",
+            cfg.headline.rect,
+            &cfg.headline.background,
+            cfg.headline.radius,
+            cfg.headline.opacity,
+        );
+        let id = bar.id.clone();
+        project.active_mut().clips.push(bar);
+        id
+    }
     fn fixture() -> (Project, IdMint) {
         let mut p = Project::new();
         p.media.push(MediaItem {
@@ -741,6 +793,7 @@ mod tests {
                 Config::from_json(&serde_json::to_string(&p).unwrap()).unwrap()
             );
             assert!(p.headline.text.is_empty());
+            assert!(!p.headline.enabled);
             assert!(!p.badge.enabled);
         }
     }
@@ -748,6 +801,9 @@ mod tests {
     fn native_layers_preserve_media_timing_and_reapplication_replaces_owned_layers() {
         let (mut p, mut m) = fixture();
         let mut c = Config::preset(2).unwrap();
+        // Even a legacy profile explicitly enabling a headline cannot
+        // make a canvas-generated title/bar. Badge is still opt-in.
+        c.headline.enabled = true;
         c.headline.text = "editable headline".into();
         c.badge.enabled = true;
         apply(&mut p, &mut m, c.clone(), vec!["c1".into()], vec![]).unwrap();
@@ -759,14 +815,191 @@ mod tests {
         );
         assert_eq!(source.media_id, "m1");
         assert!(source.scale < 1.0);
-        assert!(
-            p.active().clips.iter().any(|c| c.kind == ClipKind::Text
-                && c.text.as_ref().unwrap().content == "EDITABLE HEADLINE")
-        );
+        assert_no_canvas_headline(&p);
+        assert!(p.active().clips.iter().any(|c|
+            c.extra.get("canvasRole") == Some(&json!("badgeText"))));
         apply(&mut p, &mut m, c, vec!["c1".into()], vec![]).unwrap();
         assert_eq!(count, p.active().clips.len());
         assert_eq!(p.media.len(), 1);
     }
+    #[test]
+    fn selected_and_all_canvas_apply_preserve_real_captions_and_other_source() {
+        for preset in 1..=3 {
+            let (mut project, mut mint) = fixture();
+            let mut second = Clip::blank("c2", "T1", ClipKind::Video, "second", 7.0, 2.0);
+            second.media_id = "m1".into();
+            project.active_mut().clips.push(Arc::new(second));
+            add_real_caption(&mut project);
+            let original_caption =
+                serde_json::to_value(project.active().clip("real-caption").unwrap()).unwrap();
+            let original_second =
+                serde_json::to_value(project.active().clip("c2").unwrap()).unwrap();
+
+            let cfg = Config::preset(preset).unwrap();
+            apply(&mut project, &mut mint, cfg.clone(), vec!["c1".into()], vec![]).unwrap();
+            assert_no_canvas_headline(&project);
+            assert_eq!(
+                serde_json::to_value(project.active().clip("c2").unwrap()).unwrap(),
+                original_second
+            );
+            assert_eq!(
+                serde_json::to_value(project.active().clip("real-caption").unwrap()).unwrap(),
+                original_caption
+            );
+            apply(
+                &mut project,
+                &mut mint,
+                cfg,
+                vec!["c1".into(), "c2".into()],
+                vec![],
+            )
+            .unwrap();
+            assert_no_canvas_headline(&project);
+            for id in ["c1", "c2"] {
+                let foreground = project.active().clip(id).unwrap();
+                assert!(foreground.extra.get("canvasPreset").is_some());
+                assert_eq!(foreground.background, Some(Background::None));
+            }
+            assert_eq!(
+                serde_json::to_value(project.active().clip("real-caption").unwrap()).unwrap(),
+                original_caption
+            );
+            assert!(project.active().clips.iter().all(|c|
+                !c.name.to_lowercase().contains("canvas headline")));
+        }
+    }
+
+    #[test]
+    fn reapply_removes_only_untouched_legacy_bars_and_empty_tracks() {
+        let (mut project, mut mint) = fixture();
+        add_real_caption(&mut project);
+        apply(
+            &mut project,
+            &mut mint,
+            Config::preset(1).unwrap(),
+            vec!["c1".into()],
+            vec![],
+        )
+        .unwrap();
+        let mut old = Config::preset(1).unwrap();
+        old.headline.enabled = true;
+        let legacy_id = legacy_bar(&mut project, &mut mint, &old);
+        let caption_before =
+            serde_json::to_value(project.active().clip("real-caption").unwrap()).unwrap();
+        apply(
+            &mut project,
+            &mut mint,
+            Config::preset(2).unwrap(),
+            vec!["c1".into()],
+            vec![],
+        )
+        .unwrap();
+        assert_no_canvas_headline(&project);
+        assert!(project.active().clip(&legacy_id).is_none());
+        assert_eq!(
+            serde_json::to_value(project.active().clip("real-caption").unwrap()).unwrap(),
+            caption_before
+        );
+    }
+
+    #[test]
+    fn reapply_refuses_customized_legacy_headlines_without_changing_project() {
+        let (mut project, mut mint) = fixture();
+        apply(
+            &mut project,
+            &mut mint,
+            Config::preset(1).unwrap(),
+            vec!["c1".into()],
+            vec![],
+        )
+        .unwrap();
+        let mut old = Config::preset(1).unwrap();
+        old.headline.enabled = true;
+        let id = legacy_bar(&mut project, &mut mint, &old);
+        project.active_mut().clip_mut(&id).unwrap().opacity = 0.42;
+        let previous = serde_json::to_value(&project).unwrap();
+        let error = apply(
+            &mut project,
+            &mut mint,
+            Config::preset(3).unwrap(),
+            vec!["c1".into()],
+            vec![],
+        );
+        assert!(error.is_err());
+        assert_eq!(serde_json::to_value(&project).unwrap(), previous);
+
+        // Previously authored headline text must also be handled explicitly.
+        project.active_mut().clip_mut(&id).unwrap().opacity = 1.0;
+        let caption_lane = track(&mut project, &mut mint, "T1", "headline", false);
+        let mut title = Clip::blank(
+            mint.next("c"),
+            &caption_lane,
+            ClipKind::Text,
+            "Canvas headline text",
+            2.0,
+            4.0,
+        );
+        title.text = Some(TextStyle {
+            content: "My edited lower-third".into(),
+            ..TextStyle::default()
+        });
+        project.active_mut().clips.push(tagged(title, "c1", "headlineText"));
+        let before_text = serde_json::to_value(&project).unwrap();
+        assert!(apply(
+            &mut project,
+            &mut mint,
+            Config::preset(2).unwrap(),
+            vec!["c1".into()],
+            vec![],
+        )
+        .is_err());
+        assert_eq!(serde_json::to_value(&project).unwrap(), before_text);
+    }
+
+    #[test]
+    fn canvas_apply_undo_redo_and_save_reopen_stay_caption_free() {
+        let (mut project, _) = fixture();
+        project.media[0].path = "source.mp4".into();
+        add_real_caption(&mut project);
+        let settings = crate::doc::DocumentSettings {
+            name: "Canvas undo and GPU fixture".into(),
+            width: 1920,
+            height: 1080,
+            rate_num: 30,
+            rate_den: 1,
+        };
+        let document = crate::doc::to_document(&settings, &project);
+        for preset in 1..=3 {
+            let mut editor = crate::editor::Editor::from_document(&document).unwrap();
+            let before = serde_json::to_value(editor.project()).unwrap();
+            editor
+                .apply(crate::commands::Command::ApplyCanvasPreset {
+                    config: Config::preset(preset).unwrap(),
+                    targets: vec!["c1".into()],
+                    locked_tracks: vec![],
+                })
+                .unwrap();
+            let after = serde_json::to_value(editor.project()).unwrap();
+            assert_ne!(before, after);
+            assert_no_canvas_headline(editor.project());
+            assert!(editor.undo());
+            assert_eq!(serde_json::to_value(editor.project()).unwrap(), before);
+            assert!(editor.redo());
+            assert_eq!(serde_json::to_value(editor.project()).unwrap(), after);
+            let gpu_doc = editor.to_document(&settings);
+            let reopened = crate::doc::from_document(&gpu_doc).unwrap();
+            assert_no_canvas_headline(&reopened);
+            assert_eq!(
+                reopened.active().clip("real-caption").unwrap().text.as_ref().unwrap().content,
+                "Author's own caption"
+            );
+            // The GPU ZIP consumes the same serialized track/clip data.
+            assert_eq!(reopened.active().clip("c1").unwrap().media_id, "m1");
+            assert!(reopened.active().clips.iter().any(|clip|
+                clip.extra.get("canvasRole") == Some(&json!("backdrop"))));
+        }
+    }
+
     #[test]
     fn invalid_or_locked_targets_leave_project_untouched() {
         let (mut p, mut m) = fixture();
@@ -870,6 +1103,7 @@ mod tests {
                     p.media[0].height = Some(1080);
                 }
                 let mut config = Config::preset(number).unwrap();
+                config.headline.enabled = true;
                 config.headline.text = "Editable headline".into();
                 config.badge.enabled = true;
                 apply(&mut p, &mut mint, config, vec!["c1".into()], vec![]).unwrap();
@@ -884,6 +1118,7 @@ mod tests {
                 let reopened = crate::doc::from_document(&doc).unwrap();
                 assert_eq!(reopened.active().clips.len(), p.active().clips.len());
                 assert_eq!(reopened.active().clip("c1").unwrap().media_id, "m1");
+                assert_no_canvas_headline(&reopened);
                 if let Ok(folder) = std::env::var("CONCAT_CANVAS_FIXTURE_DIR") {
                     std::fs::create_dir_all(&folder).unwrap();
                     std::fs::write(
