@@ -25,6 +25,7 @@ enum Action {
     Prepare,
     Upload,
     Status,
+    Cancel,
 }
 
 impl Action {
@@ -33,6 +34,7 @@ impl Action {
             Self::Prepare => "Prepare",
             Self::Upload => "Upload",
             Self::Status => "Status",
+            Self::Cancel => "Cancel",
         }
     }
 }
@@ -303,7 +305,11 @@ impl Controller {
                 } else {
                     "Cancelled before submission.".into()
                 };
+                let remote_cancel = (submitted && !job.domain.is_empty()).then(|| job.clone());
                 self.data.started = false;
+                if let Some(job) = remote_cancel {
+                    self.launch(Action::Cancel, job);
+                }
                 // Keep in-flight flags set until the helper exits. Starting
                 // another upload before the aborted process ends is unsafe.
                 self.note = "Queue paused after cancellation. Click Start Queue to continue.".into();
@@ -551,11 +557,19 @@ impl Controller {
                         self.next_poll = Instant::now() + Duration::from_secs(4);
                     }
                     Action::Upload => self.uploading = false,
+                    Action::Cancel => {},
                 }
                 let Some(job) = self.data.jobs.iter_mut().find(|job| job.id == id) else {
                     return;
                 };
                 if job.phase == Phase::Cancelled {
+                    if action == Action::Cancel {
+                        job.detail = match result {
+                            Ok(()) => "Cancelled locally; worker cancellation requested.".into(),
+                            Err(_) => "Cancelled locally. Worker cancellation was not confirmed; reconnect to check the remote job.".into(),
+                        };
+                        self.save();
+                    }
                     return;
                 }
                 match action {

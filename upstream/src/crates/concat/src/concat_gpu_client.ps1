@@ -2,7 +2,7 @@
 # Embedded in the actual Concat Windows EXE. No additional desktop editor.
 # Use only the existing SaladCloud Gateway and existing VPS receiver.
 param(
-    [ValidateSet("Submit","Save","Test","Prepare","Upload","Status","Retry","OfflineBundle")][string]$Operation="Submit",
+    [ValidateSet("Submit","Save","Test","Prepare","Upload","Status","Retry","Cancel","OfflineBundle")][string]$Operation="Submit",
     [string]$ProjectDir,
     [string]$Job,
     [string]$SnapshotID,
@@ -524,6 +524,19 @@ function Queue-Status([string]$job,[string]$domain,$headers,[string]$gpuDataDir)
     }
 }
 
+function Invoke-QueueControl([string]$operation,[string]$job,[string]$domain,$headers,[string]$gpuDataDir) {
+    if ($operation -notin "Status","Retry","Cancel") {throw "Unsupported queue control operation."}
+    if ($operation -in "Retry","Cancel") {
+        $endpoint=if ($operation -eq "Retry") {"retry"} else {"cancel"}
+        Invoke-RestMethod -Method Post -MaximumRedirection 0 -Uri "$domain/api/jobs/$job/$endpoint" -Headers $headers -TimeoutSec 20 | Out-Null
+    }
+    if ($operation -eq "Cancel") {
+        Report "Worker cancellation requested." -1 "" $false "cancelled"
+        return
+    }
+    Queue-Status $job $domain $headers $gpuDataDir
+}
+
 if ($DefineOnly) {return}
 if ($BundleOnly) {
     if (!$BundlePath) {throw "Offline bundle test requires -BundlePath"}
@@ -581,7 +594,7 @@ $headers=$null
 try {
     if (!$env:LOCALAPPDATA) {throw "Windows did not provide a local application data directory."}
     $gpuDataDir=Join-Path $env:LOCALAPPDATA "Concat\GPU"
-    if ($Operation -in "Prepare","Upload","Status","Retry") {
+    if ($Operation -in "Prepare","Upload","Status","Retry","Cancel") {
         if ($Job -cnotmatch '^concat-cuda-[a-f0-9]{16}$' -or
             $SnapshotID -cnotmatch '^concat-cuda-[a-f0-9]{16}$') {throw "Invalid queue job identifier."}
         $queueDir=Join-Path $gpuDataDir "Queue"
@@ -608,8 +621,12 @@ try {
     }
     $config=Resolve-Connection $saved $draft
     $headers=New-ConnectionHeaders $config
-    if ($Operation -in "Upload","Status") {
+    if ($Operation -in "Upload","Status","Retry","Cancel") {
         if ($config.domain -ne $JobDomain) {throw "Restore the saved worker address for this job before resuming."}
+        if ($Operation -eq "Cancel") {
+            Invoke-QueueControl $Operation $Job $config.domain $headers $gpuDataDir
+            return
+        }
         if ($Operation -eq "Upload") {
             try {
                 # A helper can outlive the editor. Its lease prevents the
@@ -631,8 +648,7 @@ try {
                 Report "Upload verified. Waiting for GPU rendering ($formatted)." 100 "" $false "uploaded" "" $zipSize $zipSize
             } finally {$lease.Dispose()}
         } else {
-            if ($Operation -eq "Retry") {Invoke-RestMethod -Method Post -MaximumRedirection 0 -Uri "$($config.domain)/api/jobs/$Job/retry" -Headers $headers -TimeoutSec 20 | Out-Null}
-            Queue-Status $Job $config.domain $headers $gpuDataDir
+            Invoke-QueueControl $Operation $Job $config.domain $headers $gpuDataDir
         }
         return
     }

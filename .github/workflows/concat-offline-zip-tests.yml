@@ -58,3 +58,6 @@ jobs:
           # rejected overwrite (nonzero child exit), so LASTEXITCODE remains
           # nonzero even when every assertion passed.
           & ./upstream/src/crates/concat/tests/test_offline_zip_only.ps1
+      - name: Verify authenticated GPU caption retry/cancel without network
+        shell: pwsh
+        run: ./upstream/src/crates/concat/tests/test_gpu_caption_queue_controls.ps1
