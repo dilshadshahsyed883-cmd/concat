@@ -205,8 +205,13 @@ NATIVE_COLOR_PASSES = {EXPOSURE: apply_exposure, CONTRAST: apply_contrast}
 
 def picture(sources, clip, index, tail=False, *, force_opacity=False, placement_index=None,
             return_background=False):
-    pixels = (sources.shape(clip.shape) if clip.kind == "shape" else
-              sources.image(clip.path) if clip.kind == "image" else sources.video(clip, index, tail))
+    if clip.kind == "image":
+        try:
+            pixels = sources.image(clip.path)
+        except (ValueError, OSError, RuntimeError) as error:
+            raise ValueError(f"GPU clip {clip.id} image {clip.path}: {error}") from error
+    else:
+        pixels = sources.shape(clip.shape) if clip.kind == "shape" else sources.video(clip, index, tail)
     if clip.flip_h:
         pixels = pixels[:, ::-1]
     if clip.flip_v:
