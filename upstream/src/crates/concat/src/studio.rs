@@ -2119,8 +2119,8 @@ pub enum Confirm {
     /// this a disk unplugged, full or read-only made a window that would
     /// never close.
     QuitWithoutSaving { error: String },
-    /// Removing a project from Recent Projects.
-    DeleteRecent { path: String, name: String },
+    /// Moving an explicitly confirmed, validated project into Windows Recycle Bin.
+    DeleteRecent { path: String, name: String, resolved_path: String },
 }
 
 /// One clip on the clipboard: the clip as it was when copied, and the row
@@ -2525,10 +2525,26 @@ impl Studio {
                 self.release_project();
                 slint::quit_event_loop().ok();
             }
-            Some(Confirm::DeleteRecent { path, .. }) => {
-                if let Err(error) = concat_host::projects::forget(&self.host.dirs.config, &path) {
-                    self.notify(&error, true);
+            Some(Confirm::DeleteRecent { path, name, .. }) => {
+                // No deletion of an active edit or anything with pending unsaved
+                // changes. The backend checks the selected manifest, linked
+                // folders and other project references again before recycling.
+                if self.session.is_some() || self.dirty {
+                    self.notify("Close and save the active project before deleting another project", true);
+                } else {
+                    match concat_host::project_delete::recycle(
+                        &self.host.dirs.config, &path, &name, None,
+                    ) {
+                        Ok(()) => {
+                            self.posters.remove(&path);
+                            self.lengths.remove(&path);
+                            self.notify("Project moved to the Windows Recycle Bin", false);
+                        }
+                        Err(error) => self.notify(&error, true),
+                    }
                 }
+                // The actual filesystem is authoritative: an error must never
+                // hide a card whose directory still exists.
                 self.recents = concat_host::projects::recents(&self.host.dirs.config);
             }
             None => {}
@@ -2558,6 +2574,7 @@ impl Studio {
                     title: t("timeline.deleteTrackTitle").into(),
                     message: message.into(),
                     action: t("common.delete").into(),
+                    required_name: "".into(),
                 }
             }
             Confirm::ReplaceExport { path } => crate::ui::ConfirmData {
@@ -2565,18 +2582,23 @@ impl Studio {
                 title: t("export.replaceFileTitle").into(),
                 message: tf("export.replaceFileMessage", &[path]).into(),
                 action: t("export.replace").into(),
+                required_name: "".into(),
             },
             Confirm::QuitWithoutSaving { error } => crate::ui::ConfirmData {
                 open: true,
                 title: t("close.unsavedTitle").into(),
                 message: tf("close.unsavedMessage", &[error]).into(),
                 action: t("close.quitWithoutSaving").into(),
+                required_name: "".into(),
             },
-            Confirm::DeleteRecent { name, .. } => crate::ui::ConfirmData {
+            Confirm::DeleteRecent { name, resolved_path, .. } => crate::ui::ConfirmData {
                 open: true,
-                title: t("start.deleteRecentTitle").into(),
-                message: tf("start.deleteRecentMessage", &[name]).into(),
-                action: t("common.delete").into(),
+                title: "Delete Project from disk".into(),
+                message: format!(
+                    "Project: {name}\\nFolder: {resolved_path}\\n\\nMove this entire folder to the Windows Recycle Bin? Original media outside this folder will be left alone. Type the exact project name below to confirm. Remove from Recent is a separate, list-only action."
+                ).replace("\\n", "\n").into(),
+                action: "Move to Recycle Bin".into(),
+                required_name: name.as_str().into(),
             },
         }
     }
