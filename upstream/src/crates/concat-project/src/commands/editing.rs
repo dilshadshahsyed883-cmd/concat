@@ -501,6 +501,25 @@ pub(super) fn apply(
                 ));
             }
             let commands = artifact.commands().map_err(|e| refused(&e))?;
+            // Import exact speech timing, then restore the user's saved look
+            // rather than replacing nine gallery styles with a legacy default.
+            let native_id = match artifact.preset.as_str() {
+                "yellow-bar" => "cuda-caption.preset-2-yellow-bar",
+                "purple-word" => "cuda-caption.preset-1-purple-word",
+                "classic" => "cuda-caption.classic-subtitle",
+                other => other,
+            };
+            let saved_preset = staged.extra.get("captionPreset")
+                .filter(|settings| settings.get("presetId")
+                    .and_then(serde_json::Value::as_str) == Some(native_id));
+            let saved_style = saved_preset
+                .and_then(|settings| settings.get("style"))
+                .and_then(|value| serde_json::from_value::<TextStyle>(value.clone()).ok());
+            let saved_offset_y = saved_preset
+                .and_then(|settings| settings.get("position"))
+                .and_then(|position| position.get("offsetY"))
+                .and_then(serde_json::Value::as_f64)
+                .filter(|y| y.is_finite() && (0.0..=0.45).contains(y));
             staged.active_mut().clips.retain(|c| {
                 c.extra
                     .get("gpuCaptionSource")
@@ -512,10 +531,27 @@ pub(super) fn apply(
                 let outcome = super::apply(&mut staged, mint, command)?;
                 if let Some(id) = &outcome.created_id {
                     if let Some(index) = staged.active().clips.iter().position(|c| &c.id == id) {
-                        staged.active_mut().clip_at_mut(index).extra.insert(
+                        let clip = staged.active_mut().clip_at_mut(index);
+                        clip.extra.insert(
                             "gpuCaptionSource".into(),
                             serde_json::Value::String(artifact.source_clip_id.clone()),
                         );
+                        if let (Some(saved), Some(generated)) =
+                            (saved_style.as_ref(), clip.text.as_ref()) {
+                            let mut styled = saved.clone();
+                            styled.content = generated.content.clone();
+                            styled.karaoke_words = generated.karaoke_words.clone();
+                            styled.karaoke_word = None;
+                            // Never show fake karaoke alignment without true word times.
+                            if styled.karaoke_words.is_empty() {
+                                styled.karaoke = false;
+                                styled.karaoke_background.clear();
+                            }
+                            clip.text = Some(styled);
+                        }
+                        if let Some(y) = saved_offset_y {
+                            clip.offset_y = y;
+                        }
                     }
                 }
                 created = outcome.created_id;
