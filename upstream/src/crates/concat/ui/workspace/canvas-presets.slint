@@ -16,7 +16,7 @@ export component CanvasPresetPanel inherits VerticalLayout {
         Button { label: "Orange Frame"; clicked => { CanvasPresets.choose(2); } }
         Button { label: "Blurred Fill"; clicked => { CanvasPresets.choose(3); } }
     }
-    Text { text: "Edit headline, badge, fonts, colors, inset, border, blur and safe-area positions below. Layout layers stay editable in the timeline.";
+    Text { text: "Canvas changes framing, borders and background only. No headline/caption bar is generated. Add real captions in Text > Captions. Legacy JSON headline fields are ignored; optional badge and visual layout settings remain editable.";
         color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
     Rectangle {
         height: 220px; background: Theme.field; border-radius: Theme.r;
