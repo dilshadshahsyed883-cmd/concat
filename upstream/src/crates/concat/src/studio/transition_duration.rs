@@ -198,8 +198,9 @@ mod tests {
                 "duration":2., "sourceStart":0.2, "scale":1.2, "offsetX":0.1});
             if index > 0 {
                 let id = ["concat.fade-black", "concat.clock-wipe", "concat.paper-rip-vertical"][(index - 1) % 3];
-                clip["transitionIn"] = json!({"id":id, "duration":[1.,0.5,0.75][(index - 1) % 3],
-                    "intensity":[0.5,0.6,0.4][(index - 1) % 3]});
+                let duration = [1.0, 0.5, 0.75][(index - 1) % 3];
+                let intensity = [0.5, 0.6, 0.4][(index - 1) % 3];
+                clip["transitionIn"] = json!({"id":id, "duration":duration, "intensity":intensity});
                 if id == "concat.paper-rip-vertical" {
                     clip["transitionIn"]["params"] = json!({"roughness":0.6,"seed":42});
                 }
