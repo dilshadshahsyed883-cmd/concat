@@ -111,6 +111,21 @@ export global Editor {
     in-out property <bool> cb-videos-enabled;
     in-out property <string> cb-image-selection-summary;
     in-out property <string> cb-video-selection-summary;
+    in-out property <string> cb-plan-name;
+    in-out property <string> cb-plan-opening;
+    in-out property <string> cb-plan-closing;
+    in-out property <string> cb-plan-image-min;
+    in-out property <string> cb-plan-image-max;
+    in-out property <string> cb-plan-video-min;
+    in-out property <string> cb-plan-video-max;
+    in-out property <string> cb-plan-max-videos;
+    in-out property <string> cb-plan-max-images;
+    in-out property <string> cb-plan-cooldown;
+    in-out property <string> cb-plan-seed;
+    callback cb-tune-profile(json:string, name:string, opening:string, closing:string,
+        image-min:string, image-max:string, video-min:string, video-max:string,
+        max-videos:string, max-images:string, cooldown:string, seed:string);
+    callback cb-equalize-keywords(json:string, video:bool);
     callback cb-keyword-changed(json: string, video: bool, keyword: string, selected: bool, weight: int);
     callback cb-videos-toggled(json: string, on: bool);
     in-out property <string> cb-preview;
