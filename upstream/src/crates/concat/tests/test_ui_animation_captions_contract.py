@@ -109,6 +109,16 @@ class DesktopUiContractTests(unittest.TestCase):
         preview = (ROOT / "ui/workspace/preview-pane.slint").read_text(encoding="utf-8")
         self.assertIn("CaptionPreviewBadge", preview)
 
+    def test_canvas_preset_all_actions_are_not_selection_limited(self):
+        motion = (ROOT / "ui/workspace/canvas-motion.slint").read_text(encoding="utf-8")
+        presets = (ROOT / "ui/workspace/canvas-presets.slint").read_text(encoding="utf-8")
+        self.assertIn('label: "Apply Selected"', motion)
+        self.assertIn('label: "Apply All"', motion)
+        self.assertIn("root.images, root.videos, false, root.settings", motion)
+        self.assertIn('label: "Apply Selected"', presets)
+        self.assertIn('label: "Apply All"', presets)
+        self.assertIn("CanvasPresets.apply(CanvasPresets.profile, true", presets)
+
     def test_generate_captions_reuses_existing_sheet(self):
         self.assertIn('label: "Generate Captions";', MEDIA)
         self.assertIn("root.generate-captions();", MEDIA)
