@@ -22,3 +22,8 @@ pub mod c_builder;
 
 #[path = "../../../upstream/src/crates/concat/src/c_builder_used.rs"]
 pub mod c_builder_used;
+
+// Exercise the real Transition inspector planner and native undo/serialization
+// with the same project-only source harness; no desktop linking is needed.
+#[path = "../../../upstream/src/crates/concat/src/studio/transition_duration.rs"]
+pub mod transition_duration;

@@ -12,6 +12,12 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+# Works both as a Python module and when invoked directly as an offline CLI.
+try:
+    from cloud_render.concat.hybrid.contract import RENDER_CONTRACT_ID, RENDER_CONTRACT_VERSION
+except ModuleNotFoundError:
+    from hybrid.contract import RENDER_CONTRACT_ID, RENDER_CONTRACT_VERSION
+
 PROJECT_NAMES = ("concat.json", "wolfcut.json")
 SAFE_MEDIA = re.compile(r"media/[a-f0-9]{32}(?:\.[a-z0-9]{1,12})?")
 LIMIT = 500 * 1024 ** 3
@@ -81,7 +87,8 @@ def pack(root: Path, destination: Path) -> dict:
             seen[identity] = (member, source, sha256(source), size)
         member, _, digest, size = seen[identity]
         references.append({"index": index, "member": member, "sha256": digest, "size": size})
-    control = {"version": 1, "project_file": manifest_name, "references": references}
+    control = {"version": 1, "project_file": manifest_name, "references": references,
+               "render_contract": {"id": RENDER_CONTRACT_ID, "version": RENDER_CONTRACT_VERSION}}
     destination.parent.mkdir(parents=True, exist_ok=True)
     try:
         with zipfile.ZipFile(destination, "x", allowZip64=True) as bundle:
@@ -114,6 +121,14 @@ def restore(archive: Path, destination: Path) -> dict:
             control = json.loads(bundle.read("bundle.json"))
             if control.get("version") != 1 or control.get("project_file") not in PROJECT_NAMES:
                 raise TransferError("Unsupported bundle format")
+            # Older stored v1 ZIPs had no contract field: retain recovery/retry support.
+            # New ZIPs must identify this worker's exact render manifest contract.
+            declared = control.get("render_contract")
+            if "render_contract" in control and (not isinstance(declared, dict)
+                    or declared.get("id") != RENDER_CONTRACT_ID
+                    or type(declared.get("version")) is not int
+                    or declared["version"] != RENDER_CONTRACT_VERSION):
+                raise TransferError("Concat ZIP render contract does not match this Salad worker image")
             project_name = control["project_file"]
             refs = control.get("references")
             if not isinstance(refs, list) or len(refs) > 20000:

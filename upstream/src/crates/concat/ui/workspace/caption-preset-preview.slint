@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Caption cards and pending preview controls. Pixel samples come from Titles.
 import { Theme } from "../theme/theme.slint";
+import { Fmt } from "../util.slint";
+import { Select } from "../primitives/select.slint";
+import { ColourField } from "../inspector/controls.slint";
 import { Button } from "../primitives/modal.slint";
 
 export struct CaptionPreviewCard { id: string, name: string, thumbnail: image }
@@ -8,7 +11,12 @@ export struct CaptionPreviewCard { id: string, name: string, thumbnail: image }
 export global CaptionPresetPreview {
     in property <[CaptionPreviewCard]> cards;
     in property <string> chosen;
+    in property <string> applied;
     in property <string> status;
+    in property <bool> previewing;
+    in property <int> font-index;
+    in property <string> text-hex;
+    in property <string> background-hex;
     in property <bool> sample;
     in property <bool> demo-playing;
     in property <bool> can-apply-selected;
@@ -18,24 +26,61 @@ export global CaptionPresetPreview {
     callback apply(all: bool);
     callback demo-toggle();
     callback scope(active: bool);
+    callback style-font(index: int);
+    callback style-color(field: string, hex: string);
 }
 
 export component CaptionPresetPreviewPanel inherits VerticalLayout {
     spacing: 8px;
     Text {
-        text: CaptionPresetPreview.chosen == "" ? "Choose a look to preview it over the current image or video. The project stays unchanged until Apply."
+        text: CaptionPresetPreview.chosen == "" ? "Select a caption look to preview it. Apply to All works before captions exist."
             : CaptionPresetPreview.status;
         color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
     }
     if CaptionPresetPreview.chosen != "": VerticalLayout {
-        spacing: 5px;
-        Button { label: "Apply to Selected Captions"; enabled: CaptionPresetPreview.can-apply-selected;
-            primary: true; clicked => { CaptionPresetPreview.apply(false); } }
-        Button { label: "Apply to All Captions"; enabled: CaptionPresetPreview.can-apply-all;
-            clicked => { CaptionPresetPreview.apply(true); } }
-        if CaptionPresetPreview.sample: Button { label: CaptionPresetPreview.demo-playing ? "Pause Sample Demo" : "Play Sample Demo";
-            clicked => { CaptionPresetPreview.demo-toggle(); } }
-        Button { label: "Cancel Preview"; clicked => { CaptionPresetPreview.cancel(); } }
+        spacing: 6px;
+        Text { text: "Font"; color: Theme.fg-muted; font-size: Theme.fs-sm; }
+        Select {
+            options: ["Hanken Grotesk SemiBold", "Hanken Grotesk Bold", "Inter Black", "Inter Bold", "Montserrat ExtraBold", "Archivo Black", "Anton"];
+            current: CaptionPresetPreview.font-index;
+            changed(index) => { CaptionPresetPreview.style-font(index); }
+        }
+        ColourField {
+            label: "Text color";
+            value: Fmt.color-of(CaptionPresetPreview.text-hex, #ffffff);
+            changed(c) => { CaptionPresetPreview.style-color("text", Fmt.hex-of(c, false)); }
+        }
+        ColourField {
+            label: "Background color";
+            value: Fmt.color-of(CaptionPresetPreview.background-hex, #000000);
+            changed(c) => { CaptionPresetPreview.style-color("background", Fmt.hex-of(c, false)); }
+        }
+        Button {
+            label: "Apply to All Captions";
+            enabled: CaptionPresetPreview.can-apply-all;
+            primary: true;
+            clicked => { CaptionPresetPreview.apply(true); }
+        }
+        Text {
+            text: "Sets the project preset and requests GPU captions, even if none exist yet.";
+            color: Theme.fg-muted; font-size: Theme.fs-xs; wrap: word-wrap;
+        }
+        Button {
+            label: "Apply to Selected Captions";
+            enabled: CaptionPresetPreview.can-apply-selected;
+            clicked => { CaptionPresetPreview.apply(false); }
+        }
+        if !CaptionPresetPreview.can-apply-selected: Text {
+            text: "Select an existing caption clip to use Apply to Selected. Apply to All does not require one.";
+            color: Theme.fg-muted; font-size: Theme.fs-xs; wrap: word-wrap;
+        }
+        if CaptionPresetPreview.sample: Button {
+            label: CaptionPresetPreview.demo-playing ? "Pause Sample Demo" : "Play Sample Demo";
+            clicked => { CaptionPresetPreview.demo-toggle(); }
+        }
+        if CaptionPresetPreview.previewing: Button {
+            label: "Cancel Preview"; clicked => { CaptionPresetPreview.cancel(); }
+        }
     }
     if CaptionPresetPreview.cards.length == 0: Text {
         text: "No caption presets loaded. Preset browsing does not require a selected caption. Reopen this shelf after the preset library is ready.";
@@ -60,6 +105,11 @@ export component CaptionPresetPreviewPanel inherits VerticalLayout {
                 x: 4px; y: 4px; width: parent.width - 8px; height: parent.width * 9 / 16 - 4px;
                 source: card.thumbnail; image-fit: contain;
             }
+            if CaptionPresetPreview.applied == card.id: Text {
+                x: 6px; y: 6px; width: parent.width - 12px; height: 18px;
+                text: "Applied"; color: Theme.accent; font-size: Theme.fs-xs;
+                horizontal-alignment: right;
+            }
             Text {
                 x: 6px; y: parent.width * 9 / 16 + 2px;
                 width: parent.width - 12px; height: 52px;
@@ -73,7 +123,7 @@ export component CaptionPresetPreviewPanel inherits VerticalLayout {
 
 // No hit area: a staged caption never becomes a timeline selection box.
 export component CaptionPreviewBadge inherits Rectangle {
-    visible: CaptionPresetPreview.chosen != "";
+    visible: CaptionPresetPreview.previewing;
     in property <length> available-width: 296px;
     width: Math.max(40px, Math.min(280px, root.available-width - 16px));
     height: message.preferred-height + 10px;

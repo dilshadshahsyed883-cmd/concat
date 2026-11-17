@@ -1,7 +1,7 @@
 name: Concat Home project management tests (source only)
 on:
   push:
-    branches: [fix/home-project-management-20261117]
+    branches: [fix/home-project-management-20261117, fix/home-regression-67]
     paths:
       - 'upstream/src/crates/concat-host/src/projects.rs'
       - 'upstream/src/crates/concat-host/src/project_delete.rs'
@@ -49,6 +49,7 @@ jobs:
         run: |
           python3 upstream/src/crates/concat/tests/test_recent_projects_menu.py
           python3 upstream/src/crates/concat/tests/test_home_project_management.py
+          python3 upstream/src/crates/concat/tests/test_home_project_layout.py
       - name: Rust syntax of changed source modules (no app build)
         run: |
           rustfmt --edition 2024 --emit stdout upstream/src/crates/concat-host/src/projects.rs > /dev/null

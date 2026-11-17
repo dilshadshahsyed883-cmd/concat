@@ -17,12 +17,77 @@ import re
 import subprocess
 import threading
 import time
+import tomllib
 
 from cloud_render.concat.hybrid.captions import Cue, WordTiming
 
 MODELS = {"tiny", "base", "small", "medium", "large-v3", "turbo"}
-PRESETS = {"purple-word", "yellow-bar", "classic"}
+# Legacy IDs stay readable. Native gallery IDs and style values are loaded from
+# the same checked-in CUDA caption presets that the Windows editor displays.
+PRESET_ALIASES = {
+    "purple-word": "cuda-caption.preset-1-purple-word",
+    "yellow-bar": "cuda-caption.preset-2-yellow-bar",
+    "classic": "cuda-caption.classic-subtitle",
+}
+# Only styling fields supported by the existing hybrid CUDA caption compositor.
+STYLE_FIELDS = {
+    "fontFamily", "fontSize", "fontWeight", "color", "strokeColor", "strokeWidth",
+    "shadow", "opacity", "background", "backgroundRadius", "backgroundPaddingX",
+    "backgroundPaddingY", "karaoke", "karaokeColor", "karaokeBackground",
+    "maxWidth", "maxHeight",
+}
 ENGINE_VERSION = 1
+
+
+def preset_template(preset):
+    """Use editor source presets, not stale worker-side approximations."""
+    if not isinstance(preset, str) or len(preset) > 128:
+        raise ValueError("Unknown GPU caption preset")
+    ident = PRESET_ALIASES.get(preset, preset)
+    # Source tree during development, bundled copy inside the Salad container.
+    locations = (Path(__file__).with_name("text-presets"),
+                 Path(__file__).resolve().parents[3] / "upstream/src/crates/concat/text-presets")
+    for base in locations:
+        if not base.is_dir():
+            continue
+        for path in sorted(base.glob("cuda-*/preset.toml")):
+            with path.open("rb") as stream:
+                item = tomllib.load(stream)
+            if item.get("id") != ident:
+                continue
+            style = item.get("style")
+            if not isinstance(style, dict) or set(style) - (STYLE_FIELDS | {"content"}):
+                raise ValueError("Unsupported styling in native caption preset")
+            return {name: value for name, value in style.items() if name != "content"}
+    raise ValueError(f"GPU caption preset {preset!r} is unavailable; update worker preset assets")
+
+
+def resolve_request(document):
+    """An applied EXE preset is a pending GPU request, not a local transcript."""
+    raw = document.get("gpuCaptionRequest")
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError("Invalid GPU caption request metadata")
+    if raw.get("enabled") is False:
+        return None
+    raw = dict(raw)
+    raw.pop("enabled", None)
+    if not raw.get("sourceClipId"):
+        timeline = active_timeline(document)
+        tracks = {t.get("id"): t for t in timeline.get("tracks", [])}
+        media = {m.get("id"): m for m in document.get("media", [])}
+        clips = [c for c in timeline.get("clips", [])
+                 if not c.get("muted") and not tracks.get(c.get("trackId"), {}).get("muted")
+                 and c.get("kind") in ("audio", "video")
+                 and media.get(c.get("mediaId")) is not None]
+        narration = [c for c in clips if c["kind"] == "audio"]
+        candidates = narration if narration else [
+            c for c in clips if media[c["mediaId"]].get("hasAudio")]
+        if len(candidates) != 1:
+            raise ValueError("Select a single narration source for GPU captions; multiple/missing audio clips are ambiguous")
+        raw["sourceClipId"] = candidates[0]["id"]
+    return validate_request(raw)
 
 
 class GpuSpeechUnavailable(RuntimeError):
@@ -42,9 +107,15 @@ def _finite(value, label):
 def validate_request(value):
     if not isinstance(value, dict) or value.get("version") != 1:
         raise ValueError("GPU caption request needs version 1")
-    allowed = {"version", "sourceClipId", "model", "language", "wordTimestamps", "preset", "renderAfter", "transcript", "style"}
+    allowed = {"version", "sourceClipId", "model", "language", "wordTimestamps",
+               "preset", "presetId", "renderAfter", "transcript", "style", "position"}
     if set(value) - allowed:
         raise ValueError("Unknown GPU caption request settings")
+    value = dict(value)
+    if "presetId" in value:
+        if "preset" in value and value["preset"] != value["presetId"]:
+            raise ValueError("Conflicting GPU caption preset IDs")
+        value["preset"] = value.pop("presetId")
     source = value.get("sourceClipId")
     if not isinstance(source, str) or not source or len(source) > 128:
         raise ValueError("Choose a narration/video source clip for GPU captions")
@@ -54,16 +125,27 @@ def validate_request(value):
     language = value.get("language")
     if language is not None and (not isinstance(language, str) or not re.fullmatch(r"[a-z]{2,3}", language)):
         raise ValueError("Caption language must be a two/three-letter code or null")
-    if value.get("preset", "purple-word") not in PRESETS:
-        raise ValueError("Unknown GPU caption preset")
-    if type(value.get("wordTimestamps", True)) is not bool or type(value.get("renderAfter", False)) is not bool:
+    preset = value.get("preset", "purple-word")
+    template = preset_template(preset)
+    if type(value.get("wordTimestamps", True)) is not bool or type(value.get("renderAfter", True)) is not bool:
         raise ValueError("Caption task options must be booleans")
-    if value.get("preset", "purple-word") == "purple-word" and not value.get("wordTimestamps", True):
-        raise ValueError("Purple word highlighting requires real word timestamps")
-    if "style" in value and not isinstance(value["style"], dict):
-        raise ValueError("Caption style overrides must be an object")
+    if (template.get("karaoke") or template.get("karaokeBackground")
+            or value.get("style", {}).get("karaoke") if isinstance(value.get("style", {}), dict) else False):
+        if not value.get("wordTimestamps", True):
+            raise ValueError("Karaoke highlighting requires real word timestamps")
+    style = value.get("style", {})
+    if not isinstance(style, dict) or set(style) - STYLE_FIELDS:
+        raise ValueError("Unsupported GPU caption style overrides")
+    # A position is a normalized video-frame anchor, never simulated text.
+    position = value.get("position", {"x": 0.5, "y": 0.86})
+    if (not isinstance(position, dict) or set(position) != {"x", "y"}
+            or any(type(position.get(axis)) not in (float, int) or
+                   not math.isfinite(position[axis]) or not 0 <= position[axis] <= 1
+                   for axis in ("x", "y"))):
+        raise ValueError("GPU caption position needs normalized x/y coordinates")
     return {"version": 1, "model": model, "language": language, "wordTimestamps": True,
-            "preset": "purple-word", "renderAfter": False, **value}
+            "preset": "purple-word", "renderAfter": True,
+            **value, "position": {"x": float(position["x"]), "y": float(position["y"])}}
 
 
 def read_document(root):
@@ -264,9 +346,9 @@ class CaptionEngine:
 
     def run(self, root, artifacts, status=lambda **kw: None, cancel=None):
         manifest, document = read_document(root)
-        if document.get("gpuCaptionRequest") is None:
+        request = resolve_request(document)
+        if request is None:
             return None
-        request = validate_request(document["gpuCaptionRequest"])
         artifacts.mkdir(parents=True, exist_ok=True)
         audio = artifacts/"speech.wav"
         status(caption_state="extracting_audio")
@@ -319,28 +401,19 @@ def apply_captions(document, request, cues, timeline_start):
     timeline["clips"] = [c for c in timeline.get("clips", []) if c.get("gpuCaptionSource") != request["sourceClipId"]]
     if not any(t.get("id") == track_id for t in timeline["tracks"]):
         timeline["tracks"].append({"id": track_id, "visible": True, "muted": False})
-    if request["preset"] == "purple-word":
-        style = {"fontFamily": "Inter", "fontWeight": 900, "fontSize": .053, "color": "#ffffff",
-                 "strokeColor": "#000000", "strokeWidth": .004, "shadow": True,
-                 "karaoke": True, "karaokeColor": "#ffffff", "karaokeBackground": "#a020f0"}
-        offset = .30
-    elif request["preset"] == "yellow-bar":
-        style = {"fontFamily": "Inter", "fontWeight": 900, "fontSize": .053, "color": "#000000",
-                 "background": "#ffff00", "backgroundRadius": .012, "shadow": False, "karaoke": False}
-        offset = -.35
-    else:
-        style = {"fontFamily": "Hanken Grotesk", "fontWeight": 600, "fontSize": .045,
-                 "color": "#ffffff", "shadow": True, "karaoke": False}
-        offset = .35
-    style["maxWidth"] = .85
+    style = preset_template(request["preset"])
     style.update(request.get("style", {}))
+    style.setdefault("maxWidth", .85)
+    position = request["position"]
     for index, cue in enumerate(cues, 1):
-        upper = request["preset"] in ("purple-word", "yellow-bar")
+        upper = PRESET_ALIASES.get(request["preset"], request["preset"]) in (
+            "cuda-caption.preset-1-purple-word", "cuda-caption.preset-2-yellow-bar")
         text = cue.text.upper() if upper else cue.text
         timeline["clips"].append({"id": f"gpu-caption-{request['sourceClipId']}-{index}",
             "trackId": track_id, "kind": "text", "name": text, "start": timeline_start+cue.start_ms/1000,
             "duration": (cue.end_ms-cue.start_ms)/1000, "sourceStart": 0, "mediaId": "",
-            "offsetY": offset, "text": {**style, "content": text,
+            "offsetX": position["x"] - .5, "offsetY": position["y"] - .5,
+            "text": {**style, "content": text,
                 "karaokeWords": [{"text": w.text.upper() if upper else w.text,
                     "startMs": w.start_ms-cue.start_ms, "endMs": w.end_ms-cue.start_ms} for w in cue.words]},
             "captionWords": [{"text": w.text.upper() if upper else w.text,

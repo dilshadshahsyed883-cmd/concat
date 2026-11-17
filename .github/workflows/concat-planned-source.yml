@@ -12,6 +12,8 @@ jobs:
     timeout-minutes: 25
     env:
       CONCAT_CANVAS_FIXTURE_DIR: /tmp/concat-canvas-fixtures
+      CONCAT_CAPTION_FIXTURE_DIR: /tmp/concat-caption-fixtures
+      CONCAT_TRANSITION_FIXTURE_DIR: /tmp/concat-transition-fixtures
     steps:
       - uses: actions/checkout@v4
         with:
@@ -47,3 +49,5 @@ jobs:
           python -m compileall -q cloud_render/concat
           python -m unittest discover -v -s cloud_render/concat/tests
           python upstream/src/crates/concat/tests/test_ui_animation_captions_contract.py
+          python upstream/src/crates/concat/tests/test_caption_preset_ui_71.py
+          python upstream/src/crates/concat/tests/test_home_project_layout.py

@@ -19,7 +19,7 @@ PHYSICS = (
 TABS = (
     '"common.media"', '"common.text"',
     '"mediaPane.transitions"', '"Animations"', '"mediaPane.filters"',
-    '"mediaPane.templates"', '"common.effects"',
+    '"common.effects"', '"mediaPane.templates"',
 )
 
 

@@ -40,6 +40,7 @@ class CompatibilityTests(unittest.TestCase):
                         "api_version": 1, "bundle_versions": [1],
                         "render_modes": ["cuda-stage1", "cuda-hybrid-v1"],
                         "validation_version": 1,
+                        "render_contract": {"id": "concat-cuda-hybrid-v1", "version": 1},
                         "max_project_manifest_bytes": MAX_PROJECT_MANIFEST_BYTES,
                     })
                 finally:

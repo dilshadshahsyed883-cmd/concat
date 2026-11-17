@@ -414,6 +414,48 @@ pub(super) fn apply(
                 applied: previous.as_ref() != Some(&profile),
             }
         }
+        Command::SetCaptionPresetSettings { settings } => {
+            let obj = settings
+                .as_object()
+                .ok_or_else(|| refused("Invalid caption preset configuration"))?;
+            let id = obj
+                .get("presetId")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| refused("Caption preset ID missing"))?;
+            let style = obj
+                .get("style")
+                .and_then(serde_json::Value::as_object)
+                .ok_or_else(|| refused("Caption style missing"))?;
+            let position = obj
+                .get("position")
+                .and_then(serde_json::Value::as_object)
+                .ok_or_else(|| refused("Caption position missing"))?;
+            if obj.get("version").and_then(serde_json::Value::as_u64) != Some(1)
+                || !id.starts_with("cuda-caption.")
+                || id.len() > 128
+                || obj
+                    .get("generateOnGpu")
+                    .and_then(serde_json::Value::as_bool)
+                    != Some(true)
+                || style.contains_key("content")
+                || style.contains_key("karaokeWords")
+                || position.get("anchor").and_then(serde_json::Value::as_str)
+                    != Some("bottom-center")
+                || !position
+                    .get("offsetY")
+                    .and_then(serde_json::Value::as_f64)
+                    .is_some_and(|y| y.is_finite() && (0.0..=0.45).contains(&y))
+            {
+                return Err(refused("Unsupported caption preset configuration"));
+            }
+            let previous = staged
+                .extra
+                .insert("captionPreset".into(), settings.clone());
+            Outcome {
+                created_id: None,
+                applied: previous.as_ref() != Some(&settings),
+            }
+        }
         Command::SetGpuCaptionRequest { request } => {
             if let Some(value) = &request {
                 let object = value
@@ -427,7 +469,20 @@ pub(super) fn apply(
                         != Some(true)
                     || !matches!(
                         object.get("preset").and_then(serde_json::Value::as_str),
-                        Some("purple-word" | "yellow-bar")
+                        Some(
+                            "purple-word"
+                                | "yellow-bar"
+                                | "classic"
+                                | "cuda-caption.classic-subtitle"
+                                | "cuda-caption.bold-highlight"
+                                | "cuda-caption.cinematic-title"
+                                | "cuda-caption.minimal-clean"
+                                | "cuda-caption.news-alert"
+                                | "cuda-caption.modern-accent"
+                                | "cuda-caption.karaoke-highlight"
+                                | "cuda-caption.preset-1-purple-word"
+                                | "cuda-caption.preset-2-yellow-bar"
+                        )
                     )
                 {
                     return Err(refused(
@@ -470,6 +525,25 @@ pub(super) fn apply(
                 ));
             }
             let commands = artifact.commands().map_err(|e| refused(&e))?;
+            // Import exact speech timing, then restore the user's saved look
+            // rather than replacing nine gallery styles with a legacy default.
+            let native_id = match artifact.preset.as_str() {
+                "yellow-bar" => "cuda-caption.preset-2-yellow-bar",
+                "purple-word" => "cuda-caption.preset-1-purple-word",
+                "classic" => "cuda-caption.classic-subtitle",
+                other => other,
+            };
+            let saved_preset = staged.extra.get("captionPreset").filter(|settings| {
+                settings.get("presetId").and_then(serde_json::Value::as_str) == Some(native_id)
+            });
+            let saved_style = saved_preset
+                .and_then(|settings| settings.get("style"))
+                .and_then(|value| serde_json::from_value::<TextStyle>(value.clone()).ok());
+            let saved_offset_y = saved_preset
+                .and_then(|settings| settings.get("position"))
+                .and_then(|position| position.get("offsetY"))
+                .and_then(serde_json::Value::as_f64)
+                .filter(|y| y.is_finite() && (0.0..=0.45).contains(y));
             staged.active_mut().clips.retain(|c| {
                 c.extra
                     .get("gpuCaptionSource")
@@ -481,10 +555,28 @@ pub(super) fn apply(
                 let outcome = super::apply(&mut staged, mint, command)?;
                 if let Some(id) = &outcome.created_id {
                     if let Some(index) = staged.active().clips.iter().position(|c| &c.id == id) {
-                        staged.active_mut().clip_at_mut(index).extra.insert(
+                        let clip = staged.active_mut().clip_at_mut(index);
+                        clip.extra.insert(
                             "gpuCaptionSource".into(),
                             serde_json::Value::String(artifact.source_clip_id.clone()),
                         );
+                        if let (Some(saved), Some(generated)) =
+                            (saved_style.as_ref(), clip.text.as_ref())
+                        {
+                            let mut styled = saved.clone();
+                            styled.content = generated.content.clone();
+                            styled.karaoke_words = generated.karaoke_words.clone();
+                            styled.karaoke_word = None;
+                            // Never show fake karaoke alignment without true word times.
+                            if styled.karaoke_words.is_empty() {
+                                styled.karaoke = false;
+                                styled.karaoke_background.clear();
+                            }
+                            clip.text = Some(styled);
+                        }
+                        if let Some(y) = saved_offset_y {
+                            clip.offset_y = y;
+                        }
                     }
                 }
                 created = outcome.created_id;
@@ -1143,5 +1235,213 @@ mod visual_audio_protection_tests {
         assert_eq!(voice(&editor), narration);
         assert!(editor.redo());
         assert_eq!(voice(&editor), narration);
+    }
+}
+
+#[cfg(test)]
+mod caption_preset_settings_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn can_apply_before_captions_and_roundtrip_through_undo_redo() {
+        let mut editor = crate::Editor::new();
+        let settings = json!({
+            "version": 1, "presetId": "cuda-caption.preset-2-yellow-bar",
+            "generateOnGpu": true, "sourceClipId": null,
+            "style": {"fontFamily": "Inter", "fontWeight": 900,
+                      "color": "#000000", "background": "#ffff00"},
+            "position": {"anchor": "bottom-center", "offsetX": 0.0,
+                         "offsetY": 0.35, "safeMargin": 0.08}
+        });
+        editor
+            .apply(Command::SetCaptionPresetSettings {
+                settings: settings.clone(),
+            })
+            .unwrap();
+        assert!(editor.project().active().clips.is_empty());
+        assert_eq!(editor.project().extra.get("captionPreset"), Some(&settings));
+        assert!(editor.undo());
+        assert!(!editor.project().extra.contains_key("captionPreset"));
+        assert!(editor.redo());
+        let doc = crate::to_document(
+            &crate::DocumentSettings {
+                name: "Caption metadata".into(),
+                width: 1920,
+                height: 1080,
+                rate_num: 30,
+                rate_den: 1,
+            },
+            editor.project(),
+        );
+        let reopened = crate::Editor::from_document(&doc).unwrap();
+        assert_eq!(
+            reopened.project().extra.get("captionPreset"),
+            Some(&settings)
+        );
+        assert!(reopened.project().active().clips.is_empty());
+    }
+
+    #[test]
+    fn native_gpu_caption_requests_preserve_worker_style_and_reopen() {
+        let mut project = crate::model::Project::new();
+        project.active_mut().clips.push(Arc::new(Clip::blank(
+            "voice1",
+            "T1",
+            ClipKind::Audio,
+            "Narration",
+            0.0,
+            4.0,
+        )));
+        let mut mint = IdMint::default();
+        mint.adopt_project(&project);
+        let request = json!({
+            "version": 1, "sourceClipId": "voice1",
+            "model": "small", "wordTimestamps": true,
+            "renderAfter": true, "preset": "cuda-caption.preset-2-yellow-bar",
+            "style": {"fontFamily": "Inter", "fontWeight": 900,
+                      "color": "#000000", "background": "#ffff00",
+                      "backgroundRadius": 0.012, "maxWidth": 0.88},
+            "position": {"x": 0.5, "y": 0.85}
+        });
+        super::apply(
+            &mut project,
+            &mut mint,
+            Command::SetGpuCaptionRequest {
+                request: Some(request.clone()),
+            },
+        )
+        .unwrap();
+        assert_eq!(project.extra.get("gpuCaptionRequest"), Some(&request));
+        assert_eq!(
+            project
+                .active()
+                .clips
+                .iter()
+                .filter(|clip| clip.kind == ClipKind::Text)
+                .count(),
+            0
+        );
+        let document = crate::to_document(
+            &crate::DocumentSettings {
+                name: "Native caption request".into(),
+                width: 1920,
+                height: 1080,
+                rate_num: 30,
+                rate_den: 1,
+            },
+            &project,
+        );
+        let reopened = crate::Editor::from_document(&document).unwrap();
+        assert_eq!(
+            reopened.project().extra.get("gpuCaptionRequest"),
+            Some(&request)
+        );
+        let bad = json!({ "version": 1, "sourceClipId": "voice1",
+            "model": "small", "wordTimestamps": true, "preset": "cuda-caption.fake" });
+        assert!(
+            super::apply(
+                &mut project,
+                &mut mint,
+                Command::SetGpuCaptionRequest { request: Some(bad) }
+            )
+            .is_err()
+        );
+        assert_eq!(project.extra.get("gpuCaptionRequest"), Some(&request));
+    }
+
+    #[test]
+    fn write_native_caption_requests_for_worker_zip_integration() {
+        let Ok(directory) = std::env::var("CONCAT_CAPTION_FIXTURE_DIR") else {
+            return;
+        };
+        let path = std::path::Path::new(&directory);
+        std::fs::create_dir_all(path).unwrap();
+        for name in [
+            "classic-subtitle",
+            "bold-highlight",
+            "cinematic-title",
+            "minimal-clean",
+            "news-alert",
+            "modern-accent",
+            "karaoke-highlight",
+            "preset-1-purple-word",
+            "preset-2-yellow-bar",
+        ] {
+            let mut project = crate::model::Project::new();
+            project.active_mut().clips.push(Arc::new(Clip::blank(
+                "voice1",
+                "T1",
+                ClipKind::Audio,
+                "Narration",
+                0.0,
+                2.0,
+            )));
+            let mut mint = IdMint::default();
+            mint.adopt_project(&project);
+            let preset = format!("cuda-caption.{name}");
+            let settings = json!({"version": 1, "presetId": preset,
+                "generateOnGpu": true, "sourceClipId": "voice1",
+                "style": {"fontFamily": "Inter", "color": "#123456"},
+                "position": {"anchor": "bottom-center", "offsetX": 0.0,
+                    "offsetY": 0.35, "safeMargin": 0.08}});
+            super::apply(
+                &mut project,
+                &mut mint,
+                Command::SetCaptionPresetSettings { settings },
+            )
+            .unwrap();
+            let request = json!({"version": 1, "sourceClipId": "voice1",
+                "model": "small", "wordTimestamps": true, "renderAfter": true,
+                "preset": preset, "style": {"fontFamily": "Inter", "color": "#123456"},
+                "position": {"x": 0.5, "y": 0.85}});
+            super::apply(
+                &mut project,
+                &mut mint,
+                Command::SetGpuCaptionRequest {
+                    request: Some(request.clone()),
+                },
+            )
+            .unwrap();
+            let document = crate::to_document(
+                &crate::DocumentSettings {
+                    name: name.into(),
+                    width: 1920,
+                    height: 1080,
+                    rate_num: 30,
+                    rate_den: 1,
+                },
+                &project,
+            );
+            let reopened = crate::Editor::from_document(&document).unwrap();
+            assert_eq!(
+                reopened.project().extra.get("gpuCaptionRequest"),
+                Some(&request)
+            );
+            std::fs::write(
+                path.join(format!("{name}.json")),
+                serde_json::to_vec_pretty(&document).unwrap(),
+            )
+            .unwrap();
+        }
+    }
+
+    #[test]
+    fn sample_words_are_refused_in_project_settings() {
+        let mut project = crate::model::Project::new();
+        let settings = json!({
+            "version": 1, "presetId": "cuda-caption.preset-2-yellow-bar",
+            "generateOnGpu": true, "style": {"content": "Sample caption preview"},
+            "position": {"anchor": "bottom-center", "offsetY": 0.35}
+        });
+        assert!(
+            super::apply(
+                &mut project,
+                &mut IdMint::default(),
+                Command::SetCaptionPresetSettings { settings }
+            )
+            .is_err()
+        );
+        assert!(!project.extra.contains_key("captionPreset"));
     }
 }

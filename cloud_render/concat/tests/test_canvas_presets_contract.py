@@ -2,10 +2,11 @@
 from copy import deepcopy
 import json
 import os
+import tempfile
 from pathlib import Path
 import unittest
 from cloud_render.concat.hybrid.canvas_shapes import parse_shape, parse_mask, mask_coverage
-from cloud_render.concat.hybrid.project import validate_gpu_manifest
+from cloud_render.concat.hybrid.project import load_project, validate_gpu_manifest
 from cloud_render.concat.tests.test_gpu_compat_validation import minimal_project, load_fixture
 
 class CanvasPresetContracts(unittest.TestCase):
@@ -48,6 +49,31 @@ class CanvasPresetContracts(unittest.TestCase):
         files=list(Path(directory).glob('canvas-*.json'))
         self.assertEqual(len(files),6)
         for file in files:
-            with self.subTest(file=file.name):validate_gpu_manifest(json.loads(file.read_text()))
+            with self.subTest(file=file.name):
+                document = json.loads(file.read_text())
+                validate_gpu_manifest(document)
+                timeline = document['timelines'][0]
+                clips = timeline['clips']
+                # These fixtures come from the native Canvas preset application,
+                # not from a reconstructed preview. The GPU project consumer
+                # must see compositing layers and user-authored text only.
+                self.assertFalse(any(c.get('canvasRole') in ('headline', 'headlineText')
+                                     for c in clips))
+                self.assertFalse(any(t.get('canvasRole') in ('banner', 'headline')
+                                     for t in timeline['tracks']))
+                self.assertTrue(any(c.get('canvasRole') == 'backdrop' for c in clips))
+                self.assertTrue(any(c.get('canvasRole') == 'frame' for c in clips)
+                                if 'canvas-3-' not in file.name else True)
+                self.assertEqual(len([c for c in clips if c.get('canvasRole') == 'badgeText']), 1)
+                # Native fixtures point to source.mp4. The worker's manifest
+                # loader resolves real ZIP-relative paths; supply the expected
+                # placeholder in this isolated test rather than changing the
+                # worker's safe media-path validation.
+                with tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    (root / 'concat.json').write_text(json.dumps(document))
+                    (root / 'source.mp4').write_bytes(b'canvas fixture placeholder')
+                    plan = load_project(root, lambda _: None)
+                self.assertGreaterEqual(len(plan.lanes), 2)
 
 if __name__=='__main__':unittest.main()

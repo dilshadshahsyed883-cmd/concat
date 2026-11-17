@@ -27,12 +27,13 @@ from pathlib import Path
 
 from cloud_render.concat.hybrid.contract import (
     BUNDLE_VERSION, HYBRID_MODE, RENDER_MODES, WORKER_API_VERSION,
+    RENDER_CONTRACT_ID, RENDER_CONTRACT_VERSION,
 )
 from cloud_render.concat.project_bundle import restore, MAX_PROJECT_MANIFEST_BYTES
 from cloud_render.concat.hybrid.naming import read_project_names, content_disposition, mp4_name
 from cloud_render.concat.gpu.resumable import ResumableUpload, UploadError
 from cloud_render.concat.gpu.caption_jobs import (CaptionEngine, CaptionCancelled,
-    FasterWhisperCuda, GpuSpeechUnavailable, read_document, atomic_json, validate_request)
+    FasterWhisperCuda, GpuSpeechUnavailable, read_document, atomic_json, resolve_request)
 
 IDS = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 DIGESTS = re.compile(r"^[a-f0-9]{64}$")
@@ -386,7 +387,9 @@ class RenderWorker:
             raise WorkerError(409, "Job is not ready for this operation")
         if render:
             path, document = read_document(self.inputs/job/"project")
-            request = validate_request(document.get("gpuCaptionRequest"))
+            request = resolve_request(document)
+            if request is None:
+                raise WorkerError(409, "Project has no active GPU caption generation request")
             document["gpuCaptionRequest"] = {**request, "renderAfter": True}
             atomic_json(path, document)
         with self.lock:
@@ -478,6 +481,7 @@ class RenderWorker:
                     raise CaptionCancelled("Job cancelled before publishing render; source bundle and output retained")
                 self._change(job, state="rendered", output_size=output.stat().st_size,
                              output_sha256=checksum,
+                             **({"caption_state": "rendered"} if caption_result is not None else {}),
                              **self._performance_metrics(report, elapsed))
             if self.receiver:
                 self._change(job, state="delivering")
@@ -637,6 +641,7 @@ class Handler(BaseHTTPRequestHandler):
                                     "bundle_versions": [BUNDLE_VERSION],
                                     "render_modes": list(RENDER_MODES),
                                     "validation_version": 1,
+                                    "render_contract": {"id": RENDER_CONTRACT_ID, "version": RENDER_CONTRACT_VERSION},
                                     "gpu_captions": {"request_version": 1, **FasterWhisperCuda.capability()},
                                     "max_project_manifest_bytes": MAX_PROJECT_MANIFEST_BYTES})
         if path == "/api/config/concurrency":

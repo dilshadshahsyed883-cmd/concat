@@ -552,6 +552,8 @@ pub enum Command {
     ImportGpuCaptions { artifact: serde_json::Value },
     /// Selects or clears a GPU caption task in the existing project package.
     SetGpuCaptionRequest { request: Option<serde_json::Value> },
+    /// Undoable project-wide GPU caption styling. Does not create caption clips.
+    SetCaptionPresetSettings { settings: serde_json::Value },
     /// Persists a validated per-project runtime C Builder profile.
     SetPlanningProfile { profile: serde_json::Value },
     /// Persists the independent magnetic-edit setting with this timeline.
@@ -1225,7 +1227,7 @@ pub fn apply(
         Command::DragClips {request} => crate::drag_edit::apply(project,mint,request),
         Command::ApplyCanvasPreset { config, targets, locked_tracks } => crate::canvas_preset::apply(project, mint, config, targets, locked_tracks),
         command @ (Command::InsertMedia { .. } | Command::ReplaceMediaInSlot { .. }
-            | Command::CloseTrackGaps { .. } | Command::SetTimelineMagnetic { .. } | Command::SetGpuCaptionRequest { .. } | Command::SetPlanningProfile { .. } | Command::ImportGpuCaptions { .. } | Command::ScopedMoveClips { .. } | Command::ReplaceMediaFromFile { .. }) => editing::apply(project, mint, command),
+            | Command::CloseTrackGaps { .. } | Command::SetTimelineMagnetic { .. } | Command::SetGpuCaptionRequest { .. } | Command::SetCaptionPresetSettings { .. } | Command::SetPlanningProfile { .. } | Command::ImportGpuCaptions { .. } | Command::ScopedMoveClips { .. } | Command::ReplaceMediaFromFile { .. }) => editing::apply(project, mint, command),
         command @ (Command::AddMedia { .. }
         | Command::SetMediaPlaceholder { .. }
         | Command::FillSlot { .. }

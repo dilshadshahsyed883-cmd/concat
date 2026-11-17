@@ -93,8 +93,9 @@ def _validated_timeline(document):
             if not item or item.get("placeholder"):
                 raise ValueError(f"Missing or placeholder media for GPU clip {ident}")
             if kind == "image" and _media_path(item).suffix.lower() not in (
-                    ".jpg", ".jpeg"):
-                raise ValueError(f"GPU clip {ident} requires a JPEG photo; PNG is not supported")
+                    ".jpg", ".jpeg", ".png"):
+                raise ValueError(
+                    f"GPU clip {ident} has an unsupported still-image type; use JPEG or PNG")
         if clip.get("background") is not None:
             background = parse_background(clip["background"])
             if background is not None and kind not in ("image", "video"):
