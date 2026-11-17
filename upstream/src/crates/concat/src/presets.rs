@@ -272,7 +272,7 @@ fn parse(text: &str, folder: Option<&Path>) -> Option<(i64, TextPreset)> {
             },
             id,
             style,
-            offset_y: file.offset_y,
+            offset_y: if file.id.starts_with("cuda-caption.") { Some(0.35) } else { file.offset_y },
             font,
             language,
             sample,
@@ -392,8 +392,9 @@ mod tests {
             if preset.id == "cuda-caption.preset-2-yellow-bar" {
                 assert_eq!(preset.style.background, "#ffff00");
                 assert_eq!(preset.style.color, "#000000");
-                assert_eq!(preset.offset_y, Some(-0.35));
+                assert_eq!(preset.offset_y, Some(0.35));
             }
+            assert_eq!(preset.offset_y, Some(0.35));
             assert_eq!(preset.style.max_width, 0.88);
             assert!((0.01..=0.5).contains(&preset.style.font_size));
             assert!(!preset.style.italic);
