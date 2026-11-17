@@ -3,6 +3,9 @@
 # This image DOES NOT modify Salad configuration or deploy to VPS.
 FROM ubuntu:24.04
 ARG DEBIAN_FRONTEND=noninteractive
+ARG SOURCE_SHA=unknown
+ENV CONCAT_SOURCE_SHA=$SOURCE_SHA
+LABEL org.opencontainers.image.revision=$SOURCE_SHA
 # Native Concat project schema pin; Rust/Slint is compiled ONLY for Windows editor.
 LABEL org.opencontainers.image.concat-upstream-commit="79116bd0f9a103c633d888603ad27890e929dbdc"
 LABEL org.opencontainers.image.concat-project-schema="1"
@@ -23,16 +26,17 @@ RUN python3 -m venv /opt/venv \
        -r /opt/app/cloud_render/concat/hybrid/requirements-captions.txt \
        -r /opt/app/cloud_render/concat/hybrid/requirements-asr.txt \
        nvidia-cuda-runtime-cu12==12.8.90 nvidia-cuda-nvrtc-cu12==12.8.93
+# Preseed the desktop's default small ASR model; other explicitly selected
+# sizes may still download into this writable cache when requested.
+RUN /opt/venv/bin/python -c "from faster_whisper import download_model; download_model('small', cache_dir='/worker/asr-models')" \
+    && chown -R 10001:10001 /worker/asr-models
+ENV CONCAT_ASR_MODEL_CACHE=/worker/asr-models
 ENV PATH=/opt/venv/bin:$PATH
 ENV LD_LIBRARY_PATH=/opt/venv/lib/python3.12/site-packages/nvidia/cublas/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cudnn/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cuda_runtime/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cuda_nvrtc/lib:/usr/local/nvidia/lib64
 COPY cloud_render/concat/project_bundle.py /opt/app/cloud_render/concat/project_bundle.py
-# The worker imports caption_jobs at startup; ship the ASR implementation and
-# the exact native caption-gallery TOMLs used by the Windows editor.
-COPY cloud_render/concat/gpu/caption_jobs.py /opt/app/cloud_render/concat/gpu/caption_jobs.py
+# Reuse the verified complete-worker packaging fix, including acceptance CLI.
+COPY cloud_render/concat/gpu/ /opt/app/cloud_render/concat/gpu/
 COPY upstream/src/crates/concat/text-presets/ /opt/app/cloud_render/concat/gpu/text-presets/
-COPY cloud_render/concat/gpu/worker.py /opt/app/cloud_render/concat/gpu/worker.py
-COPY cloud_render/concat/gpu/resumable.py /opt/app/cloud_render/concat/gpu/resumable.py
-COPY cloud_render/concat/gpu/simple_timeline_v1.py /opt/app/cloud_render/concat/gpu/simple_timeline_v1.py
 
 # Compile-time software capability gate. The live RTX 3060 Ti and NVIDIA
 # decode/encode libraries must still be verified by a real Salad render.

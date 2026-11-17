@@ -13,7 +13,7 @@ permissions:
 jobs:
   image:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,18 +24,30 @@ jobs:
         run: |
           set -euo pipefail
           image="ghcr.io/${GITHUB_REPOSITORY,,}-gpu-candidate:${GITHUB_SHA}"
-          docker build --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+          docker build --build-arg SOURCE_SHA="$GITHUB_SHA" --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
             --label "org.opencontainers.image.revision=$GITHUB_SHA" \
             -f cloud_render/concat/gpu/Dockerfile -t "$image" .
           docker run --rm --entrypoint python3 "$image" -c "from cloud_render.concat.gpu.worker import RenderWorker; from cloud_render.concat.hybrid.project import validate_gpu_manifest; print('Cuda worker and compatibility validator import PASS')"
+          docker run --rm --entrypoint python3 -e EXPECTED_SOURCE_SHA="$GITHUB_SHA" -v "$PWD:/src:ro" "$image" /src/tools/release_image_smoke.py > image-smoke.json
+          docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image" | grep -Fx "$GITHUB_SHA"
+          export SMOKE_TOKEN="$(openssl rand -hex 32)"
+          docker run -d --name concat-release-smoke -p 127.0.0.1:18080:8080 -e RENDERER_API_TOKEN="$SMOKE_TOKEN" "$image"
+          trap 'docker logs concat-release-smoke --tail 30 >&2 || true; docker rm -f concat-release-smoke >/dev/null 2>&1 || true' EXIT
+          python3 tools/verify_container_entrypoint.py
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           docker push "$image"
           docker logout ghcr.io
           reference="$(docker inspect --format '{{index .RepoDigests 0}}' "$image")"
           printf 'Tag: `%s`\n\nDigest: `%s`\n' "$image" "$reference" >> "$GITHUB_STEP_SUMMARY"
           printf '%s\n%s\n' "$image" "$reference" > image-reference.txt
+          export IMAGE_TAG="$image" IMAGE_DIGEST="$reference"
+          python3 -c 'import json,os; smoke=json.load(open("image-smoke.json")); assert smoke["source_sha"]==os.environ["GITHUB_SHA"]; smoke.update(image=os.environ["IMAGE_TAG"],digest=os.environ["IMAGE_DIGEST"]); json.dump(smoke,open("image-reference.json","w"),indent=2)'
+
       - uses: actions/upload-artifact@v4
         with:
           name: Concat-Salad-image-reference
-          path: image-reference.txt
+          path: |
+            image-reference.txt
+            image-reference.json
+            image-smoke.json
           if-no-files-found: error

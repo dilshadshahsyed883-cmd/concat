@@ -1,14 +1,9 @@
-Concat final synchronized Windows EXE + Salad CUDA candidate build request — 2026-11-09.
+Concat matching release request — 2026-11-18.
 
-RELEASE SCOPE:
-- Source: current main, including merged PR #40 and standalone layout PR #41.
-- Compound Clips are explicitly DEFERRED / OUT OF SCOPE. PR #35 closed without merge. Preserve its feature branch; DO NOT cherry-pick compound code or block the release on that work.
-- Preserve Media, C Builder, Text, Transitions, Animations, Filters, Templates, Effects; compact 48px full-width timeline; Canvas/Whisper; offline ZIP; GPU manifest and performance fixes.
+PR #56 merged with all seven feature sources and eight green source CI runs.
+Build Windows x64 EXE and Salad GPU candidate strictly from the same triggering
+main SHA. Embed and verify source revision and render contract. Include small
+ASR model assets, all nine presets, PNG/JPEG, actual worker startup and contract
+checks. Publish Windows release only after matching image verification.
 
-VERIFICATION GATE:
-- PR #40 and PR #41 Linux worker tests, Rust/Slint typecheck, C Builder contracts and offline ZIP tests completed successfully.
-- Windows workflow must build the native Windows x64 EXE, run smoke test, bundled offline ZIP parity and local queue tests, project/host tests, and publish the release ZIP only if all jobs pass.
-- Salad candidate workflow must build the Docker image and verify Python CUDA worker and manifest validator imports; publish GHCR image tagged with the exact triggering source commit SHA and report digest.
-- The same source commit MUST identify both deliverables. Do not claim NVIDIA hardware acceptance without live RTX GPU verification.
-
-NO VPS OR SALAD DEPLOYMENT. Do not modify production or create general auto-builds for unrelated pushes.
+No VPS deployment, Drive Bridge changes, production Salad swap or Auto Script.
