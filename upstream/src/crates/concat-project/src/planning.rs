@@ -792,7 +792,8 @@ mod keyword_budget_tests {
         s.change_keyword(false,"a",true,0);
         assert_eq!(shares(&s,false),vec![100]);
         s.change_keyword(false,"b",true,0);
-        assert_eq!(shares(&s,false),vec![50,50]);
+        // b's remembered 34% is restored, without wiping a.
+        assert_eq!(shares(&s,false),vec![66,34]);
     }
     #[test]
     fn legacy_profiles_round_trip_deterministically() {
