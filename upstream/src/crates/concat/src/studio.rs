@@ -4990,7 +4990,7 @@ impl Studio {
                 if !seconds.is_finite() || !pixels.is_finite() {self.gesture=gesture;self.clip_cancelled();return;}
                 let threshold=8.0*self.lanes.seconds_per_pixel;
                 let moving:Vec<&str>=origins.iter().map(|o|o.clip.as_str()).collect();
-                let edges:Vec<f32>=origins.iter().filter_map(|o|self.clip(&o.clip).map(|c|[c.start as f32+seconds,c.end() as f32+seconds])).flatten().collect();
+                let edges:Vec<f32>=origins.iter().filter_map(|o|self.clip(&o.clip).map(|c|[c.start as f32+seconds,(c.start+c.duration) as f32+seconds])).flatten().collect();
                 let first=origins.iter().filter_map(|o|self.clip(&o.clip).map(|c|c.start)).fold(f64::INFINITY,f64::min);
                 let shift=(f64::from(seconds+self.snap_shift(&edges,threshold,&moving))).max(-first);
                 let rows=nearest_row(lanes,row_top(lanes,anchor.row)+pixels)-anchor.row;
@@ -5006,7 +5006,7 @@ impl Studio {
                     moves.push(ClipMove {clip_id:clip.id.clone(),track_id:track.id.clone(),start:(clip.start+shift).max(0.0)});
                 }
                 let row=(anchor.row+rows).clamp(0,(count-1).max(0));
-                let duration=origins.iter().filter_map(|o|self.clip(&o.clip).map(|c|c.end())).fold(first,f64::max)-first;
+                let duration=origins.iter().filter_map(|o|self.clip(&o.clip).map(|c|c.start+c.duration)).fold(first,f64::max)-first;
                 self.drag_feedback=crate::ui::DragFeedbackData {active:true,valid:false,start:(first+shift) as f32,duration:duration as f32,row,label:invalid.clone().unwrap_or_default().into()};
                 if invalid.is_none() {
                     let request=concat_project::drag_edit::DragRequest {moves,
