@@ -212,7 +212,7 @@ class ZipParityTests(unittest.TestCase):
                 self.assertEqual(png_path.read_bytes(), (source / "cutout.png").read_bytes())
                 if len(calls) == 1:
                     raise RuntimeError("old renderer rejected PNG")
-                output.write_bytes(b"\\x00\\x00\\x00\\x18ftypisom" + b"\\x00" * 20)
+                output.write_bytes(b"\x00\x00\x00\x18ftypisom" + b"\x00" * 20)
 
             worker = RenderWorker(root / "worker", token="png-retry-test-token" * 3,
                                   renderer=simulate_renderer)
