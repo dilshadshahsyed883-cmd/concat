@@ -134,10 +134,17 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          & "$env:ProgramFiles\Git\bin\bash.exe" scripts/ci/fetch.sh onnxruntime-win-x64 onnxruntime.zip
-          if ($LASTEXITCODE -ne 0) { throw "ONNX download failed" }
-          Expand-Archive onnxruntime.zip -DestinationPath .
           $dir="$PWD\onnxruntime-win-x64-$env:ORT_VERSION"
+          & "$env:ProgramFiles\Git\bin\bash.exe" scripts/ci/fetch.sh onnxruntime-win-x64 onnxruntime.zip
+          if ($LASTEXITCODE -eq 0) {
+            Expand-Archive onnxruntime.zip -DestinationPath .
+          } else {
+            Write-Host "Pinned release ZIP unavailable; using same-version SHA-256-pinned official Microsoft NuGet native SDK"
+            & "$env:ProgramFiles\Git\bin\bash.exe" scripts/ci/fetch.sh onnxruntime-nuget-1.28.0 onnxruntime.nupkg
+            if ($LASTEXITCODE -ne 0) { throw "Pinned ONNX NuGet download failed" }
+            python ../tools/prepare_ort_nuget.py onnxruntime.nupkg $dir
+            if ($LASTEXITCODE -ne 0) { throw "ONNX native SDK validation failed" }
+          }
           if (-not (Test-Path "$dir\lib\onnxruntime.lib")) { throw "Missing ONNX import library" }
           "ORT_LIB_LOCATION=$dir\lib" | Out-File -FilePath $env:GITHUB_ENV -Append
           "ORT_PREFER_DYNAMIC_LINK=1" | Out-File -FilePath $env:GITHUB_ENV -Append

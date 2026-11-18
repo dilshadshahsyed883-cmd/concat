@@ -41,6 +41,7 @@ with tempfile.TemporaryDirectory() as work:
         response = conn.getresponse(); assert response.status == 200; response.read()
         conn.request('GET', '/api/capabilities')
         response = conn.getresponse(); assert response.status == 401; response.read()
+        conn.close()  # Authentication errors deliberately close the worker connection.
         conn.request('GET', '/api/capabilities', headers={'Authorization': 'Bearer ' + token})
         response = conn.getresponse(); assert response.status == 200
         capabilities = json.loads(response.read())

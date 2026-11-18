@@ -7,3 +7,6 @@ ASR model assets, all nine presets, PNG/JPEG, actual worker startup and contract
 checks. Publish Windows release only after matching image verification.
 
 No VPS deployment, Drive Bridge changes, production Salad swap or Auto Script.
+
+Release recovery: reopen the HTTP smoke connection after expected 401; rebuild BOTH
+Windows and GPU candidates from the new triggering main SHA. No production swap.
