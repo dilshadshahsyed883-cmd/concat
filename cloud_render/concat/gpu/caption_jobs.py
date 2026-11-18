@@ -21,7 +21,7 @@ import tomllib
 
 from cloud_render.concat.hybrid.captions import Cue, WordTiming
 
-MODELS = {"tiny", "base", "small", "medium", "large-v3", "turbo"}
+MODELS = {"tiny", "base", "small"}
 # Legacy IDs stay readable. Native gallery IDs and style values are loaded from
 # the same checked-in CUDA caption presets that the Windows editor displays.
 PRESET_ALIASES = {

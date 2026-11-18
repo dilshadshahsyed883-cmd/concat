@@ -23,6 +23,8 @@ class BundledAsrTests(unittest.TestCase):
                          and any(isinstance(target, ast.Name) and target.id == "MODELS"
                                  for target in item.targets))
         self.assertEqual(set(asr_models.BUNDLED_MODELS), supported)
+        self.assertEqual(asr_models.BUNDLED_MODELS, ("tiny", "base", "small"))
+        self.assertTrue({"medium", "large-v3", "turbo"}.isdisjoint(supported))
         self.assertEqual(len(asr_models.BUNDLED_MODELS), len(supported))
 
     def test_offline_verification_never_downloads_model(self):

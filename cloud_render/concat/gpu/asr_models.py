@@ -13,8 +13,8 @@ import tempfile
 import wave
 from pathlib import Path
 
-# Keep in sync with caption_jobs.MODELS. All supported sizes are image-bundled.
-BUNDLED_MODELS = ("tiny", "base", "small", "medium", "large-v3", "turbo")
+# Keep in sync with caption_jobs.MODELS. Only the three enabled sizes are image-bundled.
+BUNDLED_MODELS = ("tiny", "base", "small")
 REQUIRED_FILES = ("model.bin", "config.json", "tokenizer.json")
 
 

@@ -26,7 +26,7 @@ RUN python3 -m venv /opt/venv \
        -r /opt/app/cloud_render/concat/hybrid/requirements-captions.txt \
        -r /opt/app/cloud_render/concat/hybrid/requirements-asr.txt \
        nvidia-cuda-runtime-cu12==12.8.90 nvidia-cuda-nvrtc-cu12==12.8.93
-# Bake all six selectable GPU-caption ASR models into this immutable image.
+# Bake only Tiny, Base and Small GPU-caption ASR models into this immutable image.
 # No model download or Hugging Face network access is needed at runtime.
 # CI fails if any model weight, config, tokenizer or WAV decoder is broken.
 COPY cloud_render/concat/gpu/asr_models.py /opt/app/cloud_render/concat/gpu/asr_models.py
