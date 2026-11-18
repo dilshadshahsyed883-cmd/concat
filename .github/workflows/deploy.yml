@@ -1,0 +1,97 @@
+name: Concat Web guarded deployment
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Exact current concat-web/main commit SHA
+        required: true
+        type: string
+      action:
+        description: Preflight only, or deploy after host/SSO readiness
+        required: true
+        type: choice
+        default: preflight
+        options:
+          - preflight
+          - deploy
+permissions:
+  contents: read
+concurrency:
+  group: concat-web-production
+  cancel-in-progress: false
+jobs:
+  guarded-release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: concat-web-production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Pin reviewed main commit
+        env:
+          REQUESTED_SHA: ${{ inputs.sha }}
+        run: |
+          set -euo pipefail
+          test "$REQUESTED_SHA" = "$GITHUB_SHA" || { echo "Refusing non-HEAD or unreviewed SHA"; exit 1; }
+          test "$GITHUB_REF" = refs/heads/main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Offline build, integration and negative security tests
+        run: |
+          set -euo pipefail
+          python -m pip install -e '.[test]'
+          python -m compileall -q app run.py reused
+          python -m unittest discover -s tests -p 'test_foundation.py' -v
+          python -m unittest discover -s tests -p 'test_reused_*.py' -v
+          python -m unittest app.modules.concat.test_routes -v
+          python -m unittest discover -s app/modules/uploader/tests -p 'test_*.py' -v
+          python -m unittest discover -s tests -p 'test_admin_security.py' -v
+          python -m pip wheel --no-deps --wheel-dir /tmp/concat-wheel .
+      - name: Verify private deploy connection configuration
+        env:
+          SSH_HOST: ${{ secrets.CONCAT_VPS_HOST }}
+          SSH_USER: ${{ secrets.CONCAT_VPS_USER }}
+          SSH_KEY: ${{ secrets.CONCAT_VPS_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.CONCAT_VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          for value in "$SSH_HOST" "$SSH_USER" "$SSH_KEY" "$SSH_KNOWN_HOSTS"; do test -n "$value" || { echo "Missing protected VPS environment secret"; exit 1; }; done
+          mkdir -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/concat_key
+          chmod 600 ~/.ssh/concat_key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Remote read-only host and SSO readiness check
+        env:
+          SSH_HOST: ${{ secrets.CONCAT_VPS_HOST }}
+          SSH_USER: ${{ secrets.CONCAT_VPS_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/concat_key -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=12 -- "$SSH_USER@$SSH_HOST" \
+            "sudo -n bash -s -- preflight '$GITHUB_SHA'" < deploy/guarded-release.sh
+      - name: Upload immutable standalone Concat release
+        if: inputs.action == 'deploy'
+        env:
+          SSH_HOST: ${{ secrets.CONCAT_VPS_HOST }}
+          SSH_USER: ${{ secrets.CONCAT_VPS_USER }}
+        run: |
+          set -euo pipefail
+          tar -czf /tmp/concat-web-release.tgz --exclude='__pycache__' --exclude='*.pyc' \
+            --exclude='.pytest_cache' app reused run.py pyproject.toml
+          scp -i ~/.ssh/concat_key -o StrictHostKeyChecking=yes -o BatchMode=yes \
+            /tmp/concat-web-release.tgz "$SSH_USER@$SSH_HOST:/tmp/concat-web-$GITHUB_SHA.tgz"
+      - name: Deploy Concat service with automatic rollback
+        if: inputs.action == 'deploy'
+        env:
+          SSH_HOST: ${{ secrets.CONCAT_VPS_HOST }}
+          SSH_USER: ${{ secrets.CONCAT_VPS_USER }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/concat_key -o StrictHostKeyChecking=yes -o BatchMode=yes -- "$SSH_USER@$SSH_HOST" \
+            "sudo -n bash -s -- deploy '$GITHUB_SHA' '/tmp/concat-web-$GITHUB_SHA.tgz'" < deploy/guarded-release.sh
+      - name: Remove local SSH material
+        if: always()
+        run: rm -f ~/.ssh/concat_key ~/.ssh/known_hosts

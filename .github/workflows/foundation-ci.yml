@@ -28,5 +28,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_reused_*.py' -v
           python -m unittest app.modules.concat.test_routes -v
           python -m unittest discover -s app/modules/uploader/tests -p 'test_*.py' -v
+      - name: Release script syntax (no SSH or deployment)
+        run: bash -n deploy/guarded-release.sh
       - name: Wheel build smoke
         run: python -m pip wheel --no-deps --wheel-dir /tmp/concat-web-wheel .
