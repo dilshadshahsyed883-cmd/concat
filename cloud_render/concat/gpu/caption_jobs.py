@@ -305,34 +305,35 @@ class FasterWhisperCuda:
             self.models[key] = WhisperModel(key, device="cuda", compute_type="float16",
                 download_root=os.environ.get("CONCAT_ASR_MODEL_CACHE", "/worker/asr-models"),
                 local_files_only=True)
-        segments, _ = self.models[key].transcribe(str(audio), language=request["language"],
-            word_timestamps=True, vad_filter=True, beam_size=5)
-        cues = []
-        for segment in segments:
+        from cloud_render.concat.gpu.asr_alignment import (
+            AsrWordAlignmentError, segments_to_cues
+        )
+        # Normal path keeps the existing VAD and beam settings. Only when
+        # faster-whisper returns invalid *word* timing do we retry the source
+        # audio once with independent VAD/context settings. No heuristic word
+        # intervals or CPU ASR/video-rendering fallback are permitted.
+        settings = (
+            {"word_timestamps": True, "vad_filter": True, "beam_size": 5},
+            {"word_timestamps": True, "vad_filter": False, "beam_size": 5,
+             "condition_on_previous_text": False},
+        )
+        for attempt, options in enumerate(settings, 1):
             ensure_not_cancelled(cancel)
-            words = []
-            for word in segment.words or ():
-                text = word.word.strip()
-                if not text:
-                    continue
-                if len(text.split()) != 1:
-                    raise ValueError("ASR returned multi-word token without individual word timestamps")
-                start, end = round(_finite(word.start, "ASR word start")*1000), round(_finite(word.end, "ASR word end")*1000)
-                words.append({"text": text, "startMs": start, "endMs": end})
-            if not words:
-                continue
-            # Boundaries derive from speech words, retaining actual silence gaps.
-            phrase = []
-            for word in words:
-                if phrase and (len(phrase) >= 7 or sum(len(w["text"])+1 for w in phrase)+len(word["text"]) > 42):
-                    cues.append({"startMs": phrase[0]["startMs"], "endMs": phrase[-1]["endMs"],
-                                 "text": " ".join(w["text"] for w in phrase), "words": phrase})
-                    phrase = []
-                phrase.append(word)
-            if phrase:
-                cues.append({"startMs": phrase[0]["startMs"], "endMs": phrase[-1]["endMs"],
-                             "text": " ".join(w["text"] for w in phrase), "words": phrase})
-        return {"version": 1, "cues": cues}
+            segments, _ = self.models[key].transcribe(
+                str(audio), language=request["language"], **options
+            )
+            try:
+                return segments_to_cues(
+                    segments, model=key,
+                    check_cancel=lambda: ensure_not_cancelled(cancel)
+                )
+            except AsrWordAlignmentError as exc:
+                if attempt == len(settings):
+                    raise ValueError(
+                        "GPU ASR word alignment unavailable after 2 passes; "
+                        f"{exc}. Source audio is retained for retry."
+                    ) from exc
+        raise AssertionError("ASR alignment attempt loop unexpectedly exited")
 
 
 class CaptionEngine:
