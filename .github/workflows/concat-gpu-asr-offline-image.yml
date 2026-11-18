@@ -1,0 +1,75 @@
+name: Concat GPU offline-ASR candidate image
+
+on:
+  push:
+    branches: ['fix/gpu-offline-asr-bundle-20261118']
+    paths:
+      - 'cloud_render/concat/gpu/asr_models.py'
+      - 'cloud_render/concat/gpu/caption_jobs.py'
+      - 'cloud_render/concat/gpu/Dockerfile'
+      - 'cloud_render/concat/hybrid/requirements-asr.txt'
+      - 'tests/test_gpu_asr_image_bundle.py'
+      - '.github/workflows/concat-gpu-asr-offline-image.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: concat-gpu-offline-asr-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate Python syntax and offline image contracts
+        run: |
+          python -m py_compile cloud_render/concat/gpu/asr_models.py cloud_render/concat/gpu/caption_jobs.py tests/test_gpu_asr_image_bundle.py
+          python -m unittest -v tests.test_gpu_asr_image_bundle
+
+  image:
+    needs: contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Release runner-only space for six bundled ASR models
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/hostedtoolcache/CodeQL || true
+          docker system prune -af || true
+          df -h /
+      - name: Build immutable Salad GPU candidate with offline models
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}-gpu-candidate:${{ github.sha }}
+        run: |
+          set -euo pipefail
+          image="${IMAGE,,}"
+          docker build --build-arg SOURCE_SHA="$GITHUB_SHA" -f cloud_render/concat/gpu/Dockerfile -t "$image" .
+          docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image" | grep -Fx "$GITHUB_SHA"
+          docker run --rm --entrypoint python3 "$image" /opt/app/cloud_render/concat/gpu/asr_models.py --mode verify
+          docker run --rm --entrypoint python3 "$image" -c 'from cloud_render.concat.gpu.worker import RenderWorker; print("Concat GPU worker import PASS")'
+      - name: Publish candidate by exact source SHA (no Salad deployment)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ghcr.io/${{ github.repository }}-gpu-candidate:${{ github.sha }}
+        run: |
+          set -euo pipefail
+          image="${IMAGE,,}"
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker push "$image"
+          docker logout ghcr.io
+          echo "Candidate image: \`$image\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Source SHA: \`$GITHUB_SHA\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Model bundle: tiny, base, small, medium, large-v3, turbo" >> "$GITHUB_STEP_SUMMARY"
+          echo "No VPS_1 or Salad live container changes" >> "$GITHUB_STEP_SUMMARY"
