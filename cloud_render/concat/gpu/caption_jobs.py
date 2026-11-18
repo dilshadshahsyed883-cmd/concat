@@ -303,7 +303,8 @@ class FasterWhisperCuda:
             import gc
             gc.collect()
             self.models[key] = WhisperModel(key, device="cuda", compute_type="float16",
-                download_root=os.environ.get("CONCAT_ASR_MODEL_CACHE", "/worker/asr-models"))
+                download_root=os.environ.get("CONCAT_ASR_MODEL_CACHE", "/worker/asr-models"),
+                local_files_only=True)
         segments, _ = self.models[key].transcribe(str(audio), language=request["language"],
             word_timestamps=True, vad_filter=True, beam_size=5)
         cues = []
