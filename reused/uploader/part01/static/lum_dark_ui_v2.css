@@ -1,0 +1,261 @@
+/* LUM_DARK_UX_REFINEMENT_V2
+   Full-width, flatter dashboard UI. Visual-only. */
+
+:root{color-scheme:dark}
+html,body{
+  width:100%!important;max-width:none!important;margin:0!important;
+  background:#0a1220!important;color:#e7edf6!important;
+}
+body,button,input,select,textarea{
+  font-family:"Segoe UI Variable","Segoe UI",Roboto,Arial,sans-serif!important;
+  font-kerning:normal;
+}
+body{font-weight:400!important;-webkit-font-smoothing:antialiased!important;text-rendering:optimizeLegibility!important}
+body.lum-embedded,.app-main{
+  width:100%!important;max-width:none!important;
+  background:#0a1220!important;
+}
+body.lum-embedded .app-main{padding:0!important;margin:0!important}
+
+.lum-shell{
+  --lum:#6d5dfc;
+  --lum-hover:#796cff;
+  --lum-cyan:#38c8eb;
+  --lum-green:#35d18a;
+  --lum-amber:#f0b84b;
+  --lum-red:#ff7187;
+  --lum-ink:#e7edf6;
+  --lum-muted:#9aa8ba;
+  --lum-line:rgba(148,163,184,.16);
+  --lum-soft:#0d1726;
+  width:100%!important;
+  max-width:none!important;
+  min-width:0!important;
+  margin:0!important;
+  padding:4px 10px 28px!important;
+  font-size:15px!important;
+  line-height:1.45!important;
+  color:var(--lum-ink)!important;
+}
+.lum-shell *{box-sizing:border-box}
+
+/* Flatter surfaces: use hierarchy, not boxes everywhere */
+.lum-statusbar,.lum-tabs,.lum-card,.lum-metrics>div,.lum-channel-summary>div,
+.lum-vault-stats>div,.lum-pc-preview-grid>div,.lum-ae-head,.lum-ae-toolbar,
+.lum-ae-savebar,.lum-ae-record-stats>div{
+  background:#101a2a!important;
+  border:1px solid var(--lum-line)!important;
+  color:#e7edf6!important;
+  box-shadow:none!important;
+}
+.lum-card{
+  border-radius:12px!important;
+  padding:17px!important;
+}
+.lum-card.inset{
+  background:#0d1726!important;
+  border-color:rgba(148,163,184,.12)!important;
+  box-shadow:none!important;
+}
+.lum-card-head{
+  border-color:rgba(148,163,184,.13)!important;
+  padding-bottom:12px!important;margin-bottom:14px!important;
+}
+.lum-card-head h2,.lum-card.inset h3,.lum-ae-head h2{
+  color:#f2f5fa!important;
+  font-weight:700!important;
+  letter-spacing:-.012em!important;
+}
+.lum-card-head h2{font-size:18px!important;line-height:1.3!important}
+.lum-card.inset h3{font-size:16px!important}
+.lum-card-head p,.lum-submit-card p,.lum-ae-head p,.lum-card.inset p{
+  color:#9aa8ba!important;
+  font-size:13.5px!important;
+  font-weight:400!important;
+  line-height:1.5!important;
+}
+
+/* Header/status */
+.lum-statusbar{padding:13px 14px!important;border-radius:12px!important}
+.lum-statusbar strong{font-size:14px!important;font-weight:650!important;color:#eef3f9!important}
+.lum-statusbar span{font-size:13px!important;font-weight:400!important;color:#9aa8ba!important}
+.lum-mode-toggle,.admin-mode-toggle{background:#0c1625!important;border-color:var(--lum-line)!important}
+.lum-mode-toggle button,.admin-mode-toggle button{
+  color:#aab5c5!important;font-size:13px!important;font-weight:600!important;padding:8px 14px!important
+}
+.lum-mode-toggle button.active,.admin-mode-toggle button.active{
+  background:#6354ee!important;color:#fff!important;box-shadow:none!important
+}
+
+/* Main / nested navigation */
+.lum-tabs{
+  gap:3px!important;padding:4px!important;border-radius:10px!important;
+  overflow-x:auto!important;background:#0d1726!important;
+}
+.lum-tabs a{
+  font-size:14px!important;font-weight:600!important;padding:10px 14px!important;
+  color:#aeb9c8!important;border:0!important;
+}
+.lum-tabs a:hover{background:#162238!important;color:#f6f8fc!important}
+.lum-tabs a.active{background:#6253ec!important;color:#fff!important;box-shadow:none!important}
+
+.lum-channel-subnav,.lum-ae-tabs{
+  background:#0d1726!important;border:1px solid var(--lum-line)!important;
+  padding:4px!important;border-radius:10px!important;gap:3px!important;
+}
+.lum-channel-subnav button,.lum-ae-tabs button{
+  font-size:14px!important;font-weight:600!important;color:#aeb9c8!important;
+  padding:10px 14px!important;min-height:40px!important;
+}
+.lum-channel-subnav button:hover,.lum-ae-tabs button:hover{background:#162238!important;color:#fff!important}
+.lum-channel-subnav button.active,.lum-ae-tabs button.active{
+  background:#6253ec!important;color:#fff!important;box-shadow:none!important;
+}
+
+/* Natural typography */
+.lum-field>span{font-size:13px!important;font-weight:600!important;color:#b5c0ce!important;margin-bottom:6px!important}
+.lum-field small{font-size:12.5px!important;font-weight:400!important;color:#8493a7!important}
+.lum-check{font-size:14px!important;font-weight:500!important;color:#c3ccd8!important}
+.lum-list strong,.lum-submit-card>div>strong,.lum-switch span strong{font-size:14px!important;font-weight:650!important;color:#edf2f8!important}
+.lum-list span,.lum-switch span small{font-size:12.5px!important;font-weight:400!important;color:#8e9caf!important}
+.lum-kv dt,.lum-kv dd{font-size:13.5px!important}.lum-kv dt{color:#98a6b8!important;font-weight:400!important}.lum-kv dd{color:#e8edf5!important;font-weight:650!important}
+.lum-section-label strong{font-size:15px!important;font-weight:650!important;color:#f2f5fa!important}
+.lum-section-label span{font-size:12.5px!important;font-weight:400!important;color:#8999ad!important}
+code,.lum-shell code{font-family:"Cascadia Mono","Segoe UI Mono",Consolas,monospace!important;color:#9ed7ff!important;font-weight:400!important}
+
+/* Controls */
+.lum-field input,.lum-field select,.lum-field textarea,.lum-confirm,
+.lum-oauth input,.user-inline select,.user-password input,.lum-ae-concurrency-form select{
+  background:#0b1523!important;color:#e5ebf3!important;border:1px solid rgba(148,163,184,.22)!important;
+  font-size:14px!important;font-weight:400!important;min-height:42px!important;border-radius:8px!important;
+}
+.lum-field input::placeholder,.lum-field textarea::placeholder,.lum-confirm::placeholder{color:#69798e!important}
+.lum-field input:focus,.lum-field select:focus,.lum-field textarea:focus,.lum-confirm:focus{
+  border-color:#7568ff!important;box-shadow:0 0 0 3px rgba(109,93,252,.16)!important
+}
+
+.lum-button,.lum-row-actions>summary,.lum-pagination button{
+  background:#152238!important;color:#dbe4ef!important;border:1px solid rgba(148,163,184,.20)!important;
+  font-size:14px!important;font-weight:600!important;min-height:39px!important;
+  padding:9px 13px!important;border-radius:8px!important;box-shadow:none!important;
+}
+.lum-button:hover,.lum-row-actions>summary:hover,.lum-pagination button:hover{background:#1b2b44!important;color:#fff!important}
+.lum-button.primary{background:#6757f3!important;border-color:#6757f3!important;color:#fff!important;box-shadow:none!important}
+.lum-button.primary:hover{background:#7568ff!important}
+.lum-button.secondary{background:#152238!important;color:#d1dae7!important}
+.lum-button.danger{background:#321723!important;color:#ff9aab!important;border-color:#683044!important}
+.lum-button.tiny{font-size:13px!important;font-weight:600!important;min-height:34px!important;padding:7px 10px!important}
+
+/* Badges: readable, not shouty */
+.lum-badge,.lum-health,.lum-state{
+  font-size:12px!important;font-weight:650!important;padding:5px 9px!important;border-radius:999px!important;
+}
+.lum-badge{background:#152238!important;border-color:rgba(148,163,184,.18)!important;color:#bdc8d7!important}
+.lum-badge.good,.lum-health.ok,.lum-state.s-completed,.lum-state.s-active{background:#103326!important;border-color:#235c47!important;color:#7ce3b2!important}
+.lum-badge.warn,.lum-health.warn,.lum-state.s-waiting_slot,.lum-state.s-scheduled,.lum-state.s-paused{background:#37290f!important;border-color:#675022!important;color:#f7cf73!important}
+.lum-badge.bad,.lum-state.s-failed,.lum-state.s-review_required{background:#351722!important;border-color:#693246!important;color:#ff9bad!important}
+.lum-badge.brand,.lum-state.s-uploading,.lum-state.s-verifying_remote,.lum-state.s-cleaning{background:#211d4b!important;border-color:#4d4291!important;color:#bcb2ff!important}
+
+/* Metrics */
+.lum-metrics{gap:10px!important}
+.lum-metrics>div{padding:15px!important;border-radius:11px!important}
+.lum-metrics span{font-size:12px!important;font-weight:600!important;color:#8f9eb1!important;text-transform:none!important;letter-spacing:0!important}
+.lum-metrics strong{font-size:27px!important;font-weight:700!important;color:#fff!important;margin-top:5px!important}
+
+/* Tables: better legibility */
+.lum-table-wrap,.lum-channel-table-wrap{
+  width:100%!important;max-width:100%!important;overflow:auto!important;
+  background:#0c1625!important;border:1px solid rgba(148,163,184,.14)!important;border-radius:9px!important;
+}
+.lum-table{background:#0c1625!important;color:#dce5ef!important}
+.lum-table th,.lum-channel-table th{
+  background:#111e31!important;color:#9faec1!important;border-color:rgba(148,163,184,.13)!important;
+  font-size:12px!important;font-weight:650!important;letter-spacing:.015em!important;padding:11px 12px!important;
+}
+.lum-table td,.lum-channel-table td{
+  color:#d9e2ed!important;border-color:rgba(148,163,184,.10)!important;
+  font-size:13.5px!important;font-weight:400!important;padding:10px 12px!important;
+}
+.lum-table td small{font-size:12px!important;color:#8191a6!important}
+.lum-table code{font-size:12.5px!important}
+.lum-table tbody tr:hover,.lum-channel-table tr[data-channel-row]:hover td{background:#111f32!important}
+
+/* Channel workspace */
+.lum-channel-summary{gap:9px!important}
+.lum-channel-summary>div{padding:13px 14px!important;border-radius:10px!important}
+.lum-channel-summary span{font-size:12px!important;font-weight:500!important;color:#8e9db0!important}
+.lum-channel-summary strong{font-size:20px!important;font-weight:700!important;color:#f4f7fb!important}
+.lum-channel-manager{padding:16px!important}
+.lum-channel-manager h2{font-size:19px!important;font-weight:700!important}
+.lum-channel-manager p{font-size:13.5px!important;font-weight:400!important}
+.lum-channel-filters{background:#0d1726!important;border-color:rgba(148,163,184,.13)!important;padding:11px!important}
+.lum-channel-filters .lum-field>span{font-size:12.5px!important;font-weight:600!important}
+.lum-channel-filters input,.lum-channel-filters select{font-size:14px!important;font-weight:400!important}
+.lum-channel-bulk,.lum-ae-toolbar,.lum-ae-savebar,.lum-ae-thumb-selectbar,.lum-ae-queue-summary{
+  background:#0d1726!important;border-color:rgba(148,163,184,.13)!important;box-shadow:none!important;
+}
+.lum-selection-info strong{font-size:13px!important;font-weight:650!important}
+.lum-link-button{font-size:13px!important;font-weight:600!important;color:#aa9fff!important}
+
+/* Accounts & OAuth */
+.lum-dual-auth-hero{background:#111a31!important;border-color:rgba(117,104,255,.30)!important}
+.lum-dual-methods>div,.lum-dual-channel,.lum-connection-card{
+  background:#0d1726!important;border-color:rgba(148,163,184,.14)!important;box-shadow:none!important;
+}
+.lum-dual-methods strong,.lum-connection-title strong{font-size:15px!important;font-weight:650!important}
+.lum-dual-methods small,.lum-connection-title small{font-size:12.5px!important;font-weight:400!important}
+.lum-dual-channel>header strong{font-size:17px!important;font-weight:700!important}
+.lum-dual-channel>header small,.lum-dual-channel>header code{font-size:13px!important;font-weight:400!important;overflow-wrap:anywhere!important}
+.lum-connection-card.active{border-color:#695df1!important;box-shadow:inset 3px 0 0 #695df1!important}
+
+/* Auto Engine */
+.lum-ae-head{padding:15px 16px!important;border-radius:11px!important}
+.lum-ae-head h2{font-size:20px!important;font-weight:700!important}
+.lum-ae-head p{font-size:13.5px!important;font-weight:400!important}
+.lum-eyebrow{font-size:12px!important;font-weight:650!important;color:#aaa0ff!important}
+.lum-ae-toolbar{padding:10px 12px!important}
+.lum-ae-facts span{background:#0c1625!important;border-color:rgba(148,163,184,.13)!important;color:#98a7b9!important;font-size:12.5px!important;font-weight:400!important}
+.lum-ae-facts strong{font-size:13.5px!important;font-weight:650!important}
+.lum-ae-result-grid>div{background:#0d1726!important;border-color:rgba(148,163,184,.13)!important}
+.lum-ae-result-grid span{font-size:12px!important;font-weight:500!important}
+.lum-ae-result-grid strong{font-size:18px!important;font-weight:700!important}
+.lum-ae-thumb-meta strong{font-size:13.5px!important;font-weight:650!important}
+.lum-ae-thumb-meta span{font-size:12px!important;font-weight:400!important}
+
+/* Logs */
+.lum-log{background:#07101c!important;border-color:rgba(148,163,184,.14)!important;font-size:13.5px!important;line-height:1.6!important}
+.lum-log b{font-size:12px!important;font-weight:650!important}
+
+/* Remove unnecessary outer "boxed app" feeling */
+.lum-shell>.lum-statusbar,
+.lum-shell>.lum-tabs{margin-left:0!important;margin-right:0!important}
+.lum-shell>section,.lum-shell>div{max-width:none!important}
+.lum-shell .lum-card{max-width:none!important}
+
+/* Accessibility */
+.lum-shell a:focus-visible,.lum-shell button:focus-visible,.lum-shell input:focus-visible,
+.lum-shell select:focus-visible,.lum-shell textarea:focus-visible{
+  outline:2px solid #8e83ff!important;outline-offset:2px!important;
+}
+
+/* Responsive */
+@media (min-width:1600px){
+  .lum-shell{padding-left:12px!important;padding-right:12px!important}
+}
+@media (max-width:1365px){
+  .lum-shell{font-size:14.5px!important;padding-left:8px!important;padding-right:8px!important}
+}
+@media (max-width:980px){
+  .lum-card{padding:15px!important}
+  .lum-dual-connection-grid,.lum-dual-methods,.lum-perm-setup-grid{grid-template-columns:1fr!important}
+}
+@media (max-width:760px){
+  .lum-shell{padding:0 6px 24px!important}
+  .lum-tabs,.lum-channel-subnav,.lum-ae-tabs{flex-wrap:nowrap!important;overflow-x:auto!important;-webkit-overflow-scrolling:touch}
+  .lum-tabs a,.lum-channel-subnav button,.lum-ae-tabs button{font-size:13.5px!important;min-height:42px!important}
+  .lum-card{padding:13px!important;border-radius:10px!important}
+  .lum-card-head h2{font-size:17px!important}
+  .lum-card-head p{font-size:13px!important}
+  .lum-field input,.lum-field select,.lum-field textarea,.lum-confirm{font-size:16px!important}
+  .lum-button{font-size:13.5px!important;min-height:42px!important}
+}

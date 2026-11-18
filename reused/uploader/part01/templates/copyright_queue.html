@@ -1,0 +1,74 @@
+<section class="lum-card copyright-queue">
+  <div class="lum-card-head"><h2>Upload Queue <span class="lum-badge">{{ projects|length }}</span></h2><div class="lum-actions"><a class="lum-button" href="{{ base_path }}/app?tab=queue">Refresh</a><a class="lum-button primary" href="{{ base_path }}/app?tab=add_video">+ Add Video</a></div></div>
+  <div class="copyright-queue-toolbar">
+    <label class="lum-field"><span>Search videos</span><input type="search" data-copyright-search placeholder="Title, channel or filename"></label>
+    <label class="lum-field"><span>Status</span><select data-copyright-status><option value="all">All statuses</option><option value="waiting">Waiting / Scheduled</option><option value="active">Uploading / Processing</option><option value="attention">Needs attention</option><option value="completed">Completed</option><option value="cancelled">Cancelled</option></select></label>
+    <div class="lum-actions copyright-queue-controls">
+      {% if stats.owner_queue_paused %}
+      <form method="post" action="{{ base_path }}/actions/copyright/queue/start"><input type="hidden" name="csrf_token" value="{{ csrf }}"><button class="lum-button primary" type="submit">Start / Resume My Queue</button></form>
+      {% else %}
+      <form method="post" action="{{ base_path }}/actions/copyright/queue/pause"><input type="hidden" name="csrf_token" value="{{ csrf }}"><button class="lum-button" type="submit">Pause My Queue</button></form>
+      {% endif %}
+    </div>
+  </div>
+  <form id="copyright-bulk-form" method="post" action="{{ base_path }}/actions/copyright/queue/bulk" class="lum-actions" data-copyright-confirm="Apply this action to the selected jobs owned by your account?">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <button class="lum-button" type="submit" name="action" value="retry">Retry Selected</button>
+    <button class="lum-button danger" type="submit" name="action" value="cancel">Cancel Selected</button>
+    <button class="lum-button" type="submit" name="action" value="remove">Remove Done / Cancelled</button>
+    <small>Only your own waiting/failed jobs can be changed. Unowned selections are rejected.</small>
+  </form>
+  <p class="copyright-result-count" data-copyright-count role="status">{{ projects|length }} videos</p>
+  <div class="lum-table-wrap"><table class="lum-table copyright-queue-table"><thead><tr><th>Video</th><th>{{ "Concat Source" if engine_instance == "concat" else "VPS Folder" }}</th><th>Group</th><th>Channel</th><th>Status / Progress</th><th>{{ "YouTube Release (PKT)" if engine_instance == "concat" else "Schedule (PKT)" }}</th><th>Details</th><th>Actions</th></tr></thead><tbody>
+  {% for p in projects %}
+    {% set ch = namespace(name='Channel #' ~ p.channel_db_id) %}
+    {% for c in channels %}{% if c.id|string == p.channel_db_id|string %}{% set ch.name = c.channel_name or c.channel_id %}{% endif %}{% endfor %}
+    {% set bucket = 'cancelled' if p.status == 'CANCELLED' else 'completed' if p.status == 'COMPLETED' else ('attention' if p.status in ['FAILED','PAUSED','REVIEW_REQUIRED','WAITING_NETWORK','WAITING_PROXY'] else ('active' if p.status in ['DOWNLOADING','SOURCE_READY','UPLOAD_QUEUED','UPLOADING','VERIFYING_REMOTE','CLEANING'] else 'waiting')) %}
+    <tr data-copyright-job data-status="{{ bucket }}" data-search="{{ (p.title ~ ' ' ~ ch.name ~ ' ' ~ (p.source_file_name or '') ~ ' ' ~ (p.vps_folder or '') ~ ' ' ~ (p.group_name or '') ~ ' ' ~ p.id)|lower }}">
+      <td><label><input type="checkbox" name="project_ids" value="{{ p.id }}" form="copyright-bulk-form" aria-label="Select project {{ p.id }}"> <strong>{{ p.title }}</strong></label><small>#{{ p.id }} · {{ p.source_file_name or 'Google Drive video' }}</small></td>
+      <td>{{ (p.source_file_name or 'Verified Cloud Render MP4') if engine_instance == 'concat' else ((p.vps_folder or 'My VPS Root') if p.source_origin == 'folder' else '—') }}</td>
+      <td>{{ p.group_name or '—' }}</td>
+      <td>{{ ch.name }}</td>
+      <td><span class="lum-state s-{{ p.status|lower }}">{{ p.status|replace('_',' ')|title }}</span><div class="lum-progress" role="progressbar" aria-label="Upload progress for project {{ p.id }}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ p.progress or 0 }}"><i style="width:{{ p.progress or 0 }}%"></i></div><small>{{ p.progress or 0 }}%</small></td>
+      <td>{{ (p.publish_at if engine_instance == 'concat' else p.app_upload_at)|schedule_pkt }}</td>
+      <td>{% if p.error_message %}<details class="copyright-error"><summary>View message</summary><p>{{ p.error_message }}</p></details>{% elif p.status == 'COMPLETED' %}Upload verified{% if p.cleanup_verified_at %} · VPS cleanup recorded{% else %} · Cleanup not confirmed{% endif %}{% else %}{{ p.core_status or '—' }}{% endif %}</td>
+      <td><div class="lum-actions">
+        {% if p.youtube_url %}<a class="lum-button tiny" href="{{ p.youtube_url }}" target="_blank" rel="noopener">YouTube</a>{% endif %}
+        {% if p.status in ['FAILED','PAUSED'] %}<form method="post" action="{{ base_path }}/actions/retry/{{ p.id }}"><input type="hidden" name="csrf_token" value="{{ csrf }}"><button class="lum-button tiny" type="submit">Retry</button></form>
+        {% elif p.status == 'REVIEW_REQUIRED' %}<details><summary>Review upload</summary><p>Check YouTube Studio for an existing video before retrying.</p><form method="post" action="{{ base_path }}/actions/authorize-fresh/{{ p.id }}"><input type="hidden" name="csrf_token" value="{{ csrf }}"><label class="lum-field"><span>Type NO REMOTE VIDEO</span><input name="confirm_text" required placeholder="NO REMOTE VIDEO"></label><button class="lum-button tiny danger" type="submit">Authorize Fresh Upload</button></form></details>
+        {% elif p.status in ['QUEUED','WAITING_SLOT','SCHEDULED'] %}<form method="post" action="{{ base_path }}/actions/cancel/{{ p.id }}" data-copyright-confirm="Cancel this waiting video? Original media will be kept."><input type="hidden" name="csrf_token" value="{{ csrf }}"><button class="lum-button tiny" type="submit">Cancel</button></form>
+        {% elif not p.youtube_url %}<span>—</span>{% endif %}
+        {% if p.status in ['COMPLETED','CANCELLED'] %}
+        <form method="post" action="{{ base_path }}/actions/copyright/queue/remove" data-copyright-confirm="Remove this terminal job from your visible queue? Uploaded video records and source files are preserved.">
+          <input type="hidden" name="csrf_token" value="{{ csrf }}">
+          <input type="hidden" name="project_id" value="{{ p.id }}">
+          <button class="lum-button tiny" type="submit">Delete from Queue</button>
+        </form>
+        {% endif %}
+        {% if p.status in ['QUEUED','WAITING_SLOT','SCHEDULED'] %}
+        <details class="copyright-metadata-edit">
+          <summary>Edit metadata</summary>
+          <form method="post" action="{{ base_path }}/actions/copyright/metadata/{{ p.id }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf }}">
+            <label class="lum-field"><span>Title</span><input name="title" maxlength="100" required value="{{ p.title }}"></label>
+            <label class="lum-field"><span>Description</span><textarea name="description" maxlength="5000" rows="3">{{ p.description or '' }}</textarea></label>
+            <label class="lum-field"><span>Tags</span><input name="tags" value="{{ p.tags or '' }}"></label>
+            <label class="lum-field"><span>Category ID</span><input name="category_id" value="{{ p.category_id or '22' }}"></label>
+            {% if engine_instance == 'concat' and p.publish_at %}
+            <label class="lum-field"><span>Visibility</span><input value="Public — scheduled" disabled><small>Release visibility is locked; cancel and recreate the waiting job to change its scheduled publication.</small></label>
+            <input type="hidden" name="privacy_status" value="public">
+            {% else %}
+            <label class="lum-field"><span>Visibility</span><select name="privacy_status">
+              {% for v in ['public','unlisted','private'] %}<option value="{{ v }}" {% if p.privacy_status==v %}selected{% endif %}>{{ v|title }}</option>{% endfor %}
+            </select></label>
+            {% endif %}
+            <button class="lum-button tiny primary" type="submit">Save Metadata</button>
+          </form>
+        </details>
+        {% endif %}
+      </div></td>
+    </tr>
+  {% else %}<tr><td colspan="8"><div class="lum-empty">No videos queued. <a href="{{ base_path }}/app?tab=add_video">Add your first video</a>.</div></td></tr>{% endfor %}
+  <tr data-copyright-no-match hidden><td colspan="8"><div class="lum-empty">No videos match these filters.</div></td></tr>
+  </tbody></table></div>
+</section>

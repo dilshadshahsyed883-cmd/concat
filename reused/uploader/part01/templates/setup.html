@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}First Setup · Local Upload Manager{% endblock %}
+{% block subtitle %}Create the first administrator{% endblock %}
+{% block content %}
+<div class="auth-wrap"><section class="auth-card wide"><div class="auth-title"><div class="brand-mark large">LU</div><div><h1>First-time setup</h1><p>Create the standalone LUM administrator. No account is imported from Scene Builder or ACS.</p></div></div>
+{% if error %}<div class="lum-alert error">{{ error }}</div>{% endif %}
+<div class="lum-note setup-note">The first account is an <strong>Administrator</strong> with access to both Simple and Heavy modes and can create additional users later.</div>
+<form method="post" action="{{ base_path }}/setup"><input type="hidden" name="csrf_token" value="{{ csrf }}"><label class="lum-field"><span>Administrator username</span><input name="username" autocomplete="username" required autofocus></label><div class="lum-row"><label class="lum-field"><span>Password</span><input name="password" type="password" minlength="8" autocomplete="new-password" required></label><label class="lum-field"><span>Confirm password</span><input name="confirm_password" type="password" minlength="8" autocomplete="new-password" required></label></div><button class="lum-button primary full" type="submit">Create Administrator</button></form>
+</section></div>
+{% endblock %}

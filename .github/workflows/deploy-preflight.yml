@@ -1,0 +1,18 @@
+name: Concat Web guarded release preflight (NO DEPLOY)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  release-gate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: No-production-action gate
+        run: |
+          echo "This is a review-only release gate. No SSH, no deployment, no service change."
+          test -f deploy/RELEASE_GATES.md
+          test -f deploy/concat-web.service.example
+          test -f deploy/nginx-site.example.conf

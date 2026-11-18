@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark"><title>Admin · Concat Web</title>
+<link rel="stylesheet" href="/static/app.css">
+<style>
+.panel {display:grid;gap:20px;max-width:1050px}
+.panel-card {background:#151c2c;border:1px solid #30405b;border-radius:12px;padding:20px}
+.panel-card h2{margin:0 0 12px}
+table{width:100%;border-collapse:collapse;text-align:left;min-width:580px}
+th,td{padding:10px 12px;border-bottom:1px solid #30405b}
+.scroll-table{overflow-x:auto}
+.panel button{border:1px solid #64748b;background:#26334c;color:#f1f5f9;padding:8px 12px;border-radius:8px;cursor:pointer}
+.panel button:disabled{opacity:.5;cursor:not-allowed}
+.controls{display:flex;flex-wrap:wrap;gap:18px;align-items:center}
+.controls label{display:flex;align-items:center;gap:8px}
+.panel input[type=number]{width:90px;background:#172132;color:white;border:1px solid #70809b;padding:8px}
+.muted{color:#aebbcf}
+.status{min-height:24px}
+.error{color:#ffb4b4}
+</style></head>
+<body><a class="skip" href="#content">Skip to content</a>
+<header class="mobile-bar"><button id="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar">☰</button><strong>Concat Web</strong></header>
+<div class="layout"><nav id="sidebar" class="sidebar" aria-label="Main navigation">
+<div class="brand"><span class="brand-mark">C</span><span>Concat <b>Web</b></span></div>
+<div class="nav-group"><a class="nav-top" href="/dashboard">Dashboard</a></div>
+<div class="nav-group"><div class="nav-top">Concat Studio</div>
+<div class="nav-subtitle">Concat</div>
+<a class="nav-link" href="/concat/production">Production</a>
+<a class="nav-link" href="/concat/media">Media</a>
+<a class="nav-link" href="/concat/gpu-config">GPU Config</a>
+<div class="nav-subtitle">Concat Uploader</div>
+<a class="nav-link" href="/concat-uploader/sheets-sync">Sheets Sync</a>
+<a class="nav-link" href="/concat-uploader/channels">Channels</a>
+<a class="nav-link" href="/concat-uploader/upload-engine">Upload Engine</a>
+<a class="nav-link" href="/concat-uploader/queue">Queue</a>
+</div>
+<div class="nav-group"><a class="nav-top current" aria-current="page" href="/admin">Admin</a></div>
+<div class="identity">Signed in as <strong>{{ principal.username }}</strong>
+<button id="logout" type="button">Sign out</button></div>
+</nav><main id="content" class="content" tabindex="-1">
+<div class="eyebrow">Concat Web / Admin</div>
+<h1>Admin &amp; Security</h1>
+<p class="lead">Scene owns user accounts and admin roles. This panel manages Concat access, session revocation and non-secret system settings. Admin render and upload data remains owner-scoped.</p>
+<div class="panel">
+<p role="status" class="status" id="status">Loading verified settings…</p>
+<section class="panel-card"><h2>Users &amp; access</h2>
+<p class="muted">A Concat access grant does not grant access to another user's media, channels, queues or credentials. Scene account changes must be made in Scene.</p>
+<div class="scroll-table"><table><thead><tr><th>User</th><th>Scene status</th><th>Role</th><th>Concat access</th><th>Sessions</th></tr></thead>
+<tbody id="users"><tr><td colspan="5">Loading…</td></tr></tbody></table></div></section>
+<section class="panel-card"><h2>System configuration</h2>
+<div class="controls"><label><input type="checkbox" id="maintenance"> Maintenance mode (non-admin access disabled)</label>
+<label>Max session minutes <input type="number" min="15" max="480" id="max-session" value="480"></label>
+<button id="save-config" type="button">Save settings</button></div>
+<p class="muted">Signing keys, Scene database paths, GPU service credentials and OAuth tokens are never sent to this page.</p></section>
+<section class="panel-card"><h2>Recent security activity</h2><div id="audit" class="muted">Loading…</div></section>
+</div>
+</main></div>
+<script defer src="/static/app.js"></script>
+<script>
+(() => {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  let csrf = "";
+  function status(message, error=false) { $("status").textContent=message; $("status").className="status"+(error?" error":""); }
+  async function api(path, method="GET", payload) {
+    const headers={"Accept":"application/json"};
+    if(method!=="GET") {headers["Content-Type"]="application/json";headers["X-CSRF-Token"]=csrf;}
+    const response = await fetch(path, {method, credentials:"same-origin", headers,
+      body:payload===undefined?undefined:JSON.stringify(payload), cache:"no-store"});
+    if (!response.ok) throw new Error("Request rejected ("+response.status+")");
+    return response.json();
+  }
+  function action(label, callback) {
+    const button=document.createElement("button");button.type="button";button.textContent=label;
+    button.addEventListener("click", async ()=>{button.disabled=true;try{await callback();status("Saved");await loadUsers();await loadAudit();}catch(e){status(e.message,true);}finally{button.disabled=false;}});
+    return button;
+  }
+  async function loadUsers() {
+    const data=await api("/api/v1/admin/users");
+    const tbody=$("users");tbody.replaceChildren();
+    for(const user of data.users) {
+      const tr=document.createElement("tr");
+      for(const value of [user.username,user.is_active?"Active":"Disabled",user.is_admin?"Admin":"User"]) {
+        const td=document.createElement("td");td.textContent=value;tr.append(td);
+      }
+      const access=document.createElement("td");
+      access.append(document.createTextNode(user.concat_granted?"Granted ":"Denied "));
+      access.append(action(user.concat_granted?"Revoke":"Grant",()=>api("/api/v1/admin/users/"+encodeURIComponent(user.username)+"/access","POST",{concat_granted:!user.concat_granted})));
+      const sessions=document.createElement("td");
+      sessions.append(action("Revoke sessions",()=>api("/api/v1/admin/users/"+encodeURIComponent(user.username)+"/revoke-sessions","POST")));
+      tr.append(access,sessions);tbody.append(tr);
+    }
+    if(!data.users.length){const tr=document.createElement("tr");const td=document.createElement("td");td.colSpan=5;td.textContent="No Scene accounts available";tr.append(td);tbody.append(tr);}
+  }
+  async function loadAudit() {
+    const data=await api("/api/v1/admin/audit");
+    const wrapper=$("audit");wrapper.replaceChildren();
+    for(const event of data.events.slice(0,30)){
+      const p=document.createElement("p");
+      p.textContent=new Date(event.created_at*1000).toLocaleString()+" · "+event.actor_key+" · "+event.action+" · "+event.target_key;
+      wrapper.append(p);
+    }
+    if(!data.events.length)wrapper.textContent="No administrative events.";
+  }
+  async function bootstrap() {
+    try {
+      csrf=(await api("/api/v1/auth/csrf")).csrf_token;
+      const cfg=(await api("/api/v1/admin/config")).config;
+      $("maintenance").checked=cfg.maintenance_mode;
+      $("max-session").value=cfg.session_max_minutes;
+      await Promise.all([loadUsers(),loadAudit()]);
+      status("Verified Scene session · Admin controls active");
+    } catch(e) { status(e.message,true); }
+  }
+  $("save-config").addEventListener("click",async()=>{
+    try{
+      const max=Number($("max-session").value);
+      if(!Number.isInteger(max)||max<15||max>480)throw new Error("Session duration must be 15–480 minutes");
+      await api("/api/v1/admin/config","POST",{maintenance_mode:$("maintenance").checked,session_max_minutes:max});
+      status("Settings saved");
+    }catch(e){status(e.message,true);}
+  });
+  $("logout").addEventListener("click",async()=>{
+    try{
+      const response=await fetch("/auth/logout",{method:"POST",credentials:"same-origin",headers:{"X-CSRF-Token":csrf,"Origin":location.origin},redirect:"manual"});
+      if(response.status===303||response.status===0)location.assign("/auth/scene/start");
+      else status("Sign out rejected ("+response.status+")",true);
+    }catch(e){status(e.message,true);}
+  });
+  bootstrap();
+})();
+</script>
+</body></html>

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}Copyright Uploader{% endblock %}</title>
+  <link rel="stylesheet" href="{{ base_path }}/static/standalone.css?v=20260824-rwd2">
+  <link rel="stylesheet" href="{{ base_path }}/static/local_upload_manager.css?v=20260905-iframe-nav-parity-v1{% if engine_instance == 'shortstudio' %}&amp;short=20261030-actions-times-v2{% endif %}">
+  <link rel="stylesheet" href="{{ base_path }}/static/lum_desktop_theme_v4.css?v=20260826-v4">
+<style id="universal-theme-v3">
+:root {
+  --sb-bg: #f8fafc;
+  --sb-card: #ffffff;
+  --sb-border: #e2e8f0;
+  --sb-accent: #4f46e5;
+  --sb-text: #0f172a;
+  --sb-muted: #64748b;
+  --sb-spacing-sm: 8px;
+  --sb-spacing-md: 16px;
+  --sb-spacing-lg: 24px;
+  --sb-radius: 12px;
+  --sb-radius-sm: 8px;
+}
+body { background-color: var(--sb-bg) !important; color: var(--sb-text) !important; font-family: 'Inter', system-ui, -apple-system, sans-serif !important; margin: 0; }
+.card, .panel, .live-control-card, #title-to-publish-panel { background-color: var(--sb-card) !important; border: 1px solid var(--sb-border) !important; border-radius: var(--sb-radius) !important; box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1), 0 1px 2px 0 rgba(0,0,0,0.06) !important; padding: var(--sb-spacing-lg) !important; margin-bottom: var(--sb-spacing-lg) !important; }
+h1, h2, h3, h4, h5, h6 { margin-top: 0 !important; margin-bottom: var(--sb-spacing-md) !important; color: var(--sb-text) !important; }
+label { display: block !important; margin-bottom: var(--sb-spacing-sm) !important; font-weight: 600 !important; font-size: 13px !important; color: var(--sb-muted) !important; }
+.form-control, input[type="text"], input[type="number"], input[type="password"], select, textarea { background-color: #ffffff !important; border: 1px solid var(--sb-border) !important; border-radius: var(--sb-radius-sm) !important; padding: 10px 14px !important; box-sizing: border-box !important; margin-bottom: var(--sb-spacing-md) !important; width: 100%; max-width: 100%; color: var(--sb-text) !important; transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out; font-family: inherit !important; font-size: 14px !important; }
+.form-control:focus, input[type="text"]:focus, input[type="password"]:focus, select:focus, textarea:focus { border-color: var(--sb-accent) !important; outline: none !important; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1) !important; }
+.btn-primary, button.primary { background-color: var(--sb-accent) !important; border-color: var(--sb-accent) !important; color: #ffffff !important; border-radius: var(--sb-radius-sm) !important; font-weight: 600 !important; padding: 10px 20px !important; cursor: pointer; display: inline-block; margin-top: 4px; border: none !important; }
+.btn-secondary, button.secondary { background-color: #ffffff !important; border: 1px solid var(--sb-border) !important; color: var(--sb-text) !important; border-radius: var(--sb-radius-sm) !important; font-weight: 600 !important; padding: 10px 20px !important; cursor: pointer; display: inline-block; margin-top: 4px; }
+.btn-primary:hover, button.primary:hover { opacity: 0.9 !important; }
+.row, .form-group, .mb-3, .mt-3 { margin-bottom: var(--sb-spacing-md) !important; }
+</style>
+{% if engine_instance in ['copyright','concat'] %}
+<style id="copyright-studio-isolation">
+  /* Old Upload Studio rails can survive page or browser-history restore.
+     Never display them inside Copyright Uploader's independent studio. */
+  body.lum-copyright-workspace nav.vps1-native-upload-tabs,
+  body.lum-copyright-workspace nav[aria-label="Upload Studio"],
+  body.lum-copyright-workspace nav.vps1-native-experiment-tabs { display: none !important; }
+  body.lum-copyright-workspace .copyright-source-panel[hidden] { display: none !important; }
+  body.lum-copyright-workspace .copyright-source-panel:not([hidden]) { display: block; }
+</style>
+{% endif %}
+{% if engine_instance in ['song', 'shortstudio', 'copyright', 'concat'] %}
+<link rel="stylesheet" href="{{ base_path }}/static/song_uploader_kokoro_ui.css?v=20261030-minimal-auto-v2{% if engine_instance == 'shortstudio' %}&amp;short=20261030-actions-times-v2{% endif %}">
+{% endif %}
+{% if engine_instance in ['copyright','concat'] %}<link rel="stylesheet" href="{{ base_path }}/static/copyright_workspace.css?v=20261031-sheets-parity-v1">{% endif %}
+{% if embedded_view and engine_instance != "concat" %}
+<link rel="stylesheet" href="/static/vps1_native_site_shell.css?v=20261020-upload-studio-v1&song=20261029">
+<script src="/static/vps1_native_site_shell.js?v=20261020-upload-studio-v1&song=20261029&copyright=20261030&copyright-nav=20261030-v3&studio-permissions=20261031" data-workspace="copyright-uploader" defer></script>
+{% endif %}
+</head>
+<body class="{% if embedded_view %}lum-embedded{% endif %}{% if engine_instance in ['song', 'shortstudio', 'copyright'] %} lum-song-ui{% endif %}{% if engine_instance in ['copyright','concat'] %} lum-copyright-workspace{% endif %}">
+  {% if not embedded_view %}<header class="app-topbar">
+    <div class="app-brand">
+      <div class="brand-mark">LU</div>
+      <div><strong>{{ 'Concat Uploader' if engine_instance == 'concat' else 'Copyright Uploader' }}</strong><span>{% block subtitle %}VPS YouTube uploader{% endblock %}</span></div>
+    </div>
+    {% if user %}
+    <div class="app-userbar">
+      {% if user.is_admin %}<span class="access-pill">Administrator</span>{% endif %}
+      <strong class="user-name">{{ user.username }}</strong>
+      {% if user.is_admin and not suite_auth %}<a href="{{ base_path }}/users">Users</a>{% endif %}
+      {% if suite_auth %}
+      <form method="post" action="/logout"><button type="submit">Sign out</button></form>
+      {% else %}
+      <form method="post" action="{{ base_path }}/logout"><input type="hidden" name="csrf_token" value="{{ csrf }}"><button type="submit">Sign out</button></form>
+      {% endif %}
+    </div>
+    {% endif %}
+  </header>{% endif %}
+  <main class="app-main">{% block content %}{% endblock %}</main>
+<script src="{{ base_path }}/static/channels_subtabs_v5_1.js?v=20260824-v5.1" defer></script>
+{% if engine_instance != "concat" %}<script src="{{ base_path }}/static/auto_engine_v6.js?v=20261030-song-folders-v3{% if engine_instance == 'shortstudio' %}&amp;short=group-metadata-v1{% endif %}" defer></script>{% endif %}
+<script src="{{ base_path }}/static/navigation_state_v1.js?v=20260826-v1" defer></script>
+  <script src="{{ base_path }}/static/lum_ux_state_v2.js?v=20261030-copyright-isolation-v1" defer></script>
+{% if engine_instance in ['copyright','concat'] %}
+<script src="{{ base_path }}/static/copyright_video_picker.js?v=20261030-v2-folder-options" defer></script>
+<script src="{{ base_path }}/static/copyright_workspace.js?v=20261030-ux1" defer></script>
+{% endif %}
+</body>
+</html>
+

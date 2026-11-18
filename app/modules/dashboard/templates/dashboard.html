@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark"><title>Dashboard · Concat Web</title>
+<link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
+<link rel="stylesheet" href="/dashboard/assets/dashboard.css">
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<header class="mobile-bar"><button id="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar">☰</button><strong>Concat Web</strong></header>
+<div class="layout">
+<nav id="sidebar" class="sidebar" aria-label="Main navigation">
+<div class="brand"><span class="brand-mark">C</span><span>Concat <b>Web</b></span></div>
+<div class="nav-group"><a class="nav-top current" href="/dashboard" aria-current="page">Dashboard</a></div>
+<div class="nav-group"><div class="nav-top">Concat Studio</div>
+<div class="nav-subtitle">Concat</div>
+{% for item in concat_pages %}<a class="nav-link" href="{{ item.path }}">{{ item.title }}</a>{% endfor %}
+<div class="nav-subtitle">Concat Uploader</div>
+{% for item in uploader_pages %}<a class="nav-link" href="{{ item.path }}">{{ item.title }}</a>{% endfor %}
+</div>
+<div class="nav-group"><a class="nav-top" href="/admin">Admin {% if not principal.is_admin %}<span class="lock">Restricted</span>{% endif %}</a></div>
+<div class="identity">Signed in as <strong>{{ principal.username }}</strong></div>
+</nav>
+<main id="content" class="content" tabindex="-1">
+<div class="eyebrow">Concat Web / Dashboard</div>
+<div class="dash-header"><div><h1>Dashboard</h1><p class="lead">Your rendering, media and YouTube upload workspace</p></div>
+<button id="dashboard-refresh" class="dash-refresh" type="button">Refresh data</button></div>
+<p id="dashboard-message" class="dash-message" role="status" aria-live="polite">Connecting to live owner-scoped sources…</p>
+
+<section aria-label="Workspace totals" class="dash-stats">
+<article class="dash-stat"><div>Render jobs</div><strong data-stat="renders.total">—</strong><span><b data-stat="renders.active">—</b> active · <b data-stat="renders.completed">—</b> completed</span></article>
+<article class="dash-stat"><div>Completed videos</div><strong data-stat="videos.total">—</strong><span>Verified MP4 media</span></article>
+<article class="dash-stat"><div>Upload jobs</div><strong data-stat="uploads.total">—</strong><span><b data-stat="uploads.active">—</b> active · <b data-stat="uploads.completed">—</b> completed</span></article>
+<article class="dash-stat"><div>GPU availability</div><strong id="gpu-availability">—</strong><span id="gpu-status">Not checked</span></article>
+</section>
+
+<div class="dash-panels">
+<section class="dash-panel" aria-labelledby="render-queue-title">
+<div class="dash-panel-heading"><h2 id="render-queue-title">Render queue</h2><a href="/concat/production">Open Production</a></div>
+<p class="dash-meta">Queue: <strong id="render-queue-state">—</strong> · <span data-stat="renders.queue.queued">—</span> waiting · <span data-stat="renders.queue.active">—</span> active</p>
+<ul class="dash-jobs" id="render-jobs"><li class="dash-empty">Live jobs unavailable</li></ul>
+</section>
+<section class="dash-panel" aria-labelledby="upload-queue-title">
+<div class="dash-panel-heading"><h2 id="upload-queue-title">Upload queue</h2><a href="/concat-uploader/queue">Open Queue</a></div>
+<p class="dash-meta">Queue: <strong id="upload-queue-state">—</strong> · <span data-stat="uploads.queue.queued">—</span> waiting · <span data-stat="uploads.queue.active">—</span> active</p>
+<ul class="dash-jobs" id="upload-jobs"><li class="dash-empty">Live jobs unavailable</li></ul>
+</section>
+<section class="dash-panel" aria-labelledby="video-list-title">
+<div class="dash-panel-heading"><h2 id="video-list-title">Recent completed videos</h2><a href="/concat/media">Open Media</a></div>
+<ul class="dash-jobs" id="video-jobs"><li class="dash-empty">Verified media unavailable</li></ul>
+</section>
+<section class="dash-panel" aria-labelledby="activity-title">
+<div class="dash-panel-heading"><h2 id="activity-title">Recent activity</h2></div>
+<ul class="dash-jobs" id="dashboard-activity"><li class="dash-empty">Activity unavailable</li></ul>
+</section>
+</div>
+<section class="dash-panel dash-quick" aria-labelledby="quick-title">
+<h2 id="quick-title">Quick navigation</h2>
+<div class="dash-actions">
+<a href="/concat/production">Production <span>Render jobs</span></a>
+<a href="/concat/media">Media <span>Verified video library</span></a>
+<a href="/concat/gpu-config">GPU Config <span>Connection status</span></a>
+<a href="/concat-uploader/upload-engine">Upload Engine <span>Create an upload</span></a>
+<a href="/concat-uploader/channels">Channels <span>Accounts and tokens</span></a>
+<a href="/concat-uploader/sheets-sync">Sheets Sync <span>Video metadata</span></a>
+</div>
+</section>
+</main></div>
+<script defer src="{{ url_for('static', path='/app.js') }}"></script>
+<script defer src="/dashboard/assets/dashboard.js"></script>
+</body></html>

@@ -1,0 +1,619 @@
+@import url("/static/studio_compact_ui.css?v=20261022-1");
+/* VPS1_NATIVE_SITE_SHELL_V1: shared navigation, independent application document */
+body.vps1-native-site{padding-left:var(--vps1-sidebar-width,214px)!important;background:#f8fafc!important;box-sizing:border-box!important}
+#vps1-native-site-sidebar{position:fixed;z-index:9990;inset:0 auto 0 0;width:var(--vps1-sidebar-width,214px);box-sizing:border-box;background:#101526;color:white;padding:20px 14px;display:flex;flex-direction:column;font-family:Inter,system-ui,Arial,sans-serif}
+#vps1-native-site-sidebar .vps1-native-brand{display:flex;align-items:center;gap:10px;margin-bottom:28px}
+#vps1-native-site-sidebar .vps1-native-logo{background:#7152ea;border-radius:12px;width:36px;height:36px;display:grid;place-items:center;font-weight:800}
+#vps1-native-site-sidebar strong,#vps1-native-site-sidebar small{display:block}
+#vps1-native-site-sidebar strong{font-size:13px}
+#vps1-native-site-sidebar small{font-size:11px;color:#aab4d5}
+#vps1-native-site-sidebar nav{display:flex;flex-direction:column;gap:5px}
+#vps1-native-site-sidebar nav a{display:block;padding:11px 12px;border-radius:9px;color:#bec8e0!important;font-size:13px;font-weight:700;text-decoration:none!important}
+#vps1-native-site-sidebar nav a.active,#vps1-native-site-sidebar nav a:hover{background:#282f49;color:white!important}
+#vps1-native-site-sidebar .vps1-native-bottom{margin-top:auto;color:#aab4d5;font-size:11px}
+.vps1-native-toggle{display:none}
+.vps1-native-video-tabs{display:flex;flex-wrap:wrap;gap:8px;max-width:1400px;margin:20px auto 18px;padding:9px 12px;background:#f8faff;border:1px solid #dfe5ef;border-radius:11px}
+.vps1-native-video-tabs a{padding:9px 13px;border:1px solid #d6ddea;border-radius:8px;text-decoration:none!important;background:white;color:#34415b!important;font-size:12px;font-weight:750}
+.vps1-native-video-tabs a.active{background:#315edb;color:white!important;border-color:#315edb}
+
+/* CW-003: keep the shared Video Studio application rail on the canonical 62px geometry. */
+.vps1-native-video-tabs{
+  display:flex!important;flex-wrap:nowrap!important;align-items:center!important;
+  gap:var(--vps1-ui-gap,8px)!important;
+  width:calc(100% - 2 * var(--vps1-ui-content-gutter,34px))!important;
+  max-width:var(--vps1-ui-content-max,1400px)!important;
+  min-height:var(--vps1-ui-tab-rail-height,62px)!important;
+  margin:var(--vps1-ui-content-top,26px) auto 18px!important;
+  padding:10px 12px!important;box-sizing:border-box!important;
+  border:1px solid var(--vps1-ui-border,#dfe5ef)!important;
+  border-radius:var(--vps1-ui-radius,11px)!important;
+  background:var(--vps1-ui-panel,#f8faff)!important;
+  overflow-x:auto!important;overflow-y:hidden!important;
+  white-space:nowrap!important;scrollbar-width:thin;
+}
+.vps1-native-video-tabs > a{
+  display:inline-flex!important;align-items:center!important;justify-content:center!important;
+  flex:0 0 auto!important;min-height:var(--vps1-ui-touch-height,40px)!important;
+  margin:0!important;padding:9px 14px!important;box-sizing:border-box!important;
+  border:1px solid var(--vps1-ui-tab-border,#d6ddea)!important;
+  border-radius:8px!important;font:750 13px/1.2 Inter,system-ui,Arial,sans-serif!important;
+  background:#fff!important;color:var(--vps1-ui-text,#34415b)!important;
+  text-decoration:none!important;white-space:nowrap!important;
+}
+@media(max-width:760px){
+  .vps1-native-video-tabs{width:calc(100% - 2 * var(--vps1-ui-content-gutter,14px))!important;margin:var(--vps1-ui-content-top,72px) auto 18px!important;}
+}
+/* Audio Downloader keeps its existing engine and queue, but is reached via Song Studio. */
+body.vps1-native-voice:not(.vs-audio-active) .vps1-native-song-tabs{display:none!important}
+body.vps1-native-voice #vsEngineAudio{display:none!important}
+.vps1-song-studio-tabs a{display:inline-flex;align-items:center}
+body.vps1-native-voice .vps3-main-sidebar{display:none!important}
+body.vps1-native-voice .vps3-layout{display:block!important;min-height:auto!important}
+body.vps1-native-voice .vps3-main-column{width:100%!important;min-width:0!important}
+body.vps1-native-uploader .app-main{max-width:1600px;margin:0 auto}
+@media(max-width:760px){
+body.vps1-native-site{padding-left:0!important}
+#vps1-native-site-sidebar{transform:translateX(-100%);transition:transform .2s}
+body.vps1-native-open #vps1-native-site-sidebar{transform:translateX(0)}
+.vps1-native-toggle{display:block!important;margin:8px 12px;padding:9px 13px;border:1px solid #d1d9ea;border-radius:8px;background:white;color:#101828;position:relative;z-index:9991}
+.vps1-native-video-tabs{margin:8px 10px;gap:5px}
+}
+/* Scene role is fetched live. Never flash an unverified administrator link. */
+#vps1-native-site-sidebar [hidden]{display:none!important}
+#vps1-native-site-sidebar .vps1-native-account{
+  margin-top:auto;margin-bottom:12px;padding:12px 10px;border:1px solid #303952;
+  border-radius:11px;background:#171e33;overflow-wrap:anywhere
+}
+#vps1-native-site-sidebar .vps1-native-account small{
+  font-size:10px;letter-spacing:.06em;color:#aab4d5
+}
+#vps1-native-site-sidebar .vps1-native-account strong{
+  margin-top:4px;font-size:12px;color:#fff
+}
+#vps1-native-site-sidebar .vps1-native-account form{margin:9px 0 0}
+#vps1-native-site-sidebar .vps1-native-account button{
+  width:100%;padding:8px;border:1px solid #38415c;border-radius:8px;
+  background:#232d49;color:#fff;font:700 12px/1.2 inherit;cursor:pointer
+}
+#vps1-native-site-sidebar .vps1-native-bottom{
+  margin-top:0;color:#aab4d5
+}
+
+/* VPS1_CANONICAL_SIDEBAR_V2 — only shared site chrome, never app content.
+   This stylesheet is loaded LAST on Scene pages and also on native app pages.
+   Identical width & geometry across all routes and breakpoints > 760px. */
+:root { --vps1-sidebar-width:214px; --vps1-sidebar-bg:#101526; }
+@view-transition { navigation: auto; }
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-old(root),::view-transition-new(root){animation-duration:120ms}
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),::view-transition-new(root){animation-duration:0.01ms}
+}
+@media(min-width:761px) {
+  body:has(#app-sidebar)>main {margin-left:var(--vps1-sidebar-width)!important}
+  body.vps1-native-site {padding-left:var(--vps1-sidebar-width)!important}
+  /* Reserve sidebar real estate before deferred native JS constructs its nodes. */
+  html:has(script[data-workspace="uploader"]) body,
+  html:has(script[data-workspace="voice"]) body,
+  html:has(script[data-workspace="acs"]) body,
+  html:has(script[data-workspace="stream"]) body,
+  html:has(script[data-workspace="library"]) body {
+    padding-left:var(--vps1-sidebar-width)!important;
+    background:linear-gradient(to right,var(--vps1-sidebar-bg) 0 var(--vps1-sidebar-width),#f8fafc var(--vps1-sidebar-width))!important;
+  }
+}
+#app-sidebar.sidebar,#vps1-native-site-sidebar {
+  position:fixed!important;inset:0 auto 0 0!important;
+  width:var(--vps1-sidebar-width)!important;box-sizing:border-box!important;
+  min-height:100dvh!important;height:100dvh!important;
+  padding:20px 14px 12px!important;display:flex!important;flex-direction:column!important;
+  gap:0!important;background:var(--vps1-sidebar-bg)!important;color:#fff!important;
+  font-family:Inter,system-ui,-apple-system,"Segoe UI",Arial,sans-serif!important;
+  font-size:13px!important;line-height:1.4!important;
+  overflow-y:auto!important;overscroll-behavior:contain!important;
+  view-transition-name:vps1-global-sidebar;
+}
+#app-sidebar .brand,#vps1-native-site-sidebar .vps1-native-brand {
+  display:flex!important;align-items:center!important;gap:10px!important;
+  min-height:43px!important;margin:0 0 29px!important;padding:0!important;
+}
+#app-sidebar .logo,#vps1-native-site-sidebar .vps1-native-logo {
+  width:36px!important;height:36px!important;flex:0 0 36px!important;
+  border-radius:12px!important;background:#7152ea!important;
+  display:grid!important;place-items:center!important;
+  color:white!important;font-size:14px!important;font-weight:800!important;
+}
+#app-sidebar .brand strong,#vps1-native-site-sidebar .vps1-native-brand strong {
+  display:block!important;color:#fff!important;font-size:12px!important;
+  font-weight:800!important;line-height:1.25!important;
+}
+#app-sidebar .brand small,#vps1-native-site-sidebar .vps1-native-brand small {
+  display:block!important;color:#aab4d5!important;font-size:11px!important;
+  font-weight:400!important;line-height:1.5!important;
+}
+#app-sidebar>nav,#vps1-native-site-sidebar>nav[aria-label="Applications"]{
+  display:flex!important;flex-direction:column!important;gap:6px!important;
+  width:100%!important;margin:0!important;padding:0!important;
+}
+#app-sidebar>nav>a,#vps1-native-site-sidebar>nav[aria-label="Applications"]>a{
+  display:block!important;flex:none!important;box-sizing:border-box!important;
+  min-height:40px!important;width:100%!important;
+  margin:0!important;padding:11px 12px!important;border:0!important;border-radius:9px!important;
+  background:transparent!important;text-align:left!important;text-decoration:none!important;
+  color:#bec8e0!important;font-size:13px!important;font-weight:700!important;
+  line-height:18px!important;letter-spacing:0!important;
+}
+#app-sidebar>nav>a.active,#vps1-native-site-sidebar>nav[aria-label="Applications"]>a.active,
+#app-sidebar>nav>a:hover,#vps1-native-site-sidebar>nav[aria-label="Applications"]>a:hover {
+  background:#282f49!important;color:#fff!important;
+}
+#app-sidebar .sidebar-account,#vps1-native-site-sidebar .vps1-native-account{
+  box-sizing:border-box!important;display:grid!important;gap:8px!important;
+  width:100%!important;flex:none!important;margin:auto 0 0!important;
+  padding:12px 10px!important;border:1px solid #2b334b!important;
+  border-radius:12px!important;background:#171e31!important;box-shadow:none!important;
+  color:#fff!important;
+}
+#vps1-native-site-sidebar .vps1-native-account[hidden]{display:none!important}
+#app-sidebar .sidebar-account-name,#vps1-native-site-sidebar .vps1-native-account strong{
+  display:block!important;color:white!important;font-size:13px!important;
+  font-weight:800!important;line-height:1.25!important;overflow-wrap:anywhere!important;
+}
+#app-sidebar .sidebar-account form,#vps1-native-site-sidebar .vps1-native-account form{
+  width:100%!important;margin:0!important;
+}
+#app-sidebar .sidebar-account button,#vps1-native-site-sidebar .vps1-native-account button{
+  display:block!important;width:100%!important;min-height:38px!important;
+  border:1px solid #39425f!important;border-radius:9px!important;
+  padding:8px 11px!important;margin:0!important;
+  background:#202940!important;color:#f7f8ff!important;
+  font:800 12px/1.3 Inter,system-ui,sans-serif!important;text-align:center!important;cursor:pointer;
+}
+#app-sidebar .sidebar-account button:hover,#vps1-native-site-sidebar .vps1-native-account button:hover{
+  background:#2a3551!important;
+}
+#app-sidebar .server,#app-sidebar .server-dot,#vps1-native-site-sidebar .vps1-native-bottom {
+  display:block!important;flex:none!important;margin:8px 0 0!important;
+  padding:8px 10px 0!important;color:#aab4d5!important;
+  font-size:11px!important;line-height:1.4!important;
+}
+@media(max-width:760px) {
+  #app-sidebar.sidebar,#vps1-native-site-sidebar {
+    width:min(84vw,300px)!important;max-width:300px!important;
+    height:100dvh!important;min-height:0!important;
+    transform:translateX(-105%)!important;
+  }
+  #app-sidebar.sidebar.mobile-open {transform:translateX(0)!important}
+  body.vps1-native-open #vps1-native-site-sidebar {transform:translateX(0)!important}
+  body.vps1-native-site {padding-left:0!important}
+  body:has(#app-sidebar)>main {margin-left:0!important}
+}
+/* Keep the nav snapshot stable while the independent page document loads. */
+::view-transition-old(vps1-global-sidebar),
+::view-transition-new(vps1-global-sidebar) {animation-duration:0.01ms;mix-blend-mode:normal}
+
+/* Voice HTML is large; hide the upstream's old sidebar before deferred JS
+   builds native navigation. Preserve the 214px shared left gutter. */
+html:has(script[data-workspace="voice"]) .vps3-main-sidebar{display:none!important}
+html:has(script[data-workspace="voice"]) .vps3-layout{display:block!important;min-height:auto!important}
+html:has(script[data-workspace="voice"]) .vps3-main-column{width:100%!important;min-width:0!important}
+
+/* UPLOAD_STUDIO_UNIFIED_NATIVE_TABS_V1: two independent native application routes. */
+.vps1-native-upload-tabs{display:flex!important;align-items:center;flex-wrap:wrap;gap:8px;max-width:1400px;margin:16px auto 18px;padding:10px 12px;background:#f8faff;border:1px solid #dfe5ef;border-radius:11px;font-family:Inter,system-ui,Arial,sans-serif;box-sizing:border-box;width:calc(100% - 32px)}
+.vps1-native-upload-tabs a{display:inline-flex;align-items:center;justify-content:center;padding:10px 16px;border:1px solid #d6ddea;border-radius:8px;text-decoration:none!important;background:#fff;color:#34415b!important;font-size:13px;font-weight:750;min-height:40px}
+.vps1-native-upload-tabs a.active,.vps1-native-upload-tabs a[aria-current="page"]{background:#315edb;color:#fff!important;border-color:#315edb}
+.vps1-native-upload-tabs a:focus-visible{outline:3px solid #6d87e6;outline-offset:2px}
+html:has(script[data-workspace="uploader"]) .lum-primary-workspaces,body.vps1-native-uploader .lum-primary-workspaces{display:none!important}
+@media(max-width:760px){.vps1-native-upload-tabs{margin:10px auto 14px;gap:6px;padding:8px;width:calc(100% - 20px)}.vps1-native-upload-tabs a{flex:1 1 135px;font-size:12px;padding:9px 10px}}
+
+/* VPS1_UNIFIED_UI_PHASE_B_V1: scoped shared Studio tabs; app content unchanged. */
+:root {
+  --vps1-ui-content-max:1400px;
+  --vps1-ui-content-gutter:34px;
+  --vps1-ui-content-top:26px;
+  --vps1-ui-tab-rail-height:62px;
+  --vps1-ui-touch-height:40px;
+  --vps1-ui-radius:11px;
+  --vps1-ui-panel:#f8faff;
+  --vps1-ui-border:#dfe5ef;
+  --vps1-ui-tab-border:#d6ddea;
+  --vps1-ui-primary:#315edb;
+  --vps1-ui-text:#34415b;
+  --vps1-ui-focus:#6d87e6;
+  --vps1-ui-gap:8px;
+}
+.vps1-native-upload-tabs {
+  display:flex!important;align-items:center!important;
+  flex-wrap:nowrap!important;gap:var(--vps1-ui-gap)!important;
+  width:calc(100% - 2 * var(--vps1-ui-content-gutter))!important;
+  max-width:var(--vps1-ui-content-max)!important;
+  min-height:var(--vps1-ui-tab-rail-height)!important;
+  margin:var(--vps1-ui-content-top) auto 18px!important;
+  padding:10px 12px!important;
+  box-sizing:border-box!important;
+  border:1px solid var(--vps1-ui-border)!important;
+  border-radius:var(--vps1-ui-radius)!important;
+  background:var(--vps1-ui-panel)!important;
+  overflow-x:auto!important;overflow-y:hidden!important;
+  white-space:nowrap!important;scrollbar-width:thin;
+}
+.vps1-native-upload-tabs > a {
+  flex:0 0 auto!important;
+  min-height:var(--vps1-ui-touch-height)!important;
+  border:1px solid var(--vps1-ui-tab-border)!important;
+  border-radius:8px!important;
+  font:750 13px/1.2 Inter,system-ui,Arial,sans-serif!important;
+  background:#fff!important;color:var(--vps1-ui-text)!important;
+  text-decoration:none!important;white-space:nowrap!important;
+}
+.vps1-native-upload-tabs > a.active,
+.vps1-native-upload-tabs > a[aria-current="page"] {
+  background:var(--vps1-ui-primary)!important;
+  color:#fff!important;border-color:var(--vps1-ui-primary)!important;
+}
+.vps1-native-upload-tabs > a:focus-visible,
+.vps1-native-video-tabs > a:focus-visible,
+[data-video-studio-subnav="1"] > a:focus-visible {
+  outline:3px solid var(--vps1-ui-focus)!important;
+  outline-offset:2px!important;
+}
+@media(max-width:760px) {
+  :root { --vps1-ui-content-gutter:14px;--vps1-ui-content-top:72px; }
+  body.vps1-native-uploader > .vps1-native-toggle,
+  body.vps1-native-stream > .vps1-native-toggle {
+    position:fixed!important;display:block!important;
+    top:12px!important;left:12px!important;z-index:9993!important;
+    min-height:39px!important;margin:0!important;
+  }
+  .vps1-native-upload-tabs {
+    width:calc(100% - 2 * var(--vps1-ui-content-gutter))!important;
+    margin:var(--vps1-ui-content-top) auto 18px!important;
+    padding:10px 12px!important;
+  }
+  .vps1-native-upload-tabs > a {flex:0 0 auto!important;min-height:40px!important;}
+}
+@media(prefers-reduced-motion:reduce) {
+  .vps1-native-upload-tabs *, .vps1-native-video-tabs *,
+  [data-video-studio-subnav="1"] * {transition:none!important;animation:none!important;}
+}
+
+/* Canonical sidebar identity is hidden until session API confirms it. */
+#app-sidebar.sidebar .sidebar-account[hidden]{display:none!important}
+
+/* Sidebar session recovery: fail closed on Admin, but never silently blank
+   the whole account footer when the Scene session has expired. */
+#app-sidebar.sidebar .sidebar-account .vps1-session-login {
+  display:block!important;width:100%!important;min-height:38px!important;
+  padding:10px!important;border:1px solid #39425f!important;
+  border-radius:9px!important;background:#232d49!important;color:white!important;
+  font:700 12px/1.3 Inter,system-ui,sans-serif!important;
+  text-decoration:none!important;text-align:center!important;box-sizing:border-box!important;
+}
+#app-sidebar.sidebar .sidebar-account .vps1-session-login[hidden],
+#app-sidebar.sidebar .sidebar-account form[hidden] { display:none!important; }
+
+/* Experiment Studio shares the canonical content width and tab-rail geometry. */
+.vps1-experiment-tabs {
+  display:flex;align-items:center;gap:var(--vps1-ui-gap,8px);
+  width:calc(100% - 2 * var(--vps1-ui-content-gutter,34px));
+  max-width:var(--vps1-ui-content-max,1400px);
+  min-height:var(--vps1-ui-tab-rail-height,62px);
+  margin:var(--vps1-ui-content-top,26px) auto 18px;
+  padding:10px 12px;box-sizing:border-box;
+  border:1px solid var(--vps1-ui-border,#dfe5ef);
+  border-radius:var(--vps1-ui-radius,11px);
+  background:var(--vps1-ui-panel,#f8faff);overflow-x:auto;
+}
+.vps1-experiment-tabs > a {
+  display:inline-flex;align-items:center;justify-content:center;
+  min-height:var(--vps1-ui-touch-height,40px);padding:9px 14px;
+  border:1px solid var(--vps1-ui-tab-border,#d6ddea);border-radius:8px;
+  font:750 13px/1.2 Inter,system-ui,Arial,sans-serif;
+  background:#fff;color:var(--vps1-ui-text,#34415b);
+  text-decoration:none;white-space:nowrap;
+}
+.vps1-experiment-tabs > a.active,.vps1-experiment-tabs > a[aria-current="page"] {
+  background:var(--vps1-ui-primary,#315edb);border-color:var(--vps1-ui-primary,#315edb);color:#fff;
+}
+.vps1-experiment-tabs > a:focus-visible{outline:3px solid var(--vps1-ui-focus,#82aaff);outline-offset:2px}
+.experiment-workspace {
+  width:calc(100% - 2 * var(--vps1-ui-content-gutter,34px));
+  max-width:var(--vps1-ui-content-max,1400px);margin:0 auto 36px;
+  padding:24px;box-sizing:border-box;background:#fff;
+  border:1px solid #dfe5ef;border-radius:12px;color:#34415b;
+}
+.experiment-workspace p{max-width:70ch;line-height:1.65;color:#667085}
+.experiment-workspace .experiment-pill{display:inline-block;padding:5px 10px;
+  border:1px solid #dfe5ef;border-radius:999px;background:#f8faff;
+  font-size:12px;font-weight:700;color:#475467}
+@media(max-width:760px){
+  .vps1-experiment-tabs,.experiment-workspace{
+    width:calc(100% - 2 * var(--vps1-ui-content-gutter,14px));
+  }
+  .vps1-experiment-tabs{margin:var(--vps1-ui-content-top,72px) auto 18px;}
+  .experiment-workspace{padding:18px;}
+}
+
+/* Pre-reserve the library's unified 214px sidebar before deferred JS runs.
+   Avoid a first-paint 230px inner-sidebar flash and any layout jump. */
+html:has(script[data-workspace="library"]) .app-shell { display:block!important; }
+html:has(script[data-workspace="library"]) .app-shell > main {
+  display:block!important;grid-column:auto!important;
+  margin:0 auto!important;width:100%!important;max-width:1468px!important;
+}
+/* EXPERIMENT_STUDIO_SELF_MEDIA_NAV_V2: Scoped to the independent library only.
+   Two top-level Studio tabs, one unified site sidebar, app-owned internal five tabs.
+   No iframe and no CSS changes to other applications. */
+.vps1-native-experiment-tabs{
+  display:flex!important;flex-wrap:nowrap;align-items:center;gap:var(--vps1-ui-gap,8px);
+  width:calc(100% - 2 * var(--vps1-ui-content-gutter,34px));max-width:var(--vps1-ui-content-max,1400px);
+  min-height:var(--vps1-ui-tab-rail-height,62px);padding:10px 12px;box-sizing:border-box;
+  margin:var(--vps1-ui-content-top,26px) auto 18px;
+  border:1px solid var(--vps1-ui-border,#dfe5ef);
+  border-radius:var(--vps1-ui-radius,11px);background:var(--vps1-ui-panel,#f8faff);
+  overflow-x:auto;overflow-y:hidden;white-space:nowrap;
+}
+.vps1-native-experiment-tabs > a{
+  display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;
+  min-height:40px;padding:9px 14px;border:1px solid #d6ddea;border-radius:8px;
+  background:white;color:#34415b!important;text-decoration:none!important;
+  font:750 13px/1.2 Inter,system-ui,sans-serif;white-space:nowrap;
+}
+.vps1-native-experiment-tabs > a.active,
+.vps1-native-experiment-tabs > a[aria-current="page"]{
+  background:#315edb;color:white!important;border-color:#315edb;
+}
+.vps1-native-experiment-tabs > a:focus-visible{outline:3px solid #6d87e6;outline-offset:2px}
+
+body.vps1-native-library .app-shell{display:block!important;min-height:100vh!important;background:#0b0d11!important;}
+body.vps1-native-library .app-shell > main{
+  display:block!important;width:100%!important;max-width:1468px!important;
+  min-width:0!important;grid-column:auto!important;
+  margin:0 auto!important;padding:0 34px 44px!important;
+}
+body.vps1-native-library .sml-control-rail{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  min-height:62px;margin:0 auto 18px;padding:10px 12px;
+  border:1px solid #334052;border-radius:11px;background:#141a23;
+  box-sizing:border-box;overflow-x:auto;
+}
+body.vps1-native-library .sml-control-rail > nav{
+  display:flex;align-items:center;gap:6px;flex:1 1 680px;
+  min-width:0;overflow-x:auto;scrollbar-width:thin;
+}
+body.vps1-native-library .sml-control-rail .nav-item{
+  flex:0 0 auto;min-height:40px;width:auto!important;white-space:nowrap;
+  padding:9px 13px;background:transparent;border:1px solid transparent;
+  border-radius:8px;color:#c9d2e1;font-weight:700;
+}
+body.vps1-native-library .sml-control-rail .nav-item.active{
+  background:#6751cf;border-color:#826ee1;color:white;
+}
+body.vps1-native-library .sml-control-rail .sml-engine-state{
+  display:flex;align-items:center;gap:9px;white-space:nowrap;color:#abbad3;
+  font-size:11px;margin-left:auto;
+}
+@media(max-width:760px){
+  .vps1-native-experiment-tabs {
+    width:calc(100% - 28px);margin:72px auto 14px;min-height:52px;padding:8px;
+  }
+  body.vps1-native-library > .vps1-native-toggle {
+    position:fixed!important;display:block!important;top:12px!important;left:12px!important;
+    z-index:9993!important;min-height:39px!important;margin:0!important;
+  }
+  body.vps1-native-library .app-shell > main{padding:0 14px 32px!important;}
+  body.vps1-native-library .sml-control-rail {padding:8px;gap:8px;}
+  body.vps1-native-library .sml-control-rail > nav {flex:1 1 100%;}
+  body.vps1-native-library .sml-control-rail .sml-engine-state{margin-left:4px;}
+}
+@media(prefers-reduced-motion:reduce){
+  .vps1-native-experiment-tabs *,body.vps1-native-library .sml-control-rail *{
+    animation:none!important;transition:none!important;
+  }
+}
+
+/* CW-003 SIDEBAR STABILITY V4 — canonical geometry for Scene + native app shells.
+   Uniform fixed desktop sidebar, mobile drawer and menu toggle; no app-specific
+   margins or moving button while switching between independent documents. */
+:root {
+  --vps1-sidebar-width:214px;
+  --vps1-sidebar-bg:#101526;
+  --vps1-mobile-drawer-width:min(84vw,300px);
+  --vps1-nav-toggle-size:44px;
+}
+#app-sidebar.sidebar,#vps1-native-site-sidebar{
+  top:0!important;left:0!important;bottom:0!important;
+  width:var(--vps1-sidebar-width)!important;
+  max-width:var(--vps1-sidebar-width)!important;
+  height:100dvh!important;min-height:100dvh!important;
+  margin:0!important;z-index:9990!important;
+  scrollbar-gutter:stable;
+}
+@media(min-width:761px){
+  body.vps1-native-site {padding-left:var(--vps1-sidebar-width)!important;}
+  html:has(script[data-workspace]) body:not(:has(#app-sidebar)) {
+    padding-left:var(--vps1-sidebar-width)!important;
+  }
+  body:has(#app-sidebar)>main {margin-left:var(--vps1-sidebar-width)!important;}
+  body.vps1-native-site .vps1-native-nav-backdrop {display:none!important}
+}
+.vps1-native-nav-backdrop{display:none}
+@media(max-width:760px){
+  :root{--vps1-sidebar-width:214px}
+  #app-sidebar.sidebar,#vps1-native-site-sidebar{
+    width:var(--vps1-mobile-drawer-width)!important;
+    max-width:300px!important;min-height:0!important;
+    transform:translate3d(-105%,0,0)!important;
+    will-change:transform;
+    transition:transform .18s ease!important;
+  }
+  #app-sidebar.sidebar.mobile-open,
+  body.vps1-native-open #vps1-native-site-sidebar{
+    transform:translate3d(0,0,0)!important;
+  }
+  /* The fixed menu button never participates in content or rail height. */
+  body.vps1-native-site > .vps1-native-toggle {
+    display:flex!important;align-items:center!important;justify-content:center!important;
+    position:fixed!important;top:max(12px,env(safe-area-inset-top))!important;
+    left:12px!important;right:auto!important;
+    width:auto!important;min-width:var(--vps1-nav-toggle-size)!important;
+    min-height:var(--vps1-nav-toggle-size)!important;
+    margin:0!important;padding:8px 11px!important;
+    box-sizing:border-box!important;
+    background:#fff!important;color:#101526!important;border:1px solid #cbd5e1!important;
+    border-radius:9px!important;z-index:9993!important;
+    font:750 12px/1.2 Inter,system-ui,sans-serif!important;
+    box-shadow:0 2px 8px rgba(15,23,42,.12)!important;
+  }
+  body.vps1-native-open > .vps1-native-toggle{
+    left:min(calc(var(--vps1-mobile-drawer-width) + 6px),calc(100vw - 92px))!important;
+  }
+  body.vps1-native-site > .vps1-native-nav-backdrop{
+    display:block!important;position:fixed!important;inset:0!important;
+    background:rgba(8,15,28,.46)!important;opacity:0!important;
+    pointer-events:none!important;z-index:9989!important;
+    transition:opacity .18s ease!important;
+  }
+  body.vps1-native-open > .vps1-native-nav-backdrop{
+    opacity:1!important;pointer-events:auto!important;
+  }
+  body.vps1-native-open {overflow:hidden!important}
+  /* All Studio rails start below the same menu row. */
+  body.vps1-native-site > :is(.vps1-native-video-tabs,.vps1-native-upload-tabs,.vps1-native-experiment-tabs){
+    margin-top:72px!important;
+  }
+  #mobile-nav-toggle.mobile-nav-toggle {
+    position:fixed!important;
+    top:max(12px,env(safe-area-inset-top))!important;
+    left:12px!important;
+    margin:0!important;
+    min-height:var(--vps1-nav-toggle-size)!important;
+    min-width:var(--vps1-nav-toggle-size)!important;
+    box-sizing:border-box!important;
+  }
+}
+@media(prefers-reduced-motion:reduce){
+  #app-sidebar.sidebar,#vps1-native-site-sidebar,
+  body.vps1-native-site > .vps1-native-nav-backdrop{
+    transition:none!important;animation:none!important;
+  }
+}
+
+/* KOKORO_UI_AUDIT_12_V1 — measured reference, scoped to site chrome/forms. */
+:root{--vps1-ui-primary:#6355df;--vps1-ui-focus:#6355df;--vps1-ui-radius:12px;--vps1-ui-panel:#fff;--vps1-card-radius:16px}
+html{scrollbar-gutter:stable}
+body:has(#app-sidebar),body.vps1-native-site{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif!important;font-size:14px;line-height:1.5;background:#f6f7fb!important}
+body.vps1-native-uploader .app-main{width:calc(100% - 68px)!important;max-width:1400px!important;padding:0!important;margin:0 auto 34px!important;min-width:0}
+body.vps1-native-stream>main{padding:0!important;width:calc(100% - 68px)!important;max-width:1400px!important;margin:0 auto 34px!important;min-width:0}
+body.vps1-native-voice :is(#vsAudioWorkspace,.enginebar){width:calc(100% - 68px)!important;max-width:1400px!important;margin-left:auto!important;margin-right:auto!important;box-sizing:border-box!important}
+body.vps1-native-voice #vsAudioWorkspace{padding-top:4px!important}
+body.vps1-native-voice #vsaProxy{min-width:0}
+body:not(.vs-audio-active) #vsaProxy{display:none!important}
+#vsaProxy[hidden]{display:none!important}
+body:has(#app-sidebar) #experiment-browser{width:100%!important;padding:20px!important;margin:0 auto 34px!important;border-radius:16px!important}
+body:has(#app-sidebar) .vps1-experiment-tabs{width:100%!important;margin:0 auto 18px!important}
+/* Match native Experiment -> Studio rail spacing at 360/390px.
+   Legacy Scene/Video Merger pages have an 8px extra mobile gap otherwise. */
+@media (max-width:760px) {
+  body:has(#app-sidebar) .vps1-experiment-tabs{margin-bottom:10px!important}
+}
+:is(.vps1-native-upload-tabs,.vps1-native-video-tabs,.vps1-experiment-tabs,[data-video-studio-subnav])>a:is(.active,[aria-current=page]){background:#6355df!important;border-color:#6355df!important;color:#fff!important}
+:is(body.vps1-native-uploader .app-main,body.vps1-native-stream>main,body.vps1-native-voice #vsAudioWorkspace,body:has(#app-sidebar)>main,body.vps1-native-library .main) :is(.card,.panel,.vsa-card,.sm-panel){padding:20px!important;border-radius:16px!important;min-width:0;box-sizing:border-box}
+body.vps1-native-uploader .app-main :is(p,label,.field,.hint,.muted,.small,.empty,.stat-label){font-size:13px!important;line-height:1.5!important}
+body.vps1-native-uploader .app-main :is(h2,h3),#vsAudioWorkspace .vsa-card h2{font-size:18px!important;line-height:1.5!important}
+body.vps1-native-uploader .app-main table{font-size:13px!important}
+body.vps1-native-uploader .app-main th{font-size:12px!important}
+body.vps1-native-site :is(.app-main,main,.shell,#vsAudioWorkspace,.experiment-workspace) :is(input,select,textarea):not([type=range]):not([type=checkbox]):not([type=radio]):not([type=hidden]){min-height:44px!important;border-radius:8px!important;padding:10px!important;box-sizing:border-box!important;font:400 14px/1.5 Inter,system-ui,sans-serif!important;max-width:100%;min-width:0}
+#vsAudioWorkspace :is(label,.vsa-note,.vsa-hint,.vsa-card p){font-size:13px!important;line-height:1.5!important}
+#vsAudioWorkspace .vsa-heading{padding:20px!important;border:1px solid #e4e7ec;border-radius:16px;background:#fff}
+#vsAudioWorkspace .vsa-card{border-radius:16px!important;padding:20px!important}
+body:has(#app-sidebar) main :is(.sm-tabs,.scene-workspace-tabs,.vm-app .tabs),body.vps1-native-uploader :is(.workspace-tabs,.tabs,.auto-v6-tabs),body.vps1-native-stream nav[aria-label],#vsAudioWorkspace .vsa-tabs{display:flex;align-items:center;gap:6px;flex-wrap:nowrap;overflow-x:auto;min-height:54px;border-radius:12px;box-sizing:border-box;scrollbar-width:thin}
+body.vps1-native-site :is(nav[aria-label="Auto Stream primary tabs"],nav[aria-label="Auto Engine workspace"],.vsa-tabs,.workspace-tabs,.auto-v6-tabs)>:is(a,button),body:has(#app-sidebar) :is(.sm-tabs,.scene-workspace-tabs,.vm-app .tabs)>:is(a,button){min-height:44px!important;padding:10px 14px!important;border-radius:8px!important;white-space:nowrap;flex:0 0 auto;font-size:13px!important}
+body.vps1-native-site :is(nav,.tabs)>:is(a,button)[aria-pressed=true],body:has(#app-sidebar) :is(.sm-tabs,.scene-workspace-tabs,.vm-app .tabs)>[aria-pressed=true]{background:#6355df!important;color:#fff!important;border-color:#6355df!important}
+body:has(#app-sidebar) .sm-hero{background:#fff!important;border:1px solid #e4e7ec!important;border-radius:16px!important;color:#101828!important;padding:20px!important;box-shadow:none!important}
+body:has(#app-sidebar) .sm-hero :is(h1,h2,h3){color:#101828!important}
+body:has(#app-sidebar) .sm-hero :is(p,.sm-kicker){color:#475467!important}
+body:has(#app-sidebar) .sm-hero :is(.sm-status,.sm-compact-indicator){background:#eef0f8!important;color:#344054!important}
+.vps1-ui-runtime{white-space:normal!important;display:grid!important;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:12px 0}
+.vps1-ui-runtime>div{background:#f8f9fc;border:1px solid #e4e7ec;border-radius:8px;padding:12px;overflow-wrap:anywhere}
+.vps1-ui-runtime dt{font-size:12px;color:#667085}.vps1-ui-runtime dd{margin:4px 0 0;font-size:14px;font-weight:650;color:#101828}
+.vps1-ui-voices{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:10px;max-height:420px;overflow-y:auto;margin-top:12px}
+.vps1-ui-voice{padding:12px;border:1px solid #e4e7ec;border-radius:8px;color:#344054;background:#f8f9fc;overflow-wrap:anywhere;font-size:14px}
+.vps1-ui-search{width:100%;min-height:44px;padding:10px;border:1px solid #d0d5dd;border-radius:8px;font:inherit}
+.vps1-ui-pager{display:flex;gap:12px;align-items:center;justify-content:flex-end;margin:12px 0}
+.vps1-ui-pager button{min-height:44px;padding:10px 14px;border:1px solid #d0d5dd;border-radius:8px;background:#fff;color:#344054;cursor:pointer}
+.vps1-ui-pager button:disabled{opacity:.5;cursor:default}
+:is(body:has(#app-sidebar),body.vps1-native-site) :is(a,button,input,select,textarea,summary):focus-visible{outline:3px solid #6355df!important;outline-offset:3px!important}
+body.vps1-native-uploader .table-wrap,body.vps1-native-stream .table-wrap{max-width:100%;overflow-x:auto}
+body.vps1-native-uploader details.vps1-ui-details{padding:12px 16px;margin:12px 0;background:#f8f9fc;border:1px solid #e4e7ec;border-radius:8px}
+body.vps1-native-uploader details.vps1-ui-details summary{cursor:pointer;font-size:13px;font-weight:650}
+@media(max-width:760px){
+body.vps1-native-uploader .app-main,body.vps1-native-stream>main,body.vps1-native-voice :is(#vsAudioWorkspace,.enginebar){width:calc(100% - 28px)!important}
+body.vps1-native-site :is(.app-main,main,.shell,#vsAudioWorkspace) :is(input,select,textarea):not([type=range]):not([type=checkbox]):not([type=radio]):not([type=hidden]){font-size:16px!important}
+#vsAudioWorkspace .vsa-grid{grid-template-columns:minmax(0,1fr)!important}
+body:has(#app-sidebar) #experiment-browser{padding:16px!important}
+.vps1-ui-voices{grid-template-columns:minmax(0,1fr)}
+}
+body.vps1-native-uploader :is(.lum-tabs,.lum-ae-tabs){gap:6px!important;min-height:54px!important;overflow-x:auto!important;flex-wrap:nowrap!important}
+body.vps1-native-uploader :is(.lum-tabs,.lum-ae-tabs)>:is(a,button){min-height:44px!important;padding:10px 14px!important;border-radius:8px!important;font-size:13px!important;white-space:nowrap}
+body.vps1-native-uploader .lum-tabs>a:is(.active,[aria-current=page]){background:#6355df!important;color:#fff!important}
+#aiJobs>[hidden],.vps1-ui-voices>[hidden]{display:none!important}
+html:has(script[data-workspace=voice]):not([data-vs-engine]) :is(.enginebar,section.page){visibility:hidden}
+@media(max-width:760px){body.vps1-native-voice .vs-engine-selector{margin-top:72px!important;width:calc(100% - 28px)!important}}
+body:has(#app-sidebar) .scene-workspace-tabs>a[aria-current=page]{background:#6355df!important;color:white!important;border-color:#6355df!important}
+#app-sidebar>nav,#vps1-native-site-sidebar>nav[aria-label=Applications]{min-height:270px}
+/* Final public-page readback: app inline CSS must respect hidden fields. */
+body.vps1-native-acs .field[hidden]{display:none!important}
+body.vps1-native-uploader .app-main .lum-shell{padding:0 0 34px!important;margin:0!important;width:100%!important;max-width:none!important}
+body.vps1-native-uploader .lum-ae-schedule-control{flex-wrap:wrap!important;min-width:0!important;max-width:100%!important}
+body.vps1-native-uploader .lum-ae-schedule-control>button{flex:0 1 auto!important;max-width:100%!important;white-space:normal!important}
+
+/* Approved website re-audit: bounded reports and consistent identity footprint. */
+.vps1-report-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0}.vps1-report-controls input{flex:1;min-width:180px;max-width:460px}.report-row[hidden]{display:none!important}
+#app-sidebar .sidebar-account,#vps1-native-site-sidebar .vps1-native-account{min-height:90px;background:#f8f9fc;border:1px solid #e4e7ef;border-radius:12px;padding:12px}
+.aev2-tabs button.active,.aev2-inner-tabs button.active{background:#5c5ce6!important;color:#fff!important}
+.vse-queue small,.vsk-queue small,#vseQueueRows small,#vskQueueRows small{display:block;margin-top:4px;overflow-wrap:anywhere}
+
+/* EXPERIMENT_NESTED_STUDIOS_20261030: the site has one parent rail and each
+   studio keeps its original app tabs as the third level. No layout shifts. */
+.vps1-experiment-tabs,.vps1-native-experiment-tabs{
+  flex-wrap:nowrap!important;overflow-x:auto!important;overflow-y:hidden!important;
+  scroll-behavior:auto;scrollbar-width:thin;
+}
+.vps1-experiment-tabs>a,.vps1-native-experiment-tabs>a{
+  flex:0 0 auto!important;white-space:nowrap!important;
+}
+:is(.vps1-experiment-tabs,.vps1-native-experiment-tabs)>a:is(.active,[aria-current="page"]){
+  background:var(--vps1-ui-primary,#6355df)!important;
+  border-color:var(--vps1-ui-primary,#6355df)!important;color:#fff!important;
+}
+/* With a visible, server-verified Experiment parent, the third-level rail
+   follows immediately; the parent's 18px bottom margin is already the gap.
+   Do not push inner tabs down a second time. */
+body.vps1-native-site>.vps1-native-experiment-tabs~:is(
+  .vps1-native-video-tabs,.vps1-native-upload-tabs){
+  margin-top:0!important;
+}
+@media(max-width:760px){
+  body.vps1-native-site>.vps1-native-experiment-tabs{
+    margin-top:72px!important;
+    margin-bottom:14px!important;
+  }
+  body.vps1-native-site>.vps1-native-experiment-tabs~:is(
+    .vps1-native-video-tabs,.vps1-native-upload-tabs){
+    margin-top:0!important;
+  }
+}
+
+/* Three-Studio per-user navigation: hidden must override existing flex rules. */
+#app-sidebar.sidebar nav a[hidden],
+#vps1-native-site-sidebar nav a[hidden] { display: none !important; }
+
+/* Keep admin-only Experiment navigation out of sight until server role verification. */
+.vps1-experiment-tabs[hidden],
+.vps1-native-experiment-tabs[hidden],
+nav[aria-label="Experiment Studio"][hidden] { display: none !important; }
+
+/* Concat Studio's independent rail must fail closed until session verification. */
+.vps1-concat-studio-tabs[hidden],.vps1-native-concat-studio-tabs[hidden]{display:none!important}

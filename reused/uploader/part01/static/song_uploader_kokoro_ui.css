@@ -1,0 +1,325 @@
+/* SONG_UPLOADER_KOKORO_PARITY_V1
+   Song-only presentation layer, based on the native Kokoro/Voice UI contract.
+   No workflow, scheduling, authorization, URL or data-state changes.
+   The older LUM desktop theme remains untouched for every other uploader.
+*/
+body.lum-song-ui {
+  --song-panel: #fff;
+  --song-ink: #101828;
+  --song-muted: #667085;
+  --song-border: #e4e7ec;
+  --song-primary: #6355df;
+  background: #f6f7fb !important;
+  color: var(--song-ink) !important;
+  font: 400 14px/1.5 Inter, system-ui, -apple-system, "Segoe UI", sans-serif !important;
+}
+body.lum-song-ui .app-main {
+  box-sizing: border-box !important;
+  width: calc(100% - 68px) !important;
+  max-width: 1400px !important;
+  min-width: 0 !important;
+  margin: 0 auto 34px !important;
+  padding: 0 !important;
+}
+body.lum-song-ui .lum-shell {
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 0 0 34px !important;
+  background: transparent !important;
+  color: var(--song-ink) !important;
+  font: inherit !important;
+}
+body.lum-song-ui .lum-shell :is(.lum-tabs, .lum-ae-tabs, .lum-channel-subnav) {
+  display: flex !important;
+  align-items: center !important;
+  flex-wrap: nowrap !important;
+  gap: 6px !important;
+  min-height: 54px !important;
+  padding: 6px 8px !important;
+  margin: 0 0 16px !important;
+  overflow-x: auto !important;
+  background: var(--song-panel) !important;
+  border: 1px solid var(--song-border) !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+  scrollbar-width: thin;
+}
+body.lum-song-ui .lum-shell :is(.lum-tabs, .lum-ae-tabs, .lum-channel-subnav) > :is(a, button) {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: 0 0 auto !important;
+  white-space: nowrap !important;
+  min-height: 44px !important;
+  padding: 10px 14px !important;
+  border: 1px solid transparent !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  color: #475467 !important;
+  font: 750 13px/1.3 Inter, system-ui, sans-serif !important;
+  text-decoration: none !important;
+  cursor: pointer;
+}
+body.lum-song-ui .lum-shell :is(.lum-tabs, .lum-ae-tabs, .lum-channel-subnav) > :is(a, button):is(.active, [aria-current="page"], [aria-selected="true"]) {
+  background: var(--song-primary) !important;
+  color: #fff !important;
+  border-color: var(--song-primary) !important;
+}
+body.lum-song-ui .lum-shell :is(.lum-card, .lum-ae-head, .lum-metrics > div, .lum-channel-summary > div) {
+  box-sizing: border-box !important;
+  min-width: 0 !important;
+  background: var(--song-panel) !important;
+  color: var(--song-ink) !important;
+  border: 1px solid var(--song-border) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 4px 18px rgba(16, 24, 40, .035) !important;
+}
+body.lum-song-ui .lum-shell :is(.lum-card, .lum-ae-head) {
+  padding: 20px !important;
+  margin-bottom: 14px !important;
+}
+body.lum-song-ui .lum-shell .lum-ae-head {
+  background: #fff !important;
+  gap: 16px !important;
+}
+body.lum-song-ui .lum-shell :is(.lum-card-head h2, .lum-card h2) {
+  font-size: 18px !important;
+  line-height: 1.4 !important;
+  font-weight: 750 !important;
+  color: var(--song-ink) !important;
+}
+body.lum-song-ui .lum-shell .lum-ae-head h2 {
+  font-size: 24px !important;
+  line-height: 1.25 !important;
+  font-weight: 750 !important;
+}
+body.lum-song-ui .lum-shell :is(p, .lum-note, .lum-card-head p, .lum-ae-head p, .lum-empty, .lum-details summary) {
+  font-size: 13px !important;
+  line-height: 1.6 !important;
+  color: var(--song-muted) !important;
+}
+body.lum-song-ui .lum-shell :is(.lum-field > span, label, .lum-eyebrow) {
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+}
+body.lum-song-ui .lum-shell :is(input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]), select, textarea) {
+  box-sizing: border-box !important;
+  min-height: 44px !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  padding: 10px 12px !important;
+  border: 1px solid #d0d5dd !important;
+  border-radius: 8px !important;
+  background: #fff !important;
+  color: var(--song-ink) !important;
+  font: 400 14px/1.5 Inter, system-ui, sans-serif !important;
+}
+body.lum-song-ui .lum-shell :is(.lum-button, button:not([disabled])) {
+  box-sizing: border-box !important;
+  min-height: 44px !important;
+  padding: 10px 14px !important;
+  border-radius: 8px !important;
+  font-size: 13px !important;
+  line-height: 1.3 !important;
+  white-space: normal !important;
+}
+body.lum-song-ui .lum-shell :is(.lum-button.primary, button.primary) {
+  background: var(--song-primary) !important;
+  border-color: var(--song-primary) !important;
+  color: white !important;
+}
+body.lum-song-ui .lum-shell :is(.lum-badge, .lum-health, .lum-state) {
+  font-size: 11px !important;
+  line-height: 1.4 !important;
+}
+body.lum-song-ui .lum-shell :is(.lum-table-wrap, .lum-channel-table-wrap) {
+  max-width: 100% !important;
+  overflow-x: auto !important;
+}
+body.lum-song-ui .lum-shell :is(.lum-table, .lum-channel-table) th {
+  font-size: 12px !important;
+  line-height: 1.5 !important;
+  padding: 11px 10px !important;
+}
+body.lum-song-ui .lum-shell :is(.lum-table, .lum-channel-table) td {
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+  padding: 11px 10px !important;
+}
+body.lum-song-ui :is(a, button, input, select, textarea, summary):focus-visible {
+  outline: 3px solid var(--song-primary) !important;
+  outline-offset: 3px !important;
+}
+@media (max-width: 760px) {
+  body.lum-song-ui .app-main {
+    width: calc(100% - 28px) !important;
+    margin-bottom: 24px !important;
+  }
+  body.lum-song-ui .lum-shell :is(.lum-card, .lum-ae-head) {
+    padding: 16px !important;
+  }
+  body.lum-song-ui .lum-shell .lum-ae-head {
+    flex-wrap: wrap !important;
+  }
+  body.lum-song-ui .lum-shell :is(.lum-tabs, .lum-ae-tabs, .lum-channel-subnav) {
+    padding: 5px !important;
+  }
+  body.lum-song-ui .lum-shell :is(input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]), select, textarea) {
+    font-size: 16px !important;
+  }
+}
+
+/* Manual metadata/source chooser must hide inactive inputs even with Kokoro field layouts. */
+body.lum-song-ui .lum-shell [data-song-drive-field][hidden],
+body.lum-song-ui .lum-shell [data-song-sheet-field][hidden],
+body.lum-song-ui .lum-shell [data-song-manual-fields][hidden],
+body.lum-song-ui .lum-shell [data-song-sheet-note][hidden] {
+  display: none !important;
+}
+
+/* SONG_UPLOADER_MINIMAL_AUTO_ENGINE_V2 — only Song Uploader.
+   Preserve all controls, warning/error messages, mode data and functionality. */
+body.lum-song-ui .lum-shell[data-engine-instance="song"] .lum-tabs-shell {
+  margin-bottom: 10px !important;
+}
+body.lum-song-ui .lum-shell[data-engine-instance="song"] :is(.lum-tabs, .lum-ae-tabs) {
+  min-height: 46px !important;
+  margin-bottom: 10px !important;
+  padding: 4px 6px !important;
+  border-radius: 10px !important;
+}
+body.lum-song-ui .lum-shell[data-engine-instance="song"] :is(.lum-tabs, .lum-ae-tabs) > :is(a, button) {
+  min-height: 38px !important;
+  padding: 8px 12px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+}
+body.lum-song-ui .lum-shell[data-engine-instance="song"] :is(.lum-card, .lum-ae-head) {
+  border-radius: 12px !important;
+  margin-bottom: 10px !important;
+  padding: 16px 18px !important;
+  box-shadow: 0 1px 4px rgba(16, 24, 40, .025) !important;
+}
+body.lum-song-ui .lum-shell[data-engine-instance="song"] .lum-ae-head {
+  align-items: center !important;
+  gap: 12px !important;
+}
+body.lum-song-ui .lum-shell[data-engine-instance="song"] .lum-ae-head h2 {
+  margin: 0 !important;
+  font-size: 21px !important;
+}
+body.lum-song-ui .lum-shell[data-engine-instance="song"] .lum-ae-head-actions {
+  min-width: min(100%, 430px);
+  gap: 6px;
+}
+body.lum-song-ui .lum-shell[data-engine-instance="song"] .lum-ae-health {
+  gap: 5px;
+  align-items: center;
+}
+body.lum-song-ui .lum-shell[data-engine-instance="song"] .lum-ae-schedule-control {
+  padding: 8px 10px !important;
+  border-radius: 9px !important;
+}
+body.lum-song-ui .lum-shell[data-engine-instance="song"] .lum-ae-schedule-control-copy > span {
+  font-size: 10px !important;
+}
+body.lum-song-ui .lum-shell[data-engine-instance="song"] .lum-ae-schedule-control-copy > strong {
+  font-size: 13px !important;
+}
+body.lum-song-ui .lum-shell[data-engine-instance="song"] .lum-ae-schedule-toggle {
+  min-height: 38px !important;
+  white-space: nowrap !important;
+}
+body.lum-song-ui .lum-shell[data-engine-instance="song"] .lum-card-head {
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 9px;
+  margin-bottom: 10px;
+}
+body.lum-song-ui .lum-shell[data-engine-instance="song"] .lum-card-head h2,
+body.lum-song-ui .lum-shell[data-engine-instance="song"] .lum-ae-profile-manager-heading h2 {
+  font-size: 17px !important;
+  margin: 0 !important;
+}
+body.lum-song-ui .lum-shell[data-engine-instance="song"] .lum-ae-profile-manager-top {
+  align-items: center;
+  gap: 10px;
+}
+body.lum-song-ui .lum-shell[data-engine-instance="song"] .lum-ae-profile-manager-heading .lum-eyebrow {
+  display: none !important;
+}
+body.lum-song-ui .lum-shell[data-engine-instance="song"] .lum-song-import-details {
+  padding: 0 !important;
+  overflow: hidden;
+}
+body.lum-song-ui .lum-shell[data-engine-instance="song"] .lum-song-import-details > summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 18px;
+  cursor: pointer;
+  font-size: 13px !important;
+  font-weight: 750;
+  color: var(--song-ink) !important;
+  list-style-position: inside;
+}
+body.lum-song-ui .lum-shell[data-engine-instance="song"] .lum-song-import-details > summary > span {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--song-muted);
+}
+body.lum-song-ui .lum-shell[data-engine-instance="song"] .lum-song-import-details[open] > summary {
+  border-bottom: 1px solid var(--song-border);
+}
+body.lum-song-ui .lum-shell[data-engine-instance="song"] .lum-song-import-body {
+  padding: 12px 18px 16px;
+}
+body.lum-song-ui .lum-shell[data-engine-instance="song"] .lum-song-import-body .lum-note {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+@media (max-width: 900px) {
+  body.lum-song-ui .lum-shell[data-engine-instance="song"] .lum-ae-head {
+    align-items: stretch !important;
+  }
+  body.lum-song-ui .lum-shell[data-engine-instance="song"] .lum-ae-head-actions {
+    min-width: 0;
+    width: 100%;
+  }
+  body.lum-song-ui .lum-shell[data-engine-instance="song"] .lum-ae-profile-manager-top {
+    align-items: flex-start;
+  }
+}
+@media (max-width: 560px) {
+  body.lum-song-ui .lum-shell[data-engine-instance="song"] :is(.lum-card, .lum-ae-head) {
+    padding: 13px !important;
+  }
+  body.lum-song-ui .lum-shell[data-engine-instance="song"] .lum-ae-schedule-control {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  body.lum-song-ui .lum-shell[data-engine-instance="song"] .lum-song-import-details > summary {
+    padding: 12px 13px;
+    flex-wrap: wrap;
+  }
+  body.lum-song-ui .lum-shell[data-engine-instance="song"] .lum-song-import-body {
+    padding: 11px 13px;
+  }
+}
+
+/* Song group profile fields respect the hidden attribute. */
+body.lum-song-ui [data-ae-group-choice][hidden],
+body.lum-song-ui [data-ae-single-choice][hidden],
+body.lum-song-ui [data-ae-group-fields][hidden],
+body.lum-song-ui [data-ae-song-modes][hidden] {display:none !important;}
+
+
+/* Short Uploader source controls must override the shared label display rule. */
+body.lum-song-ui .lum-shell[data-engine-instance="shortstudio"] [data-short-sheet-field][hidden],
+body.lum-song-ui .lum-shell[data-engine-instance="shortstudio"] [data-short-manual-fields][hidden] {display:none !important;}

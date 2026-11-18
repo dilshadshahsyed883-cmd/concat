@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark"><title>{{ page.title }} · Concat Web</title>
+<link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}"></head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<header class="mobile-bar"><button id="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar">☰</button><strong>Concat Web</strong></header>
+<div class="layout"><nav id="sidebar" class="sidebar" aria-label="Main navigation">
+<div class="brand"><span class="brand-mark">C</span><span>Concat <b>Web</b></span></div>
+<div class="nav-group"><a class="nav-top {% if page.area == 'dashboard' %}current{% endif %}" href="/dashboard">Dashboard</a></div>
+<div class="nav-group"><div class="nav-top">Concat Studio</div>
+<div class="nav-subtitle">Concat</div>
+{% for item in concat_pages %}<a class="nav-link {% if page.key == item.key %}current{% endif %}" href="{{ item.path }}" {% if page.key == item.key %}aria-current="page"{% endif %}>{{ item.title }}</a>{% endfor %}
+<div class="nav-subtitle">Concat Uploader</div>
+{% for item in uploader_pages %}<a class="nav-link {% if page.key == item.key %}current{% endif %}" href="{{ item.path }}" {% if page.key == item.key %}aria-current="page"{% endif %}>{{ item.title }}</a>{% endfor %}
+</div>
+<div class="nav-group"><a class="nav-top {% if page.area == 'admin' %}current{% endif %}" href="/admin">Admin {% if not principal.is_admin %}<span class="lock">Restricted</span>{% endif %}</a></div>
+<div class="identity">Signed in as <strong>{{ principal.username }}</strong></div>
+</nav><main id="content" class="content" tabindex="-1">
+<div class="eyebrow">Concat Web / {{ page.area | replace('-', ' ') | title }}</div>
+<h1>{{ page.title }}</h1><p class="lead">{{ page.description }}</p>
+<section class="content-card" aria-labelledby="integration-title">
+<h2 id="integration-title">Integration boundary established</h2>
+<p>The existing VPS_1 implementation is retained in this repository for the owning feature agent to adapt. Business operations remain unavailable until verified owner authorization and service integration pass the release gate.</p>
+</section>
+</main></div>
+<script defer src="{{ url_for('static', path='/app.js') }}"></script>
+</body></html>
