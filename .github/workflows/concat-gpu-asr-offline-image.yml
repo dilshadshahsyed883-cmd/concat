@@ -6,9 +6,11 @@ on:
     paths:
       - 'cloud_render/concat/gpu/asr_models.py'
       - 'cloud_render/concat/gpu/caption_jobs.py'
+      - 'cloud_render/concat/gpu/asr_alignment.py'
       - 'cloud_render/concat/gpu/Dockerfile'
       - 'cloud_render/concat/hybrid/requirements-asr.txt'
       - 'tests/test_gpu_asr_image_bundle.py'
+      - 'tests/test_gpu_asr_alignment.py'
       - '.github/workflows/concat-gpu-asr-offline-image.yml'
   workflow_dispatch:
 
@@ -18,7 +20,7 @@ permissions:
 
 concurrency:
   group: concat-gpu-offline-asr-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   contracts:
@@ -31,10 +33,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install deterministic mocked-caption test dependencies
+        run: python -m pip install Pillow==12.0.0 numpy==2.2.6
       - name: Validate Python syntax and offline image contracts
         run: |
-          python -m py_compile cloud_render/concat/gpu/asr_models.py cloud_render/concat/gpu/caption_jobs.py tests/test_gpu_asr_image_bundle.py
-          python -m unittest -v tests.test_gpu_asr_image_bundle
+          python -m py_compile cloud_render/concat/gpu/asr_models.py cloud_render/concat/gpu/asr_alignment.py cloud_render/concat/gpu/caption_jobs.py tests/test_gpu_asr_image_bundle.py tests/test_gpu_asr_alignment.py
+          python -m unittest -v tests.test_gpu_asr_image_bundle tests.test_gpu_asr_alignment cloud_render.concat.tests.test_gpu_caption_jobs
 
   image:
     needs: contracts
