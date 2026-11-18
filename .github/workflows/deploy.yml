@@ -7,7 +7,7 @@ on:
         required: true
         type: string
       action:
-        description: Preflight only, or deploy after host/SSO readiness
+        description: Preflight only, or stage on loopback after host/SSO readiness
         required: true
         type: choice
         default: preflight

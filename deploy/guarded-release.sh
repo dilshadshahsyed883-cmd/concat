@@ -111,18 +111,18 @@ for i in {1..10}; do
       grep -Fq '"service":"concat-web"'; then healthy=1; break; fi
   sleep 2
 done
-if [[ "$healthy" -ne 1 ]] ||
-   ! curl --fail --silent --show-error --max-time 10 https://concat.scenebuilder.online/healthz |
-      grep -Fq '"service":"concat-web"'; then
+if [[ "$healthy" -ne 1 ]]; then
   rollback
-  fail "local or public health check failed"
+  fail "Concat loopback health check failed"
 fi
-# Verify anonymous access is denied on both loopback and the public HTTPS route.
-# Never treat a public health endpoint as evidence of authenticated safety.
+# Initial staging must not require public ingress. The existing Concat HTTPS
+# placeholder may still serve static HTML until a separately reviewed cutover.
+# Anonymous private-route access must nevertheless be rejected on loopback.
 local_status="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 6 http://127.0.0.1:18873/api/v1/session || true)"
-public_status="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 10 https://concat.scenebuilder.online/api/v1/session || true)"
-if [[ "$local_status" != "401" || "$public_status" != "401" ]]; then
+dashboard_status="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 6 http://127.0.0.1:18873/dashboard || true)"
+if [[ "$local_status" != "401" || "$dashboard_status" != "401" ]]; then
   rollback
-  fail "anonymous session API does not fail closed"
+  fail "anonymous Concat API or dashboard did not fail closed"
 fi
-echo "Concat-only release $SHA healthy; VPS_1 and nginx unchanged"
+echo "Concat-only SHA $SHA staged on loopback. Public HTTPS/Nginx unchanged."
+echo "Do not expose the public Concat site until live SSO, log redaction, owner isolation and GPU/Uploader acceptance pass."
