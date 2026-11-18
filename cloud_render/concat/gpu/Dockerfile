@@ -26,11 +26,16 @@ RUN python3 -m venv /opt/venv \
        -r /opt/app/cloud_render/concat/hybrid/requirements-captions.txt \
        -r /opt/app/cloud_render/concat/hybrid/requirements-asr.txt \
        nvidia-cuda-runtime-cu12==12.8.90 nvidia-cuda-nvrtc-cu12==12.8.93
-# Preseed the desktop's default small ASR model; other explicitly selected
-# sizes may still download into this writable cache when requested.
-RUN /opt/venv/bin/python -c "from faster_whisper import download_model; download_model('small', cache_dir='/worker/asr-models')" \
+# Bake all six selectable GPU-caption ASR models into this immutable image.
+# No model download or Hugging Face network access is needed at runtime.
+# CI fails if any model weight, config, tokenizer or WAV decoder is broken.
+COPY cloud_render/concat/gpu/asr_models.py /opt/app/cloud_render/concat/gpu/asr_models.py
+RUN /opt/venv/bin/python /opt/app/cloud_render/concat/gpu/asr_models.py --mode download \
+    && HF_HUB_OFFLINE=1 /opt/venv/bin/python /opt/app/cloud_render/concat/gpu/asr_models.py --mode verify \
     && chown -R 10001:10001 /worker/asr-models
 ENV CONCAT_ASR_MODEL_CACHE=/worker/asr-models
+ENV HF_HUB_OFFLINE=1
+ENV HF_HUB_DISABLE_TELEMETRY=1
 ENV PATH=/opt/venv/bin:$PATH
 ENV LD_LIBRARY_PATH=/opt/venv/lib/python3.12/site-packages/nvidia/cublas/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cudnn/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cuda_runtime/lib:/opt/venv/lib/python3.12/site-packages/nvidia/cuda_nvrtc/lib:/usr/local/nvidia/lib64
 COPY cloud_render/concat/project_bundle.py /opt/app/cloud_render/concat/project_bundle.py
