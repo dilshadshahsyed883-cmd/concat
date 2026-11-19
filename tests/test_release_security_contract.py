@@ -36,7 +36,7 @@ class LocalAdminManualReleaseTests(unittest.TestCase):
         helper = self.helper
         for item in ("sha256sum -c -", "root-owned", "concat-web.service",
                      "runuser -u concatweb", "/healthz", "/api/v1/session",
-                     "trap cleanup EXIT", "/etc/concat-web/concat-web.env"):
+                     "cleanup_and_rollback", "/etc/concat-web/concat-web.env"):
             self.assertIn(item, helper)
         for forbidden in ("systemctl restart vps1", "systemctl reload nginx",
                           "/usr/local/sbin/vps1-production-deploy",
@@ -78,7 +78,7 @@ class LocalAdminManualReleaseTests(unittest.TestCase):
             "concat-web-deploy preflight",
             'concat-web-deploy deploy "$SHA"',
             "DEPLOY_COMPLETED=1",
-            "cleanup_and_rollback",
+            "trap cleanup EXIT",
             "PUBLIC_NGINX_CUTOVER=NOT_PERFORMED",
             "/auth/login",
             "/dashboard",
