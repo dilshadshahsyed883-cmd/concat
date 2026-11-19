@@ -225,3 +225,37 @@ Consequently, this `200` **cannot be accepted as Concat application's `/healthz`
 **Nginx reuse strategy:** The source template's new-site-only `activate` operation is inapplicable to this existing site and must not be run. First stage the exact CI-passing integration SHA privately and verify its own loopback health and anonymous-denial. Separately audit the existing Concat vhost's safe routing directives and checksum, then implement guarded *existing-site adoption* only if needed: exact-site backup, hash-checked ownership, no symlinks outside known Concat site path, `nginx -t` and reload, HTTPS body/401 verification, Scene site's unchanged response, and restore-on-failure. The authorization to replace the existing vhost must be explicit, not assumed from an HTTP `200`.
 
 No VPS changes were performed by this read-only command. No public Nginx reload, cutover, or Concat deployment has occurred as a result of this audit.
+
+
+## Confirmed placeholder static-site identity — 2026-11-19
+
+Operator ran a read-only audit of the existing enabled Concat Nginx site file
+`/etc/nginx/sites-available/concat-web.conf`:
+
+```text
+=== CONFIG FINGERPRINT ===
+SITE_SHA256=d0371b9ec8296a2e57dafafc2b7dda8268d70d23c0b657f5f46ea35e2c1819e5
+=== RESPONSE CONFIGURATION ===
+RETURN_COUNT=1
+ROOT_COUNT=2
+TRY_FILES_COUNT=2
+=== HTTPS RESPONSE IDENTITY ===
+HTTPS_STATUS=200
+CONCAT_APP_HEALTH_BODY= NO
+CHANGES=NONE
+```
+
+**Confirmed:** Existing Concat Nginx route is a static/placeholder response, **not the running application**; `/healthz` returned 200 but its JSON did not contain `{"service":"concat-web"}`. This is consistent with two `root`, two `try_files`, zero `proxy_pass` and zero `include` directives in the inspected Concat-only site. Actual Nginx syntax/contents were not displayed; do not assert more detail.
+
+**Adoption safety anchor:** Existing Concat-only file's exact SHA-256 is
+`d0371b9ec8296a2e57dafafc2b7dda8268d70d23c0b657f5f46ea35e2c1819e5`.
+A future guarded adoption must match that hash, preserve a byte-for-byte private
+backup, verify server_name and TLS material, and replace *only* the existing
+Concat-specific file after the loopback service is healthy. Must refuse unknown
+drift, duplicated server_name/other host conflicts, or a missing backup, and
+roll back on `nginx -t`, reload, HTTPS response identity, anonymous denial or
+existing Scene site status failures.
+
+**No VPS config changes occurred.** No Concat service is running yet (as of
+the preceding live service audit), and no live external Salad/Drive/YouTube
+workflow has been proven.
