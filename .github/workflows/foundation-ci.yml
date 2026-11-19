@@ -43,5 +43,12 @@ jobs:
           bash -n deploy/nginx-cutover.sh
           python -m unittest discover -s tests -p 'test_nginx_routing.py' -v
           python -m unittest discover -s tests -p 'test_nginx_existing_adoption.py' -v
+      - name: Production-only installed wheel uploader import smoke
+        run: |
+          set -Eeuo pipefail
+          python -m venv /tmp/concat-runtime-only
+          /tmp/concat-runtime-only/bin/python -m pip install --disable-pip-version-check --no-input .
+          # -I prevents the checkout and test extras masking missing prod deps.
+          /tmp/concat-runtime-only/bin/python -I tests/smoke_uploader_production.py
       - name: Wheel build smoke
         run: python -m pip wheel --no-deps --wheel-dir /tmp/concat-web-wheel .
