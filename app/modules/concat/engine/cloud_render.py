@@ -39,19 +39,36 @@ SCENE_WORKER_HOME = Path("/var/lib/fresh-website/scene-builder/worker-home")
 
 
 def scene_rclone_env():
-    """Match the working Scene production worker's rclone lookup context.
+    """Resolve a canonical rclone identity that this *service user* can read.
 
-    A legacy RCLONE_CONFIG pointing to ubuntu's untraversable home must not
-    override the worker-owned XDG config. An accessible root-managed override
-    is kept; no credential file contents are read.
+    VPS_1 runs as a different Linux identity (vps1scene / ubuntu). Its private
+    worker HOME is not automatically accessible to the isolated concatweb user.
+    Prefer an explicitly configured, approved RCLONE_CONFIG when readable.
+    Never copy credentials, chmod Scene paths, switch Linux users or silently
+    discard an inaccessible explicit config (which could change Drive identity).
     """
     environment = os.environ.copy()
+    configured = environment.get("RCLONE_CONFIG", "").strip()
+    if configured:
+        if not Path(configured).is_file() or not os.access(configured, os.R_OK):
+            raise RcloneFailure(
+                "config", 1,
+                "canonical Drive Bridge configuration inaccessible to Concat service")
+        return environment
+
+    # Compatibility with VPS_1: reuse its worker HOME *only* if the isolated
+    # service has actually been granted access to that existing config.
+    existing = SCENE_WORKER_HOME / ".config" / "rclone" / "rclone.conf"
+    if not existing.is_file() or not os.access(existing, os.R_OK):
+        raise RcloneFailure(
+            "config", 1,
+            "Scene worker Drive Bridge configuration inaccessible to Concat service; "
+            "configure an approved, readable RCLONE_CONFIG for this service")
     environment["HOME"] = str(SCENE_WORKER_HOME)
     environment["XDG_CONFIG_HOME"] = str(SCENE_WORKER_HOME / ".config")
-    configured = environment.get("RCLONE_CONFIG", "").strip()
-    if configured and (not Path(configured).is_file() or not os.access(configured, os.R_OK)):
-        environment.pop("RCLONE_CONFIG", None)
     return environment
+
+
 # The native Linux Concat source lock in main is authoritative.
 # Dockerfile exists, but registry availability and runtime acceptance are unverified.
 IMAGE = os.getenv("CLOUD_RENDER_GPU_IMAGE_REF", "")
@@ -101,16 +118,28 @@ class RcloneFailure(RuntimeError):
 
 def classify_rclone_error(operation, returncode, stderr):
     msg = str(stderr or "").lower()[-8000:]
-    if any(x in msg for x in ("didn't find section in config file", "config file not found",
+    # In the original VPS_1 module, every "permission denied" is labelled a
+    # Google Drive *destination* error. Folder scans are reads, and local
+    # rclone.conf permissions are a separate fault (issue #16).
+    if ("permission denied" in msg or "access denied" in msg) and any(
+            marker in msg for marker in (
+                "rclone.conf", "config file", "configuration file",
+                "failed to load config", "failed to read config")):
+        cause = "local Drive Bridge configuration access denied to Concat service"
+    elif any(x in msg for x in (
+            "didn't find section in config file", "config file not found",
             "configuration file not found", "not found in config file", "unknown remote")):
-        cause = "remote configuration unavailable to Cloud Render service"
+        cause = "remote configuration unavailable to Concat service"
     elif any(x in msg for x in ("invalid_grant", "token has been expired",
             "token has been revoked", "failed to refresh token",
             "invalid credentials", "401 unauthorized")):
         cause = "Drive authentication expired or unauthorized"
     elif any(x in msg for x in ("insufficientpermissions", "insufficient permission",
             "permission denied", "access denied", "403 forbidden")):
-        cause = "Google Drive destination permission denied"
+        if operation in ("lsjson", "backend", "lsl", "lsf", "lsd"):
+            cause = "Google Drive source item permission denied; check configured account access"
+        else:
+            cause = "Google Drive destination permission denied"
     elif any(x in msg for x in ("quota exceeded", "rate limit exceeded", "storage quota")):
         cause = "Google Drive quota or rate limit reached"
     elif any(x in msg for x in ("immutable", "file already exists", "destination already exists")):
@@ -119,7 +148,8 @@ def classify_rclone_error(operation, returncode, stderr):
             "network is unreachable", "connection refused", "tls handshake timeout")):
         cause = "network or DNS connectivity failure"
     elif operation in ("lsjson", "backend") and (returncode in (3, 4) or any(x in msg for x in
-            ("directory not found", "object not found", "file not found", "doesn't exist", "404 not found", "error 404"))):
+            ("directory not found", "object not found", "file not found",
+             "doesn't exist", "404 not found", "error 404"))):
         cause = "remote_file_absent"
     elif returncode == 5:
         cause = "temporary remote failure"
@@ -128,7 +158,6 @@ def classify_rclone_error(operation, returncode, stderr):
     else:
         cause = "unclassified remote failure; check service-side rclone logs"
     return RcloneFailure(operation, returncode, cause)
-
 
 class CloudRender:
     def __init__(self, root, tenant_key):
