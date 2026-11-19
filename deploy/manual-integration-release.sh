@@ -131,7 +131,7 @@ ARCHIVE="/tmp/concat-web-$SHA.tgz"
 tar --sort=name --mtime='UTC 2020-01-01' --owner=0 --group=0 \
     --numeric-owner -czf "$ARCHIVE" -C "$WORK/source" \
     --exclude='__pycache__' --exclude='*.pyc' --exclude='.pytest_cache' \
-    app reused run.py pyproject.toml
+    app reused deploy run.py pyproject.toml
 chmod 0600 "$ARCHIVE"
 chown vps1deploy "$ARCHIVE"
 DIGEST="$(sha256sum "$ARCHIVE" | awk '{print $1}')"
