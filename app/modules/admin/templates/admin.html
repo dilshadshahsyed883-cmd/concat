@@ -1,18 +1,27 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="dark"><title>Admin · Concat Web</title>
-<link rel="stylesheet" href="/static/app.css">
+<meta name="color-scheme" content="light"><title>Admin · Concat Web</title>
+<link rel="stylesheet" href="/static/app.css?v=20261119-scene-shell-1">
 <style>
-.panel{display:grid;gap:20px;max-width:850px}.panel-card{background:#151c2c;border:1px solid #30405b;border-radius:12px;padding:20px}
-.panel-card h2{margin:0 0 12px}.panel button{border:1px solid #64748b;background:#26334c;color:#f1f5f9;padding:8px 12px;border-radius:8px;cursor:pointer}
-.panel button:disabled{opacity:.5;cursor:not-allowed}.controls{display:flex;flex-wrap:wrap;gap:18px;align-items:center}
-.controls label{display:flex;align-items:center;gap:8px}.panel input[type=number]{width:90px;background:#172132;color:white;border:1px solid #70809b;padding:8px}
-.muted{color:#aebbcf}.status{min-height:24px}.error{color:#ffb4b4}
+.panel{display:grid;gap:17px;max-width:960px}
+.panel-card{background:#fff;border:1px solid #dfe5ef;border-radius:14px;padding:23px;box-shadow:0 5px 20px #18283c0a}
+.panel-card h2{margin:0 0 12px;color:#101828;font-size:18px}
+.panel-card p{font-size:13px;line-height:1.6;color:#475467}
+.panel-card strong{color:#101828}
+.panel button{border:1px solid #d6ddea;background:#f5f6ff;color:#423bb6;padding:10px 14px;border-radius:9px;cursor:pointer;font-weight:700}
+.panel button:hover{border-color:#a5a1ef;background:#ecebff}
+.panel button:disabled{opacity:.5;cursor:not-allowed}
+.controls{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+.controls label{display:flex;flex-wrap:wrap;align-items:center;gap:10px;font-size:13px;color:#475467;font-weight:700}
+.panel input[type=number]{width:92px;background:#fff;color:#101828;border:1px solid #cdd5e2;padding:10px;border-radius:9px;font-size:14px}
+.muted{color:#64748b!important}.status{min-height:22px;color:#475467;font-size:13px}.error{color:#b42338!important}
+@media(max-width:480px){.panel-card{padding:18px}.controls{align-items:stretch}}
 </style></head><body>
 <a class="skip" href="#content">Skip to content</a>
 <header class="mobile-bar"><button id="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar">☰</button><strong>Concat Web</strong></header>
+<div id="nav-backdrop" class="nav-backdrop" aria-hidden="true"></div>
 <div class="layout"><nav id="sidebar" class="sidebar" aria-label="Main navigation">
-<div class="brand"><span class="brand-mark">C</span><span>Concat <b>Web</b></span></div>
+<a class="brand" href="/dashboard" aria-label="Concat Web dashboard"><span class="brand-mark" aria-hidden="true">C</span><span>Concat <b>Web</b></span></a>
 <div class="nav-group"><a class="nav-top" href="/dashboard">Dashboard</a></div>
 <div class="nav-group"><div class="nav-top">Concat Studio</div>
 <div class="nav-subtitle">Concat</div>
@@ -23,7 +32,7 @@
 <a class="nav-link" href="/concat-uploader/upload-engine">Upload Engine</a>
 <a class="nav-link" href="/concat-uploader/queue">Queue</a></div>
 <div class="nav-group"><a class="nav-top current" aria-current="page" href="/admin">Admin</a></div>
-<div class="identity">Signed in as <strong>{{ principal.username }}</strong></div>
+<div class="identity"><span>Signed in as</span><strong>{{ principal.username }}</strong><button id="nav-logout" class="sign-out" type="button">Sign out</button><span id="nav-logout-feedback" class="logout-feedback" role="status" hidden></span></div>
 </nav><main id="content" class="content" tabindex="-1">
 <div class="eyebrow">Concat Web / Admin</div>
 <h1>Admin &amp; Security</h1>
@@ -43,7 +52,7 @@
 </section>
 <section class="panel-card"><h2>Recent security activity</h2><div id="audit" class="muted">Loading…</div></section>
 </div></main></div>
-<script defer src="/static/app.js"></script>
+<script defer src="/static/app.js?v=20261119-scene-shell-1"></script>
 <script>
 (() => {
   "use strict";

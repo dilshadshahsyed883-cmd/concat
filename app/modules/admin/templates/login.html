@@ -1,17 +1,22 @@
 <!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="dark"><title>Sign in · Concat Web</title>
+<meta name="color-scheme" content="light"><title>Sign in · Concat Web</title>
 <style>
-:root{font-family:system-ui,Arial,sans-serif;color-scheme:dark}*{box-sizing:border-box}
-body{min-height:100vh;display:grid;place-items:center;background:#0b1220;color:#eef2ff;margin:0;padding:20px}
-form{width:100%;max-width:410px;padding:30px;border:1px solid #334155;border-radius:18px;background:#111b2c;box-shadow:0 20px 80px #0005}
-h1{margin:0 0 8px;font-size:26px}p{color:#a9b7cc;font-size:14px;margin:0 0 28px}
-label{display:block;margin:14px 0 8px;font-size:14px}
-input{width:100%;background:#101827;color:#fff;border:1px solid #50627f;border-radius:8px;padding:13px;font-size:16px}
-input:focus{outline:2px solid #60a5fa;outline-offset:2px}
-button{margin-top:24px;width:100%;padding:14px;background:#2563eb;border:0;border-radius:9px;color:white;font-weight:700;cursor:pointer}
-small{display:block;margin-top:20px;color:#a9b7cc}
+:root{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color-scheme:light}
+*{box-sizing:border-box}
+body{min-height:100dvh;display:grid;place-items:center;background:linear-gradient(145deg,#eef0ff,#f8fafc 55%,#eef3fc);color:#101828;margin:0;padding:22px}
+form{width:100%;max-width:430px;padding:36px;background:#fff;border:1px solid #dfe5ef;border-radius:19px;box-shadow:0 18px 55px #2732531e}
+h1{font-size:28px;letter-spacing:-.03em;margin:0 0 8px;color:#101828}
+p{font-size:14px;line-height:1.55;color:#64748b;margin:0 0 22px}
+label{display:block;font-size:13px;font-weight:700;color:#475467;margin:16px 0 8px}
+input:not([type=hidden]){width:100%;padding:12px 14px;border:1px solid #cdd5e2;border-radius:10px;background:#fff;color:#101828;font:inherit;font-size:15px}
+input:focus-visible,button:focus-visible{outline:3px solid #9e91ff;outline-offset:2px}
+button{width:100%;min-height:46px;margin-top:24px;border:0;border-radius:10px;background:#4f46e5;color:#fff;font:inherit;font-weight:750;cursor:pointer}
+button:hover{background:#4238c7}button:disabled{opacity:.6;cursor:wait}
+small{display:block;margin-top:20px;color:#64748b;font-size:12px;line-height:1.55}
+#login-status{color:#b42338!important}
+@media(max-width:480px){form{padding:25px 22px}}
 </style></head><body>
 <form action="/auth/login" method="post" autocomplete="on">
 <h1>Concat Web</h1><p>Secure, independent administrator sign-in</p>

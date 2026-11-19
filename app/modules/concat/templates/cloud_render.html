@@ -2,10 +2,10 @@
 {% block title %}Concat{% endblock %}
 {% block subtitle %}Concat Production queue, rendered media and SaladCloud GPU connection{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="/concat/assets/cloud_render.css?v=20261104-v1">
+<link rel="stylesheet" href="/concat/assets/cloud_render.css?v=20261119-scene-shell-1">
 <section id="cloud-render" data-csrf="{{ csrf_token }}" data-initial-tab="{{ initial_tab }}" aria-labelledby="cloud-heading">
   <header class="cr-header">
-    <div><div class="cr-eyebrow">CONCAT STUDIO / OWNER WORKSPACE</div><h2 id="cloud-heading">Concat</h2><p>Queue Concat projects from Google Drive, render on SaladCloud and manage the verified MP4s.</p></div>
+    <div><div class="cr-eyebrow">CONCAT STUDIO / OWNER WORKSPACE</div><h2 id="cloud-heading" class="visually-hidden">Concat Studio workspace</h2><p>Queue Concat projects from Google Drive, render on SaladCloud and manage the verified MP4s.</p></div>
     <span id="cr-health" class="cr-pill">Worker not connected</span>
   </header>
   <nav class="cr-tabs" aria-label="Concat tabs">
