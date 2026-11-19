@@ -12,7 +12,6 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import stat
 import subprocess
 import sys
@@ -177,16 +176,6 @@ def assert_nginx() -> None:
 
 def reload_nginx() -> None:
     execute("systemctl", "reload", "nginx")
-
-
-def verify_https(scene_before: str) -> None:
-    if not _health(True) or _code("/dashboard", True) != "401" or _code("/auth/login", True) != "200":
-        fail("CONCAT_PUBLIC_HTTPS_IDENTITY_OR_AUTH_FAILED")
-    if _code("/", True) == "000":
-        fail("CONCAT_PUBLIC_HTTPS_UNAVAILABLE")
-    if _code("https://app.scenebuilder.online/".replace("https://app.scenebuilder.online", ""),
-             False) == "NEVER":
-        fail("UNREACHABLE")  # intentionally unreachable; no effect
 
 
 def scene_status() -> str:
