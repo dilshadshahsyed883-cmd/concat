@@ -51,7 +51,7 @@ class BridgeIdentityTests(unittest.TestCase):
                     env = bridge.scene_rclone_env()
             self.assertEqual(env["HOME"], str(home))
             self.assertEqual(env["XDG_CONFIG_HOME"], str(home / ".config"))
-            self.assertNotIn("RCLONE_CONFIG", env) if not env.get("RCLONE_CONFIG") else self.fail("Unexpected configured remote")
+            self.assertFalse(env.get("RCLONE_CONFIG"))
 
     def test_folder_read_permission_is_not_destination_write_permission(self):
         failure = bridge.classify_rclone_error("lsjson", 1,
