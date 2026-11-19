@@ -114,6 +114,77 @@ class DriveSocket:
         fields = ("drive_id", "name", "resource_keys", "drive_size", "drive_md5", "folder_id", "drive_path")
         return self.request("download", {"row": {key: row[key] for key in fields}}, destination)
 
+    def upload_mp4(self, local, *, job, name, size, sha, md5):
+        """Stream verified Concat Media to the canonical Concat Outputs folder.
+
+        Only the peer-authenticated bridge can choose the actual remote.
+        This function never uses direct rclone or the Scene worker's private HOME.
+        """
+        if (not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", str(job))
+                or not re.fullmatch(r"[A-Za-z0-9_.() -]{5,150}", str(name))
+                or not str(name).lower().endswith(".mp4")
+                or not isinstance(size, int) or not 0 < size <= 20 * 1024**3
+                or not re.fullmatch(r"[a-f0-9]{64}", str(sha))
+                or not re.fullmatch(r"[a-f0-9]{32}", str(md5))):
+            raise RuntimeError("Invalid verified MP4 metadata; VPS original retained")
+        local = Path(local)
+        if local.is_symlink() or not local.is_file() or local.stat().st_size != size:
+            raise RuntimeError("Local MP4 missing or changed; VPS original retained")
+        conn = UnixHTTP(self.path, 7500)
+        try:
+            conn.putrequest("POST", "/v1/upload")
+            for key, value in (
+                ("Content-Type", "application/octet-stream"),
+                ("Content-Length", str(size)),
+                ("X-Owner", self.owner),
+                ("X-Job-ID", job),
+                ("X-File-Name", name),
+                ("X-Content-SHA256", sha),
+                ("X-Content-MD5", md5),
+            ):
+                conn.putheader(key, value)
+            conn.endheaders()
+            digest, md5_seen = hashlib.sha256(), hashlib.md5(usedforsecurity=False)
+            with local.open("rb") as fh:
+                while block := fh.read(1024 * 1024):
+                    digest.update(block)
+                    md5_seen.update(block)
+                    conn.send(block)
+            if (not hmac.compare_digest(digest.hexdigest(), sha)
+                    or not hmac.compare_digest(md5_seen.hexdigest(), md5)):
+                raise RuntimeError("Local MP4 checksum changed; VPS original retained")
+            response = conn.getresponse()
+            raw = response.read(4097)
+            if len(raw) > 4096:
+                raise ValueError()
+            result = json.loads(raw)
+            if response.status != 200:
+                reason = result.get("error", "") if isinstance(result, dict) else ""
+                detail = {
+                    "remote_conflict": "Drive output already exists with a different checksum",
+                    "output_denied": "Drive destination permission denied",
+                    "authentication": "Canonical Drive authentication unavailable",
+                    "configuration": "Canonical Drive configuration unavailable",
+                    "insufficient_spool": "Not enough temporary VPS space for Drive upload",
+                    "content_mismatch": "Drive transfer checksum mismatch",
+                    "invalid_mp4": "Drive Bridge rejected invalid MP4",
+                }.get(reason, "Drive output upload unavailable")
+                raise RuntimeError(detail + "; VPS original retained")
+            if (not isinstance(result, dict) or result.get("ok") is not True
+                    or result.get("size") != size
+                    or not hmac.compare_digest(str(result.get("md5", "")), md5)):
+                raise ValueError()
+            remote = result.get("remote")
+            suffix = f":Concat Outputs/{self.owner}/{job}_{name}"
+            if (not isinstance(remote, str) or not remote.endswith(suffix)
+                    or not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", remote.split(":", 1)[0])):
+                raise ValueError()
+            return remote
+        except (OSError, http.client.HTTPException, ValueError, TypeError):
+            raise RuntimeError("Canonical Drive output Bridge unavailable or invalid; VPS original retained") from None
+        finally:
+            conn.close()
+
     def available(self):
         try:
             return self.request("health", {}) == {"ok": True, "protocol": 1}

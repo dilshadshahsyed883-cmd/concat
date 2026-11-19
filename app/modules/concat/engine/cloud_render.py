@@ -2,8 +2,8 @@
 
 Safe contract: authenticated admin manages media; a separate rotating receiver token
 permits chunked Salad output ingress. Local MP4 removal only follows successful
-rclone transfer AND matching remote length+MD5. The canonical Drive Bridge is
-provided by deployment; no OAuth credentials are created or copied here.
+peer-authenticated canonical Bridge transfer AND matching remote length+MD5.
+No OAuth credentials are created or copied into the Concat Web service.
 """
 from __future__ import annotations
 import hashlib
@@ -548,30 +548,14 @@ class CloudRender:
                 return
             con.execute("UPDATE files SET state='uploading' WHERE id=?", (job,))
         try:
-            remote_name = os.getenv("CLOUD_RENDER_DRIVE_REMOTE", "gdrive")
-            folder = os.getenv("CLOUD_RENDER_DRIVE_FOLDER", "Cloud Render")
-            if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}",remote_name) or not re.fullmatch(r"[A-Za-z0-9_ /-]{1,120}",folder):
-                raise RuntimeError("Invalid Drive Bridge destination")
-            if not shutil.which("rclone"):
-                raise RuntimeError("Canonical Drive Bridge rclone executable is not available")
-            # Only use the configured canonical remote, under this process identity.
-            remotes = {line.strip().rstrip(":") for line in
-                       self.execute(["rclone","listremotes"],30).splitlines()}
-            if remote_name not in remotes:
-                raise RuntimeError(f'Canonical Drive Bridge remote "{remote_name}" is not configured for Cloud Render service')
-            if local.is_symlink() or not local.is_file() or local.stat().st_size != row["size"]:
-                raise RuntimeError("Source file absent or changed")
-            remote = f"{remote_name}:{folder}/concat-web/{self.tenant_key}/{job}_{filename(row['name'])}"
-            info = self.remote_stat(remote)
-            if info is None:
-                self.execute(["rclone","copyto",str(local),remote,"--immutable"],3600)
-                info = self.remote_stat(remote)
-            if not isinstance(info,dict) or info.get("Size") != row["size"]:
-                raise RuntimeError("Remote size verification failed; VPS original retained")
-            hashes = info.get("Hashes") or {}
-            remote_md5 = hashes.get("MD5") or hashes.get("md5") or ""
-            if not remote_md5 or not hmac.compare_digest(remote_md5.lower(),row["md5"].lower()):
-                raise RuntimeError("Remote MD5 verification failed; VPS original retained")
+            # Output delivery uses the existing canonical Scene identity over
+            # the peer-authenticated Unix Bridge; never read or copy Scene
+            # rclone credentials into this isolated Concat process.
+            from .drive_socket import DriveSocket
+            remote = DriveSocket(self.tenant_key).upload_mp4(
+                local, job=job, name=filename(row["name"]),
+                size=row["size"], sha=row["sha256"], md5=row["md5"],
+            )
             # Record the verified remote before attempting deletion, for crash recovery.
             with self.lock, self.connection() as con:
                 con.execute("UPDATE files SET state='verified',drive_path=?,error='' WHERE id=?", (remote,job))
