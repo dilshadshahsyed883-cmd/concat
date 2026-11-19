@@ -13,8 +13,7 @@
 <div class="nav-group"><a class="nav-top {% if page.area == 'admin' %}current{% endif %}" href="/admin">Admin {% if not principal.is_admin %}<span class="lock">Restricted</span>{% endif %}</a></div>
 <div class="identity"><span>Signed in as</span><strong>{{ principal.username }}</strong><button id="nav-logout" class="sign-out" type="button">Sign out</button><span id="nav-logout-feedback" class="logout-feedback" role="status" hidden></span></div>
 </nav><main id="content" class="content" tabindex="-1">
-<div class="eyebrow">Concat Web / Concat Studio</div>
-<h1>Concat Studio</h1><p class="lead">Rendering, media, GPU configuration and uploads in one workspace.</p>
+<h1 class="visually-hidden">Concat Studio</h1>
 {% block content %}{% endblock %}
 </main></div>
 <script defer src="{{ url_for('static', path='/app.js') }}?v=20261119-three-tab-1"></script>

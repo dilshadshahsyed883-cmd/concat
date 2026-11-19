@@ -60,7 +60,7 @@ class StudioTests(unittest.TestCase):
             self.assertEqual(page.status_code, 200)
             self.assertIn('data-initial-tab="' + tab + '"', page.text)
             self.assertIn("Scan &amp; Add to Queue", page.text)
-            self.assertIn("Copy Link", page.text)
+            self.assertIn('id="cr-media-list"', page.text)
             self.assertIn("SaladCloud", page.text)
             self.assertEqual(page.text.count('class="nav-group"'), 3)
         self.assertIn("copyMediaLink", self.client.get("/concat/assets/cloud_render.js").text)

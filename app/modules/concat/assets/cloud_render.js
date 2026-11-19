@@ -45,7 +45,6 @@
     config = await api("/config");
     configured=true;
     $("cr-auto").checked=!!config.auto_upload;
-    $("cr-image").value=config.image||"Not published — cloud_render/concat/gpu/Dockerfile";
     $("cr-endpoint").value=config.endpoint||"";
     $("cr-health-path").value=config.health_path||"/health/ready";
     $("cr-timeout").value=config.timeout||300;
@@ -54,18 +53,6 @@
     $("cr-concurrency-status").textContent = "Saved limit: " + (config.concurrency||1) + " · synchronized on connection/dispatch";
     $("cr-salad-key-state").textContent=config.salad_key_saved?"Saved":"Not saved";
     $("cr-worker-key-state").textContent=config.worker_key_saved?"Saved":"Not saved";
-    const details=[
-      ["Engine",config.engine],["GPU",config.gpu],["VRAM",(config.vram_gb||8)+" GB"],
-      ["CPU",config.cpu+" vCPU"],["RAM",config.ram_gb+" GB"],
-      ["Storage",config.storage_gb+" GB"],["Replicas",String(config.replicas)],
-      ["Architecture",config.architecture],["Port",String(config.port)],
-      ["Codec",config.codec],["Concurrency",String(config.concurrency)]
-    ];
-    const container=$("cr-requirements");container.replaceChildren();
-    details.forEach(([title,value])=>{
-      const div=document.createElement("div");const span=document.createElement("span");span.textContent=title;
-      const strong=document.createElement("strong");strong.textContent=value;div.append(span,strong);container.appendChild(div);
-    });
     const online=!!config.enabled;
     $("cr-health").textContent=online?"Worker enabled":"Worker not connected";
     $("cr-connection").textContent=online?"Enabled — verify worker":"Image not GPU-verified";
