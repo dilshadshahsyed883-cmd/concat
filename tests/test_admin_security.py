@@ -77,6 +77,19 @@ class LocalAdminSecurityTests(unittest.TestCase):
         return self.client.post(path, json=data,
                                 headers={"X-CSRF-Token": csrf, "Origin": origin})
 
+    def test_six_character_password_can_sign_in(self):
+        with patch.dict(os.environ, {"CONCAT_ADMIN_PASSWORD_HASH": password_hash("Ab3!xy")}):
+            response = self._login(password="Ab3!xy")
+            self.assertEqual(response.status_code, 303, response.text[:300])
+            self.assertEqual(response.headers["location"], "/dashboard")
+            self.assertEqual(self.client.get("/api/v1/session").status_code, 200)
+
+    def test_password_policy_rejects_short_oversized_and_control_characters(self):
+        for password in ("", "abcde", "a" * 1025, "abcde\n", "abcde\x00", None):
+            with self.subTest(password=password):
+                with self.assertRaisesRegex(ValueError, "at least 6"):
+                    password_hash(password)
+
     def test_fail_closed_before_credentials_and_legacy_scene_endpoints_removed(self):
         with patch.dict(os.environ, {"CONCAT_AUTH_MODE": "", "CONCAT_ADMIN_PASSWORD_HASH": ""}):
             app = create_app()

@@ -29,10 +29,10 @@ def main():
     username = input("Concat admin username [admin]: ").strip() or "admin"
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", username) or username == "__default__":
         raise SystemExit("Invalid local admin username")
-    password = getpass.getpass("Choose a new Concat admin password (16+ chars): ")
+    password = getpass.getpass("Choose a new Concat admin password (6+ chars): ")
     confirmation = getpass.getpass("Confirm password: ")
     if (not hmac.compare_digest(password, confirmation) or
-        not 16 <= len(password) <= 1024 or
+        not 6 <= len(password) <= 1024 or
         any(ord(char) < 32 for char in password)):
         raise SystemExit("Password mismatch or insufficient strength")
     salt = secrets.token_bytes(16)

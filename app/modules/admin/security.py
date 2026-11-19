@@ -65,9 +65,9 @@ def _parse_password_hash(raw: str) -> tuple[bytes, bytes]:
 
 def password_hash(password: str) -> str:
     """Used only by private, interactive host setup. Never print the password."""
-    if (not isinstance(password, str) or len(password) < 16 or
+    if (not isinstance(password, str) or len(password) < 6 or
         len(password) > 1024 or any(ord(ch) < 32 for ch in password)):
-        raise ValueError("Admin password must contain at least 16 safe characters")
+        raise ValueError("Admin password must contain at least 6 safe characters")
     salt = secrets.token_bytes(16)
     digest = hashlib.scrypt(password.encode(), salt=salt,
                             n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P, dklen=32)
