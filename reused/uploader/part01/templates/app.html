@@ -70,7 +70,6 @@
     <input type="hidden" name="csrf_token" value="{{ csrf }}">
     {% if engine_instance == 'concat' %}
     <section class="lum-card lum-span-2 copyright-source-card">
-      <div class="lum-card-head"><h2>Video source</h2></div>
       <select name="source_mode" id="copyright-source-mode" hidden aria-label="Video source"><option value="concat_link" selected>Concat Video Link</option></select>
       <label class="lum-field"><span>Concat Video Link</span><input name="concat_video_link" type="url" maxlength="2048" value="{{ concat_source_prefill|e }}" required placeholder="https://app.scenebuilder.online/api/cloud-render/media/VIDEO_ID/file" autocomplete="off"></label>
     </section>

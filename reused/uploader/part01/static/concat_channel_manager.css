@@ -145,6 +145,13 @@
 }
 
 /* Preview the selected file in a fixed widescreen frame without distortion. */
+[data-engine-instance="concat"] .copyright-source-card {
+  padding: 14px !important;
+}
+[data-engine-instance="concat"] .copyright-source-card .lum-field,
+[data-engine-instance="concat"] .copyright-source-card input {
+  margin: 0 !important;
+}
 [data-engine-instance="concat"] .concat-thumbnail-preview {
   width: 100%;
   aspect-ratio: 16 / 9;
