@@ -60,3 +60,27 @@ apply to the superseded SSO design, not to this standalone admin branch.
 **Current mode:** integration-only, manual VPS terminal. If local preflight, backup or loopback smoke fails, halt without modifying public Nginx. Do not claim real Salad or YouTube acceptance from CI fixtures.
 
 The one-shot script intentionally **does not** alter public HTTPS/Nginx ingress; public activation still requires read-only host verification, backed-up Concat-only Nginx changes and real browser/GPU/Drive acceptance. No existing VPS1 service may be restarted as part of Concat staging.
+
+
+## Existing live Concat HTTPS placeholder (verified 2026-11-19)
+
+The VPS has exactly two audited Concat HTTP/HTTPS server blocks in a
+root-owned enabled site. The file is a static placeholder
+(SHA256 `d0371b9ec8296a2e57dafafc2b7dda8268d70d23c0b657f5f46ea35e2c1819e5`).
+Its HTTPS `/healthz` returned `200` **without** the Concat service JSON.
+The last live check found the Concat systemd unit inactive, no selected
+release and no port `18873` listener. Nginx config, DNS and SSL file
+location were confirmed; certificate hostname and next-seven-day expiry
+checks passed. See `docs/NGINX_ROUTING_AUDIT_20261119.md`.
+
+After successful SHA-pinned loopback staging, use the exact release's
+`deploy/nginx-adopt-existing.py audit`, then the separately authorized
+`activate <same-40-hex-SHA>`. This adopts **only the existing HTTPS
+location /**, with a byte-for-byte private backup, filename/owner/hash
+preflight, Nginx syntax + reload, app JSON and 401/login checks, Scene-site
+response comparison, and automatic restore-on-failure. Explicit rollback
+is `nginx-adopt-existing.py rollback <same-SHA>`.
+
+**Do not run `deploy/nginx-cutover.sh activate`** on this host; that utility
+is intentionally for creating a site when no Concat vhost exists. Do not
+replace ACME challenge routes or alter existing Scene Nginx blocks.
