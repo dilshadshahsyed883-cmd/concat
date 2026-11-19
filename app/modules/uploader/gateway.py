@@ -14,6 +14,7 @@ import logging
 import os
 from pathlib import Path
 import sys
+import tempfile
 from urllib.parse import urlencode, parse_qsl, urlsplit
 
 from fastapi import HTTPException, Request
@@ -130,6 +131,29 @@ def _configure_from_private_environment() -> None:
         raise HTTPException(503, "Uploader core already bound to another instance")
 
 
+def _verify_private_storage() -> None:
+    """Validate the actual writable runtime state, not just configuration strings.
+
+    Production installs are read-only except for the dedicated Concat state
+    tree. Refuse to boot the uploader if an operator provisioned that tree
+    with inaccessible permissions or an unexpected symlink.
+    """
+    root = Path(os.environ["LUM_DATA_DIR"])
+    for folder in (root, root / "core", root / "secure", root / "staging"):
+        if folder.is_symlink():
+            raise OSError("Unsafe symlink in Concat Uploader runtime storage")
+        folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if not folder.is_dir():
+            raise OSError("Concat Uploader runtime storage is not a directory")
+    # os.access() is insufficient when systemd sandboxing or ACLs differ.
+    # Creating an exclusive temporary file proves that the live service user
+    # can actually write here. No media, SQLite or OAuth files are modified.
+    for folder in (root, root / "core", root / "secure", root / "staging"):
+        with tempfile.TemporaryFile(dir=folder) as probe:
+            probe.write(b"concat-uploader-storage-check")
+            probe.flush()
+
+
 def _import_reused_app():
     if str(REUSED_ROOT) not in sys.path:
         # The source is copied into this repository. There are no runtime
@@ -138,8 +162,8 @@ def _import_reused_app():
     return importlib.import_module("lum_engine.standalone_app").app
 
 
-async def backend_for(request: Request):
-    state = request.app.state
+async def backend_for_app(app):
+    state = app.state
     current = getattr(state, "concat_uploader_backend", None)
     if current is not None:
         return current
@@ -151,15 +175,24 @@ async def backend_for(request: Request):
         current = getattr(state, "concat_uploader_backend", None)
         if current is not None:
             return current
-        _configure_from_private_environment()
         try:
+            _configure_from_private_environment()
+            _verify_private_storage()
             current = _import_reused_app()
             await current.router.startup()
         except (ImportError, RuntimeError, OSError) as exc:
-            LOG.exception("Concat Uploader backend initialization failed")
+            LOG.exception(
+                "Concat Uploader backend initialization failed (%s); "
+                "check service dependencies, owner and writable private paths",
+                type(exc).__name__,
+            )
             raise HTTPException(503, "Concat Uploader dependencies or storage unavailable") from exc
         state.concat_uploader_backend = current
         return current
+
+
+async def backend_for(request: Request):
+    return await backend_for_app(request.app)
 
 
 async def shutdown_backend(app) -> None:

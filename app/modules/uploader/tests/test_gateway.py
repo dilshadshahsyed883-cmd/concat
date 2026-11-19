@@ -111,6 +111,40 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(self.client.get("/concat-uploader/static/test.css").json()["principal"],
                          "alice")
 
+    def test_enabled_service_lifespan_initializes_real_uploader(self):
+        # Regression: /healthz must never describe a healthy server when
+        # the enabled uploader fails to import or open persistent storage.
+        with TestClient(self.app) as client:
+            self.assertIs(self.app.state.concat_uploader_backend, self.fake)
+            self.assertEqual(client.get("/concat-uploader/channels").status_code, 200)
+        self.assertIsNone(self.app.state.concat_uploader_backend)
+
+    def test_enabled_service_refuses_missing_runtime_dependency(self):
+        from fastapi import HTTPException
+        with patch.object(gateway, "_import_reused_app",
+                          side_effect=ImportError("example private import failure")):
+            with self.assertRaises(HTTPException) as caught:
+                with TestClient(self.app):
+                    pass
+        self.assertEqual(caught.exception.status_code, 503)
+        self.assertEqual(str(caught.exception.detail),
+                         "Concat Uploader dependencies or storage unavailable")
+        self.assertIsNone(getattr(self.app.state, "concat_uploader_backend", None))
+
+    def test_private_storage_must_be_writable_by_service_user(self):
+        if hasattr(os, "geteuid") and os.geteuid() == 0:
+            self.skipTest("root bypasses ordinary filesystem permission checks")
+        data_root = self.tmp / "uploader-data"
+        data_root.mkdir()
+        data_root.chmod(0o500)
+        try:
+            response = self.client.get("/concat-uploader/channels")
+            self.assertEqual(response.status_code, 503)
+            self.assertNotIn(str(data_root), response.text)
+            self.assertIsNone(getattr(self.app.state, "concat_uploader_backend", None))
+        finally:
+            data_root.chmod(0o700)
+
     def test_backend_requires_private_persistent_configuration(self):
         self.app.state.concat_uploader_backend = None
         os.environ.pop("LUM_SESSION_SECRET")
