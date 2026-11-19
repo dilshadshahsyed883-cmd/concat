@@ -21,5 +21,39 @@ small{display:block;margin-top:20px;color:#a9b7cc}
 <label for="password">Password</label>
 <input id="password" name="password" type="password" required autocomplete="current-password" maxlength="1024">
 <button type="submit">Sign in</button>
+<p id="login-status" role="status" aria-live="polite" style="margin:14px 0 0;color:#fda4af" hidden></p>
 <small>Private admin access. Your credentials stay on this server.</small>
-</form></body></html>
+</form>
+<script>
+(() => {
+  const form = document.querySelector("form");
+  const status = document.getElementById("login-status");
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    status.hidden = true;
+    const button = form.querySelector("button");
+    button.disabled = true;
+    try {
+      const response = await fetch("/auth/login", {
+        method: "POST", body: new FormData(form), credentials: "same-origin",
+        headers: {"Origin": location.origin}, redirect: "manual", cache: "no-store"
+      });
+      if (response.status === 303 || response.type === "opaqueredirect") {
+        location.assign("/dashboard");
+        return;
+      }
+      status.textContent = response.status === 429
+        ? "Too many attempts. Try again later."
+        : "Username or password incorrect, or session verification failed.";
+      status.hidden = false;
+      form.querySelector("#password").value = "";
+      form.querySelector("#password").focus();
+    } catch (error) {
+      status.textContent = "Could not connect. Please try again.";
+      status.hidden = false;
+    } finally {
+      button.disabled = false;
+    }
+  });
+})();
+</script></body></html>
