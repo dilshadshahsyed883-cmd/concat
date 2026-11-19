@@ -242,7 +242,7 @@ class CloudRender:
                 "enabled": cfg["enabled"] == "1",
                 "salad_key_saved": bool(cfg["salad_key"]),
                 "worker_key_saved": bool(cfg["worker_key"]),
-                "drive_bridge_available": shutil.which("rclone") is not None}
+                "drive_bridge_available": self.production.drive.available()}
 
     def save(self, obj):
         accepted = {"auto_upload","endpoint","priority","health_path","timeout","salad_key","worker_key","concurrency"}

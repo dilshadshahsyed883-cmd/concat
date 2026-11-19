@@ -1,19 +1,46 @@
-# Concat Web Drive Bridge access — issue #16
+# Issue 16 — canonical read-only Drive intake
 
-## Source of discrepancy (2026-11-19)
+Concat runs as `concatweb` and cannot read Scene's private worker HOME.
+`ProductionQueue` now uses a Unix-socket client instead of running rclone for
+Drive scans/downloads. No credentials are copied, no permissions on Scene HOME
+are changed, and there is no direct-rclone or anonymous fallback for intake.
 
-VPS_1 `apps/scene-builder/part01/cloud_render.py` resolves rclone from its Scene worker HOME. The independent Concat Web service runs as `concatweb` rather than `vps1scene`. The Scene worker HOME is private and is not an authorized credential source for `concatweb` without a deliberately scoped host access grant. Previous Concat logic blindly set HOME/XDG to that private directory, even when its service user could not traverse it. Every remote `lsjson` permission error was misreported as a **destination** permission error, even though folder scan is a **read**.
+The companion VPS_1 implementation is on `feature/shared-drive-bridge` in
+`dilshadshahsyed883-cmd/vps1-deploy-control`:
+`production/concat_drive_bridge.py`, an inert systemd template, tests and
+`docs/CONCAT_DRIVE_BRIDGE.md`. It runs separately as the existing canonical
+Scene identity and reuses the original DriveIntake/rclone contract. Only
+`concatweb`'s kernel UID can call health, scan or bounded ZIP download; no caller
+paths, arbitrary commands, upload/delete or remote selectors are accepted.
 
-## Corrected contract
+`CONCAT_DRIVE_BRIDGE_SOCKET` defaults to
+`/run/concat-drive-bridge/intake.sock`. This non-secret setting can be supplied
+by the host environment. An absent/unhealthy bridge stops intake safely;
+GPU config checks the canonical remote through the bridge rather than merely
+checking whether a local rclone executable exists.
 
-- Prefer a host-approved `RCLONE_CONFIG` explicitly configured on the isolated Concat unit and **readable as `concatweb`**. Use the remote name already configured by `CLOUD_RENDER_DRIVE_REMOTE` (default `gdrive`).
-- If no explicit config is set, reuse the existing Scene worker config only if its directory/file is actually accessible to the Concat identity. Do not assume matching HOME grants access.
-- If inaccessible, return a sanitized, actionable error **before invoking rclone**. Do not fall back to anonymous Drive, a second OAuth flow, or another account.
-- Folder `lsjson` and Drive `copyid` failures are **source access** errors. Verified MP4 `copyto` failures remain **destination access** errors. Raw token/config path information must never reach a browser.
-- No changes to VPS_1's rclone config, OAuth secrets, service identity, Nginx, Salad worker or queues.
+Owner identity remains derived from authenticated Concat principals. Socket
+requests carry the existing tenant SHA256; owner queues and staging remain
+separate, with no admin cross-owner bypass. ZIP streams are written exclusively
+to new private local files, checked for exact byte count and SHA256, then checked
+by the existing queue for scanned size/MD5, bundle validity and GPU dispatch.
+Corrupt/truncated transfers remove the partial file. Folder resource keys and
+direct-link discovery use the existing canonical parser and downloader.
+Source permission, missing item, auth and configuration errors are sanitized;
+failed scans create no queue rows. No changes to output MP4 Drive upload,
+verified cleanup, Salad, OAuth, YouTube publishing or queue schema.
 
-## Host-only acceptance gate (not established by source tests)
+## Activation and verification
 
-A host administrator must verify that the `concatweb` service identity can read an *approved* canonical rclone configuration and that its `gdrive` remote addresses the intended account. This is a runtime permission/configuration task, **not a reason to chmod the Scene worker HOME or copy OAuth files into the repository**. Verify with a read-only `rclone listremotes` and `rclone lsjson` against an approved test folder from the same systemd identity/environment. Confirm authorized folder access, then Scan & Add to Queue creates owner-scoped ZIP rows. Negative check: an unshared folder must fail without creating rows. No credential contents or Drive folder URLs should be printed in logs or issue comments.
+Merge source into `integration/personal-release-20261119` only after CI passes.
+Do not merge the release PR to main or deploy automatically. The companion
+bridge must be installed from its immutable reviewed VPS1 feature-branch SHA
+using its documented dedicated service setup; existing VPS1 services stay live.
+No Scene or OAuth change is required. Rollback stops only the new bridge and
+restores the previous Concat release, preserving databases and credentials.
 
-Until this scoped host check passes, **issue #16 is not confirmed fixed in production**. Do not automatically merge or deploy source changes to claim success.
+Offline tests cover the protocol, peer UID rejection, sanitized denial, resource
+keys, private spool cleanup, no caller paths, socket outage, integrity failures,
+no-rclone intake, owner-specific queue creation and zero rows on denied scans.
+Real allowed/unshared Drive folders and GPU acceptance still require manual
+host activation. Source merge does not establish that production is repaired.
