@@ -1,13 +1,59 @@
-# Independent Concat Web release gates (public cutover NOT yet authorized)
+# Concat Web: standalone admin, manual VPS terminal release gates
 
-1. Confirm DNS and TLS for proposed `concat.scenebuilder.online` via separate read-only discovery.
-2. Inventory exact VPS_1 ports, Nginx locations, Linux users and production services; check collisions with 18873.
-3. Verify Agent 5 Scene-session SSO: secure cookies or server-verified auth_request, role refresh, session revocation and anti-forgery. Never trust arbitrary inbound identity headers.
-4. Verify owner-bound Cloud Render media/job/config/ingest callbacks and quarantine unknown legacy owners (audit PR #768).
-5. Verify owner+app uploader queues, channels, Sheets/OAuth tokens and canonical Drive-backed media handoff (PR #770 contract). Preserve Copy Video Link URL and Drive Bridge canonical identity/verification/cleanup.
-6. Test Alice, Bob and admin (admin as own owner) on all API reads/writes, copied URLs, direct guessed IDs and worker callbacks.
-7. Validate complete suite, real provider smoke in controlled mode and effective TLS/NGINX config without touching current routes.
-8. Snapshot independent release and persistent state (consistent SQLite backup where appropriate). Keep previous working service and Nginx config.
-9. Use the manually approved, SHA-pinned `deploy.yml` workflow from protected `main` to stage the independent Concat unit **on loopback only**; keep existing public Nginx placeholder/routes unchanged. Never deploy from feature branches. Do not alter the host-installed Drive Bridge.
-10. Before public activation: verify live Scene issuer deployment/schema, same independent HMAC key, ticket URL logging redaction, real two-user/admin browser SSO + revocation and controlled GPU → verified MP4 → Uploader acceptance against the staged unit. Only then authorize a separate, backed-up Concat-only Nginx cutover. Afterwards test public /healthz, authenticated UI, owner isolation, Nginx -t and existing app.scenebuilder.online. On failure roll back only the Concat unit/release/route. Preserve queues and data.
-Integration PR #7 and upstream issuer PR #773 are merged in source, but actual Scene issuer deployment and cross-app signing/access remain unverified. Production public activation remains gated; historical release blockers are documented in docs/FINAL_INTEGRATION_BLOCKERS_20261118.md. Do not treat isolated tests or a loopback 200 as live SSO/Salad/YouTube acceptance.
+The old Scene SSO release requirement is permanently replaced by independent
+single-admin authentication. **Concat Web never deploys through GitHub Actions.**
+
+## Source and security acceptance (Steps 1–3)
+
+1. Start only from a reviewed, tested commit on protected `concat-web/main`.
+   Keep all coding in GitHub feature branches and PRs. Do not deploy branches.
+2. Verify a root-owned `0600` `/etc/concat-web/concat-web.env` contains
+   `CONCAT_AUTH_MODE=local-admin`, single admin username, stdlib scrypt
+   password hash, random independent Concat session and uploader secrets,
+   HTTPS origins and strictly owner-scoped data storage. The host bootstrap
+   `deploy/init-local-admin.py` must never print the password or hashes.
+3. Verify private `/var/lib/concat-web`, uploader data, service user
+   `concatweb` and root-owned release/helper. No Scene DB/issuer/key is read.
+4. Run negative security tests: anonymous/forged-header/old Scene cookie denied,
+   valid admin login, username/password failure and throttling, login CSRF,
+   session CSRF/origin, revocation/logout, changed password invalidation,
+   foreign/ownerless resource quarantine and no cross-app access.
+5. Run actual standalone-login offline integration against checked MP4 receiver,
+   copied Concat verified-source admission, persistent uploader queue,
+   duplicate prevention and dashboard. This does **not** imply a live Salad
+   GPU render or YouTube OAuth publishing was performed.
+6. Run existing route/queue/dashboard tests, complete CI, wheel build and
+   `bash -n deploy/guarded-release.sh`; ensure `deploy.yml` has no SSH,
+   auto-deploy, or push-triggered production deployment.
+
+## VPS terminal deployment, only after source acceptance (Step 4)
+
+1. Read-only DNS/TLS/port/service/Nginx audit for
+   `concat.scenebuilder.online` and port `18873`, preserve
+   `app.scenebuilder.online`.
+2. Manually use the **exact verified main SHA** to obtain the repo source and
+   install its root-owned new `deploy/guarded-release.sh` helper.
+   Do not reuse the earlier Scene-SSO-only helper.
+3. Provision the independent private Concat admin environment **once**,
+   interactively, through `deploy/init-local-admin.py`; never enter
+   password or secrets in shell arguments or GitHub. Existing env is not
+   overwritten. Back up prior independent Concat state.
+4. Run `/usr/local/sbin/concat-web-deploy preflight <main-SHA>` first.
+   It must fail closed on missing or conflicting private identity/security.
+5. Build exact-SHA archive from protected main and invoke the existing
+   Concat-only helper in `deploy` mode. Install on `127.0.0.1:18873`,
+   verify `/healthz`, and confirm anonymous `/dashboard` and
+   `/api/v1/session` are denied. On health failure helper restores the
+   previous Concat service only. Persistent owner/queue data is not reset.
+6. Before public cutover, verify secure browser login/logout over HTTPS,
+   CSRF, owner-scoped Concat Studio and Uploader, relevant GPU receiver tokens,
+   Drive access, and controlled Salad render -> verified MP4 -> staging test.
+   Real YouTube publication requires explicit separate approval.
+7. Back up existing Nginx and certificate configuration; make only the
+   isolated new Concat virtual-host change, validate `nginx -t`, HTTPS
+   DNS and `app.scenebuilder.online` availability. On failure revert only
+   Concat route/release. Keep Scene worker, LUTs, other VPS services,
+   existing OAuth and canonical Drive Bridge untouched.
+
+Historical Scene SSO blockers in `docs/FINAL_INTEGRATION_BLOCKERS_20261118.md`
+apply to the superseded SSO design, not to this standalone admin branch.
