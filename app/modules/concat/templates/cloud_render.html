@@ -2,18 +2,18 @@
 {% block title %}Concat{% endblock %}
 {% block subtitle %}Concat Production queue, rendered media and SaladCloud GPU connection{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="/concat/assets/cloud_render.css?v=20261119-three-tab-1">
+<link rel="stylesheet" href="/concat/assets/cloud_render.css?v=20261119-compact-2">
 <section id="cloud-render" data-csrf="{{ csrf_token }}" data-initial-tab="{{ initial_tab }}" aria-labelledby="cloud-heading">
-  <header class="cr-header">
-    <div><div class="cr-eyebrow">CONCAT STUDIO / OWNER WORKSPACE</div><h2 id="cloud-heading" class="visually-hidden">Concat Studio workspace</h2><p>Queue Concat projects from Google Drive, render on SaladCloud and manage the verified MP4s.</p></div>
-    <span id="cr-health" class="cr-pill">Worker not connected</span>
-  </header>
+  <h2 id="cloud-heading" class="visually-hidden">Concat Studio workspace</h2>
+  <div class="cr-navigation">
   <nav class="cr-tabs studio-tabs" aria-label="Concat Studio modules">
     <button class="active" type="button" data-tab="production" aria-selected="true">Production</button>
     <button type="button" data-tab="media" aria-selected="false">Media</button>
     <button type="button" data-tab="gpu" aria-selected="false">GPU Config</button>
     <a href="/concat-uploader/sheets-sync">Uploader</a>
   </nav>
+    <span id="cr-health" class="cr-pill">Worker not connected</span>
+  </div>
   <p id="cr-message" role="status" aria-live="polite"></p>
   <section class="cr-section" id="cr-production">
     <form class="cr-card" id="cr-production-form">
@@ -22,7 +22,7 @@
         <label for="cr-drive-link">Google Drive folder or ZIP link</label>
         <input id="cr-drive-link" type="url" placeholder="https://drive.google.com/..." autocomplete="off" required>
       </div>
-      <p class="cr-note">Use a folder of Concat bundles or a single ZIP made with Prepare ZIP Only. Private links must be shared with the configured Drive account.</p>
+      <p class="cr-note">Add a folder of Concat ZIPs or one ZIP. Share private links with your configured Drive account.</p>
       <button class="cr-btn primary" id="cr-scan" type="submit">Scan &amp; Add to Queue</button>
     </form>
     <div class="cr-card">
@@ -35,7 +35,7 @@
         <button class="cr-btn secondary" id="cr-pause-queue" type="button" disabled>Pause Queue</button>
         <button class="cr-btn primary" id="cr-resume-queue" type="button" disabled>Resume Queue</button>
       </div>
-      <p class="cr-note">Projects render one at a time. Pausing holds new submissions. A project already accepted by the worker can finish and deliver its MP4.</p>
+      <p class="cr-note">Pause holds new submissions; active renders can finish.</p>
     </div>
     <div class="cr-list" id="cr-production-list"><p>Loading projects…</p></div>
   </section>
@@ -47,21 +47,18 @@
     </div>
     <div class="cr-card cr-autoline">
       <label class="cr-check"><input type="checkbox" id="cr-auto"><b>Auto Upload New Jobs to Google Drive</b></label>
-      <p>OFF by default. When enabled, only newly received, verified MP4 jobs upload automatically. After remote size and MD5 verification, the VPS copy is removed. Failures retain the VPS file.</p>
+      <p>Upload new verified MP4s automatically. Successful transfers free VPS space; failed transfers retain the file.</p>
       <button class="cr-btn secondary" id="cr-save-auto" type="button">Save preference</button>
     </div>
     <div class="cr-row cr-row-wrap">
-      <div><h3>Media library</h3><p>Completed Concat outputs stored on VPS_1</p></div>
+      <h3>Media library</h3>
       <button class="cr-btn secondary" id="cr-refresh" type="button">Refresh</button>
     </div>
     <div class="cr-list" id="cr-media-list"><p>Loading media...</p></div>
-    <p class="cr-note">VPS-ready MP4s have Copy Link for Concat Uploader (signed-in access required). Drive-delivered MP4s no longer have a local VPS link. Existing Upload to Drive, Rename, Preview, Download, and Delete controls are unchanged; deletion during active Drive transfers is blocked.</p>
   </section>
   <section class="cr-section" id="cr-gpu" hidden>
     <div class="cr-card">
-      <div class="cr-row"><div><h3>SaladCloud GPU Configuration</h3><p>OmniVoice-style independent connection. Concat renderer image, not the OmniVoice image.</p></div><span id="cr-connection" class="cr-pill">Not connected</span></div>
-      <div class="cr-field"><label>Docker image (planned tag; verify in GHCR before activation)</label><input id="cr-image" disabled></div>
-      <div class="cr-technical" id="cr-requirements"></div>
+      <div class="cr-row"><h3>GPU Configuration</h3><span id="cr-connection" class="cr-pill">Not connected</span></div>
       <div class="cr-field"><label for="cr-endpoint">SaladCloud Gateway HTTPS URL</label><input id="cr-endpoint" placeholder="https://your-renderer.salad.cloud" inputmode="url" autocomplete="off"></div>
       <div class="cr-fields">
         <div class="cr-field"><label for="cr-salad-key">Salad API Key</label><input id="cr-salad-key" type="password" autocomplete="new-password" placeholder="Leave blank to keep saved key"><small id="cr-salad-key-state">Not saved</small></div>
@@ -83,16 +80,16 @@
         <button class="cr-btn secondary" id="cr-connect" type="button">Connect Worker</button>
         <button class="cr-btn danger" id="cr-disconnect" type="button">Disconnect</button>
       </div>
-      <p class="cr-note">GPU allocation, VRAM, CPU/RAM, registry image and priority are applied in SaladCloud deployment. Saving here does not purchase, resize or restart a SaladCloud container.</p>
+      <p class="cr-note">Container resources and image are managed in SaladCloud.</p>
     </div>
     <div class="cr-card">
       <h3>GPU → VPS Output Receiver</h3>
-      <p>The renderer must upload chunks to <code>/api/cloud-render/ingest/{job_id}/chunk</code>, using <code>X-Cloud-Render-Token</code>. The receiver verifies MP4 signature and SHA256 before accepting the completed file.</p>
+      <p>Authorize verified MP4 delivery from your renderer.</p>
       <button class="cr-btn secondary" id="cr-rotate" type="button">Generate / Rotate Receiver Token</button>
       <pre id="cr-token" class="cr-token" hidden></pre>
       <p class="cr-note">Token is displayed only after rotation. Configure the same token as RENDER_OUTPUT_TOKEN in the Salad worker; keep it secret. Rotation invalidates old worker access.</p>
     </div>
   </section>
 </section>
-<script defer src="/concat/assets/cloud_render.js?v=20261118-media-copy-link-1"></script>
+<script defer src="/concat/assets/cloud_render.js?v=20261119-compact-2"></script>
 {% endblock %}

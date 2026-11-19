@@ -70,10 +70,8 @@
     <input type="hidden" name="csrf_token" value="{{ csrf }}">
     {% if engine_instance == 'concat' %}
     <section class="lum-card lum-span-2 copyright-source-card">
-      <div class="lum-card-head"><div><h2>Concat Video Link</h2><p>Paste Copy Video Link from your completed, owner-verified Cloud Render MP4.</p></div><span class="lum-badge brand">Manual queue</span></div>
       <select name="source_mode" id="copyright-source-mode" hidden aria-label="Video source"><option value="concat_link" selected>Concat Video Link</option></select>
       <label class="lum-field"><span>Concat Video Link</span><input name="concat_video_link" type="url" maxlength="2048" value="{{ concat_source_prefill|e }}" required placeholder="https://app.scenebuilder.online/api/cloud-render/media/VIDEO_ID/file" autocomplete="off"></label>
-      <p class="lum-note">Only video links belonging to this account are accepted. Unverified/legacy videos cannot be queued.</p>
     </section>
     {% else %}
     <section class="lum-card lum-span-2 copyright-source-card">
@@ -118,13 +116,19 @@
       <div class="copyright-field-pair">
       <label class="lum-field"><span>Visibility</span><select name="privacy_status"><option value="public">Public</option><option value="unlisted">Unlisted</option><option value="private">Private</option></select></label>
       {% if engine_instance == 'concat' %}
-      <label class="lum-field"><span>Schedule YouTube upload start — optional</span><input name="app_upload_at" type="datetime-local"><small>Blank = manual queue (Start My Queue required). Set a time to automatically START uploading then, using your selected visibility. Actual start may be later if another upload is running or the worker is offline. This does not schedule YouTube publication.</small></label>
+      <label class="lum-field"><span>Schedule YouTube upload start — optional</span><input name="app_upload_at" type="datetime-local"></label>
       <label class="lum-field"><span>Schedule timezone</span><select name="timezone_name"><option value="Asia/Karachi">Pakistan (PKT)</option><option value="UTC">UTC</option><option value="America/New_York">New York</option><option value="America/Los_Angeles">Los Angeles</option><option value="Europe/London">London</option></select></label>
       {% else %}
 <label class="lum-field"><span>Schedule (PKT) — optional</span><input name="app_upload_at" type="datetime-local"><small>Blank = next available queue slot.</small></label>
       {% endif %}
       </div>
+      {% if engine_instance == 'concat' %}
+      <label class="lum-field"><span>Thumbnail — optional</span><input id="concat-thumbnail" name="thumbnail" type="file" accept="image/png,image/jpeg"></label>
+      <div class="concat-thumbnail-preview" data-concat-thumbnail-preview hidden><img alt="Selected thumbnail preview"></div>
+      <p class="concat-thumbnail-error" data-concat-thumbnail-error role="alert" hidden></p>
+      {% else %}
       <label class="lum-field"><span>Thumbnail — optional</span><input name="thumbnail" type="file" accept="image/png,image/jpeg"></label>
+      {% endif %}
     </section>
     <section class="lum-card">
       <h2>Video Metadata</h2>
@@ -135,7 +139,7 @@
       <label class="lum-check"><input type="checkbox" name="made_for_kids" value="on"> Made for Kids</label>
     </section>
     <section class="lum-card lum-span-2 lum-submit-card">
-      <div><strong>Verified upload cleanup</strong><p>VPS video copies are deleted after YouTube verification. Failed uploads keep files for retry; Drive originals are retained.</p></div>
+      {% if engine_instance != 'concat' %}<div><strong>Verified upload cleanup</strong><p>VPS video copies are deleted after YouTube verification. Failed uploads keep files for retry; Drive originals are retained.</p></div>{% endif %}
       <button class="lum-button primary" type="submit">+ Add Video to Queue</button>
     </section>
   </form>
@@ -491,7 +495,7 @@
         <div class="lum-card-head">
           <div>
             <h2>Channel & Brand Manager</h2>
-            <p>PC-app channel controls with compact rows, instant filters, bulk selection and permanent token/config status.</p>
+            <p>Filter channels, manage access and check connection health.</p>
           </div>
           <details class="lum-columns-menu">
             <summary class="lum-button secondary">Columns</summary>
