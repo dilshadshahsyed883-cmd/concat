@@ -1528,7 +1528,7 @@
     <section class="lum-card"><div class="lum-card-head"><div><h2>Logs</h2><p>Copyright Uploader events only.</p></div></div><div class="lum-log">{% for e in logs %}<div><time>{{ e.created_at }}</time><b class="l-{{ e.level|lower }}">{{ e.level }}</b><span>{% if e.project_id %}#{{ e.project_id }} · {% endif %}{{ e.message }}</span></div>{% else %}<div>No logs yet.</div>{% endfor %}</div></section>
   {% endif %}
 </div>
-<script src="{{ base_path }}/static/local_upload_manager.js?v=20260821-v2.1"></script>
+<script src="{{ base_path }}/static/local_upload_manager.js?v=20261119-shell-rebind-v1"></script>
 {% endblock %}
 
 
