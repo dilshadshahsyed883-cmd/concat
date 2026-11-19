@@ -23,6 +23,13 @@ global or ownerless data is quarantined; no admin override or silent migration.
 
 ## Standalone login
 
+**Login link:** [https://concat.scenebuilder.online/auth/login](https://concat.scenebuilder.online/auth/login)
+
+Use the standalone Concat administrator username and password configured on the VPS.
+Successful login opens [Dashboard](https://concat.scenebuilder.online/dashboard).
+An already signed-in browser also redirects from the login link to Dashboard;
+use a private/incognito window to see the login form without changing that session.
+
 - Only `CONCAT_AUTH_MODE=local-admin` may enable local identity.
 - Root-owned private environment contains `CONCAT_ADMIN_USERNAME`,
   `CONCAT_ADMIN_PASSWORD_HASH` (scrypt, not plaintext),
