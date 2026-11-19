@@ -1,28 +1,72 @@
 # Concat Web
 
-Independent FastAPI application for the existing VPS_1 host. The original Scene website is unchanged. Integrated PR #3 (Uploader), #4 (Concat Studio), #5 (Dashboard), and #6 (Admin/SSO) are copied from their verified source trees.
+Independent FastAPI application deployed separately on VPS_1. Its existing
+Concat Studio, GPU render receiver, verified MP4 library, Concat Uploader,
+Google Drive integrations, and dashboard remain in this repository. The
+existing VPS_1 Scene website remains unchanged.
 
-## Routes and source boundaries
+**Authentication decision (2026-11-19): standalone single administrator.**
+Scene SSO is no longer a dependency. No Scene account DB, Scene session,
+SSO issuer or VPS1 PR #774 is needed for Concat Web. Every request uses a
+revocable server-side local session; owner-scoped media and queue isolation
+remain mandatory even for the administrator.
 
-The sidebar has exactly three top-level sections: Dashboard, Concat Studio, and Admin. Concat Studio contains Production, Media, GPU Config, and Copy Video Link. Concat Uploader exposes Sheets Sync, Channels, Upload Engine and Queue by calling the copied uploader in process after verified authentication.
+## Product
 
-Dashboard uses read-only owner-scoped queries against the real Cloud Render and uploader SQLite stores, not mock counters. SSO consumer checks active Scene users, revocable sessions and Concat grants on every protected request; without the upstream Scene issuer it fails closed.
+Top-level navigation: Dashboard, Concat Studio, Admin.
+Concat Studio contains Production, Media, GPU Config, and Concat Uploader
+(Sheets Sync, Channels, Upload Engine and Queue).
 
-Concat stores each user's videos and jobs in a private per-owner SQLite directory under $CONCAT_WEB_DATA_ROOT/owners/sha256(canonical_username). The copied uploader's verified media admission checks the same owner-specific directory and copies a SHA-verified ready MP4 to private staging. The legacy global single-database source is supported only when its owner_username field matches the authenticated owner; ownerless data is never migrated.
+The dashboard reads real owner-scoped job and uploader stores, not mock stats.
+Media must be checksum-verified before copy-link/uploader admission. Legacy
+global or ownerless data is quarantined; no admin override or silent migration.
 
-## Offline verification and wheel
+## Standalone login
 
-    python -m pip install -e '.[test]'
-    python -m compileall -q app reused run.py
-    python -m unittest discover -s tests -p 'test_foundation.py' -v
-    python -m unittest discover -s tests -p 'test_reused_*.py' -v
-    python -m unittest app.modules.concat.test_routes -v
-    python -m unittest discover -s app/modules/uploader/tests -p 'test_*.py' -v
-    python -m unittest discover -s tests -p 'test_admin_security.py' -v
-    python -m pip wheel --no-deps --wheel-dir /tmp/concat-web-wheel .
+- Only `CONCAT_AUTH_MODE=local-admin` may enable local identity.
+- Root-owned private environment contains `CONCAT_ADMIN_USERNAME`,
+  `CONCAT_ADMIN_PASSWORD_HASH` (scrypt, not plaintext),
+  `CONCAT_ADMIN_SESSION_SECRET`, and separate uploader secrets.
+- `GET /auth/login` issues a secure login CSRF nonce.
+  `POST /auth/login` verifies the nonce, origin, username/password,
+  and applies rate limiting; successful login sets a secure `__Host-`
+  session cookie with a hashed/revocable SQLite session record.
+- `POST /auth/logout` requires a verified session plus anti-CSRF token;
+  local admin may revoke all sessions. Password-hash rotation invalidates
+  previously minted sessions.
+- Browser identity headers, Scene cookies and foreign owners are rejected.
+- Public `GET /healthz` provides minimal unauthenticated health response.
 
-Fixtures verify a signed-in receiver's simulated output, verified MP4, copied persistent queue, dashboard, owner isolation, CSRF, and legacy quarantine. Tests do not publish live YouTube videos or invoke Salad GPU.
+## Offline verification (no VPS writes)
 
-## Release status
+```bash
+python -m pip install -e '.[test]'
+python -m compileall -q app reused run.py
+python -m unittest discover -s tests -p 'test_foundation.py' -v
+python -m unittest discover -s tests -p 'test_admin_security.py' -v
+python -m unittest discover -s tests -p 'test_reused_*.py' -v
+python -m unittest app.modules.concat.test_routes -v
+python -m unittest discover -s app/modules/uploader/tests -p 'test_*.py' -v
+python -m unittest discover -s tests -p 'test_release_security_contract.py' -v
+bash -n deploy/guarded-release.sh
+python -m pip wheel --no-deps --wheel-dir /tmp/concat-web-wheel .
+```
 
-No merge or deployment authorized. Upstream Scene SSO issuer/session table is pending in VPS_1 issue #772. Real OAuth/YouTube/Salad and full multi-user deployed verification require controlled non-production staging after SSO. See docs/FINAL_INTEGRATION_BLOCKERS_20261118.md and deploy/RELEASE_GATES.md. Main, VPS_1 production data, secrets, Nginx, and GPU images are untouched.
+The integration fixture covers **local admin login -> simulated GPU receiver
+chunk -> SHA-verified MP4 -> copied persistent uploader queue -> dashboard ->
+logout**, without contacting Salad, Google OAuth or real YouTube. A genuine
+GPU/Drive/OAuth acceptance check is required at controlled VPS staging before
+claiming full external-service readiness.
+
+## Deployment policy
+
+Code changes happen in GitHub feature branches and PRs. After successful
+checks and approval, merge to `concat-web/main`, pin the exact SHA and deploy
+manually from VPS terminal using the existing Concat-only
+`deploy/guarded-release.sh` and independent `concat-web.service`.
+GitHub Actions is CI-only and **cannot deploy to VPS**.
+
+See [release gates](deploy/RELEASE_GATES.md) for private environment,
+preflight, backup/rollback, loopback staging, and separate HTTPS Nginx cutover.
+The 2026-11-18 SSO notes are historical and no longer apply to the current
+standalone-login design.
