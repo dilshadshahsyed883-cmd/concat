@@ -129,6 +129,24 @@ class ExistingNginxSiteAdoptionTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "BACKUP_ALREADY_EXISTS"):
                 adopt.secure_original_backup(backup, original)
 
+    def test_graceful_nginx_reload_waits_before_failing(self):
+        """First HTTPS probe sees the old placeholder; next sees Concat."""
+        with (patch.object(adopt, "_health", side_effect=[False, True]) as health,
+              patch.object(adopt, "_code", side_effect=["401", "200"]) as code,
+              patch.object(adopt.time, "sleep") as sleep):
+            adopt.wait_for_public_app(timeout_seconds=3, pause_seconds=0)
+            self.assertEqual(health.call_count, 2)
+            self.assertEqual(code.call_count, 2)
+            sleep.assert_called_once()
+
+    def test_healthy_upstream_still_requires_private_denial(self):
+        with (patch.object(adopt, "_health", return_value=True),
+              patch.object(adopt, "_code", side_effect=["200", "200", "200"]),
+              patch.object(adopt.time, "monotonic", side_effect=[1.0, 1.0]),
+              patch.object(adopt.time, "sleep")):
+            with self.assertRaisesRegex(RuntimeError, "DASHBOARD"):
+                adopt.wait_for_public_app(timeout_seconds=0)
+
     def test_manual_release_bundles_nginx_adoption_code(self):
         script = (ROOT / "deploy/manual-integration-release.sh").read_text()
         self.assertIn("app reused deploy run.py pyproject.toml", script)

@@ -16,6 +16,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 
 DOMAIN = "concat.scenebuilder.online"
 AUDITED_HASH = "d0371b9ec8296a2e57dafafc2b7dda8268d70d23c0b657f5f46ea35e2c1819e5"
@@ -159,6 +160,27 @@ def _health(public: bool) -> bool:
         return False
 
 
+def wait_for_public_app(timeout_seconds: float = 14.0, pause_seconds: float = 0.7) -> None:
+    """Wait for Nginx's graceful worker reload before deciding to rollback."""
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        healthy = _health(True)
+        if healthy:
+            dashboard = _code("/dashboard", True)
+            login = _code("/auth/login", True)
+            if dashboard == "401" and login == "200":
+                return
+            failure = "DASHBOARD" if dashboard != "401" else "LOGIN"
+        else:
+            failure = "HEALTH"
+        if time.monotonic() >= deadline:
+            # Probe only a public health endpoint, never expose private headers.
+            code = _code("/healthz", True)
+            fail("CONCAT_HTTPS_HEALTH_OR_AUTH_FAILED:" + failure +
+                 ":PUBLIC_HEALTH_HTTP_" + code)
+        time.sleep(pause_seconds)
+
+
 def assert_stage(sha: str) -> None:
     if not re.fullmatch(r"[0-9a-f]{40}", sha):
         fail("INVALID_INTEGRATION_SHA")
@@ -238,12 +260,7 @@ def activate(sha: str) -> None:
         changed = True
         assert_nginx()
         reload_nginx()
-        if not _health(True):
-            fail("CONCAT_HTTPS_HEALTH_OR_AUTH_FAILED:HEALTH")
-        if _code("/dashboard", True) != "401":
-            fail("CONCAT_HTTPS_HEALTH_OR_AUTH_FAILED:DASHBOARD")
-        if _code("/auth/login", True) != "200":
-            fail("CONCAT_HTTPS_HEALTH_OR_AUTH_FAILED:LOGIN")
+        wait_for_public_app()
         if scene_status() != previous_scene:
             fail("SCENE_HTTPS_STATUS_CHANGED")
         meta["state"] = "active"
