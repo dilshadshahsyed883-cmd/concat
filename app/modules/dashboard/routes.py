@@ -5,10 +5,12 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 
 from app.auth import Principal, current_principal
 from app.contracts.navigation import DASHBOARD, CONCAT, UPLOADER
 from .services import InvalidSnapshot, SourceUnavailable, get_overview
+from .system_metrics import system_dashboard_snapshot
 
 router = APIRouter()
 _root = Path(__file__).resolve().parent
@@ -25,6 +27,18 @@ async def dashboard(request: Request, principal: Principal = Depends(current_pri
                  "concat_pages": CONCAT, "uploader_pages": UPLOADER},
         headers=_NO_STORE,
     )
+
+
+
+@router.get("/api/v1/dashboard/system")
+async def system_dashboard(_principal: Principal = Depends(current_principal)):
+    """Protected host resource snapshot. Never writes or calls upstream Scene APIs."""
+    try:
+        payload = await run_in_threadpool(system_dashboard_snapshot)
+    except Exception:
+        _logger.exception("Read-only VPS system monitoring failed")
+        raise HTTPException(status_code=503, detail="System monitoring unavailable", headers=_NO_STORE) from None
+    return JSONResponse(payload, headers=_NO_STORE)
 
 
 @router.get("/api/v1/dashboard/overview")

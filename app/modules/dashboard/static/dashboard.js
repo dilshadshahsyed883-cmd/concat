@@ -1,99 +1,40 @@
-(() => {
-  "use strict";
-  const button = document.getElementById("dashboard-refresh");
-  const message = document.getElementById("dashboard-message");
-  if (!button || !message) return;
+export const CONTRACT = 2;
 
-  const byId = id => document.getElementById(id);
-  const setText = (id, value) => {
-    const node = byId(id);
-    if (node) node.textContent = String(value);
-  };
-  const stat = (key, value) => {
-    const node = document.querySelector('[data-stat="' + key + '"]');
-    if (node) node.textContent = String(value);
-  };
-  const stamp = value => {
-    if (!value) return "Time unavailable";
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? "Time unavailable" : date.toLocaleString();
-  };
+export function mount(root, context = {}) {
+  if (!root) throw new Error('Dashboard root required');
+  const lifetime = new AbortController();
+  const fetch = (url, options = {}) => window.fetch(url, {...options, credentials: "same-origin", signal:lifetime.signal});
+  const $=id=>root.querySelector('#'+id);
+  let timer=null, pending=false;
+  const preferencesKey = null; // Do not reuse Scene account settings.
+  try {
+    const saved=preferencesKey && JSON.parse(sessionStorage.getItem(preferencesKey)||'null');
+    if(saved && typeof saved.auto==='boolean' && [5,10,30,60].includes(saved.rate)){
+      $('dashboard-auto-refresh').checked=saved.auto;
+      $('dashboard-refresh-rate').value=String(saved.rate);
+    }
+  } catch (_) {}
+  const fmtGB=v=>Number.isFinite(Number(v))?Number(v).toFixed(1)+' GB':'—';
+  function render(data){if (!data || data.ok !== true || !data.vps || !data.vps.disk || !data.vps.ram || !Array.isArray(data.services)) throw new Error("Invalid snapshot");
+    const v=data.vps,disk=v.disk,ram=v.ram,svc=data.services,activeSvc=svc.filter(x=>x.active === true).length;
+    $('vps-status').textContent=data.ok?'Online':'Attention';$('vps-status-note').textContent=data.ok?'System reachable':'Some checks failed';$('cpu-percent').textContent=(v.cpu_percent??0)+'%';$('cpu-cores').textContent=(v.cpu_cores||0)+' Cores';$('ram-percent').textContent=(ram.percent??0)+'%';$('ram-detail').textContent=`${fmtGB(ram.used_gb)} / ${fmtGB(ram.total_gb)}`;$('disk-percent').textContent=(disk.percent??0)+'%';$('disk-detail').textContent=`${fmtGB(disk.used_gb)} / ${fmtGB(disk.total_gb)}`;$('services-ratio').textContent=`${activeSvc} / ${svc.length}`;$('services-note').textContent=activeSvc===svc.length?'All Core Services Active':'Service attention required';
+    const cpu=Number(v.cpu_percent||0),rp=Number(ram.percent||0),dp=Number(disk.percent||0);$('resource-cpu-label').textContent=cpu+'%';$('resource-ram-label').textContent=rp+'%';$('resource-disk-label').textContent=dp+'%';$('resource-cpu-bar').style.width=Math.min(100,cpu)+'%';$('resource-ram-bar').style.width=Math.min(100,rp)+'%';$('resource-disk-bar').style.width=Math.min(100,dp)+'%';$('load-average').textContent=v.load_1m??'—';$('uptime').textContent=v.uptime_human||'—';$('free-storage').textContent=fmtGB(disk.free_gb);
 
-  function renderRows(id, rows, emptyText) {
-    const container = byId(id);
-    if (!container) return;
-    container.replaceChildren();
-    if (!Array.isArray(rows) || !rows.length) {
-      const empty = document.createElement("li");
-      empty.className = "dash-empty";
-      empty.textContent = emptyText;
-      container.append(empty);
-      return;
-    }
-    for (const item of rows) {
-      const row = document.createElement("li");
-      const main = document.createElement("span");
-      main.className = "dash-job-main";
-      const title = document.createElement("strong");
-      title.className = "dash-job-title";
-      title.textContent = item.title;
-      const when = document.createElement("small");
-      when.className = "dash-job-date";
-      when.textContent = stamp(item.updated_at);
-      main.append(title, when);
-      const state = document.createElement("span");
-      state.className = "dash-state";
-      state.textContent = item.status;
-      state.dataset.state = item.status;
-      row.append(main, state);
-      container.append(row);
-    }
+
+
+    $('dashboard-updated').textContent='Updated '+(data.generated_at_local||new Date().toLocaleTimeString());
   }
-
-  function display(data) {
-    for (const area of ["renders", "uploads"]) {
-      for (const key of ["total", "active", "completed"]) {
-        stat(area + "." + key, data[area][key].toLocaleString());
-      }
-      for (const key of ["queued", "active"]) {
-        stat(area + ".queue." + key, data[area].queue[key].toLocaleString());
-      }
-    }
-    stat("videos.total", data.videos.total.toLocaleString());
-    setText("render-queue-state", data.renders.queue.state);
-    setText("upload-queue-state", data.uploads.queue.state);
-    setText("gpu-availability",
-      data.gpu.available === true ? "Online" : data.gpu.available === false ? "Offline" : "Unknown");
-    setText("gpu-status", data.gpu.status +
-      (data.gpu.checked_at ? " · " + stamp(data.gpu.checked_at) : ""));
-    renderRows("render-jobs", data.renders.jobs, "No render jobs yet");
-    renderRows("upload-jobs", data.uploads.jobs, "No upload jobs yet");
-    renderRows("video-jobs", data.videos.items, "No verified videos yet");
-    renderRows("dashboard-activity", data.recent_activity.map(item => ({
-      ...item, title: item.kind + " · " + item.title
-    })), "No recent activity");
-  }
-
-  async function refresh() {
-    button.disabled = true;
-    message.dataset.error = "false";
-    message.textContent = "Refreshing owner-scoped activity…";
-    try {
-      const response = await fetch("/api/v1/dashboard/overview?limit=8", {
-        credentials: "same-origin", cache: "no-store", headers: {"Accept": "application/json"}
-      });
-      if (!response.ok) throw new Error("Dashboard sources are not ready (" + response.status + ")");
-      display(await response.json());
-      message.textContent = "Live data · updated " + new Date().toLocaleTimeString();
-    } catch (_error) {
-      message.dataset.error = "true";
-      message.textContent =
-        "Live dashboard data is unavailable. No estimated or shared-user counts are shown. Try Refresh data.";
-    } finally {
-      button.disabled = false;
-    }
-  }
-
-  button.addEventListener("click", refresh);
-  refresh();
-})();
+  async function refresh(){if(pending || document.hidden || lifetime.signal.aborted)return;pending=true;const btn=$('dashboard-refresh-now');btn.disabled=true;try{const r=await fetch('/api/v1/dashboard/system',{headers:{Accept:'application/json'},cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);render(await r.json());}catch(e){$('vps-status').textContent='Unknown';$('vps-status-note').textContent='Dashboard API unavailable';$('dashboard-updated').textContent='Refresh failed: '+e.message;}finally{pending=false;btn.disabled=false;}}
+  function schedule(){
+    if(preferencesKey)try{sessionStorage.setItem(preferencesKey,JSON.stringify({auto:$('dashboard-auto-refresh').checked,rate:Number($('dashboard-refresh-rate').value)}));}catch(_){}
+    if(timer)clearInterval(timer);timer=null;if($('dashboard-auto-refresh').checked)timer=setInterval(refresh,Math.max(5,Number($('dashboard-refresh-rate').value||10))*1000)}
+  $('dashboard-refresh-now').addEventListener('click',refresh,{signal:lifetime.signal});
+  $('dashboard-refresh-rate').addEventListener('change',schedule,{signal:lifetime.signal});
+  $('dashboard-auto-refresh').addEventListener('change',schedule,{signal:lifetime.signal});
+  refresh();schedule();
+  return {unmount(){lifetime.abort();if(timer)clearInterval(timer);timer=null;},dispose(){}};
+}
+if (!document.getElementById('vps1-shell-outlet')) {
+  const root=document.getElementById('control-dashboard');
+  if(root){const view=mount(root);window.addEventListener('pagehide',()=>view.unmount(),{once:true});}
+}

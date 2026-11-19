@@ -2,9 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark"><title>Dashboard · Concat Web</title>
+<meta name="color-scheme" content="light"><title>Dashboard · Concat Web</title>
 <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}?v=20261119-three-tab-1">
-<link rel="stylesheet" href="/dashboard/assets/dashboard.css">
+<link rel="stylesheet" href="/dashboard/assets/dashboard.css?v=vps1-monitor-20261119">
 </head>
 <body class="dashboard-page">
 <a class="skip" href="#content">Skip to content</a>
@@ -19,50 +19,44 @@
 <div class="identity"><span>Signed in as</span><strong>{{ principal.username }}</strong><button id="nav-logout" class="sign-out" type="button">Sign out</button><span id="nav-logout-feedback" class="logout-feedback" role="status" hidden></span></div>
 </nav>
 <main id="content" class="content" tabindex="-1">
-<div class="eyebrow">Concat Web / Dashboard</div>
-<div class="dash-header"><div><h1>Dashboard</h1><p class="lead">Your rendering, media and YouTube upload workspace</p></div>
-<button id="dashboard-refresh" class="dash-refresh" type="button">Refresh data</button></div>
-<p id="dashboard-message" class="dash-message" role="status" aria-live="polite">Connecting to live owner-scoped sources…</p>
+<h1>Dashboard</h1>
+<div class="control-dashboard" id="control-dashboard">
+  <div class="dashboard-toolbar dashboard-toolbar-single">
+    <div></div>
+    <div class="dashboard-refresh">
+      <label><input id="dashboard-auto-refresh" type="checkbox" checked> Auto Refresh</label>
+      <select id="dashboard-refresh-rate"><option value="5">5 sec</option><option value="10" selected>10 sec</option><option value="30">30 sec</option><option value="60">60 sec</option></select>
+      <button id="dashboard-refresh-now" class="icon-button" type="button" title="Refresh now">↻</button>
+    </div>
+  </div>
 
-<section aria-label="Workspace totals" class="dash-stats">
-<article class="dash-stat"><div>Render jobs</div><strong data-stat="renders.total">—</strong><span><b data-stat="renders.active">—</b> active · <b data-stat="renders.completed">—</b> completed</span></article>
-<article class="dash-stat"><div>Completed videos</div><strong data-stat="videos.total">—</strong><span>Verified MP4 media</span></article>
-<article class="dash-stat"><div>Upload jobs</div><strong data-stat="uploads.total">—</strong><span><b data-stat="uploads.active">—</b> active · <b data-stat="uploads.completed">—</b> completed</span></article>
-<article class="dash-stat"><div>GPU availability</div><strong id="gpu-availability">—</strong><span id="gpu-status">Not checked</span></article>
-</section>
+  <section class="dashboard-panel active" data-panel="overview">
+    <div class="health-grid">
+      <article class="health-card"><span>VPS Status</span><strong id="vps-status">Loading…</strong><small id="vps-status-note">Checking system</small></article>
+      <article class="health-card"><span>CPU Usage</span><strong id="cpu-percent">—</strong><small id="cpu-cores">—</small></article>
+      <article class="health-card"><span>RAM Usage</span><strong id="ram-percent">—</strong><small id="ram-detail">—</small></article>
+      <article class="health-card"><span>Storage Usage</span><strong id="disk-percent">—</strong><small id="disk-detail">—</small></article>
+      <article class="health-card"><span>Services Health</span><strong id="services-ratio">—</strong><small id="services-note">Checking services</small></article>
+    </div>
+    <div class="dashboard-bottom-grid">
+      <article class="dashboard-card resource-card">
+        <h2>System Resources</h2>
+        <div class="resource-row"><span>CPU Usage</span><b id="resource-cpu-label">—</b><div class="resource-bar"><i id="resource-cpu-bar"></i></div></div>
+        <div class="resource-row"><span>RAM Usage</span><b id="resource-ram-label">—</b><div class="resource-bar"><i id="resource-ram-bar"></i></div></div>
+        <div class="resource-row"><span>Storage Usage</span><b id="resource-disk-label">—</b><div class="resource-bar"><i id="resource-disk-bar"></i></div></div>
+        <div class="resource-mini">
+          <div><span>Load Average</span><strong id="load-average">—</strong></div>
+          <div><span>Uptime</span><strong id="uptime">—</strong></div>
+          <div><span>Free Storage</span><strong id="free-storage">—</strong></div>
+        </div>
+      </article>
+    </div>
+  </section>
 
-<div class="dash-panels">
-<section class="dash-panel" aria-labelledby="render-queue-title">
-<div class="dash-panel-heading"><h2 id="render-queue-title">Render queue</h2><a href="/concat/production">Open Production</a></div>
-<p class="dash-meta">Queue: <strong id="render-queue-state">—</strong> · <span data-stat="renders.queue.queued">—</span> waiting · <span data-stat="renders.queue.active">—</span> active</p>
-<ul class="dash-jobs" id="render-jobs"><li class="dash-empty">Live jobs unavailable</li></ul>
-</section>
-<section class="dash-panel" aria-labelledby="upload-queue-title">
-<div class="dash-panel-heading"><h2 id="upload-queue-title">Upload queue</h2><a href="/concat-uploader/queue">Open Queue</a></div>
-<p class="dash-meta">Queue: <strong id="upload-queue-state">—</strong> · <span data-stat="uploads.queue.queued">—</span> waiting · <span data-stat="uploads.queue.active">—</span> active</p>
-<ul class="dash-jobs" id="upload-jobs"><li class="dash-empty">Live jobs unavailable</li></ul>
-</section>
-<section class="dash-panel" aria-labelledby="video-list-title">
-<div class="dash-panel-heading"><h2 id="video-list-title">Recent completed videos</h2><a href="/concat/media">Open Media</a></div>
-<ul class="dash-jobs" id="video-jobs"><li class="dash-empty">Verified media unavailable</li></ul>
-</section>
-<section class="dash-panel" aria-labelledby="activity-title">
-<div class="dash-panel-heading"><h2 id="activity-title">Recent activity</h2></div>
-<ul class="dash-jobs" id="dashboard-activity"><li class="dash-empty">Activity unavailable</li></ul>
-</section>
+
+  <div class="dashboard-footer"><span id="dashboard-updated">Waiting for first refresh…</span><span>Read-only dashboard · Controls remain inside each app</span></div>
 </div>
-<section class="dash-panel dash-quick" aria-labelledby="quick-title">
-<h2 id="quick-title">Quick navigation</h2>
-<div class="dash-actions">
-<a href="/concat/production">Production <span>Render jobs</span></a>
-<a href="/concat/media">Media <span>Verified video library</span></a>
-<a href="/concat/gpu-config">GPU Config <span>Connection status</span></a>
-<a href="/concat-uploader/upload-engine">Upload Engine <span>Create an upload</span></a>
-<a href="/concat-uploader/channels">Channels <span>Accounts and tokens</span></a>
-<a href="/concat-uploader/sheets-sync">Sheets Sync <span>Video metadata</span></a>
-</div>
-</section>
 </main></div>
 <script defer src="{{ url_for('static', path='/app.js') }}?v=20261119-three-tab-1"></script>
-<script defer src="/dashboard/assets/dashboard.js"></script>
+<script type="module" src="/dashboard/assets/dashboard.js?v=vps1-monitor-20261119"></script>
 </body></html>
