@@ -9,7 +9,7 @@ import secrets
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, StrictBool, conint
+from pydantic import BaseModel, StrictBool
 
 from app.auth import Principal, admin_principal, current_principal
 from app.modules.admin.security import (
@@ -109,7 +109,6 @@ async def config(request: Request, _: Principal = Depends(admin_principal)):
 
 class ConfigBody(BaseModel):
     maintenance_mode: StrictBool | None = None
-    session_max_minutes: conint(strict=True, ge=15, le=480) | None = None
     model_config = {"extra": "forbid"}
 
 
