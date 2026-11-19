@@ -5,8 +5,9 @@ single-admin authentication. **Concat Web never deploys through GitHub Actions.*
 
 ## Source and security acceptance (Steps 1–3)
 
-1. Start only from a reviewed, tested commit on protected `concat-web/main`.
-   Keep all coding in GitHub feature branches and PRs. Do not deploy branches.
+1. Start only from a reviewed, CI-verified exact commit on `integration/personal-release-20261119`.
+   **Do not merge into `main`** for this release. Compare GitHub branch SHA before manual release;
+   never use an unreviewed feature branch or moving HEAD.
 2. Verify a root-owned `0600` `/etc/concat-web/concat-web.env` contains
    `CONCAT_AUTH_MODE=local-admin`, single admin username, stdlib scrypt
    password hash, random independent Concat session and uploader secrets,
@@ -31,16 +32,16 @@ single-admin authentication. **Concat Web never deploys through GitHub Actions.*
 1. Read-only DNS/TLS/port/service/Nginx audit for
    `concat.scenebuilder.online` and port `18873`, preserve
    `app.scenebuilder.online`.
-2. Manually use the **exact verified main SHA** to obtain the repo source and
+2. Manually use the **exact verified integration SHA** to obtain the repo source and
    install its root-owned new `deploy/guarded-release.sh` helper.
    Do not reuse the earlier Scene-SSO-only helper.
 3. Provision the independent private Concat admin environment **once**,
    interactively, through `deploy/init-local-admin.py`; never enter
    password or secrets in shell arguments or GitHub. Existing env is not
    overwritten. Back up prior independent Concat state.
-4. Run `/usr/local/sbin/concat-web-deploy preflight <main-SHA>` first.
+4. Run `/usr/local/sbin/concat-web-deploy preflight <integration-SHA>` first.
    It must fail closed on missing or conflicting private identity/security.
-5. Build exact-SHA archive from protected main and invoke the existing
+5. Build exact-SHA archive from the verified integration branch and invoke the existing
    Concat-only helper in `deploy` mode. Install on `127.0.0.1:18873`,
    verify `/healthz`, and confirm anonymous `/dashboard` and
    `/api/v1/session` are denied. On health failure helper restores the
@@ -57,3 +58,5 @@ single-admin authentication. **Concat Web never deploys through GitHub Actions.*
 
 Historical Scene SSO blockers in `docs/FINAL_INTEGRATION_BLOCKERS_20261118.md`
 apply to the superseded SSO design, not to this standalone admin branch.
+
+**Current mode:** integration-only, manual VPS terminal. If local preflight, backup or loopback smoke fails, halt without modifying public Nginx. Do not claim real Salad or YouTube acceptance from CI fixtures.

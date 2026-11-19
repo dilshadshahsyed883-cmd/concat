@@ -2,7 +2,7 @@ name: Concat Web essential checks
 on:
   pull_request:
   push:
-    branches: [feature/foundation]
+    branches: [feature/foundation, integration/personal-release-20261119]
 permissions:
   contents: read
 concurrency:
@@ -30,7 +30,7 @@ jobs:
           python -m unittest discover -s app/modules/uploader/tests -p 'test_*.py' -v
       - name: Release script syntax (no SSH or deployment)
         run: bash -n deploy/guarded-release.sh
-      - name: Tailnet release security contract (offline only)
+      - name: Local-admin manual release security contract (offline only)
         run: python -m unittest discover -s tests -p 'test_release_security_contract.py' -v
       - name: Wheel build smoke
         run: python -m pip wheel --no-deps --wheel-dir /tmp/concat-web-wheel .

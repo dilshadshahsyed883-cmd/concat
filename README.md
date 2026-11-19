@@ -60,8 +60,8 @@ claiming full external-service readiness.
 
 ## Deployment policy
 
-Code changes happen in GitHub feature branches and PRs. After successful
-checks and approval, merge to `concat-web/main`, pin the exact SHA and deploy
+Code changes happen in GitHub feature branches and PRs. **Current release target:** `integration/personal-release-20261119` (not `main`).
+After checks pass, pin that integration branch's exact verified SHA and deploy
 manually from VPS terminal using the existing Concat-only
 `deploy/guarded-release.sh` and independent `concat-web.service`.
 GitHub Actions is CI-only and **cannot deploy to VPS**.
@@ -70,3 +70,7 @@ See [release gates](deploy/RELEASE_GATES.md) for private environment,
 preflight, backup/rollback, loopback staging, and separate HTTPS Nginx cutover.
 The 2026-11-18 SSO notes are historical and no longer apply to the current
 standalone-login design.
+
+## Integration-only release state (2026-11-19)
+
+The user requested **not to merge into `main`**. The integration branch contains the consolidated PR #13 implementation and preserved PR #12 audit evidence. Only a separately verified, explicitly approved terminal release may use a pinned SHA of this integration branch. This is a conscious temporary exception to the earlier protected-main-only release procedure. GitHub Actions remains CI-only. Keep `main` and existing VPS1 services unchanged.
