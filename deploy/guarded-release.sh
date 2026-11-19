@@ -29,6 +29,22 @@ id vps1deploy >/dev/null || fail "existing VPS1 deploy identity missing"
 [[ -d /var/lib/concat-web ]] || fail "Concat owner storage missing"
 runuser -u concatweb -- test -w /var/lib/concat-web ||
   fail "Concat cannot write its own persistent state"
+# The parent may be writable while a previously root-provisioned uploader
+# directory is not. This produces a live /concat-uploader/* 503 even when
+# /healthz and the installation package are healthy.
+UPLOADER_ROOT='/var/lib/concat-web/uploader'
+[[ -d "$UPLOADER_ROOT" && ! -L "$UPLOADER_ROOT" ]] ||
+  fail "Dedicated Concat Uploader state missing or unsafe"
+for path in "$UPLOADER_ROOT" "$UPLOADER_ROOT/core" "$UPLOADER_ROOT/secure" "$UPLOADER_ROOT/staging"; do
+  [[ ! -L "$path" ]] || fail "Concat Uploader runtime symlink blocked"
+  if [[ -e "$path" ]]; then
+    [[ -d "$path" ]] || fail "Concat Uploader runtime path must be a directory"
+    runuser -u concatweb -- test -r "$path" &&
+      runuser -u concatweb -- test -w "$path" &&
+      runuser -u concatweb -- test -x "$path" ||
+      fail "Concat Uploader storage permissions invalid for concatweb"
+  fi
+done
 [[ -d /srv/concat-web/releases ]] || fail "Concat releases path missing"
 [[ "$(stat -c %U /srv/concat-web/releases)" == root ]] ||
   fail "releases directory not root-owned"
