@@ -1,0 +1,171 @@
+/* Concat channel tools: consistent control heights and a balanced filter grid.
+   Scoped to the manager so the other uploader tabs retain their own layouts. */
+[data-engine-instance="concat"] .lum-channel-manager {
+  padding: 18px !important;
+  font-family: Inter, "Segoe UI", Arial, sans-serif !important;
+}
+[data-engine-instance="concat"] .lum-channel-manager .lum-card-head {
+  margin: 0 0 14px !important;
+  padding-bottom: 12px;
+  gap: 12px;
+}
+[data-engine-instance="concat"] .lum-channel-manager .lum-card-head p {
+  margin: 4px 0 0 !important;
+  font-size: 12px !important;
+}
+[data-engine-instance="concat"] .lum-channel-manager .lum-channel-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: end;
+  gap: 10px 12px;
+  padding: 12px !important;
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 10px;
+}
+[data-engine-instance="concat"] .lum-channel-manager .lum-filter-search {
+  grid-column: span 2;
+}
+[data-engine-instance="concat"] .lum-channel-manager .lum-field {
+  display: flex !important;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0 !important;
+}
+[data-engine-instance="concat"] .lum-channel-manager .lum-field > span {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  line-height: 16px;
+  color: #475569 !important;
+}
+[data-engine-instance="concat"] .lum-channel-manager .lum-channel-filters :is(input, select),
+[data-engine-instance="concat"] .lum-channel-manager .lum-clear-filters {
+  width: 100%;
+  height: 36px !important;
+  min-height: 36px !important;
+  margin: 0 !important;
+  padding: 7px 10px !important;
+  border-radius: 7px !important;
+  font-size: 12px !important;
+  line-height: 20px !important;
+}
+[data-engine-instance="concat"] .lum-channel-manager .lum-channel-bulk {
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 10px;
+  padding: 9px 10px !important;
+  background: #f8fafc !important;
+  border-radius: 8px;
+}
+[data-engine-instance="concat"] .lum-channel-manager :is(.lum-selection-info, .lum-bulk-actions, .lum-channel-tools) {
+  gap: 6px;
+  width: auto;
+}
+[data-engine-instance="concat"] .lum-channel-manager .lum-selection-info strong {
+  min-width: auto;
+  margin-right: 6px;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+}
+[data-engine-instance="concat"] .lum-channel-manager :is(.lum-bulk-actions, .lum-channel-tools) form {
+  flex: 0 1 auto;
+  margin: 0;
+}
+[data-engine-instance="concat"] .lum-channel-manager :is(.lum-bulk-actions, .lum-channel-tools) .lum-button {
+  width: auto;
+  min-height: 34px !important;
+  margin: 0 !important;
+  padding: 6px 10px !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  line-height: 20px !important;
+}
+[data-engine-instance="concat"] .lum-channel-manager .lum-channel-tools {
+  margin: 10px 0 0;
+}
+[data-engine-instance="concat"] .lum-channel-manager .lum-table-meta {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px 14px;
+  margin: 12px 0 8px;
+  padding: 0 !important;
+  font-size: 12px;
+}
+[data-engine-instance="concat"] .lum-channel-manager [data-channel-showing] {
+  margin-right: auto;
+}
+[data-engine-instance="concat"] .lum-channel-manager .lum-table-meta label {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
+  margin: 0 !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+}
+[data-engine-instance="concat"] .lum-channel-manager .lum-table-meta select {
+  width: 68px;
+  height: 32px !important;
+  min-height: 32px !important;
+  margin: 0 !important;
+  padding: 4px 8px !important;
+  font-size: 12px !important;
+}
+[data-engine-instance="concat"] .lum-channel-manager .lum-pagination button {
+  min-height: 32px !important;
+  padding: 5px 9px !important;
+  font-size: 12px !important;
+}
+@media (min-width: 1360px) {
+  [data-engine-instance="concat"] .lum-channel-manager .lum-channel-filters {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  [data-engine-instance="concat"] .lum-channel-manager { padding: 12px !important; }
+  [data-engine-instance="concat"] .lum-channel-manager .lum-channel-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  [data-engine-instance="concat"] .lum-channel-manager .lum-channel-bulk {
+    align-items: flex-start;
+  }
+  [data-engine-instance="concat"] .lum-channel-manager .lum-table-meta {
+    justify-content: space-between;
+  }
+  [data-engine-instance="concat"] .lum-channel-manager [data-channel-showing] {
+    flex-basis: 100%;
+  }
+}
+@media (max-width: 420px) {
+  [data-engine-instance="concat"] .lum-channel-manager .lum-channel-filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  [data-engine-instance="concat"] .lum-channel-manager .lum-filter-search {
+    grid-column: auto;
+  }
+}
+
+/* Preview the selected file in a fixed widescreen frame without distortion. */
+[data-engine-instance="concat"] .concat-thumbnail-preview {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #0f172a;
+}
+[data-engine-instance="concat"] .concat-thumbnail-preview img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+[data-engine-instance="concat"] .concat-thumbnail-error {
+  color: #b42318 !important;
+  font-size: 12px !important;
+}
+[data-engine-instance="concat"] .copyright-upload .lum-submit-card {
+  justify-content: flex-end;
+}
