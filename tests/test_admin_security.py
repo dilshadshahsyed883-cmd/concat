@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import sqlite3
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -129,7 +130,52 @@ class LocalAdminSecurityTests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/v1/admin/config").json()["identity"],
                          "standalone-local-admin")
         self.assertEqual(self._post("/api/v1/admin/config", csrf,
-                                    {"session_max_minutes": 60}).status_code, 200)
+                                    {"maintenance_mode": False}).status_code, 200)
+
+    def test_unlimited_session_and_removed_duration_setting(self):
+        csrf = self._signed_in()
+        config = self.client.get("/api/v1/admin/config").json()["config"]
+        self.assertNotIn("session_max_minutes", config)
+        self.assertEqual(self._post("/api/v1/admin/config", csrf,
+                                   {"session_max_minutes": 60}).status_code, 422)
+        page = self.client.get("/admin").text
+        for removed in ("Session settings", "max-session", "save-config"):
+            self.assertNotIn(removed, page)
+        token = self.client.cookies.get(COOKIE)
+        with sqlite3.connect(self.db) as db:
+            self.assertEqual(db.execute("SELECT expires_at FROM sessions").fetchone()[0], 0)
+        # Server lifetime has no timeout, even years later and after a restart.
+        with patch("app.modules.admin.security.time.time", return_value=time.time() + 10 * 365 * 86400):
+            with TestClient(create_app(), base_url=ORIGIN) as other:
+                other.cookies.set(COOKIE, token)
+                response = other.get("/api/v1/session")
+                self.assertEqual(response.status_code, 200)
+                self.assertIn("Max-Age=34560000", response.headers["set-cookie"])
+                response = other.post("/api/v1/admin/sessions/revoke-all",
+                                      headers={"X-CSRF-Token": csrf, "Origin": ORIGIN})
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(other.get("/api/v1/session").status_code, 401)
+
+    def test_only_live_legacy_sessions_become_unlimited(self):
+        self._signed_in()
+        now = int(time.time())
+        with sqlite3.connect(self.db) as db:
+            db.execute("UPDATE sessions SET expires_at=?", (now + 3600,))
+            row = db.execute("SELECT * FROM sessions").fetchone()
+            db.execute("INSERT INTO sessions VALUES (?,?,?,?,?,?,?)",
+                       ("expired", *row[1:5], now - 1, None))
+            db.execute("INSERT INTO sessions VALUES (?,?,?,?,?,?,?)",
+                       ("revoked", *row[1:5], now + 3600, now - 1))
+            db.execute("INSERT INTO config VALUES ('session_max_minutes', '60')")
+        with TestClient(create_app(), base_url=ORIGIN) as other:
+            other.cookies.set(COOKIE, self.client.cookies.get(COOKIE))
+            self.assertEqual(other.get("/api/v1/session").status_code, 200)
+        with sqlite3.connect(self.db) as db:
+            rows = dict(db.execute("SELECT token_hash,expires_at FROM sessions"))
+            self.assertEqual(rows.pop("expired"), now - 1)
+            self.assertEqual(rows.pop("revoked"), now + 3600)
+            self.assertEqual(list(rows.values()), [0])
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM config WHERE key='session_max_minutes'").fetchone()[0], 0)
 
     def test_failed_login_csrf_cross_origin_and_bruteforce_limit(self):
         self.assertEqual(self._login(password="incorrect").status_code, 401)
