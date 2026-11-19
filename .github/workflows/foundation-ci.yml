@@ -34,5 +34,9 @@ jobs:
           bash -n deploy/manual-integration-release.sh
       - name: Local-admin manual release security contract (offline only)
         run: python -m unittest discover -s tests -p 'test_release_security_contract.py' -v
+      - name: Concat-only Nginx HTTPS routing contract (offline only)
+        run: |
+          bash -n deploy/nginx-cutover.sh
+          python -m unittest discover -s tests -p 'test_nginx_routing.py' -v
       - name: Wheel build smoke
         run: python -m pip wheel --no-deps --wheel-dir /tmp/concat-web-wheel .
