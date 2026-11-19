@@ -169,6 +169,58 @@ print(json.dumps(dict(job=job, duplicate_blocked=duplicate_blocked,
                 "/api/cloud-render/media/" + VIDEO_ID + "/file").status_code, 404)
         self.owner, self.admin = "alice", False
 
+    def test_local_admin_login_to_verified_mp4_and_uploader_queue(self):
+        """Use actual standalone login rather than a test identity injection.
+
+        Salad delivery is simulated by a checksum-verified receiver chunk. The
+        uploader uses the real copied staging and persistent queue repository.
+        """
+        from app.modules.admin.security import LOGIN_CSRF_COOKIE, password_hash
+
+        self.app.state.identity_resolver = None
+        with patch.dict(os.environ, {
+            "CONCAT_AUTH_MODE": "local-admin",
+            "CONCAT_ADMIN_USERNAME": "alice",
+            "CONCAT_ADMIN_PASSWORD_HASH": password_hash(
+                "Long-Standalone-Admin-Test-Password"),
+            "CONCAT_ADMIN_SESSION_SECRET": "independent-test-session-key-over-thirty-two",
+            "CONCAT_WEB_SECURITY_DB": str(Path(self.tmp.name) / "admin.sqlite3"),
+            "CONCAT_WEB_DATA_ROOT": str(self.cloud),
+        }):
+            self.assertEqual(self.client.get("/dashboard").status_code, 401)
+            page = self.client.get("/auth/login")
+            self.assertEqual(page.status_code, 200)
+            import re
+            match = re.search(r'name="csrf" value="([^"]+)"', page.text)
+            self.assertIsNotNone(match)
+            self.assertTrue(self.client.cookies.get(LOGIN_CSRF_COOKIE))
+            response = self.client.post(
+                "/auth/login",
+                data={"username": "alice", "password": "Long-Standalone-Admin-Test-Password",
+                      "csrf": match.group(1)},
+                headers={"Origin": ORIGIN},
+                follow_redirects=False,
+            )
+            self.assertEqual(response.status_code, 303, response.text)
+            for path in ("/dashboard", "/concat/production", "/concat/media",
+                         "/concat/gpu-config", "/concat-uploader/queue", "/admin"):
+                with self.subTest(path=path):
+                    self.assertEqual(self.client.get(path).status_code, 200)
+            digest = self.ingest()
+            job_id = self.queue_verified_video(digest)
+            result = self.client.get("/api/v1/dashboard/overview")
+            self.assertEqual(result.status_code, 200, result.text)
+            self.assertEqual(result.json()["renders"]["completed"], 1)
+            self.assertEqual(result.json()["videos"]["total"], 1)
+            self.assertEqual(result.json()["uploads"]["queued"], 1)
+            self.assertEqual(result.json()["uploads"]["jobs"][0]["id"], str(job_id))
+            csrf = self.client.get("/api/v1/auth/csrf").json()["csrf_token"]
+            out = self.client.post("/auth/logout", headers={
+                "X-CSRF-Token": csrf, "Origin": ORIGIN
+            }, follow_redirects=False)
+            self.assertEqual(out.status_code, 303)
+            self.assertEqual(self.client.get("/api/v1/dashboard/overview").status_code, 401)
+
     def test_legacy_quarantine_revocation_csrf_and_cross_owner_rows(self):
         self.ingest()
         source = source_module()
