@@ -161,3 +161,40 @@ The newly prepared `deploy/nginx-cutover.sh activate` intentionally requires the
 After the evidence identifies who owns the existing Concat route, create a **separate guarded adoption path** for an existing Concat-only configuration if appropriate, preserving a byte-for-byte backup, syntax validation and reliable rollback. Do not treat the existing vhost as owned by the newly introduced script without that verification. Deploy the exact CI-passing integration SHA to loopback and verify health + anonymous denial **before** public cutover.
 
 **Current status:** Nginx syntax passed and route/DNS/cert *paths* discovered; Concat application and public routing readiness still unverified. No VPS changes by this audit.
+
+
+## Live Nginx block, service and certificate audit — 2026-11-19 (operator supplied)
+
+The operator ran the read-only targeted inspection. Results:
+
+```text
+=== CONCAT NGINX CONFIGURATION ===
+CONFIG_FILE= /etc/nginx/sites-enabled/concat-web.conf
+DIRECTIVE= listen 80;
+DIRECTIVE= server_name concat.scenebuilder.online;
+CONFIG_FILE= /etc/nginx/sites-enabled/concat-web.conf
+DIRECTIVE= listen 443 ssl;
+DIRECTIVE= server_name concat.scenebuilder.online;
+DIRECTIVE= ssl_certificate /etc/letsencrypt/live/concat.scenebuilder.online/fullchain.pem;
+CONCAT_SERVER_BLOCKS= 2
+=== CONCAT SERVICE ===
+User=concatweb
+LoadState=loaded
+ActiveState=inactive
+=== CURRENT RELEASE ===
+CONCAT_RELEASE=NOT_SELECTED
+=== PORT 18873 ===
+[no listening sockets]
+=== TLS CERTIFICATE ===
+Hostname concat.scenebuilder.online does match certificate
+CERT_VALID_NEXT_7_DAYS=YES
+CHANGES=NONE
+```
+
+**Interpretation:** This VPS already has Concat-specific HTTP and HTTPS server blocks in `/etc/nginx/sites-enabled/concat-web.conf`, and a currently valid, hostname-matching Concat certificate (as checked by OpenSSL). The systemd unit is installed for `concatweb` but **inactive**; there is **no selected Concat release and no listener on 18873**. This explains the earlier loopback HTTP `000`. The existing Concat block audit did **not display any `proxy_pass`**, so whether the active HTTPS route forwards to 18873 remains **unverified**. Source-file includes, return/error directives, or a placeholder route could account for this.
+
+**Updated release decision:** Prefer **reusing the existing Nginx Concat vhost** rather than creating a duplicate. The new-site-only `deploy/nginx-cutover.sh activate` must **NOT** be run because it deliberately rejects existing Concat configurations. Before any Nginx edit, inspect the exact owned site file's symlink destination, mode, directives, included snippets, and existing vhost's handling of `/healthz` (redacting credentials and key contents). Then decide whether the route is already suitable or whether to implement a *separate, guarded, byte-for-byte backed-up, Concat-only adoption/patch/rollback* path. Never overwrite unknown nginx content.
+
+**Immediate dependency:** Stage the exact newly CI-verified integration SHA (which may change as audit docs are committed) with the existing Concat-only manual terminal helper, then confirm loopback `/healthz` and anonymous `/dashboard=401` before public route activation. Merely having a TLS vhost and certificate is not proof of a working Concat Web deployment.
+
+No VPS changes were made by this read-only audit. Existing VPS1 website, Scene, Drive Bridge, Salad and other services remain outside Concat deployment scope.
