@@ -259,3 +259,69 @@ existing Scene site status failures.
 **No VPS config changes occurred.** No Concat service is running yet (as of
 the preceding live service audit), and no live external Salad/Drive/YouTube
 workflow has been proven.
+
+
+## Implemented guarded adoption of existing Concat static placeholder — 2026-11-19
+
+The exact static-site fingerprint above enabled a safer approach than full
+replacement: `deploy/nginx-adopt-existing.py` now surgically changes **only**
+the existing HTTPS `location /` block, using
+`deploy/nginx-proxy-location.conf`. It does **not** replace HTTP or HTTPS
+`server` blocks, remove ACME `/.well-known/` handling, change certificates,
+modify other domains, create duplicate vhosts, or restart Scene/VPS1 services.
+It refuses any site whose on-disk SHA256 differs from the audit's
+`d0371b9ec8296a2e57dafafc2b7dda8268d70d23c0b657f5f46ea35e2c1819e5`
+or whose ownership, enabled symlink, server names or location layout deviate.
+
+### Prerequisites
+
+1. The exact Integration commit must pass the full GitHub CI after these code
+   changes and be staged by the Concat-only manual terminal release helper.
+2. `/srv/concat-web/current` must select that exact SHA; `concat-web.service`
+   must be active and loopback `/healthz` must identify `concat-web` with
+   `ok=true`; anonymous `/dashboard=401`, login page `/auth/login=200`.
+3. The original root-owned site must still match the pinned SHA256. Valid
+   existing TLS certificate and the unchanged Scene HTTPS site must be checked.
+4. Explicitly execute the integration release's code via the local VPS terminal,
+   never from GitHub Actions.
+
+**Manual read-only verification after Concat loopback stage:**
+
+```bash
+sudo python3 /srv/concat-web/current/deploy/nginx-adopt-existing.py audit
+```
+
+**Manual existing-route activation only after the preconditions pass:**
+
+```bash
+SHA=<EXACT_VERIFIED_INTEGRATION_SHA>
+sudo python3 /srv/concat-web/current/deploy/nginx-adopt-existing.py activate "$SHA"
+```
+
+This makes a byte-for-byte, root-only backup in
+`/var/backups/concat-web/nginx/original-<AUDITED_HASH>.conf` and a private
+SHA/checksum marker in `/etc/concat-web/nginx-existing-adoption.json`.
+It checks Nginx syntax, reloads Nginx (does **not** restart it), verifies
+real HTTPS JSON identity, login/anonymous rejection and unchanged Scene
+website status. On activation failure the code attempts to restore the
+original static file and reload Nginx. If recovery also fails, it prints
+a manual-recovery warning and retains the backup.
+
+**Explicit rollback of a previously successful hash-verified adoption:**
+
+```bash
+sudo python3 /srv/concat-web/current/deploy/nginx-adopt-existing.py rollback "$SHA"
+```
+
+Rollback refuses out-of-band changes to the modified file and restores only
+the backed-up Concat site; a pre-existing Nginx site is never deleted.
+
+**Note:** The separate `deploy/nginx-cutover.sh activate` is for a *new*,
+absent Concat vhost only. Never run it on this VPS because the Concat site
+already exists. `deploy/manual-integration-release.sh` now includes
+`deploy/` in the exact-SHA staged archive so the Nginx tools are actually
+available on-host.
+
+**Current coding/audit status:** Source and offline tests committed on
+`integration/personal-release-20261119`; no VPS service or Nginx writes made
+from this chat. Current Integration SHA must be re-verified after all commits.
