@@ -11,9 +11,6 @@
 .panel button{border:1px solid #d6ddea;background:#f5f6ff;color:#423bb6;padding:10px 14px;border-radius:9px;cursor:pointer;font-weight:700}
 .panel button:hover{border-color:#a5a1ef;background:#ecebff}
 .panel button:disabled{opacity:.5;cursor:not-allowed}
-.controls{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
-.controls label{display:flex;flex-wrap:wrap;align-items:center;gap:10px;font-size:13px;color:#475467;font-weight:700}
-.panel input[type=number]{width:92px;background:#fff;color:#101828;border:1px solid #cdd5e2;padding:10px;border-radius:9px;font-size:14px}
 .muted{color:#64748b!important}.status{min-height:22px;color:#475467;font-size:13px}.error{color:#b42338!important}
 @media(max-width:480px){.panel-card{padding:18px}.controls{align-items:stretch}}
 </style></head><body>
@@ -37,12 +34,6 @@
 <p class="muted">Only one configured administrator can sign in. Existing foreign or ownerless records are never imported.</p>
 <button id="revoke-all" type="button">Sign out all sessions</button>
 <button id="logout" type="button">Sign out</button></section>
-<section class="panel-card"><h2>Session settings</h2>
-<div class="controls">
-<label>Maximum session minutes <input type="number" min="15" max="480" id="max-session" value="480"></label>
-<button id="save-config" type="button">Save settings</button></div>
-<p class="muted">Admin password hash and session secret are stored in a root-owned private VPS configuration file, never in source control.</p>
-</section>
 <section class="panel-card"><h2>Recent security activity</h2><div id="audit" class="muted">Loading…</div></section>
 </div></main></div>
 <script defer src="/static/app.js?v=20261119-three-tab-1"></script>
@@ -65,8 +56,6 @@
   async function initialize() {
     try {
       csrf=(await api("/api/v1/auth/csrf")).csrf_token;
-      const cfg=(await api("/api/v1/admin/config")).config;
-      $("max-session").value=cfg.session_max_minutes;
       const events=(await api("/api/v1/admin/audit")).events;
       $("audit").replaceChildren();
       for(const event of events.slice(0,30)) {
@@ -78,14 +67,6 @@
       status("Secure local admin session active");
     } catch(error) {status(error.message,true);}
   }
-  $("save-config").addEventListener("click",async()=>{
-    const minutes=Number($("max-session").value);
-    if(!Number.isInteger(minutes)||minutes<15||minutes>480) {
-      status("Choose 15–480 minutes",true);return;
-    }
-    try {await api("/api/v1/admin/config","POST",{session_max_minutes:minutes});status("Settings saved");}
-    catch(error){status(error.message,true);}
-  });
   $("revoke-all").addEventListener("click",async()=>{
     try {await api("/api/v1/admin/sessions/revoke-all","POST");location.assign("/auth/login");}
     catch(error){status(error.message,true);}
