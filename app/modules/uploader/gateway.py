@@ -104,6 +104,31 @@ def _configure_from_private_environment() -> None:
             raise HTTPException(503, "Conflicting Concat Uploader isolation configuration")
         os.environ[key] = required
 
+    # The copied desktop core computes path constants at first import. Supply
+    # its canonical Concat-only paths *before* importing any reused modules.
+    # Reject a preloaded module from another Studio rather than risk writing
+    # channel/OAuth state to /var/lib/local-upload-manager or Copyright.
+    data_root = Path(data).resolve()
+    runtime_roots = {
+        "YOUTUBE_UPLOAD_MANAGER_DATA_DIR": data_root / "core",
+        "LUM_GOOGLE_OAUTH_ROOT": data_root / "secure",
+        "LUM_AUTO_ENGINE_V6_ROOT": data_root / "auto_engine_v6",
+    }
+    for key, expected in runtime_roots.items():
+        current = os.environ.get(key)
+        if current and Path(current).expanduser().resolve() != expected:
+            raise HTTPException(503, "Conflicting Concat Uploader private state path")
+        if expected.is_symlink():
+            raise HTTPException(503, "Unsafe Concat Uploader private state path")
+        os.environ[key] = str(expected)
+
+    loaded_config = sys.modules.get("lum_engine.config")
+    if loaded_config is not None and Path(getattr(loaded_config, "DATA_ROOT", "/")).resolve() != data_root:
+        raise HTTPException(503, "Uploader module already bound to a different instance")
+    loaded_core = sys.modules.get("desktop_core.modules.path_utils")
+    if loaded_core is not None and Path(getattr(loaded_core, "USER_DATA_ROOT", "/")).resolve() != runtime_roots["YOUTUBE_UPLOAD_MANAGER_DATA_DIR"]:
+        raise HTTPException(503, "Uploader core already bound to another instance")
+
 
 def _import_reused_app():
     if str(REUSED_ROOT) not in sys.path:
