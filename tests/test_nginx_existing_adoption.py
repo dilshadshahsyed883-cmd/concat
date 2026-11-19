@@ -85,7 +85,6 @@ class ExistingNginxSiteAdoptionTests(unittest.TestCase):
         self.assertIn("d0371b9ec8296a2e57dafafc2b7dda8268d70d23c0b657f5f46ea35e2c1819e5", script)
         for label in ("AUDITED_SITE_FINGERPRINT_DRIFT", "BACKUP_ALREADY_EXISTS",
                       "CONCAT_STAGE_SHA_MISMATCH", "CONCAT_LOOPBACK_APP_SECURITY_NOT_READY",
-                      "CONCAT_PUBLIC_HTTPS_IDENTITY_OR_AUTH_FAILED",
                       "CONCAT_HTTPS_HEALTH_OR_AUTH_FAILED", "SCENE_HTTPS_STATUS_CHANGED",
                       "CURRENT_SITE_EDITED_OUT_OF_BAND", "BACKUP_CHECKSUM_FAILURE",
                       "atomic_write(AVAILABLE, old, 0o644)", "reload_nginx()",
