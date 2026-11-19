@@ -804,6 +804,13 @@
                     <input type="hidden" name="source_id" value="{{ src.id }}">
                     <button class="lum-button secondary" type="submit" {% if stats.settings.sheets_sync_enabled!='1' or not src.enabled %}disabled{% endif %}>Sync</button>
                   </form>
+                  {% if engine_instance == 'concat' %}
+                  <form method="post" action="{{ base_path }}/actions/sheets/delete" data-lum-soft-form>
+                    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+                    <input type="hidden" name="source_id" value="{{ src.id }}">
+                    <button class="lum-button secondary" type="submit">Remove</button>
+                  </form>
+                  {% endif %}
                 </div>
               </td>
             </tr>

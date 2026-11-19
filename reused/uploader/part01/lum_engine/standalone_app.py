@@ -221,7 +221,9 @@ def all_channels(user: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     with db.connect() as conn:
         rows = [dict(r) for r in conn.execute("SELECT * FROM channels ORDER BY id DESC").fetchall()]
     if user is not None:
-        allowed=studio_tenants.allowed_ids("channel",user)
+        allowed=(studio_tenants.current_channel_ids(user)
+                 if os.getenv("LUM_ENGINE_INSTANCE") == "concat"
+                 else studio_tenants.allowed_ids("channel",user))
         if allowed is not None:
             rows=[row for row in rows if int(row["id"]) in allowed]
     for row in rows:
@@ -528,7 +530,9 @@ def app_page(request: Request, tab: str = "", message: str = "", error: str = ""
         sheet_sources=[item for item in sheet_sources if int(item["id"]) in permitted_sheets]
         if selected_sheet_source and int(selected_sheet_source["id"]) not in permitted_sheets:
             selected_sheet_source=None
-    permitted_channels=studio_tenants.allowed_ids("channel",user)
+    permitted_channels=(studio_tenants.current_channel_ids(user)
+                        if os.getenv("LUM_ENGINE_INSTANCE") == "concat"
+                        else studio_tenants.allowed_ids("channel",user))
     web_clients = (list_owner_clients(str(user["username"])) if OWNER_SCOPED
                    else (list_clients() if permitted_channels is None else []))
     channel_context = channels_page_context(
@@ -553,6 +557,8 @@ def app_page(request: Request, tab: str = "", message: str = "", error: str = ""
             web_clients=[]  # Other instances expose the shared client only to global admins
         channel_context["oauth_inventory"]=(owner_vault_inventory(db,studio_tenants,str(user["username"]))
             if OWNER_SCOPED else {})
+    if os.getenv("LUM_ENGINE_INSTANCE") == "concat":
+        channel_context["groups"] = studio_tenants.current_groups(user)
     # PC Sync is a global administrator operation; its history may contain
     # private channel identifiers and source paths from other accounts.
     pc_sync_history = (list_sync_history() if selected == "channels" and
@@ -905,6 +911,8 @@ async def add_video(
     try:
         upload_instance = os.getenv("LUM_ENGINE_INSTANCE", "engine1").strip().lower()
         studio_tenants.require("channel",int(channel_db_id),user)
+        if upload_instance == "concat":
+            studio_tenants.require_current_channel(int(channel_db_id), user)
         if upload_instance in {"copyright", "concat"}:
             # Group selection is authoritative server-side, never a client-only filter.
             membership = db.channel_group_names_map()
