@@ -29,7 +29,9 @@ jobs:
           python -m unittest app.modules.concat.test_routes -v
           python -m unittest discover -s app/modules/uploader/tests -p 'test_*.py' -v
       - name: Release script syntax (no SSH or deployment)
-        run: bash -n deploy/guarded-release.sh
+        run: |
+          bash -n deploy/guarded-release.sh
+          bash -n deploy/manual-integration-release.sh
       - name: Local-admin manual release security contract (offline only)
         run: python -m unittest discover -s tests -p 'test_release_security_contract.py' -v
       - name: Wheel build smoke

@@ -32,9 +32,7 @@ single-admin authentication. **Concat Web never deploys through GitHub Actions.*
 1. Read-only DNS/TLS/port/service/Nginx audit for
    `concat.scenebuilder.online` and port `18873`, preserve
    `app.scenebuilder.online`.
-2. Manually use the **exact verified integration SHA** to obtain the repo source and
-   install its root-owned new `deploy/guarded-release.sh` helper.
-   Do not reuse the earlier Scene-SSO-only helper.
+2. From the VPS terminal run `deploy/manual-integration-release.sh <exact-verified-integration-SHA> stage` from that same pinned GitHub SHA. The one-shot script verifies the branch and clone identity, takes private Concat-only state and helper backups, installs its root-owned new `deploy/guarded-release.sh`, invokes private admin bootstrap if necessary, and performs preflight + loopback staging. Do not reuse the earlier Scene-SSO-only helper.
 3. Provision the independent private Concat admin environment **once**,
    interactively, through `deploy/init-local-admin.py`; never enter
    password or secrets in shell arguments or GitHub. Existing env is not
@@ -60,3 +58,5 @@ Historical Scene SSO blockers in `docs/FINAL_INTEGRATION_BLOCKERS_20261118.md`
 apply to the superseded SSO design, not to this standalone admin branch.
 
 **Current mode:** integration-only, manual VPS terminal. If local preflight, backup or loopback smoke fails, halt without modifying public Nginx. Do not claim real Salad or YouTube acceptance from CI fixtures.
+
+The one-shot script intentionally **does not** alter public HTTPS/Nginx ingress; public activation still requires read-only host verification, backed-up Concat-only Nginx changes and real browser/GPU/Drive acceptance. No existing VPS1 service may be restarted as part of Concat staging.

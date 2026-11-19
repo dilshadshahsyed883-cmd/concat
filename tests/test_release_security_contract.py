@@ -36,7 +36,7 @@ class LocalAdminManualReleaseTests(unittest.TestCase):
         helper = self.helper
         for item in ("sha256sum -c -", "root-owned", "concat-web.service",
                      "runuser -u concatweb", "/healthz", "/api/v1/session",
-                     "cleanup_and_rollback", "/etc/concat-web/concat-web.env"):
+                     "trap cleanup EXIT", "/etc/concat-web/concat-web.env"):
             self.assertIn(item, helper)
         for forbidden in ("systemctl restart vps1", "systemctl reload nginx",
                           "/usr/local/sbin/vps1-production-deploy",
@@ -59,6 +59,38 @@ class LocalAdminManualReleaseTests(unittest.TestCase):
                          "O_NOFOLLOW", "0o600", "SECRETS=NOT_DISPLAYED"):
             self.assertIn(required, source)
         self.assertNotIn("print(password)", source)
+
+
+    def test_manual_integration_stage_is_sha_pinned_and_concat_only(self):
+        script = (ROOT / "deploy/manual-integration-release.sh").read_text()
+        result = subprocess.run(
+            ["bash", "-n", str(ROOT / "deploy/manual-integration-release.sh")],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for marker in (
+            "integration/personal-release-20261119",
+            'git ls-remote --exit-code "$REPO"',
+            '[[ "$REMOTE" == "$SHA" ]]',
+            'git -C "$WORK/source" rev-parse HEAD',
+            "CONCAT_SQLITE_BACKUP=PASS",
+            "deploy/init-local-admin.py",
+            "concat-web-deploy preflight",
+            'concat-web-deploy deploy "$SHA"',
+            "DEPLOY_COMPLETED=1",
+            "cleanup_and_rollback",
+            "PUBLIC_NGINX_CUTOVER=NOT_PERFORMED",
+            "/auth/login",
+            "/dashboard",
+        ):
+            self.assertIn(marker, script)
+        for forbidden in (
+            "/usr/local/sbin/vps1-production-deploy",
+            "systemctl restart scene-", "systemctl restart vps1",
+            "systemctl reload nginx", "nginx -s reload",
+            "apt upgrade", "CONCAT_SCENE_SSO_SECRET",
+        ):
+            self.assertNotIn(forbidden, script)
 
 
 if __name__ == "__main__":

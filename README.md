@@ -74,3 +74,18 @@ standalone-login design.
 ## Integration-only release state (2026-11-19)
 
 The user requested **not to merge into `main`**. The integration branch contains the consolidated PR #13 implementation and preserved PR #12 audit evidence. Only a separately verified, explicitly approved terminal release may use a pinned SHA of this integration branch. This is a conscious temporary exception to the earlier protected-main-only release procedure. GitHub Actions remains CI-only. Keep `main` and existing VPS1 services unchanged.
+
+## Guarded integration-only VPS staging
+
+After this integration commit passes both GitHub CI checks, manually execute `deploy/manual-integration-release.sh` on the VPS with its **exact verified SHA** and `stage` mode. It validates the remote integration branch SHA, clones exactly that code, takes private backups of the existing Concat helper/environment and SQLite state, installs the new local-admin Concat-only helper, provisions admin credentials privately (once, interactively), runs preflight, packages that same SHA and stages on loopback with rollback-aware smoke tests. It does **not** modify Nginx or public HTTPS ingress; that is a separate guarded terminal cutover after host/DNS/TLS validation.
+
+Example (run in the VPS terminal, using the verified integration SHA):
+
+```bash
+SHA=<exact-verified-40-hex-integration-SHA>
+TMP=$(mktemp)
+curl -fsSL "https://raw.githubusercontent.com/dilshadshahsyed883-cmd/concat-web/$SHA/deploy/manual-integration-release.sh" -o "$TMP" && sudo bash "$TMP" "$SHA" stage
+rm -f "$TMP"
+```
+
+No password, hash, API key or secret may be entered in this chat or GitHub. The credential bootstrap prompts only in the VPS terminal. Do not execute this unless the local VPS hostname, storage, separate service, HTTPS configuration and host/operator identity are confirmed; the script fails closed otherwise.
