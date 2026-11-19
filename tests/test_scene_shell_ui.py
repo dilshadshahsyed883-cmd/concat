@@ -4,6 +4,7 @@ The native Scene shell is a design reference, NOT an authentication or CSS
 runtime dependency. Pages still require the independent Concat session.
 """
 from pathlib import Path
+import re
 import unittest
 
 from fastapi.testclient import TestClient
@@ -60,7 +61,7 @@ class SceneShellUXTests(unittest.TestCase):
                 self.assertIn('id="nav-logout"', content)
                 self.assertIn('id="nav-logout-feedback"', content)
                 self.assertIn('href="/admin"', content)
-                self.assertIn('scene-shell-1', content)
+                self.assertIn('three-tab-1', content)
                 self.assertNotIn("https://app.scenebuilder.online", content)
 
     def test_sidebar_logout_uses_real_csrf_origin_and_revocable_session(self):
@@ -101,6 +102,86 @@ class SceneShellUXTests(unittest.TestCase):
                     self.assertIn('aria-current="page"', response.text)
                     self.assertIn('id="nav-backdrop"', response.text)
                     self.assertIn('id="nav-logout"', response.text)
+
+    def test_only_three_primary_links_and_studio_modules_inside_content(self):
+        app = create_app()
+        app.state.identity_resolver = lambda _: Principal(
+            "alice", is_admin=True, is_active=True, concat_granted=True
+        )
+        expected = ("/dashboard", "/concat/production", "/admin")
+        with TestClient(app) as client:
+            for path in (
+                "/dashboard", "/concat/production", "/concat/media",
+                "/concat/gpu-config", "/concat-uploader/sheets-sync",
+                "/concat-uploader/channels", "/concat-uploader/upload-engine",
+                "/concat-uploader/queue", "/admin",
+            ):
+                with self.subTest(path=path):
+                    res = client.get(path)
+                    self.assertEqual(res.status_code, 200, res.text[:250])
+                    sidebar = res.text.split('<nav id="sidebar"', 1)[1].split('</nav>', 1)[0]
+                    tabs = re.findall(r'<a class="nav-top[^"]*"[^>]*href="([^"]+)"', sidebar)
+                    self.assertEqual(tuple(tabs), expected)
+                    self.assertEqual(sidebar.count('class="nav-group"'), 3)
+                    self.assertNotIn('class="nav-link"', sidebar)
+                    self.assertNotIn('class="nav-subtitle"', sidebar)
+                    self.assertNotIn('href="/concat/media"', sidebar)
+                    self.assertNotIn('href="/concat-uploader/channels"', sidebar)
+                    if path.startswith(("/concat/", "/concat-uploader/")):
+                        self.assertIn('href="/concat/production" aria-current="page">Concat Studio', sidebar)
+
+    def test_studio_has_four_modules_and_live_uploader_keeps_one_internal_tab_rail(self):
+        app = create_app()
+        app.state.identity_resolver = lambda _: Principal(
+            "alice", is_admin=True, is_active=True, concat_granted=True
+        )
+        with TestClient(app) as client:
+            for slug, tab in (
+                ("production", "production"), ("media", "media"),
+                ("gpu-config", "gpu"),
+            ):
+                with self.subTest(slug=slug):
+                    page = client.get("/concat/" + slug).text
+                    self.assertIn('class="cr-tabs studio-tabs"', page)
+                    self.assertEqual(page.count('data-tab="'), 3)
+                    self.assertIn('data-initial-tab="' + tab + '"', page)
+                    self.assertIn('href="/concat-uploader/sheets-sync">Uploader</a>', page)
+
+            for slug, child in (
+                ("sheets-sync", "sheets"), ("channels", "channels"),
+                ("upload-engine", "add_video"), ("queue", "queue"),
+            ):
+                with self.subTest(slug=slug):
+                    page = client.get("/concat-uploader/" + slug).text
+                    self.assertIn('class="studio-tabs"', page)
+                    for href in ("/concat/production", "/concat/media",
+                                 "/concat/gpu-config", "/concat-uploader/sheets-sync"):
+                        self.assertIn('href="' + href + '"', page)
+                    # Without CONCAT_UPLOADER_ENABLED, the fail-closed fallback
+                    # renders the nested links itself instead of a live iframe.
+                    self.assertIn('class="uploader-tabs"', page)
+                    self.assertIn('href="/concat-uploader/' + slug +
+                                  '" class="active" aria-current="page"', page)
+                    self.assertNotIn('class="uploader-frame"', page)
+
+        # When enabled, the real Uploader template embeds the working app.
+        # Its one native tab rail remains inside the iframe (not duplicated).
+        live = (ROOT / "app/modules/uploader/templates/workspace.html").read_text()
+        self.assertIn('src="/concat-uploader/app?tab={{ tab | urlencode }}"', live)
+        self.assertNotIn('class="uploader-tabs"', live)
+
+        copied = (ROOT / "reused/uploader/part01/templates/app.html").read_text()
+        self.assertIn("engine_instance == 'concat'", copied)
+        for title in ("Sheets Sync", "Channels", "Upload Engine", "Queue"):
+            self.assertIn(">" + title + "</a>", copied)
+
+    def test_navigation_keeps_auth_denials(self):
+        app = create_app()
+        with TestClient(app) as client:
+            for path in ("/dashboard", "/concat/production", "/concat/media",
+                         "/concat/gpu-config", "/concat-uploader/channels", "/admin"):
+                with self.subTest(path=path):
+                    self.assertEqual(client.get(path, headers={"X-Auth-User": "admin"}).status_code, 401)
 
     def test_login_design_changes_do_not_remove_security_nonce(self):
         page = (ROOT / "app/modules/admin/templates/login.html").read_text()

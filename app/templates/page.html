@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light"><title>{{ page.title }} · Concat Web</title>
-<link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}?v=20261119-scene-shell-1"></head>
+<link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}?v=20261119-three-tab-1"></head>
 <body>
 <a class="skip" href="#content">Skip to content</a>
 <header class="mobile-bar"><button id="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar">☰</button><strong>Concat Web</strong></header>
@@ -9,21 +9,31 @@
 <div class="layout"><nav id="sidebar" class="sidebar" aria-label="Main navigation">
 <a class="brand" href="/dashboard" aria-label="Concat Web dashboard"><span class="brand-mark" aria-hidden="true">C</span><span>Concat <b>Web</b></span></a>
 <div class="nav-group"><a class="nav-top {% if page.area == 'dashboard' %}current{% endif %}" href="/dashboard">Dashboard</a></div>
-<div class="nav-group"><div class="nav-top">Concat Studio</div>
-<div class="nav-subtitle">Concat</div>
-{% for item in concat_pages %}<a class="nav-link {% if page.key == item.key %}current{% endif %}" href="{{ item.path }}" {% if page.key == item.key %}aria-current="page"{% endif %}>{{ item.title }}</a>{% endfor %}
-<div class="nav-subtitle">Concat Uploader</div>
-{% for item in uploader_pages %}<a class="nav-link {% if page.key == item.key %}current{% endif %}" href="{{ item.path }}" {% if page.key == item.key %}aria-current="page"{% endif %}>{{ item.title }}</a>{% endfor %}
-</div>
+<div class="nav-group"><a class="nav-top {% if page.area in ('concat', 'uploader') %}current{% endif %}" href="/concat/production" {% if page.area in ('concat', 'uploader') %}aria-current="page"{% endif %}>Concat Studio</a></div>
 <div class="nav-group"><a class="nav-top {% if page.area == 'admin' %}current{% endif %}" href="/admin">Admin {% if not principal.is_admin %}<span class="lock">Restricted</span>{% endif %}</a></div>
 <div class="identity"><span>Signed in as</span><strong>{{ principal.username }}</strong><button id="nav-logout" class="sign-out" type="button">Sign out</button><span id="nav-logout-feedback" class="logout-feedback" role="status" hidden></span></div>
 </nav><main id="content" class="content" tabindex="-1">
+{% if page.area in ('concat', 'uploader') %}
+<div class="eyebrow">Concat Web / Concat Studio</div>
+<h1>Concat Studio</h1><p class="lead">Rendering, media, GPU configuration and uploads in one workspace.</p>
+<nav class="studio-tabs" aria-label="Concat Studio modules">
+  <a href="/concat/production" {% if page.area == 'concat' and page.key == 'production' %}class="active" aria-current="page"{% endif %}>Production</a>
+  <a href="/concat/media" {% if page.area == 'concat' and page.key == 'media' %}class="active" aria-current="page"{% endif %}>Media</a>
+  <a href="/concat/gpu-config" {% if page.area == 'concat' and page.key == 'gpu-config' %}class="active" aria-current="page"{% endif %}>GPU Config</a>
+  <a href="/concat-uploader/sheets-sync" {% if page.area == 'uploader' %}class="active" aria-current="page"{% endif %}>Uploader</a>
+</nav>
+{% if page.area == 'uploader' %}
+<nav class="uploader-tabs" aria-label="Uploader sections">{% for item in uploader_pages %}
+<a href="{{ item.path }}" {% if page.key == item.key %}class="active" aria-current="page"{% endif %}>{{ item.title }}</a>{% endfor %}</nav>
+{% endif %}
+{% else %}
 <div class="eyebrow">Concat Web / {{ page.area | replace('-', ' ') | title }}</div>
 <h1>{{ page.title }}</h1><p class="lead">{{ page.description }}</p>
+{% endif %}
 <section class="content-card" aria-labelledby="integration-title">
 <h2 id="integration-title">Integration boundary established</h2>
 <p>The existing VPS_1 implementation is retained in this repository for the owning feature agent to adapt. Business operations remain unavailable until verified owner authorization and service integration pass the release gate.</p>
 </section>
 </main></div>
-<script defer src="{{ url_for('static', path='/app.js') }}?v=20261119-scene-shell-1"></script>
+<script defer src="{{ url_for('static', path='/app.js') }}?v=20261119-three-tab-1"></script>
 </body></html>

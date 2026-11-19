@@ -53,8 +53,13 @@ class FoundationTests(unittest.TestCase):
         self.app.state.identity_resolver = lambda _: Principal("alice", is_active=True, concat_granted=True)
         page = self.client.get("/dashboard").text
         self.assertEqual(page.count('class="nav-group"'), 3)
-        for name in ("Dashboard", "Concat Studio", "Admin", "Sheets Sync", "GPU Config", "Upload Engine"):
+        for name in ("Dashboard", "Concat Studio", "Admin"):
             self.assertIn(name, page)
+        sidebar = page.split('<nav id="sidebar"', 1)[1].split('</nav>', 1)[0]
+        self.assertNotIn("Sheets Sync", sidebar)
+        self.assertNotIn("GPU Config", sidebar)
+        self.assertNotIn("Upload Engine", sidebar)
+        self.assertIn('href="/concat/production">Concat Studio</a>', sidebar)
         self.assertIn('name="viewport"', page)
         self.assertIn('id="nav-toggle"', page)
 

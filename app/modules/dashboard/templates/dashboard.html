@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark"><title>Dashboard · Concat Web</title>
-<link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}?v=20261119-scene-shell-1">
+<link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}?v=20261119-three-tab-1">
 <link rel="stylesheet" href="/dashboard/assets/dashboard.css">
 </head>
 <body class="dashboard-page">
@@ -14,12 +14,7 @@
 <nav id="sidebar" class="sidebar" aria-label="Main navigation">
 <a class="brand" href="/dashboard" aria-label="Concat Web dashboard"><span class="brand-mark" aria-hidden="true">C</span><span>Concat <b>Web</b></span></a>
 <div class="nav-group"><a class="nav-top current" href="/dashboard" aria-current="page">Dashboard</a></div>
-<div class="nav-group"><div class="nav-top">Concat Studio</div>
-<div class="nav-subtitle">Concat</div>
-{% for item in concat_pages %}<a class="nav-link" href="{{ item.path }}">{{ item.title }}</a>{% endfor %}
-<div class="nav-subtitle">Concat Uploader</div>
-{% for item in uploader_pages %}<a class="nav-link" href="{{ item.path }}">{{ item.title }}</a>{% endfor %}
-</div>
+<div class="nav-group"><a class="nav-top" href="/concat/production">Concat Studio</a></div>
 <div class="nav-group"><a class="nav-top" href="/admin">Admin {% if not principal.is_admin %}<span class="lock">Restricted</span>{% endif %}</a></div>
 <div class="identity"><span>Signed in as</span><strong>{{ principal.username }}</strong><button id="nav-logout" class="sign-out" type="button">Sign out</button><span id="nav-logout-feedback" class="logout-feedback" role="status" hidden></span></div>
 </nav>
@@ -68,6 +63,6 @@
 </div>
 </section>
 </main></div>
-<script defer src="{{ url_for('static', path='/app.js') }}?v=20261119-scene-shell-1"></script>
+<script defer src="{{ url_for('static', path='/app.js') }}?v=20261119-three-tab-1"></script>
 <script defer src="/dashboard/assets/dashboard.js"></script>
 </body></html>

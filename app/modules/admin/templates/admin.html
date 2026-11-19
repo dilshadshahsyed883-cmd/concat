@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light"><title>Admin · Concat Web</title>
-<link rel="stylesheet" href="/static/app.css?v=20261119-scene-shell-1">
+<link rel="stylesheet" href="/static/app.css?v=20261119-three-tab-1">
 <style>
 .panel{display:grid;gap:17px;max-width:960px}
 .panel-card{background:#fff;border:1px solid #dfe5ef;border-radius:14px;padding:23px;box-shadow:0 5px 20px #18283c0a}
@@ -23,14 +23,7 @@
 <div class="layout"><nav id="sidebar" class="sidebar" aria-label="Main navigation">
 <a class="brand" href="/dashboard" aria-label="Concat Web dashboard"><span class="brand-mark" aria-hidden="true">C</span><span>Concat <b>Web</b></span></a>
 <div class="nav-group"><a class="nav-top" href="/dashboard">Dashboard</a></div>
-<div class="nav-group"><div class="nav-top">Concat Studio</div>
-<div class="nav-subtitle">Concat</div>
-<a class="nav-link" href="/concat/production">Production</a><a class="nav-link" href="/concat/media">Media</a><a class="nav-link" href="/concat/gpu-config">GPU Config</a>
-<div class="nav-subtitle">Concat Uploader</div>
-<a class="nav-link" href="/concat-uploader/sheets-sync">Sheets Sync</a>
-<a class="nav-link" href="/concat-uploader/channels">Channels</a>
-<a class="nav-link" href="/concat-uploader/upload-engine">Upload Engine</a>
-<a class="nav-link" href="/concat-uploader/queue">Queue</a></div>
+<div class="nav-group"><a class="nav-top" href="/concat/production">Concat Studio</a></div>
 <div class="nav-group"><a class="nav-top current" aria-current="page" href="/admin">Admin</a></div>
 <div class="identity"><span>Signed in as</span><strong>{{ principal.username }}</strong><button id="nav-logout" class="sign-out" type="button">Sign out</button><span id="nav-logout-feedback" class="logout-feedback" role="status" hidden></span></div>
 </nav><main id="content" class="content" tabindex="-1">
@@ -52,7 +45,7 @@
 </section>
 <section class="panel-card"><h2>Recent security activity</h2><div id="audit" class="muted">Loading…</div></section>
 </div></main></div>
-<script defer src="/static/app.js?v=20261119-scene-shell-1"></script>
+<script defer src="/static/app.js?v=20261119-three-tab-1"></script>
 <script>
 (() => {
   "use strict";

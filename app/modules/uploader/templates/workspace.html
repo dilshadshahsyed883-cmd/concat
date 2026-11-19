@@ -2,13 +2,13 @@
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light"><title>{{ page.title }} · Concat Web</title>
-<link rel="stylesheet" href="/static/app.css?v=20261119-scene-shell-1">
+<link rel="stylesheet" href="/static/app.css?v=20261119-three-tab-1">
 <style>
 .content.uploader-workspace{max-width:none;min-width:0;width:100%;padding:24px clamp(14px,2vw,32px)}
 .content.uploader-workspace h1{font-size:25px;margin:8px 0 12px}
 .content.uploader-workspace .eyebrow{font-size:11px}
 .uploader-frame{display:block;width:100%;height:calc(100vh - 108px);min-height:560px;border:1px solid #dfe5ef;border-radius:12px;background:#fff}
-@media(max-width:760px){.content.uploader-workspace{padding:12px 8px}.uploader-frame{height:calc(100vh - 140px);border-radius:6px}}
+@media(max-width:760px){.content.uploader-workspace{padding:18px 12px}.uploader-frame{height:calc(100dvh - 235px);min-height:470px;border-radius:9px}.uploader-workspace-heading p{display:none}}
 </style></head>
 <body><a class="skip" href="#content">Skip to content</a>
 <header class="mobile-bar"><button id="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar">☰</button><strong>Concat Web</strong></header>
@@ -25,8 +25,17 @@
 <div class="nav-group"><a class="nav-top" href="/admin">Admin {% if not principal.is_admin %}<span class="lock">Restricted</span>{% endif %}</a></div>
 <div class="identity"><span>Signed in as</span><strong>{{ principal.username }}</strong><button id="nav-logout" class="sign-out" type="button">Sign out</button><span id="nav-logout-feedback" class="logout-feedback" role="status" hidden></span></div></nav>
 <main id="content" class="content uploader-workspace" tabindex="-1">
-<div class="eyebrow">Concat Web / Concat Uploader</div><h1>{{ page.title }}</h1>
+<div class="eyebrow">Concat Web / Concat Studio</div>
+<h1>Concat Studio</h1>
+<p class="lead">Rendering, media, GPU configuration and uploads in one workspace.</p>
+<nav class="studio-tabs" aria-label="Concat Studio modules">
+  <a href="/concat/production">Production</a>
+  <a href="/concat/media">Media</a>
+  <a href="/concat/gpu-config">GPU Config</a>
+  <a class="active" href="/concat-uploader/sheets-sync" aria-current="page">Uploader</a>
+</nav>
+<div class="uploader-workspace-heading"><h2>{{ page.title }}</h2><p>Uploader tabs and queue controls below</p></div>
 <iframe class="uploader-frame" title="{{ page.title }} workspace" src="/concat-uploader/app?tab={{ tab | urlencode }}" loading="eager" referrerpolicy="same-origin"></iframe>
 </main></div>
-<script defer src="/static/app.js?v=20261119-scene-shell-1"></script>
+<script defer src="/static/app.js?v=20261119-three-tab-1"></script>
 </body></html>
