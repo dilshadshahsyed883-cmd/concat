@@ -71,13 +71,13 @@ audit)
   echo "=== READ-ONLY CONCAT NGINX AUDIT ==="
   if nginx_valid; then echo "NGINX_SYNTAX=PASS"; else echo "NGINX_SYNTAX=FAIL"; fi
   if nginx -T 2>/dev/null |
-     grep -Eq '^[[:space:]]*include[[:space:]]+/etc/nginx/sites-enabled/\*;'; then
+     grep -E '^[[:space:]]*include[[:space:]]+/etc/nginx/sites-enabled/\*;' >/dev/null; then
     echo "SITES_ENABLED_INCLUDE=PRESENT"
   else
     echo "SITES_ENABLED_INCLUDE=NOT_CONFIRMED"
   fi
   if nginx -T 2>/dev/null |
-     grep -Eq '^[[:space:]]*server_name[[:space:]]+concat\.scenebuilder\.online([[:space:];]|$)'; then
+     grep -E '^[[:space:]]*server_name[[:space:]]+concat\.scenebuilder\.online([[:space:];]|$)' >/dev/null; then
     echo "CONCAT_SERVER_NAME=CONFIGURED"
   else
     echo "CONCAT_SERVER_NAME=NOT_CONFIGURED"
@@ -107,10 +107,10 @@ activate)
      ! -e "$ENABLED" && ! -L "$ENABLED" && ! -e "$MARKER" ]] ||
       fail "CONCAT_ROUTE_ALREADY_EXISTS_REVIEW_MANUALLY"
   nginx -T 2>/dev/null |
-    grep -Eq '^[[:space:]]*include[[:space:]]+/etc/nginx/sites-enabled/\*;' ||
+    grep -E '^[[:space:]]*include[[:space:]]+/etc/nginx/sites-enabled/\*;' >/dev/null ||
       fail "NGINX_DOES_NOT_INCLUDE_SITES_ENABLED"
   if nginx -T 2>/dev/null |
-     grep -Eq '^[[:space:]]*server_name[[:space:]]+concat\.scenebuilder\.online([[:space:];]|$)'; then
+     grep -E '^[[:space:]]*server_name[[:space:]]+concat\.scenebuilder\.online([[:space:];]|$)' >/dev/null; then
       fail "EXISTING_CONCAT_SERVER_NAME_CONFLICT"
   fi
   readiness
