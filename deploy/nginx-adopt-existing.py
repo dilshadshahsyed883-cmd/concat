@@ -138,7 +138,10 @@ def private_root() -> None:
 
 def _code(path: str, public: bool) -> str:
     url = (ORIGIN if public else LOOPBACK) + path
-    command = ["curl", "-sS", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "8"]
+    # --resolve alone is not enough when VPS has HTTPS_PROXY configured:
+    # curl would send the request through the proxy instead of local Nginx.
+    command = ["curl", "--noproxy", "*", "-sS", "-o", "/dev/null",
+               "-w", "%{http_code}", "--max-time", "8"]
     if public:
         command += ["--resolve", DOMAIN + ":443:127.0.0.1"]
     return execute(*(command + [url])).strip()
@@ -146,7 +149,7 @@ def _code(path: str, public: bool) -> str:
 
 def _health(public: bool) -> bool:
     url = (ORIGIN if public else LOOPBACK) + "/healthz"
-    command = ["curl", "-fsS", "--max-time", "8"]
+    command = ["curl", "--noproxy", "*", "-fsS", "--max-time", "8"]
     if public:
         command += ["--resolve", DOMAIN + ":443:127.0.0.1"]
     try:
@@ -183,6 +186,25 @@ def scene_status() -> str:
                    "https://app.scenebuilder.online/").strip()
 
 
+def secure_original_backup(backup: Path, original: bytes) -> None:
+    """Keep and verify a previous rollback backup; never overwrite or delete it."""
+    if backup.is_symlink():
+        fail("BACKUP_ALREADY_EXISTS_UNSAFE")
+    if backup.exists():
+        details = backup.stat()
+        if (not backup.is_file() or details.st_uid != os.geteuid() or
+            details.st_nlink != 1 or stat.S_IMODE(details.st_mode) != 0o600 or
+            digest(backup.read_bytes()) != digest(original)):
+            fail("BACKUP_ALREADY_EXISTS_UNSAFE_OR_MISMATCH")
+        return
+
+    fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(original)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
 def activate(sha: str) -> None:
     if META.exists() or META.is_symlink():
         fail("EXISTING_ADOPTION_RECORD_REQUIRES_ROLLBACK_OR_REVIEW")
@@ -199,13 +221,9 @@ def activate(sha: str) -> None:
         fail("SCENE_BASELINE_NOT_REACHABLE")
 
     backup = BACKUP_DIR / ("original-" + AUDITED_HASH + ".conf")
-    if backup.exists() or backup.is_symlink():
-        fail("BACKUP_ALREADY_EXISTS_REQUIRES_MANUAL_REVIEW")
-    fd = os.open(backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-    with os.fdopen(fd, "wb") as handle:
-        handle.write(old)
-        handle.flush()
-        os.fsync(handle.fileno())
+    # Failed HTTPS smoke tests retain this original private backup.
+    # Retry is allowed only when its permissions and bytes match exactly.
+    secure_original_backup(backup, old)
     meta = {"sha": sha, "old_sha256": AUDITED_HASH, "new_sha256": digest(next_file),
             "backup": str(backup), "state": "pending"}
     fd = os.open(META, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
@@ -220,8 +238,12 @@ def activate(sha: str) -> None:
         changed = True
         assert_nginx()
         reload_nginx()
-        if not _health(True) or _code("/dashboard", True) != "401" or _code("/auth/login", True) != "200":
-            fail("CONCAT_HTTPS_HEALTH_OR_AUTH_FAILED")
+        if not _health(True):
+            fail("CONCAT_HTTPS_HEALTH_OR_AUTH_FAILED:HEALTH")
+        if _code("/dashboard", True) != "401":
+            fail("CONCAT_HTTPS_HEALTH_OR_AUTH_FAILED:DASHBOARD")
+        if _code("/auth/login", True) != "200":
+            fail("CONCAT_HTTPS_HEALTH_OR_AUTH_FAILED:LOGIN")
         if scene_status() != previous_scene:
             fail("SCENE_HTTPS_STATUS_CHANGED")
         meta["state"] = "active"

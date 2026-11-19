@@ -4,7 +4,10 @@ Never run Nginx, mutate /etc/nginx, or contact VPS from CI.
 """
 import importlib.util
 from pathlib import Path
+import os
+import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "deploy/nginx-adopt-existing.py"
@@ -97,6 +100,34 @@ class ExistingNginxSiteAdoptionTests(unittest.TestCase):
                           "systemctl restart vps1", "apt upgrade", "certbot --nginx",
                           "rm -rf /etc/nginx"):
             self.assertNotIn(forbidden, script)
+
+    def test_https_probes_bypass_environment_proxy(self):
+        with patch.object(adopt, "execute", return_value="401") as execute:
+            self.assertEqual(adopt._code("/dashboard", True), "401")
+            args = execute.call_args.args
+            self.assertIn("--noproxy", args)
+            self.assertEqual(args[args.index("--noproxy") + 1], "*")
+            self.assertIn("--resolve", args)
+        with patch.object(adopt, "execute", return_value='{"ok":true,"service":"concat-web"}') as execute:
+            self.assertTrue(adopt._health(True))
+            args = execute.call_args.args
+            self.assertIn("--noproxy", args)
+            self.assertEqual(args[args.index("--noproxy") + 1], "*")
+
+    def test_failed_activation_backup_safe_to_reuse_without_overwrite(self):
+        with tempfile.TemporaryDirectory() as folder:
+            backup = Path(folder) / "original.conf"
+            original = b"audited original nginx configuration"
+            adopt.secure_original_backup(backup, original)
+            self.assertEqual(backup.read_bytes(), original)
+            self.assertEqual(backup.stat().st_mode & 0o777, 0o600)
+            adopt.secure_original_backup(backup, original)
+            self.assertEqual(backup.read_bytes(), original)
+            with self.assertRaisesRegex(RuntimeError, "BACKUP_ALREADY_EXISTS"):
+                adopt.secure_original_backup(backup, b"modified original")
+            backup.write_bytes(b"tampered backup")
+            with self.assertRaisesRegex(RuntimeError, "BACKUP_ALREADY_EXISTS"):
+                adopt.secure_original_backup(backup, original)
 
     def test_manual_release_bundles_nginx_adoption_code(self):
         script = (ROOT / "deploy/manual-integration-release.sh").read_text()
