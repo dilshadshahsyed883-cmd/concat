@@ -118,7 +118,7 @@
       <div class="copyright-field-pair">
       <label class="lum-field"><span>Visibility</span><select name="privacy_status"><option value="public">Public</option><option value="unlisted">Unlisted</option><option value="private">Private</option></select></label>
       {% if engine_instance == 'concat' %}
-      <label class="lum-field"><span>Schedule public YouTube release — optional</span><input name="app_upload_at" type="datetime-local"><small>Blank = publish according to selected visibility after upload. Scheduled videos upload privately and become public at this time.</small></label>
+      <label class="lum-field"><span>Schedule YouTube upload start — optional</span><input name="app_upload_at" type="datetime-local"><small>Blank = manual queue (Start My Queue required). Set a time to automatically START uploading then, using your selected visibility. Actual start may be later if another upload is running or the worker is offline. This does not schedule YouTube publication.</small></label>
       <label class="lum-field"><span>Schedule timezone</span><select name="timezone_name"><option value="Asia/Karachi">Pakistan (PKT)</option><option value="UTC">UTC</option><option value="America/New_York">New York</option><option value="America/Los_Angeles">Los Angeles</option><option value="Europe/London">London</option></select></label>
       {% else %}
 <label class="lum-field"><span>Schedule (PKT) — optional</span><input name="app_upload_at" type="datetime-local"><small>Blank = next available queue slot.</small></label>
@@ -820,7 +820,7 @@
     </section>
     {% if engine_instance == 'concat' and selected_sheet_source %}
     <section class="lum-card">
-      <div class="lum-card-head"><div><h2>Concat Video Links</h2><p>Optional video metadata from the same owned Sheet. Choose a link to prefill Upload Engine; no queue or YouTube action occurs until you submit and manually start your queue.</p></div></div>
+      <div class="lum-card-head"><div><h2>Concat Video Links</h2><p>Optional video metadata from the same owned Sheet. Choose a link to prefill Upload Engine; submitting a timed job schedules automatic upload, while a job without a schedule requires manual Start My Queue.</p></div></div>
       {% if concat_sheet_error %}<p role="alert">{{ concat_sheet_error }}</p>{% endif %}
       {% if concat_sheet_videos %}
       <div class="lum-table-wrap"><table class="lum-table">

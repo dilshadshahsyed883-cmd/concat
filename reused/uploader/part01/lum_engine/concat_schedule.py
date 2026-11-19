@@ -27,3 +27,25 @@ def concat_publish_at(local_value: str, timezone_name: str, visibility: str, *, 
     if utc <= clock.astimezone(timezone.utc) + timedelta(minutes=10):
         raise ValueError("Scheduled YouTube release must be more than 10 minutes in the future")
     return utc.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+def concat_upload_at(local_value: str, timezone_name: str, *, now=None) -> str:
+    """UTC due time for starting the VPS upload, not YouTube publication."""
+    if not str(local_value or "").strip():
+        return ""
+    try:
+        zone = ZoneInfo(str(timezone_name or "Asia/Karachi"))
+        local = datetime.fromisoformat(str(local_value).strip().replace("Z", "+00:00"))
+        if local.tzinfo is None:
+            local = local.replace(tzinfo=zone)
+            if (local.astimezone(timezone.utc).astimezone(zone).replace(tzinfo=None)
+                    != local.replace(tzinfo=None)):
+                raise ValueError("Nonexistent local time")
+            if zone.utcoffset(local.replace(fold=0)) != zone.utcoffset(local.replace(fold=1)):
+                raise ValueError("Ambiguous local time")
+        utc = local.astimezone(timezone.utc)
+    except (TypeError, ValueError, KeyError) as exc:
+        raise ValueError("Invalid date, time or timezone for scheduled upload") from exc
+    clock = now or datetime.now(timezone.utc)
+    if utc <= clock.astimezone(timezone.utc):
+        raise ValueError("Scheduled upload start must be in the future")
+    return utc.replace(microsecond=0).isoformat().replace("+00:00", "Z")

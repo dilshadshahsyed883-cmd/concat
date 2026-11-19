@@ -9,6 +9,13 @@
       {% else %}
       <form method="post" action="{{ base_path }}/actions/copyright/queue/pause"><input type="hidden" name="csrf_token" value="{{ csrf }}"><button class="lum-button" type="submit">Pause My Queue</button></form>
       {% endif %}
+      {% if engine_instance == 'concat' %}
+      {% if stats.owner_scheduled_paused %}
+      <form method="post" action="{{ base_path }}/actions/copyright/queue/start"><input type="hidden" name="csrf_token" value="{{ csrf }}"><input type="hidden" name="scheduled_only" value="1"><button class="lum-button primary" type="submit">Resume Scheduled Uploads</button></form>
+      {% else %}
+      <form method="post" action="{{ base_path }}/actions/copyright/queue/pause"><input type="hidden" name="csrf_token" value="{{ csrf }}"><input type="hidden" name="scheduled_only" value="1"><button class="lum-button" type="submit">Pause Scheduled Uploads</button></form>
+      {% endif %}
+      {% endif %}
     </div>
   </div>
   <form id="copyright-bulk-form" method="post" action="{{ base_path }}/actions/copyright/queue/bulk" class="lum-actions" data-copyright-confirm="Apply this action to the selected jobs owned by your account?">
@@ -19,7 +26,7 @@
     <small>Only your own waiting/failed jobs can be changed. Unowned selections are rejected.</small>
   </form>
   <p class="copyright-result-count" data-copyright-count role="status">{{ projects|length }} videos</p>
-  <div class="lum-table-wrap"><table class="lum-table copyright-queue-table"><thead><tr><th>Video</th><th>{{ "Concat Source" if engine_instance == "concat" else "VPS Folder" }}</th><th>Group</th><th>Channel</th><th>Status / Progress</th><th>{{ "YouTube Release (PKT)" if engine_instance == "concat" else "Schedule (PKT)" }}</th><th>Details</th><th>Actions</th></tr></thead><tbody>
+  <div class="lum-table-wrap"><table class="lum-table copyright-queue-table"><thead><tr><th>Video</th><th>{{ "Concat Source" if engine_instance == "concat" else "VPS Folder" }}</th><th>Group</th><th>Channel</th><th>Status / Progress</th><th>{{ "Upload Start (PKT)" if engine_instance == "concat" else "Schedule (PKT)" }}</th><th>Details</th><th>Actions</th></tr></thead><tbody>
   {% for p in projects %}
     {% set ch = namespace(name='Channel #' ~ p.channel_db_id) %}
     {% for c in channels %}{% if c.id|string == p.channel_db_id|string %}{% set ch.name = c.channel_name or c.channel_id %}{% endif %}{% endfor %}
@@ -30,7 +37,7 @@
       <td>{{ p.group_name or '—' }}</td>
       <td>{{ ch.name }}</td>
       <td><span class="lum-state s-{{ p.status|lower }}">{{ p.status|replace('_',' ')|title }}</span><div class="lum-progress" role="progressbar" aria-label="Upload progress for project {{ p.id }}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ p.progress or 0 }}"><i style="width:{{ p.progress or 0 }}%"></i></div><small>{{ p.progress or 0 }}%</small></td>
-      <td>{{ (p.publish_at if engine_instance == 'concat' else p.app_upload_at)|schedule_pkt }}</td>
+      <td>{% if engine_instance == 'concat' and p.publish_at %}<small>Legacy YouTube release:</small> {{ p.publish_at|schedule_pkt }}{% else %}{{ p.app_upload_at|schedule_pkt }}{% endif %}</td>
       <td>{% if p.error_message %}<details class="copyright-error"><summary>View message</summary><p>{{ p.error_message }}</p></details>{% elif p.status == 'COMPLETED' %}Upload verified{% if p.cleanup_verified_at %} · VPS cleanup recorded{% else %} · Cleanup not confirmed{% endif %}{% else %}{{ p.core_status or '—' }}{% endif %}</td>
       <td><div class="lum-actions">
         {% if p.youtube_url %}<a class="lum-button tiny" href="{{ p.youtube_url }}" target="_blank" rel="noopener">YouTube</a>{% endif %}
