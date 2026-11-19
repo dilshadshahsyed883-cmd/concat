@@ -312,7 +312,8 @@ class Worker:
 class ProductionQueue:
     def __init__(self, manager, worker_factory):
         self.media = manager
-        self.drive = DriveIntake(manager.execute)
+        from .drive_socket import DriveSocket
+        self.drive = DriveSocket(manager.tenant_key)
         self.worker_factory = worker_factory
         self.spool = manager.root / "production"
         if self.spool.is_symlink():
