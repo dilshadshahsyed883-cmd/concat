@@ -89,3 +89,26 @@ rm -f "$TMP"
 ```
 
 No password, hash, API key or secret may be entered in this chat or GitHub. The credential bootstrap prompts only in the VPS terminal. Do not execute this unless the local VPS hostname, storage, separate service, HTTPS configuration and host/operator identity are confirmed; the script fails closed otherwise.
+
+
+## Existing Nginx site (audited 2026-11-19)
+
+The live VPS already has a root-owned Concat placeholder
+`/etc/nginx/sites-available/concat-web.conf`, linked from
+`sites-enabled`. Its HTTPS `/healthz` returns a static HTTP 200 and is
+**not** proof that Concat is running. The exact file fingerprint is documented
+in `docs/NGINX_ROUTING_AUDIT_20261119.md`.
+
+After an exact-SHA integration release is staged and its independent loopback
+health/login/401 gates pass, use only `deploy/nginx-adopt-existing.py`
+with `audit`, then manually `activate <same-SHA>`. The utility backs up
+the existing Concat site and surgically substitutes only the HTTPS
+`location /` with `deploy/nginx-proxy-location.conf`, preserving port-80
+redirects, ACME, certificate config and other sites. It tests Nginx and
+reverts the single Concat file on failed post-cutover checks. It has an explicit
+`rollback <same-SHA>` operation.
+
+**Do not use** `deploy/nginx-cutover.sh activate` on this VPS: that tool is
+for a new, absent Concat virtual host and intentionally refuses the existing
+site. The integration staging archive includes `deploy/` so the existing-site
+adoption utility is present under `/srv/concat-web/current/deploy/`.
