@@ -119,3 +119,45 @@ sudo bash /srv/concat-web/current/deploy/nginx-cutover.sh rollback "$SHA"
 No public Nginx cutover was performed while writing this document or CI.
 Real browser login, Salad GPU, Drive Bridge and Youtube OAuth acceptance
 remain independent operational verification tasks.
+
+
+## VPS read-only operator audit results — 2026-11-19 (08:03 PKT)
+
+The operator pasted the following output from a **read-only VPS terminal audit**:
+
+```text
+=== NGINX ===
+NGINX=PASS
+=== EXISTING CONCAT ROUTE ===
+CONCAT_ROUTE=EXISTS
+=== DNS ===
+137.74.162.143  STREAM concat.scenebuilder.online
+137.74.162.143  DGRAM
+137.74.162.143  RAW
+=== TLS CERTIFICATES ===
+/etc/letsencrypt/live/concat.scenebuilder.online/fullchain.pem
+/etc/letsencrypt/live/app.scenebuilder.online/fullchain.pem
+=== CONCAT APPLICATION ===
+CONCAT_HEALTH=000
+=== EXISTING WEBSITE ===
+VPS1_HTTPS=303
+CHANGES=NONE
+```
+
+**Verified facts and limits:**
+- `nginx -t` passed.
+- An active `nginx -T` server_name line contains `concat.scenebuilder.online`. It does **not** establish which config file, proxy target, or HTTP/HTTPS blocks are configured.
+- DNS lookup resolved the Concat hostname to IPv4 `137.74.162.143`. This is resolver evidence, **not** proof that external HTTPS reaches the correct service.
+- A Concat Let's Encrypt `fullchain.pem` pathname was found. This does **not** prove matching key, valid dates, hostname, trusted chain, or live TLS termination.
+- Loopback `http://127.0.0.1:18873/healthz` returned curl HTTP `000` (no HTTP response; service unavailability vs connection details not yet proven). Do not claim Concat is deployed or healthy.
+- Existing `https://app.scenebuilder.online/` returned HTTP `303`: a redirect, not an outage indicator. No changes were made.
+
+### Release gate: public Nginx activation BLOCKED
+
+The newly prepared `deploy/nginx-cutover.sh activate` intentionally requires the Concat virtual host to be *absent*. Because a Concat server_name **already exists**, it will intentionally **fail closed** with the existing-route conflict gate. **Do not invoke activate, overwrite the existing route, add a duplicate `server_name`, remove or rename an unverified Nginx file, request a replacement certificate, or reload Nginx** on the strength of the current audit.
+
+**Next safe action:** Read-only inspection of the currently loaded Concat-related server block's file path, `listen`, `server_name`, `proxy_pass`, certificate path (not key contents), and any duplicate/other host ownership. Also inspect `systemctl show concat-web.service` load and active state, active Concat release symlink, local `ss -ltn` for port 18873, and actual cert validity/hostname. Never print private env, TLS private-key contents, passwords, authorization headers, OAuth tokens or entire `nginx -T` output.
+
+After the evidence identifies who owns the existing Concat route, create a **separate guarded adoption path** for an existing Concat-only configuration if appropriate, preserving a byte-for-byte backup, syntax validation and reliable rollback. Do not treat the existing vhost as owned by the newly introduced script without that verification. Deploy the exact CI-passing integration SHA to loopback and verify health + anonymous denial **before** public cutover.
+
+**Current status:** Nginx syntax passed and route/DNS/cert *paths* discovered; Concat application and public routing readiness still unverified. No VPS changes by this audit.
