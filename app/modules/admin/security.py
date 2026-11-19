@@ -21,6 +21,8 @@ from urllib.parse import urlsplit
 from fastapi import HTTPException, Request
 
 COOKIE = "__Host-concat_session"
+# Browsers cap persistent cookies; renew on authenticated activity.
+SESSION_COOKIE_MAX_AGE = 400 * 86400
 LOGIN_CSRF_COOKIE = "__Host-concat_login_csrf"
 USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 ALLOWED_APPS = frozenset({"concat", "concat-uploader", "dashboard"})
@@ -154,9 +156,13 @@ class SecurityService:
                     target_key TEXT NOT NULL, created_at INTEGER NOT NULL
                 );
             """)
+            # Upgrade only still-active sessions. Never revive expired or revoked tokens.
+            con.execute("UPDATE sessions SET expires_at=0 WHERE revoked_at IS NULL AND expires_at>?",
+                        (int(time.time()),))
+            con.execute("DELETE FROM config WHERE key='session_max_minutes'")
 
     def _config(self) -> dict[str, Any]:
-        config = {"maintenance_mode": False, "session_max_minutes": 480}
+        config = {"maintenance_mode": False}
         with self._db() as con:
             for row in con.execute("SELECT key,value FROM config"):
                 if row["key"] in config:
@@ -164,9 +170,7 @@ class SecurityService:
                         config[row["key"]] = json.loads(row["value"])
                     except (TypeError, ValueError) as exc:
                         raise SecurityUnavailable("Corrupt local admin configuration") from exc
-        if (type(config["maintenance_mode"]) is not bool or
-            type(config["session_max_minutes"]) is not int or
-            not 15 <= config["session_max_minutes"] <= 480):
+        if type(config["maintenance_mode"]) is not bool:
             raise SecurityUnavailable("Corrupt local admin configuration")
         return config
 
@@ -177,7 +181,7 @@ class SecurityService:
         with self._db() as con:
             return con.execute(
                 "SELECT * FROM sessions WHERE token_hash=? AND username_key=? "
-                "AND credential_tag=? AND revoked_at IS NULL AND expires_at>?",
+                "AND credential_tag=? AND revoked_at IS NULL AND (expires_at=0 OR expires_at>?)",
                 (_hash(token), self.username.casefold(), self.credential_tag, int(time.time()))
             ).fetchone()
 
@@ -185,6 +189,7 @@ class SecurityService:
         from app.auth import Principal
         if self._session_row(request) is None:
             return None
+        request.state.concat_authenticated_token = request.cookies[COOKIE]
         return Principal(self.username, is_admin=True, is_active=True, concat_granted=True)
 
     def _audit(self, action: str, target: str):
@@ -220,14 +225,14 @@ class SecurityService:
             raise HTTPException(401, _UNAUTHENTICATED)
         token = secrets.token_urlsafe(48)
         csrf = self._csrf_for(token)
-        max_age = self._config()["session_max_minutes"] * 60
+        max_age = SESSION_COOKIE_MAX_AGE
         with self._db() as con:
             con.execute("DELETE FROM login_attempts WHERE bucket=?", (bucket,))
-            con.execute("DELETE FROM sessions WHERE expires_at<?", (now - 86400,))
+            con.execute("DELETE FROM sessions WHERE expires_at>0 AND expires_at<?", (now - 86400,))
             con.execute(
                 "INSERT INTO sessions VALUES (?,?,?,?,?,?,NULL)",
                 (_hash(token), self.username.casefold(), _hash(csrf), self.credential_tag,
-                 now, now + max_age)
+                 now, 0)
             )
         self._audit("login", self.username.casefold())
         return token, max_age
@@ -281,12 +286,9 @@ class SecurityService:
 
     def update_config(self, actor: str, config: Mapping[str, Any]):
         if (actor.casefold() != self.username.casefold() or not config or
-            set(config) - {"maintenance_mode", "session_max_minutes"}):
+            set(config) - {"maintenance_mode"}):
             raise HTTPException(422, "Invalid admin configuration")
-        if ("maintenance_mode" in config and type(config["maintenance_mode"]) is not bool) or (
-            "session_max_minutes" in config and
-            (type(config["session_max_minutes"]) is not int or
-             not 15 <= config["session_max_minutes"] <= 480)):
+        if "maintenance_mode" in config and type(config["maintenance_mode"]) is not bool:
             raise HTTPException(422, "Invalid admin configuration")
         with self._db() as con:
             for key, value in config.items():
