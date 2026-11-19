@@ -1,5 +1,6 @@
 """Focused no-network checks of the verified Concat Uploader ASGI gateway."""
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -73,6 +74,23 @@ class GatewayTests(unittest.TestCase):
                 self.assertIn('class="uploader-frame"', response.text)
                 self.assertIn('/concat-uploader/app?tab=' + expected_tab, response.text)
                 self.assertEqual(response.text.count('class="nav-group"'), 3)
+                # Regression: the live Uploader template must have exactly
+                # three primary entries, not copied Studio/Uploader sublinks.
+                sidebar = response.text.split('<nav id="sidebar"', 1)[1].split('</nav>', 1)[0]
+                primary = re.findall(
+                    r'<a class="nav-top[^"]*"[^>]*href="([^"]+)"', sidebar
+                )
+                self.assertEqual(primary, [
+                    "/dashboard", "/concat/production", "/admin"
+                ])
+                self.assertIn(
+                    'href="/concat/production" aria-current="page">Concat Studio',
+                    sidebar,
+                )
+                self.assertNotIn('nav-subtitle', sidebar)
+                self.assertNotIn('nav-link', sidebar)
+                for name in ("Sheets Sync", "Channels", "Upload Engine", "Queue"):
+                    self.assertNotIn(">" + name + "</a>", sidebar)
                 result = self.client.get("/concat-uploader/app?tab=" + expected_tab).json()
                 self.assertEqual(result["query"]["tab"], expected_tab)
                 self.assertEqual(result["path"], "/concat-uploader/app")

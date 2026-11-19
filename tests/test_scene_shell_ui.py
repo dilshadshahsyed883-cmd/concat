@@ -58,6 +58,11 @@ class SceneShellUXTests(unittest.TestCase):
                 self.assertIn('id="nav-toggle"', content)
                 self.assertIn('id="nav-backdrop"', content)
                 self.assertIn('id="sidebar"', content)
+                # Prevent stale per-module sidebars from passing the
+                # three-nav-group count without actually removing sublinks.
+                sidebar = content.split('<nav id="sidebar"', 1)[1].split('</nav>', 1)[0]
+                self.assertNotIn('nav-subtitle', sidebar)
+                self.assertNotIn('nav-link', sidebar)
                 self.assertIn('id="nav-logout"', content)
                 self.assertIn('id="nav-logout-feedback"', content)
                 self.assertIn('href="/admin"', content)

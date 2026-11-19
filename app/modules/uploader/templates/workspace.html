@@ -16,12 +16,7 @@
 <div class="layout"><nav id="sidebar" class="sidebar" aria-label="Main navigation">
 <a class="brand" href="/dashboard" aria-label="Concat Web dashboard"><span class="brand-mark" aria-hidden="true">C</span><span>Concat <b>Web</b></span></a>
 <div class="nav-group"><a class="nav-top" href="/dashboard">Dashboard</a></div>
-<div class="nav-group"><div class="nav-top">Concat Studio</div>
-<div class="nav-subtitle">Concat</div>
-{% for item in concat_pages %}<a class="nav-link" href="{{ item.path }}">{{ item.title }}</a>{% endfor %}
-<div class="nav-subtitle">Concat Uploader</div>
-{% for item in uploader_pages %}<a class="nav-link {% if page.key == item.key %}current{% endif %}" href="{{ item.path }}" {% if page.key == item.key %}aria-current="page"{% endif %}>{{ item.title }}</a>{% endfor %}
-</div>
+<div class="nav-group"><a class="nav-top current" href="/concat/production" aria-current="page">Concat Studio</a></div>
 <div class="nav-group"><a class="nav-top" href="/admin">Admin {% if not principal.is_admin %}<span class="lock">Restricted</span>{% endif %}</a></div>
 <div class="identity"><span>Signed in as</span><strong>{{ principal.username }}</strong><button id="nav-logout" class="sign-out" type="button">Sign out</button><span id="nav-logout-feedback" class="logout-feedback" role="status" hidden></span></div></nav>
 <main id="content" class="content uploader-workspace" tabindex="-1">
