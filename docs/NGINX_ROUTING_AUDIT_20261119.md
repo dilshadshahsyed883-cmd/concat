@@ -56,12 +56,12 @@ sudo bash <<'SH'
 set -Eeuo pipefail
 echo '=== CONCAT NGINX READ-ONLY AUDIT ==='
 if nginx -t >/dev/null 2>&1; then echo NGINX_SYNTAX=PASS; else echo NGINX_SYNTAX=FAIL; fi
-if nginx -T 2>/dev/null | grep -Eq '^[[:space:]]*include[[:space:]]+/etc/nginx/sites-enabled/\*;'; then
+if nginx -T 2>/dev/null | grep -E '^[[:space:]]*include[[:space:]]+/etc/nginx/sites-enabled/\*;' >/dev/null; then
   echo SITES_ENABLED_INCLUDE=PRESENT
 else
   echo SITES_ENABLED_INCLUDE=NOT_CONFIRMED
 fi
-if nginx -T 2>/dev/null | grep -Eq '^[[:space:]]*server_name[[:space:]]+concat\.scenebuilder\.online([[:space:];]|$)'; then
+if nginx -T 2>/dev/null | grep -E '^[[:space:]]*server_name[[:space:]]+concat\.scenebuilder\.online([[:space:];]|$)' >/dev/null; then
   echo CONCAT_SERVER_NAME=ALREADY_CONFIGURED
 else
   echo CONCAT_SERVER_NAME=NOT_CONFIGURED
@@ -88,7 +88,7 @@ echo CHANGES=NONE
 SH
 ```
 
-This audit deliberately does **not** print private environment files, login
+The grep checks intentionally consume complete Nginx output under pipefail, avoiding premature SIGPIPE false negatives.\n\nThis audit deliberately does **not** print private environment files, login
 credentials, TLS private-key contents, full Nginx configs, or OAuth tokens.
 It does not install packages, request a certificate, modify routes or reload
 services. Paste its sanitized output into the same PR audit trail.
