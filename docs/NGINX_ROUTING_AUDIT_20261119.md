@@ -198,3 +198,30 @@ CHANGES=NONE
 **Immediate dependency:** Stage the exact newly CI-verified integration SHA (which may change as audit docs are committed) with the existing Concat-only manual terminal helper, then confirm loopback `/healthz` and anonymous `/dashboard=401` before public route activation. Merely having a TLS vhost and certificate is not proof of a working Concat Web deployment.
 
 No VPS changes were made by this read-only audit. Existing VPS1 website, Scene, Drive Bridge, Salad and other services remain outside Concat deployment scope.
+
+
+## Additional live existing-route audit — 2026-11-19 (operator supplied)
+
+```text
+=== SITE OWNERSHIP ===
+SITE_TARGET=/etc/nginx/sites-available/concat-web.conf
+OWNER=root MODE=644
+=== ROUTING DIRECTIVES ===
+LOCATION= OTHER
+LOCATION= /
+RETURN_HTTP= 301
+LOCATION= /
+PROXY_DIRECTIVES= 0
+INCLUDE_DIRECTIVES= 0
+=== LOCAL HTTPS RESPONSE ===
+CONCAT_HTTPS_HTTP=200
+CHANGES=NONE
+```
+
+**Interpretation:** The enabled Concat route resolves to the root-owned, mode-0644 file `/etc/nginx/sites-available/concat-web.conf`. A line-oriented inspection of that exact file found two location blocks, a `301` return and **zero literal `proxy_pass` and `include` directives**. An HTTPS request using `--resolve concat.scenebuilder.online:443:127.0.0.1` to `/healthz` returned HTTP `200` even though the preceding live audit showed Concat service inactive, release unselected, and no listener on `18873`.
+
+Consequently, this `200` **cannot be accepted as Concat application's `/healthz` proof**. The actual body, response provenance and other possible response directives (e.g. `return`, `root`, `try_files`, `alias`, `fastcgi_pass`) were not examined. Do not infer a live application from status alone. Do not alter the existing vhost until its behavior and file checksum are established.
+
+**Nginx reuse strategy:** The source template's new-site-only `activate` operation is inapplicable to this existing site and must not be run. First stage the exact CI-passing integration SHA privately and verify its own loopback health and anonymous-denial. Separately audit the existing Concat vhost's safe routing directives and checksum, then implement guarded *existing-site adoption* only if needed: exact-site backup, hash-checked ownership, no symlinks outside known Concat site path, `nginx -t` and reload, HTTPS body/401 verification, Scene site's unchanged response, and restore-on-failure. The authorization to replace the existing vhost must be explicit, not assumed from an HTTP `200`.
+
+No VPS changes were performed by this read-only command. No public Nginx reload, cutover, or Concat deployment has occurred as a result of this audit.
