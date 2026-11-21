@@ -8,12 +8,13 @@ export component CanvasMotionPanel inherits VerticalLayout {
     in property <bool> images: true;
     in property <bool> videos: true;
     in property <bool> selected-only: false;
-    property <int> preset: 0;
+    in-out property <int> preset: 0;
+    in property <bool> inspector-mode: false;
     property <CanvasMotionData> settings <=> Keyframes.canvas-motion;
     spacing: 8px;
-    Text { text: "Canvas Motion"; color: Theme.fg; font-size: Theme.fs; }
-    Select { options: ["Top-left to Center", "Top-right to Center", "Bottom-left to Center", "Bottom-right to Center", "Center Pop", "Zoom at Left", "Zoom at Center", "Zoom at Right", "Reverse to Corner", "Slide from Left", "Slide from Right", "Slide from Top", "Slide from Bottom", "Diagonal Fly-in", "Spring Settle", "Documentary Pan", "Fade and Scale", "Alternating Inset", "Breathing Loop", "In / Hold / Out"]; current <=> root.preset; }
-    Button { label: Keyframes.physics-favourites[9 + root.preset] ? "★ Favorite" : "☆ Favorite";
+    if !root.inspector-mode: Text { text: "Canvas Motion"; color: Theme.fg; font-size: Theme.fs; }
+    if !root.inspector-mode: Select { options: ["Top-left to Center", "Top-right to Center", "Bottom-left to Center", "Bottom-right to Center", "Center Pop", "Zoom at Left", "Zoom at Center", "Zoom at Right", "Reverse to Corner", "Slide from Left", "Slide from Right", "Slide from Top", "Slide from Bottom", "Diagonal Fly-in", "Spring Settle", "Documentary Pan", "Fade and Scale", "Alternating Inset", "Breathing Loop", "In / Hold / Out"]; current <=> root.preset; }
+    if !root.inspector-mode: Button { label: Keyframes.physics-favourites[9 + root.preset] ? "★ Favorite" : "☆ Favorite";
         clicked => { Keyframes.toggle-physics-favourite(9 + root.preset); } }
     if root.preset != 15 && root.preset != 18: Param { label: "Start Scale"; value <=> root.settings.start-scale; minimum: 0.05; maximum: 1; step: 0.01; fmt: ParamFormat.steps; }
     if root.preset != 15: Param { label: root.preset == 18 ? "Base Scale" : "End Scale"; value <=> root.settings.end-scale; minimum: 0.05; maximum: 1; step: 0.01; fmt: ParamFormat.steps; }
