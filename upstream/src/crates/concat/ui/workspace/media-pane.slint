@@ -1869,6 +1869,9 @@ export component MediaPane inherits Rectangle {
     property <int> physics-preset: 0;
     property <bool> canvas-motion-page: false;
     property <int> animation-page: 0;
+    // Canvas Presets targeting survives navigation and remains separate from animations.
+    property <bool> canvas-preset-images: true;
+    property <bool> canvas-preset-videos: true;
     /// The Audio page's shelf: 0 = Mine, 1 = Concat, 10 = Voices,
     /// 11 = Styles.
     property <int> audio-category;
@@ -2397,7 +2400,7 @@ export component MediaPane inherits Rectangle {
                     // to the sound is on the Effects page.
                     if root.tab == 10 && GpuCompatibility.enabled: VerticalLayout {
                         spacing: 1px;
-                        for label[index] in ["Animations", "Transform", "Canvas"]: CategoryRow {
+                        for label[index] in ["Animations", "Transform", "Canvas", "Canvas Presets"]: CategoryRow {
                             label: label; height: 30px;
                             current: root.animation-page == index;
                             clicked => { root.animation-page = index; }
@@ -2967,14 +2970,11 @@ export component MediaPane inherits Rectangle {
                 }
                 }
                     if root.animation-page == 1: MediaLayoutPanel { canvas: false; }
-                    if root.animation-page == 2: VerticalLayout {
-                        spacing: 8px;
-                        canvas-layout := MediaLayoutPanel { canvas: true; }
-                        CanvasPresetPanel {
-                            padding: 8px;
-                            images: canvas-layout.images;
-                            videos: canvas-layout.videos;
-                        }
+                    if root.animation-page == 2: MediaLayoutPanel { canvas: true; }
+                    if root.animation-page == 3: CanvasPresetPanel {
+                        padding: 8px;
+                        images <=> root.canvas-preset-images;
+                        videos <=> root.canvas-preset-videos;
                     }
                 }
 
