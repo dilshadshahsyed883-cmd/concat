@@ -9431,7 +9431,7 @@ impl Studio {
         let parameters=self.selected_transition().and_then(|c|c.transition_in.as_ref()).map(|t|&t.params);
         app.global::<crate::ui::TransitionControls>().set_params(parameters.and_then(|p|serde_json::to_string_pretty(p).ok()).unwrap_or_else(||"{}".into()).into());
         let keys = app.global::<Keyframes>();
-        let physics_stars: Vec<bool> = (0..27).filter_map(bulk_presets::animation_favourite_id)
+        let physics_stars: Vec<bool> = (0..28).filter_map(bulk_presets::animation_favourite_id)
             .map(|preset| self.prefs.physics_motion_favourites.iter().any(|id| id == preset))
             .collect();
         keys.set_physics_favourites(slint::ModelRc::new(VecModel::from(physics_stars)));
