@@ -36,4 +36,5 @@ jobs:
           bash -n deploy/manual-integration-release.sh
           python -m pip wheel --no-deps --wheel-dir /tmp/concat-web-wheel .
       - name: Explicit terminal-only release gate
-        run: echo 'PASS: CI only. Manually deploy a verified protected-integration SHA via the VPS terminal.'
+        run: |
+          echo 'PASS: CI only. Manually deploy a verified protected-integration SHA via the VPS terminal.'

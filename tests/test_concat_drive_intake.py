@@ -135,9 +135,23 @@ class IndependentDriveIntakeTests(unittest.TestCase):
 
     def test_corrupt_media_zip_rejected_before_upload(self):
         bundle(self.fixture, bad_media=True)
+        # Scan metadata must describe the corrupt bundle so this regression
+        # reaches media SHA-256 validation, rather than the Drive MD5 guard.
+        with self.media.connection() as con:
+            con.execute("UPDATE production_jobs SET drive_size=?,drive_md5=? WHERE id=1",
+                        (self.fixture.stat().st_size,
+                         hashlib.md5(self.fixture.read_bytes()).hexdigest()))
         self.queue.tick_intake()
         self.assertEqual(self.state()["state"], "Failed")
         self.assertIn("checksum", self.state()["error"].lower())
+        self.assertEqual(self.worker.uploads, [])
+
+    def test_drive_content_changed_after_scan_rejected_before_upload(self):
+        bundle(self.fixture, bad_media=True)
+        self.queue.tick_intake()
+        self.assertEqual(self.state()["state"], "Failed")
+        self.assertIn("content changed after the scan", self.state()["error"].lower())
+        self.assertFalse(self.queue.archive(1).exists())
         self.assertEqual(self.worker.uploads, [])
 
     def test_intake_not_counted_against_two_gpu_slots(self):
