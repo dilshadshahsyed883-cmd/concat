@@ -1979,6 +1979,35 @@ export component MediaPane inherits Rectangle {
     property <int> physics-preset: 0;
     property <bool> canvas-motion-page: false;
     property <int> animation-page: 0;
+    /// The Audio page's shelf: 0 = Mine, 1 = Concat, 10 = Voices,
+    /// 11 = Styles.
+    property <int> audio-category;
+    property <bool> sounds-open: true;
+    property <bool> voices-open: true;
+    property <bool> concat-open: true;
+    /// How far left the page strip can be pushed: nothing, while its chips
+    /// fit. See `strip`.
+    property <length> strip-floor: Math.min(0px, strip.width - strip.content-width);
+    property <bool> categories-open: true;
+    property <bool> generated-open: true;
+    property <bool> text-open: true;
+    /// 0 = Titles, 1 = Styles, 2 = Languages
+    property <int> text-category;
+    property <bool> stickers-open: true;
+    property <bool> transitions-open: true;
+    property <bool> effects-open: true;
+    property <bool> filters-open: true;
+    property <bool> adjustments-open: true;
+    /// 0 = Adjustment layer, 1 = LUTs
+    property <int> adjustments-category;
+    property <bool> templates-open: true;
+    /// The Effects page shows the sound's shelves rather than the
+    /// picture's: whichever heading's row was picked last.
+    property <bool> audio-shelf;
+    property <bool> audio-open: true;
+    /// The shelf the Effects page is reading from, in `Library`'s numbers.
+    property <int> effects-shelf: root.audio-shelf ? 2 : 1;
+
     property <int> animation-filter: 0;
     property <[AnimationCardData]> animation-basic-cards: [
         {index: 0, name: "Spring Zoom", family: "Physics", mark: "↗"},
@@ -2017,34 +2046,6 @@ export component MediaPane inherits Rectangle {
     changed animation-page => {
         Keyframes.animation-browser = root.tab == 10 && root.animation-page == 0 && GpuCompatibility.enabled;
     }
-    /// The Audio page's shelf: 0 = Mine, 1 = Concat, 10 = Voices,
-    /// 11 = Styles.
-    property <int> audio-category;
-    property <bool> sounds-open: true;
-    property <bool> voices-open: true;
-    property <bool> concat-open: true;
-    /// How far left the page strip can be pushed: nothing, while its chips
-    /// fit. See `strip`.
-    property <length> strip-floor: Math.min(0px, strip.width - strip.content-width);
-    property <bool> categories-open: true;
-    property <bool> generated-open: true;
-    property <bool> text-open: true;
-    /// 0 = Titles, 1 = Styles, 2 = Languages
-    property <int> text-category;
-    property <bool> stickers-open: true;
-    property <bool> transitions-open: true;
-    property <bool> effects-open: true;
-    property <bool> filters-open: true;
-    property <bool> adjustments-open: true;
-    /// 0 = Adjustment layer, 1 = LUTs
-    property <int> adjustments-category;
-    property <bool> templates-open: true;
-    /// The Effects page shows the sound's shelves rather than the
-    /// picture's: whichever heading's row was picked last.
-    property <bool> audio-shelf;
-    property <bool> audio-open: true;
-    /// The shelf the Effects page is reading from, in `Library`'s numbers.
-    property <int> effects-shelf: root.audio-shelf ? 2 : 1;
 
     /// The category column. In-out, because it is dragged.
     in-out property <length> sidebar-w: 104px;
