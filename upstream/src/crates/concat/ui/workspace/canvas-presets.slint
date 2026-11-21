@@ -69,7 +69,7 @@ export component CanvasPresetLibrary inherits VerticalLayout {
         CanvasPresets.selected = index + 1;
         CanvasPresets.choose(index + 1);
         LibraryFocus.page = 8;
-        LibraryFocus.selected-id = "concat.canvas-" + (index + 1);
+        LibraryFocus.selected-id = "concat.canvas-\{index + 1}";
         LibraryFocus.selected-name = name;
         LibraryFocus.selected-category = "Canvas Preset";
         LibraryFocus.selected-description = "Configure framing and target scope in the right inspector. Browsing does not apply a preset.";
