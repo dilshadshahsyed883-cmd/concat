@@ -4510,7 +4510,12 @@ impl Studio {
             self.notify(&t("studio.selectVideoImageClip"), true);
             return;
         }
-        let Some(duration) = self.transition_duration(clip, 0.5) else {
+        let requested = self.prefs.transition_default_duration
+            .filter(|value| value.is_finite() && (0.1..=5.0).contains(value))
+            .unwrap_or(0.5);
+        let intensity_default = self.prefs.transition_default_intensity
+            .filter(|value| value.is_finite() && (0.0..=1.0).contains(value));
+        let Some(duration) = self.transition_duration(clip, requested) else {
             self.notify(&t("studio.noRoomForTransition"), true);
             return;
         };
@@ -4520,12 +4525,33 @@ impl Studio {
                 transition_in: Some(Some(Transition {
                     id: id.to_owned(),
                     duration,
-                    intensity: None,
+                    intensity: intensity_default,
                     params: Default::default(),
                 })),
                 ..ClipPatch::default()
             },
         });
+    }
+
+    /// Only explicit user intent changes application defaults, never selection
+    /// or navigation. The project keeps its own authored transition values.
+    pub fn save_transition_default(&mut self, duration: f64, intensity: f64) {
+        if !duration.is_finite() || !(0.1..=5.0).contains(&duration)
+            || !intensity.is_finite() || !(0.0..=1.0).contains(&intensity) {
+            self.notify("Cannot save transition defaults outside supported ranges", true);
+            return;
+        }
+        self.prefs.transition_default_duration = Some(duration);
+        self.prefs.transition_default_intensity = Some(intensity);
+        self.prefs.save(&self.host.dirs);
+        self.notify("Default transition settings saved for new transitions", false);
+    }
+
+    pub fn reset_transition_default(&mut self) {
+        self.prefs.transition_default_duration = None;
+        self.prefs.transition_default_intensity = None;
+        self.prefs.save(&self.host.dirs);
+        self.notify("New transitions use bundled defaults again", false);
     }
 
     /// The clip whose incoming transition is selected: the one picked on
