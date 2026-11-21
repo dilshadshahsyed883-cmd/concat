@@ -844,7 +844,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             match concat_project::canvas_preset::Config::from_json(profile.as_str()) {
                 Ok(config) => {
                     let mut studio = shell.studio.borrow_mut();
-                    studio.prefs.canvas_default = Some(config);
+                    studio.prefs.canvas_default = serde_json::to_string(&config).ok();
                     studio.prefs.save(&studio.host.dirs);
                     app.global::<CanvasPresets>().set_default_status(
                         "Canvas default saved for future projects and restarts.".into());
@@ -872,8 +872,8 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         });
     });
     Shell::with(|shell, app| {
-        let remembered = shell.studio.borrow().prefs.canvas_default.clone()
-            .filter(|profile| profile.validate().is_ok())
+        let remembered = shell.studio.borrow().prefs.canvas_default.as_deref()
+            .and_then(|json| concat_project::canvas_preset::Config::from_json(json).ok())
             .unwrap_or_else(|| concat_project::canvas_preset::Config::preset(1)
                 .expect("sports canvas default"));
         app.global::<CanvasPresets>().set_selected(remembered.preset as i32);
