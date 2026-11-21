@@ -114,7 +114,9 @@
     if (request !== queueRequest) return;
     $("cr-queue-state").textContent =
       ({stopped:"Stopped", running:"Running", paused:"Paused"}[data.state] || data.state)
-      + " · " + data.active + "/" + data.concurrency + " active";
+      + " · GPU " + data.active + "/" + data.concurrency + " active"
+      + " · Drive " + (data.intake_active || 0) + " downloading/verifying"
+      + " · " + (data.ready_for_gpu || 0) + " ready";
     for (const [action, state] of [["start","stopped"],["pause","running"],["resume","paused"]]) {
       $("cr-"+action+"-queue").disabled = data.state !== state;
     }
