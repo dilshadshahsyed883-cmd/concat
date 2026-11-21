@@ -61,6 +61,10 @@ pub struct Preferences {
     /// like library favourites; older settings.json files default to none.
     #[serde(default)]
     pub physics_motion_favourites: Vec<String>,
+    /// Canvas composition profile stars, stored by stable id and kept separate
+    /// from animation and effect-package favourites. Old preferences default empty.
+    #[serde(default)]
+    pub canvas_preset_favourites: Vec<String>,
     /// The playhead stops at the end of the content instead of going where
     /// it is put. Off by default: a click past the last clip lands there, so
     /// a clip can be dropped at the playhead beyond everything else.
