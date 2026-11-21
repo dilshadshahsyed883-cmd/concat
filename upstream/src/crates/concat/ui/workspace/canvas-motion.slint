@@ -31,20 +31,20 @@ export component CanvasMotionPanel inherits VerticalLayout {
     if root.preset == 14: Param { label: "Spring Intensity"; value <=> root.settings.intensity; minimum: 0.2; maximum: 2; step: 0.05; fmt: ParamFormat.steps; }
     Param { label: "Background Blur"; value <=> root.settings.blur; minimum: 0; maximum: 1; step: 0.05; fmt: ParamFormat.steps; }
     Param { label: "Foreground Corners"; value <=> root.settings.corner-radius; minimum: 0; maximum: 0.2; step: 0.005; fmt: ParamFormat.steps; }
-    Param { label: "Random Seed"; value: root.settings.seed; changed(v) => { root.settings.seed = Math.round(v); } minimum: 0; maximum: 65535; step: 1; fmt: ParamFormat.steps; }
-    Param { label: "Start X"; value <=> root.settings.start-x; minimum: -0.5; maximum: 0.5; step: 0.01; fmt: ParamFormat.steps; }
-    Param { label: "Start Y"; value <=> root.settings.start-y; minimum: -0.5; maximum: 0.5; step: 0.01; fmt: ParamFormat.steps; }
-    Param { label: "End X"; value <=> root.settings.end-x; minimum: -0.5; maximum: 0.5; step: 0.01; fmt: ParamFormat.steps; }
-    Param { label: "End Y"; value <=> root.settings.end-y; minimum: -0.5; maximum: 0.5; step: 0.01; fmt: ParamFormat.steps; }
+    if root.preset == 17: Param { label: "Random Seed"; value: root.settings.seed; changed(v) => { root.settings.seed = Math.round(v); } minimum: 0; maximum: 65535; step: 1; fmt: ParamFormat.steps; }
+    if root.settings.custom-anchors && root.preset != 18: Param { label: "Start X"; value <=> root.settings.start-x; minimum: -0.5; maximum: 0.5; step: 0.01; fmt: ParamFormat.steps; }
+    if root.settings.custom-anchors && root.preset != 18: Param { label: "Start Y"; value <=> root.settings.start-y; minimum: -0.5; maximum: 0.5; step: 0.01; fmt: ParamFormat.steps; }
+    if root.settings.custom-anchors && root.preset != 18: Param { label: "End X"; value <=> root.settings.end-x; minimum: -0.5; maximum: 0.5; step: 0.01; fmt: ParamFormat.steps; }
+    if root.settings.custom-anchors && root.preset != 18: Param { label: "End Y"; value <=> root.settings.end-y; minimum: -0.5; maximum: 0.5; step: 0.01; fmt: ParamFormat.steps; }
     HorizontalLayout {
-        Check { checked: root.settings.reverse; toggled(on) => { root.settings.reverse = on; } }
-        Text { text: "Reverse"; color: Theme.fg; }
-        Check { checked: root.settings.custom-anchors; toggled(on) => { root.settings.custom-anchors = on; } }
-        Text { text: "Use custom X/Y anchors"; color: Theme.fg; }
+        if root.preset != 18: Check { checked: root.settings.reverse; toggled(on) => { root.settings.reverse = on; } }
+        if root.preset != 18: Text { text: "Reverse"; color: Theme.fg; }
+        if root.preset != 18: Check { checked: root.settings.custom-anchors; toggled(on) => { root.settings.custom-anchors = on; } }
+        if root.preset != 18: Text { text: "Use custom X/Y anchors"; color: Theme.fg; }
     }
-    Select { options: ["Linear", "Smooth"]; current: root.settings.easing; changed(index) => { root.settings.easing = index; } }
-    Button { label: "Apply Selected"; clicked => { Keyframes.apply-canvas-motion(root.preset, 0, root.images, root.videos, true, root.settings); } }
-    Button { label: "Apply All"; clicked => { Keyframes.apply-canvas-motion(root.preset, 0, root.images, root.videos, false, root.settings); } }
-    Button { label: "Apply Randomly"; clicked => { Keyframes.apply-canvas-motion(root.preset, 2, root.images, root.videos, root.selected-only, root.settings); } }
-    Button { label: "Apply Favorites Randomly"; clicked => { Keyframes.apply-canvas-motion(root.preset, 3, root.images, root.videos, root.selected-only, root.settings); } }
+    if root.preset != 18: Select { options: ["Linear", "Smooth"]; current: root.settings.easing; changed(index) => { root.settings.easing = index; } }
+    Button { label: "Apply Selected"; enabled: root.images || root.videos; clicked => { Keyframes.apply-canvas-motion(root.preset, 0, root.images, root.videos, true, root.settings); } }
+    Button { label: "Apply All"; enabled: root.images || root.videos; clicked => { Keyframes.apply-canvas-motion(root.preset, 0, root.images, root.videos, false, root.settings); } }
+    Button { label: "Apply Randomly"; enabled: root.images || root.videos; clicked => { Keyframes.apply-canvas-motion(root.preset, 2, root.images, root.videos, root.selected-only, root.settings); } }
+    Button { label: "Apply Favorites Randomly"; enabled: root.images || root.videos; clicked => { Keyframes.apply-canvas-motion(root.preset, 3, root.images, root.videos, root.selected-only, root.settings); } }
 }
