@@ -48,10 +48,17 @@ export component CanvasPresetPanel inherits VerticalLayout {
         font-size: Theme.fs-sm;
         wrap: word-wrap;
     }
-    HorizontalLayout {
-        Button { label: "Apply Selected"; enabled: root.images || root.videos; clicked => { CanvasPresets.apply(CanvasPresets.profile, false, root.images, root.videos); } }
-        Button { label: "Apply All"; enabled: root.images || root.videos; clicked => { CanvasPresets.apply(CanvasPresets.profile, true, root.images, root.videos); } }
-    }
+}
+
+// Kept outside the inspector scroller so Apply stays visible at small window
+// heights and 100/125/150% Windows display scaling.
+export component CanvasPresetApplyBar inherits HorizontalLayout {
+    in property <bool> images: true;
+    in property <bool> videos: true;
+    spacing: 8px;
+    padding: 8px;
+    Button { label: "Apply Selected"; enabled: root.images || root.videos; clicked => { CanvasPresets.apply(CanvasPresets.profile, false, root.images, root.videos); } }
+    Button { label: "Apply All"; enabled: root.images || root.videos; clicked => { CanvasPresets.apply(CanvasPresets.profile, true, root.images, root.videos); } }
 }
 
 export component CanvasPresetLibrary inherits VerticalLayout {
@@ -61,6 +68,14 @@ export component CanvasPresetLibrary inherits VerticalLayout {
     Button {
         label: root.favourites-only ? "★ Favorites" : "☆ Favorites";
         clicked => { root.favourites-only = !root.favourites-only; }
+    }
+    if root.favourites-only
+        && !(CanvasPresets.favourites.length >= 3 &&
+            (CanvasPresets.favourites[0] || CanvasPresets.favourites[1] || CanvasPresets.favourites[2])): Text {
+        text: "No starred Canvas presets. Turn off Favorites to browse all three.";
+        color: Theme.fg-muted;
+        font-size: Theme.fs-sm;
+        wrap: word-wrap;
     }
     for name[index] in root.names: Rectangle {
         property <bool> show-item: !root.favourites-only
