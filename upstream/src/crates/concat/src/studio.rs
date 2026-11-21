@@ -10628,6 +10628,21 @@ impl Studio {
         self.prefs.save(&self.host.dirs);
     }
 
+    /// Canvas preset stars are separate from animation and effects favourites.
+    /// Legacy numeric profiles remain valid; future families get new stable IDs.
+    pub fn toggle_canvas_preset_favourite(&mut self, preset: i32) {
+        if !(1..=3).contains(&preset) {
+            return;
+        }
+        let id = format!("canvas:{preset}");
+        if self.prefs.canvas_preset_favourites.iter().any(|entry| entry == &id) {
+            self.prefs.canvas_preset_favourites.retain(|entry| entry != &id);
+        } else {
+            self.prefs.canvas_preset_favourites.push(id);
+        }
+        self.prefs.save(&self.host.dirs);
+    }
+
     /// Takes every key off a field, leaving it its constant.
     pub fn clear_keys_on(&mut self, field: ClipField) {
         let Some(property) = Self::key_property_of(field) else {
@@ -11115,6 +11130,12 @@ impl Studio {
     /// The menus, the dialogs, the bin and the engine lists.
     pub fn publish_chrome(&self, app: &App, models: &Models) {
         let editor = app.global::<Editor>();
+        let canvas_stars: Vec<bool> = (1..=3)
+            .map(|id| format!("canvas:{id}"))
+            .map(|id| self.prefs.canvas_preset_favourites.iter().any(|held| held == &id))
+            .collect();
+        app.global::<crate::ui::CanvasPresets>()
+            .set_favourites(ModelRc::new(VecModel::from(canvas_stars)));
         #[cfg(windows)]
         {
             let profile = app.global::<crate::ui::GpuCompatibility>();
