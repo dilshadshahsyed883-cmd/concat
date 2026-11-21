@@ -63,7 +63,7 @@ pub struct Preferences {
     pub physics_motion_favourites: Vec<String>,
     /// Explicitly saved editor Canvas defaults. Unlike project data these only
     /// seed the Canvas editor; they never rewrite an existing project.
-    pub canvas_default: Option<concat_project::canvas_preset::Config>,
+    pub canvas_default: Option<String>,
     /// Optional defaults for NEW transition applications only; existing cuts
     /// continue to use their own project-stored duration and intensity.
     pub transition_default_duration: Option<f64>,
@@ -548,14 +548,25 @@ mod tests {
     fn canvas_editor_default_round_trips_and_legacy_file_has_none() {
         let config = concat_project::canvas_preset::Config::preset(2).unwrap();
         let prefs = Preferences {
-            canvas_default: Some(config.clone()),
+            canvas_default: Some(serde_json::to_string(&config).unwrap()),
             ..Preferences::default()
         };
         let json = serde_json::to_string(&prefs).unwrap();
         let restored: Preferences = serde_json::from_str(&json).unwrap();
-        assert_eq!(restored.canvas_default, Some(config));
+        assert_eq!(
+            restored.canvas_default.as_deref()
+                .and_then(|json| concat_project::canvas_preset::Config::from_json(json).ok()),
+            Some(config)
+        );
         let legacy: Preferences = serde_json::from_str(r#"{"dark":true}"#).unwrap();
         assert!(legacy.canvas_default.is_none());
+        // A malformed Canvas profile must not discard unrelated preferences.
+        let malformed: Preferences = serde_json::from_str(
+            r#"{"dark":true,"canvasDefault":"{not valid JSON"}"#).unwrap();
+        assert_eq!(malformed.dark, Some(true));
+        assert!(malformed.canvas_default.as_deref()
+            .and_then(|json| concat_project::canvas_preset::Config::from_json(json).ok())
+            .is_none());
     }
 
 }
