@@ -340,7 +340,7 @@ impl Studio {
             for index in 0..model.row_count() {
                 if let Some(card) = model.row_data(index) {
                     let starred = self.prefs.favourites.iter()
-                        .any(|id| id == card.id.as_str());
+                        .any(|id| id.as_str() == card.id.as_str());
                     if !ui.get_favourites_only() || starred {
                         shown.push(card);
                         stars.push(starred);
@@ -418,7 +418,7 @@ pub(crate) fn install(app: &App) {
                     return;
                 }
                 let starred = studio.prefs.favourites.iter()
-                    .any(|entry| entry == id.as_str());
+                    .any(|entry| entry.as_str() == id.as_str());
                 studio.library_favourite(id.as_str(), !starred);
             }
             shell.studio.borrow().publish(&app, &shell.models);
