@@ -122,6 +122,15 @@ export component ConfigPane inherits Rectangle {
     property <bool> on-transition: root.transition.present && !root.has-selection;
     in property <string> project-name: I18n.t("common.untitledProject");
     in property <string> project-folder: "—";
+    // A library inspection belongs to the current project, not to whichever
+    // project replaces it. Never keep stale clip/transition context on switch.
+    changed project-folder => {
+        LibraryFocus.page = -1;
+        LibraryFocus.selected-id = "";
+        LibraryFocus.selected-name = "";
+        LibraryFocus.selected-category = "";
+        LibraryFocus.selected-description = "";
+    }
     /// The active timeline, whose frame, rate and duration the rows below
     /// report. Named in the panel so a project with three cuts at three
     /// frames never leaves anyone wondering which one "1080 × 1920" is.
