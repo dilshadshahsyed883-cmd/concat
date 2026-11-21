@@ -95,6 +95,7 @@ with patch.object(web, 'health', return_value={}), patch.object(web, 'stats_payl
             health={}, ae={}, mode='simple')
         assert f'id="{input_id}" data-max-thumbnail-bytes="{LIMIT}"' in html
         assert 'maximum 50 MB' in html
+        assert 'concat_upload_preview.js?v=20261121-thumbnail-50mb' in html
 print('PASS Concat thumbnail admission, preflight and rendered limit')
 '''
         with tempfile.TemporaryDirectory() as directory:
