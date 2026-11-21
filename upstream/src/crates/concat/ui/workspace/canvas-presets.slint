@@ -5,6 +5,9 @@ export global CanvasPresets {
     in-out property <string> profile;
     callback choose(preset: int);
     callback apply(profile: string, all: bool, images: bool, videos: bool);
+    callback save-default(profile: string);
+    callback reset-default();
+    in-out property <string> default-status;
 }
 export component CanvasPresetPanel inherits VerticalLayout {
     in property <bool> images: true;
@@ -22,6 +25,17 @@ export component CanvasPresetPanel inherits VerticalLayout {
         height: 220px; background: Theme.field; border-radius: Theme.r;
         TextInput { x: 6px; y: 6px; width: parent.width - 12px; height: parent.height - 12px;
             text <=> CanvasPresets.profile; color: Theme.fg; font-size: Theme.fs-sm; wrap: word-wrap; }
+    }
+    HorizontalLayout {
+        spacing: 8px;
+        Button { label: "Save as Default"; clicked => { CanvasPresets.save-default(CanvasPresets.profile); } }
+        Button { label: "Reset Default"; clicked => { CanvasPresets.reset-default(); } }
+    }
+    if CanvasPresets.default-status != "": Text {
+        text: CanvasPresets.default-status;
+        color: Theme.fg-muted;
+        font-size: Theme.fs-sm;
+        wrap: word-wrap;
     }
     HorizontalLayout {
         Button { label: "Apply Selected"; enabled: root.images || root.videos; clicked => { CanvasPresets.apply(CanvasPresets.profile, false, root.images, root.videos); } }
