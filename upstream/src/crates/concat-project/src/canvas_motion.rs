@@ -28,9 +28,10 @@ pub enum CanvasMotionPreset {
     Alternating,
     BreathingLoop,
     InHoldOut,
+    FocusJourney,
 }
 impl CanvasMotionPreset {
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 21] = [
         Self::TopLeft,
         Self::TopRight,
         Self::BottomLeft,
@@ -51,6 +52,7 @@ impl CanvasMotionPreset {
         Self::Alternating,
         Self::BreathingLoop,
         Self::InHoldOut,
+        Self::FocusJourney,
     ];
     pub fn from_index(index: i32) -> Option<Self> {
         usize::try_from(index)
@@ -79,6 +81,7 @@ impl CanvasMotionPreset {
             Self::Alternating => "canvas-motion.alternating",
             Self::BreathingLoop => "canvas-motion.breathing-loop",
             Self::InHoldOut => "canvas-motion.in-hold-out",
+            Self::FocusJourney => "canvas-motion.focus-journey",
         }
     }
     pub fn anchors(self, seed: u64) -> ([f64; 2], [f64; 2]) {
@@ -95,6 +98,7 @@ impl CanvasMotionPreset {
             Self::SlideBottom => ([0.0, 0.38], [0.0, 0.0]),
             Self::Diagonal => ([-0.32, -0.32], [0.04, 0.04]),
             Self::Documentary => ([-0.03, 0.0], [0.03, 0.0]),
+            Self::FocusJourney => ([-0.32, 0.0], [0.32, 0.0]),
             Self::Alternating => {
                 if seed % 2 == 0 {
                     ([-0.32, -0.32], [0.0, 0.0])
@@ -238,15 +242,33 @@ impl CanvasMotionPreset {
                     + (start_scale - end_scale) * (1.0 - progress) * controls.strength)
                     .clamp(0.05, 1.0)
             };
-            let mut x = if self == Self::BreathingLoop {
-                from[0]
+            let (mut x, mut y) = if self == Self::BreathingLoop {
+                (from[0], from[1])
+            } else if self == Self::FocusJourney {
+                // Two independent smooth legs with a fixed pause at the
+                // editable middle anchor. Reverse follows the same three
+                // checkpoints in the opposite direction.
+                let hold = (controls.focus_hold_seconds * controls.speed
+                    / controls.duration_seconds).clamp(0.0, 0.8);
+                let leg = (1.0 - hold) / 2.0;
+                let (a, b, t) = if p < leg {
+                    (from, controls.focus_middle, (p / leg).clamp(0.0, 1.0))
+                } else if p <= leg + hold {
+                    (controls.focus_middle, controls.focus_middle, 0.0)
+                } else {
+                    (controls.focus_middle, to,
+                        ((p - leg - hold) / leg).clamp(0.0, 1.0))
+                };
+                let q = match controls.easing {
+                    MotionEasing::Linear => t,
+                    MotionEasing::Smooth => t * t * (3.0 - 2.0 * t),
+                };
+                (a[0] + (b[0] - a[0]) * q, a[1] + (b[1] - a[1]) * q)
             } else {
-                from[0] + (to[0] - from[0]) * eased
-            };
-            let mut y = if self == Self::BreathingLoop {
-                from[1]
-            } else {
-                from[1] + (to[1] - from[1]) * eased
+                (
+                    from[0] + (to[0] - from[0]) * eased,
+                    from[1] + (to[1] - from[1]) * eased,
+                )
             };
             // Conservative bounds also fit portrait sources, whose fitted width is smaller.
             let room = (1.0 - scale) / 2.0;
@@ -327,6 +349,8 @@ pub struct CanvasMotionControls {
     /// Zero means automatically hold until exit begins near the clip end.
     pub hold_seconds: f64,
     pub exit_seconds: f64,
+    pub focus_middle: [f64; 2],
+    pub focus_hold_seconds: f64,
     pub delay_seconds: f64,
     pub speed: f64,
     pub strength: f64,
@@ -347,6 +371,8 @@ impl Default for CanvasMotionControls {
             entry_seconds: 0.5,
             hold_seconds: 0.0,
             exit_seconds: 0.5,
+            focus_middle: [0.0, 0.0],
+            focus_hold_seconds: 0.5,
             delay_seconds: 0.0,
             speed: 1.0,
             strength: 1.0,
@@ -372,6 +398,10 @@ impl CanvasMotionControls {
                 .all(|v| v.is_finite() && *v > 0.0 && *v <= 3600.0)
             && self.hold_seconds.is_finite()
             && (0.0..=3600.0).contains(&self.hold_seconds)
+            && self.focus_hold_seconds.is_finite()
+            && (0.0..=3600.0).contains(&self.focus_hold_seconds)
+            && self.focus_middle.into_iter()
+                .all(|v| v.is_finite() && (-0.45..=0.45).contains(&v))
             && self.delay_seconds.is_finite()
             && self.delay_seconds >= 0.0
             && self.delay_seconds <= 3600.0
@@ -527,6 +557,26 @@ mod tests {
         // Explicit hold ends the animation early; remaining frames stay hidden.
         assert!(custom.value_at(KeyProperty::Opacity, 0.22) < clip.opacity);
         assert_eq!(custom.value_at(KeyProperty::Opacity, 0.5), 0.0);
+    }
+
+    #[test]
+    fn focus_journey_reaches_and_holds_editable_middle_anchor() {
+        let clip = Clip::blank("c1", "T1", ClipKind::Video, "video", 0.0, 4.0);
+        let controls = CanvasMotionControls {
+            focus_middle: [0.1, -0.1],
+            focus_hold_seconds: 0.6,
+            ..Default::default()
+        };
+        let keys = CanvasMotionPreset::FocusJourney.keys(&clip, 1.0 / 30.0, controls).unwrap();
+        let mut after = clip.clone();
+        for k in keys { after.set_key(k.property, k.at, k.value, k.ease); }
+        // 3-second journey centers on its middle point at 1.5 seconds.
+        assert!((after.value_at(KeyProperty::OffsetX, 1.5 / 4.0) - 0.1).abs() < 1e-8);
+        assert!((after.value_at(KeyProperty::OffsetY, 1.5 / 4.0) + 0.1).abs() < 1e-8);
+        assert!((after.value_at(KeyProperty::OffsetX, 1.4 / 4.0) - 0.1).abs() < 1e-8);
+        assert!((after.value_at(KeyProperty::OffsetX, 1.6 / 4.0) - 0.1).abs() < 1e-8);
+        assert_eq!(CanvasMotionPreset::from_index(20), Some(CanvasMotionPreset::FocusJourney));
+        assert_eq!(CanvasMotionPreset::FocusJourney.id(), "canvas-motion.focus-journey");
     }
 
     #[test]
