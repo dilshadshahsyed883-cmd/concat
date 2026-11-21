@@ -1903,6 +1903,12 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     editor.on_transition_intensity_set(on_window!(|state, amount: f32| {
         state.set_transition_intensity(amount as f64);
     }));
+    editor.on_transition_default_save(on_window!(|state, seconds: f32, amount: f32| {
+        state.save_transition_default(seconds as f64, amount as f64);
+    }));
+    editor.on_transition_default_reset(on_window!(|state| {
+        state.reset_transition_default();
+    }));
 
     // ── the context menu ──
     editor.on_clip_context(on_window!(|state, id: SharedString| {
