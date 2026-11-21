@@ -146,6 +146,12 @@ impl CanvasMotionPreset {
         if let Some(anchor) = controls.end_anchor {
             to = anchor;
         }
+        // A breathing zoom stays centered; user-authored path controls are
+        // reserved for motion presets that actually travel across the frame.
+        if self == Self::BreathingLoop {
+            from = [0.0, 0.0];
+            to = [0.0, 0.0];
+        }
         let delay = (controls.delay_seconds / frame).round().min(last - 1.0);
         if self == Self::InHoldOut && last - delay < 2.0 {
             return Err(PresetError::TooShort);
