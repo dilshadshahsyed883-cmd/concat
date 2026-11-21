@@ -10631,7 +10631,7 @@ impl Studio {
     /// Canvas preset stars are separate from animation and effects favourites.
     /// Legacy numeric profiles remain valid; future families get new stable IDs.
     pub fn toggle_canvas_preset_favourite(&mut self, preset: i32) {
-        if !(1..=3).contains(&preset) {
+        if !(1..=8).contains(&preset) {
             return;
         }
         let id = format!("canvas:{preset}");
@@ -11130,7 +11130,7 @@ impl Studio {
     /// The menus, the dialogs, the bin and the engine lists.
     pub fn publish_chrome(&self, app: &App, models: &Models) {
         let editor = app.global::<Editor>();
-        let canvas_stars: Vec<bool> = (1..=3)
+        let canvas_stars: Vec<bool> = (1..=8)
             .map(|id| format!("canvas:{id}"))
             .map(|id| self.prefs.canvas_preset_favourites.iter().any(|held| held == &id))
             .collect();
