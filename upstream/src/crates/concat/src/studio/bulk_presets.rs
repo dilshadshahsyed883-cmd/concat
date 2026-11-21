@@ -27,7 +27,7 @@ pub(super) fn animation_favourite_id(index: i32) -> Option<&'static str> {
     match index {
         0..=5 => PhysicsPreset::from_index(index).map(PhysicsPreset::id),
         6 => Some("motion.push-in"), 7 => Some("motion.pan-right"), 8 => Some("motion.fade-in"),
-        9..=26 => CanvasMotionPreset::from_index(index-9).map(CanvasMotionPreset::id),
+        9..=27 => CanvasMotionPreset::from_index(index-9).map(CanvasMotionPreset::id),
         _ => None,
     }
 }
