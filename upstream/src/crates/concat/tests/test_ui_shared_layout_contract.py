@@ -39,7 +39,7 @@ class SharedLayoutContractTests(unittest.TestCase):
         self.assertIn("root.inspected();", self.media)
         self.assertIn("Library.favourite(entry.id, on);", self.media)
         self.assertIn("auditions: false;", self.media)
-        self.assertIn("applied(id, label) => { root.apply-effect(id); }", self.media)
+        self.assertIn("root.apply-effect(id);", self.media)
         self.assertIn("applied(id, label) => { root.apply-transition(id); }", self.media)
         self.assertIn("payload-kind: \"filter\";", self.media)
         self.assertIn("auditioned(id) => { root.audition-filter(id); }", self.media)
