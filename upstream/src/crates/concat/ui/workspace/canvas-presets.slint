@@ -1,24 +1,35 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { Theme } from "../theme/theme.slint";
 import { Button } from "../primitives/modal.slint";
+import { Check } from "../inspector/controls.slint";
 export global CanvasPresets {
     in-out property <string> profile;
     callback choose(preset: int);
     callback apply(profile: string, all: bool, images: bool, videos: bool);
 }
 export component CanvasPresetPanel inherits VerticalLayout {
-    in property <bool> images: true;
-    in property <bool> videos: true;
+    in-out property <bool> images: true;
+    in-out property <bool> videos: true;
+    property <bool> advanced-open: false;
     spacing: 8px;
     Text { text: "Canvas Presets"; color: Theme.fg; font-size: Theme.fs; }
+    HorizontalLayout {
+        spacing: 8px;
+        Check { checked: root.images; toggled(on) => { root.images = on; } }
+        Text { text: "Images"; color: Theme.fg; vertical-alignment: center; }
+        Check { checked: root.videos; toggled(on) => { root.videos = on; } }
+        Text { text: "Video Clips"; color: Theme.fg; vertical-alignment: center; }
+    }
     HorizontalLayout {
         Button { label: "Sports Frame"; clicked => { CanvasPresets.choose(1); } }
         Button { label: "Orange Frame"; clicked => { CanvasPresets.choose(2); } }
         Button { label: "Blurred Fill"; clicked => { CanvasPresets.choose(3); } }
     }
-    Text { text: "Canvas changes framing, borders and background only. No headline/caption bar is generated. Add real captions in Text > Captions. Legacy JSON headline fields are ignored; optional badge and visual layout settings remain editable.";
-        color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
-    Rectangle {
+    Button {
+        label: root.advanced-open ? "Hide Advanced JSON" : "Advanced JSON";
+        clicked => { root.advanced-open = !root.advanced-open; }
+    }
+    if root.advanced-open: Rectangle {
         height: 220px; background: Theme.field; border-radius: Theme.r;
         TextInput { x: 6px; y: 6px; width: parent.width - 12px; height: parent.height - 12px;
             text <=> CanvasPresets.profile; color: Theme.fg; font-size: Theme.fs-sm; wrap: word-wrap; }
