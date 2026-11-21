@@ -9461,6 +9461,17 @@ impl Studio {
             .map(|preset| self.prefs.physics_motion_favourites.iter().any(|id| id == preset))
             .collect();
         keys.set_physics_favourites(slint::ModelRc::new(VecModel::from(physics_stars)));
+        // These stable particle package IDs use the same preference store as
+        // effect-library stars, so Favorites Randomly never sees a second list.
+        let particle_stars = [
+            "stars", "gold-sparkles", "embers", "fireflies", "bokeh",
+            "dust-motes", "snow", "rain", "ash", "light-leaks",
+            "shooting-stars", "confetti",
+        ].into_iter().map(|id| {
+            self.prefs.favourites.iter().any(|saved| saved == &format!("concat.particles-{id}"))
+        }).collect::<Vec<_>>();
+        app.global::<crate::ui::ParticleBulk>()
+            .set_favourites(slint::ModelRc::new(VecModel::from(particle_stars)));
         // The Keyframes panel: set whole, since a row holds a model of its
         // keys and cannot be compared for a diff.
         models.key_editor_rows.set_vec(self.key_editor_rows());
