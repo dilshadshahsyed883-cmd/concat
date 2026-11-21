@@ -3,6 +3,7 @@ import { Theme } from "../theme/theme.slint";
 import { Button } from "../primitives/modal.slint";
 import { IconButton } from "../primitives/panel.slint";
 import { Glyph } from "../icons.slint";
+import { LibraryFocus } from "library-focus.slint";
 export global CanvasTargets {
     in-out property <bool> images: true;
     in-out property <bool> videos: true;
@@ -64,6 +65,15 @@ export component CanvasPresetApplyBar inherits HorizontalLayout {
 export component CanvasPresetLibrary inherits VerticalLayout {
     property <[string]> names: ["Sports Frame", "Orange Frame", "Blurred Fill"];
     property <bool> favourites-only: false;
+    function inspect(index: int, name: string) {
+        CanvasPresets.selected = index + 1;
+        CanvasPresets.choose(index + 1);
+        LibraryFocus.page = 8;
+        LibraryFocus.selected-id = "concat.canvas-" + (index + 1);
+        LibraryFocus.selected-name = name;
+        LibraryFocus.selected-category = "Canvas Preset";
+        LibraryFocus.selected-description = "Configure framing and target scope in the right inspector. Browsing does not apply a preset.";
+    }
     spacing: 8px;
     Button {
         label: root.favourites-only ? "★ Favorites" : "☆ Favorites";
@@ -110,10 +120,14 @@ export component CanvasPresetLibrary inherits VerticalLayout {
             width: parent.width - 38px;
             height: parent.height;
             mouse-cursor: pointer;
-            clicked => {
-                CanvasPresets.selected = index + 1;
-                CanvasPresets.choose(index + 1);
-            }
+            clicked => { root.inspect(index, name); }
+        }
+        IconButton {
+            x: parent.width - self.width - 5px;
+            y: 35px;
+            glyph: Glyph.info;
+            label: "Inspect " + name + " without applying";
+            clicked => { root.inspect(index, name); }
         }
         IconButton {
             x: parent.width - self.width - 5px;
