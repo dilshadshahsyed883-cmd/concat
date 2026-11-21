@@ -15,13 +15,14 @@ export component CanvasMotionPanel inherits VerticalLayout {
     Select { options: ["Top-left to Center", "Top-right to Center", "Bottom-left to Center", "Bottom-right to Center", "Center Pop", "Zoom at Left", "Zoom at Center", "Zoom at Right", "Reverse to Corner", "Slide from Left", "Slide from Right", "Slide from Top", "Slide from Bottom", "Diagonal Fly-in", "Spring Settle", "Documentary Pan", "Fade and Scale", "Alternating Inset"]; current <=> root.preset; }
     Button { label: Keyframes.physics-favourites[9 + root.preset] ? "★ Favorite" : "☆ Favorite";
         clicked => { Keyframes.toggle-physics-favourite(9 + root.preset); } }
-    Param { label: "Start Scale"; value <=> root.settings.start-scale; minimum: 0.05; maximum: 1; step: 0.01; fmt: ParamFormat.steps; }
-    Param { label: "End Scale"; value <=> root.settings.end-scale; minimum: 0.05; maximum: 1; step: 0.01; fmt: ParamFormat.steps; }
+    if root.preset != 15: Param { label: "Start Scale"; value <=> root.settings.start-scale; minimum: 0.05; maximum: 1; step: 0.01; fmt: ParamFormat.steps; }
+    if root.preset != 15: Param { label: "End Scale"; value <=> root.settings.end-scale; minimum: 0.05; maximum: 1; step: 0.01; fmt: ParamFormat.steps; }
+    if root.preset == 15: Text { text: "Documentary Pan uses fixed base scale 0.88 → 0.96 (adjustable via Strength)."; color: Theme.fg-muted; wrap: word-wrap; font-size: Theme.fs-sm; }
     Param { label: "Motion Duration (seconds)"; value <=> root.settings.duration; minimum: 0.05; maximum: 60; step: 0.1; fmt: ParamFormat.steps; }
     Param { label: "Delay (seconds)"; value <=> root.settings.delay; minimum: 0; maximum: 60; step: 0.1; fmt: ParamFormat.steps; }
     Param { label: "Speed"; value <=> root.settings.speed; minimum: 0.25; maximum: 3; step: 0.05; fmt: ParamFormat.steps; }
     Param { label: "Strength"; value <=> root.settings.strength; minimum: 0.1; maximum: 2; step: 0.05; fmt: ParamFormat.steps; }
-    Param { label: "Physics Intensity"; value <=> root.settings.intensity; minimum: 0.2; maximum: 2; step: 0.05; fmt: ParamFormat.steps; }
+    if root.preset == 14: Param { label: "Spring Intensity"; value <=> root.settings.intensity; minimum: 0.2; maximum: 2; step: 0.05; fmt: ParamFormat.steps; }
     Param { label: "Background Blur"; value <=> root.settings.blur; minimum: 0; maximum: 1; step: 0.05; fmt: ParamFormat.steps; }
     Param { label: "Foreground Corners"; value <=> root.settings.corner-radius; minimum: 0; maximum: 0.2; step: 0.005; fmt: ParamFormat.steps; }
     Param { label: "Random Seed"; value: root.settings.seed; changed(v) => { root.settings.seed = Math.round(v); } minimum: 0; maximum: 65535; step: 1; fmt: ParamFormat.steps; }
