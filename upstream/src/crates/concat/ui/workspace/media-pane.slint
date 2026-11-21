@@ -2481,6 +2481,13 @@ export component MediaPane inherits Rectangle {
                         }
                         if root.filters-open: VerticalLayout {
                             spacing: 1px;
+                            // All is a browsable view, never an applied filter.
+                            CategoryRow {
+                                height: 24px;
+                                label: "All";
+                                current: Library.view(0).category == "All";
+                                clicked => { Library.category-changed(0, "All"); }
+                            }
                             for label[index] in root.filter-groups: CategoryRow {
                                 height: 24px;
                                 label: label;

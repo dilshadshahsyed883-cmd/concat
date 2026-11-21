@@ -4,7 +4,7 @@ format = 2
 id = "concat.look.8k"
 name = "8K"
 kind = "filter"
-category = "Timeline Looks"
+category = "Detail & Clarity"
 order = 2
 description = "Detail/sharpen preset; not an upscaler."
 

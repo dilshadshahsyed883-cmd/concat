@@ -4,7 +4,7 @@ format = 2
 id = "concat.look.city-lights"
 name = "City Lights"
 kind = "filter"
-category = "Timeline Looks"
+category = "Cinematic & Film"
 order = 12
 description = "SDR whole-timeline color grading preset."
 

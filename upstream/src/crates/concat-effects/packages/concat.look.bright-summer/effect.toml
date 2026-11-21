@@ -4,7 +4,7 @@ format = 2
 id = "concat.look.bright-summer"
 name = "Bright Summer"
 kind = "filter"
-category = "Timeline Looks"
+category = "Vivid & Colorful"
 order = 3
 description = "SDR whole-timeline color grading preset."
 

@@ -2438,8 +2438,9 @@ impl Studio {
         studio.handle(crate::panes::Msg::Settings(
             crate::panes::settings::SettingsMsg::Restore,
         ));
-        // The effects shelf starts on "All", not whatever a stale default
-        // would leave it on.
+        // Filters and Effects both start on All; category tabs only narrow browsing.
+        studio.library[0].category = "All".to_owned();
+        studio.library[0].group = -1;
         studio.library[1].category = "All".to_owned();
         studio.library[1].group = -1;
         studio

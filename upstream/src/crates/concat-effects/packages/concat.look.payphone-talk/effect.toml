@@ -4,7 +4,7 @@ format = 2
 id = "concat.look.payphone-talk"
 name = "Payphone Talk"
 kind = "filter"
-category = "Timeline Looks"
+category = "Cinematic & Film"
 order = 15
 description = "SDR whole-timeline color grading preset."
 
