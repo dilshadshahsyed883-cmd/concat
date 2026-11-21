@@ -1853,7 +1853,10 @@ export component MediaPane inherits Rectangle {
     // Opens the existing speech/captions dialog (including SRT and Whisper).
     callback generate-captions();
     property <string> active-caption-preset: "cuda-caption.classic-subtitle";
-    changed text-category => { CaptionPresetPreview.scope(root.tab == 1 && root.text-category == 1 && GpuCompatibility.enabled); }
+    changed text-category => {
+        CaptionPresetPreview.scope(root.tab == 1 && root.text-category == 1 && GpuCompatibility.enabled);
+        if (root.tab == 1) { root.show-library(); }
+    }
     /// Stickers page: add the figure `shape` names at the playhead, as a
     /// clip called `label`.
     callback add-shape(shape: string, label: string);
@@ -1944,7 +1947,6 @@ export component MediaPane inherits Rectangle {
     property <bool> text-open: true;
     /// 0 = Titles, 1 = Styles, 2 = Languages
     property <int> text-category;
-    changed text-category => { if (root.tab == 1) { root.show-library(); } }
     property <bool> stickers-open: true;
     property <bool> transitions-open: true;
     property <bool> effects-open: true;
