@@ -6,6 +6,7 @@ import { GpuCompatibility } from "../gpu-compatibility.slint";
 import { Button } from "../primitives/modal.slint";
 import { I18n } from "../i18n.slint";
 import { Theme, Fmt, Glyph, Icon, Payload, Tip } from "../primitives/primitives.slint";
+import { IconButton } from "../primitives/panel.slint";
 import { Pane, PaneScroll } from "pane.slint";
 import { HairlineSplitter } from "splitter.slint";
 import { PaneKind, PaneSwitcher } from "pane-switcher.slint";
@@ -935,6 +936,10 @@ component CatalogueCard inherits Rectangle {
     /// Transitions and audio effects have nothing to show but their name,
     /// and a name in a box says it in a third of the room.
     in property <bool> compact;
+    // Star actions are independent from click/double-click/drag application.
+    in property <bool> favouriteable: false;
+    in property <bool> favourite: false;
+    callback favourited(on: bool);
 
     property <float> sweep: card.has-hover ? 1.0 : 0.0;
     animate sweep { duration: 1.2s; easing: ease-in-out; iteration-count: -1; }
@@ -1100,6 +1105,17 @@ component CatalogueCard inherits Rectangle {
             }
         }
     }
+    // Top-level overlay: never bubbles into the DragArea / card apply handler.
+    // IconButton supplies keyboard Space/Enter and an accessible label.
+    if root.favouriteable: IconButton {
+        x: 4px;
+        y: 4px;
+        glyph: Glyph.mask-star;
+        checked: root.favourite;
+        label: (root.favourite ? "Remove " : "Add ") + root.item.label + (root.favourite ? " from favorites" : " to favorites");
+        clicked => { root.favourited(!root.favourite); }
+    }
+
 }
 
 // The text page: the one title style that exists, as a card. Clicking adds a
@@ -1323,6 +1339,9 @@ export component ShelfGrid inherits Rectangle {
             glyph: root.glyph,
         };
         compact: root.compact;
+        favouriteable: true;
+        favourite: entry.favourite;
+        favourited(on) => { Library.favourite(entry.id, on); }
         payload: root.payload-kind == "" ? ""
             : "\{root.payload-kind}:\{entry.id}:\{entry.name}";
         auditions: root.auditions;
@@ -1426,6 +1445,10 @@ export component ShelfSearch inherits HorizontalLayout {
         edited(text) => { Library.query-changed(root.shelf, text); }
         property <string> held: Library.view(root.shelf).query;
         changed held => { self.text = self.held; }
+    }
+    Button {
+        label: Library.view(root.shelf).favourites ? "★ Favorites" : "☆ Favorites";
+        clicked => { Library.favourites-changed(root.shelf, !Library.view(root.shelf).favourites); }
     }
 }
 
@@ -2795,6 +2818,12 @@ export component MediaPane inherits Rectangle {
                         // Transitions apply directly on single-click — no audition overlay.
                         auditions: false;
                         applied(id, label) => { root.apply-transition(id); }
+                    }
+                    if root.catalogue-transitions.length == 0: Text {
+                        text: Library.view(3).favourites ? "No starred transitions in this view. Unstar the Favorites filter to browse all." : "No transitions match the current search or category.";
+                        color: Theme.fg-muted;
+                        font-size: Theme.fs-sm;
+                        wrap: word-wrap;
                     }
                 }
 
