@@ -106,7 +106,8 @@ class IndependentDriveIntakeTests(unittest.TestCase):
         from app.modules.concat.engine.cloud_render_production import WorkerWait
         self.queue.worker_factory = lambda pinned: (_ for _ in ()).throw(WorkerWait("offline"))
         self.queue.tick()
-        self.assertEqual(self.state()["state"], "Waiting for Worker")
+        self.assertEqual(self.state()["state"], "Ready for GPU")
+        self.assertEqual(self.queue.snapshot()["active"], 0)
         self.assertTrue(self.queue.archive(1).is_file())
         self.assertEqual(self.download_calls, 1)
         self.queue.worker_factory = lambda pinned: self.worker
