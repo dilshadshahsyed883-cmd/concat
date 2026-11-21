@@ -118,13 +118,15 @@ jobs:
           mkdir -p ffmpeg-dev
           tar -xf ffmpeg.tar.xz -C ffmpeg-dev --strip-components=1
           echo "FFMPEG_DIR=$PWD/ffmpeg-dev" >> "$GITHUB_ENV"
-      - name: ONNX Runtime dependency
+      - name: Pinned ONNX Runtime 1.28.0 Linux native SDK from official Microsoft NuGet
         working-directory: upstream
         run: |
+          set -euo pipefail
           stem="onnxruntime-linux-x64-$ORT_VERSION"
-          scripts/ci/fetch.sh onnxruntime-linux-x64 onnxruntime.tgz
-          tar -xzf onnxruntime.tgz
-          ln -sf "libonnxruntime.so.$ORT_VERSION" "$stem/lib/libonnxruntime.so"
+          # Same-version official NuGet replaces unavailable GitHub release archive.
+          # fetch.sh verifies the pinned SHA-256 in scripts/ci/deps.lock.
+          scripts/ci/fetch.sh onnxruntime-nuget-1.28.0 onnxruntime.nupkg
+          python3 ../tools/prepare_ort_nuget_linux.py onnxruntime.nupkg "$PWD/$stem"
           {
             echo "ORT_LIB_LOCATION=$PWD/$stem/lib"
             echo "ORT_PREFER_DYNAMIC_LINK=1"
