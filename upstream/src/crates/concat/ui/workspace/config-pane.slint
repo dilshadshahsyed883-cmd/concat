@@ -7,10 +7,10 @@ import { Button, Theme, SegmentedControl } from "../primitives/primitives.slint"
 import { Select } from "../primitives/select.slint";
 import { Pane, PaneBody, PaneScroll } from "pane.slint";
 import { LibraryFocus } from "library-focus.slint";
-import { CanvasPresetPanel, CanvasTargets } from "canvas-presets.slint";
+import { CanvasPresetPanel, CanvasPresetApplyBar, CanvasTargets } from "canvas-presets.slint";
 import { MediaLayoutPanel } from "media-layout.slint";
-import { ParticleEffectsPanel } from "particle-effects.slint";
-import { CaptionPresetPreviewPanel } from "caption-preset-preview.slint";
+import { ParticleEffectsPanel, ParticleApplyBar } from "particle-effects.slint";
+import { CaptionPresetPreview, CaptionPresetPreviewPanel, CaptionPresetApplyBar } from "caption-preset-preview.slint";
 import { PaneKind, PaneSwitcher } from "pane-switcher.slint";
 import { EffectData } from "../demo/effects-panel.slint";
 import {
@@ -428,6 +428,7 @@ export component ConfigPane inherits Rectangle {
             padding: 0px;
             spacing: 0px;
             PaneScroll {
+                vertical-stretch: 1;
                 VerticalLayout {
                     spacing: 8px;
                     padding: 8px;
@@ -566,6 +567,19 @@ export component ConfigPane inherits Rectangle {
                     }
                 }
             }
+            // The canvas, particle, and caption actions remain visible below
+            // the scrollable settings at narrow sizes and Windows DPI scaling.
+            if LibraryFocus.page == 8 || LibraryFocus.page == 9 ||
+                (LibraryFocus.page == 6 && CaptionPresetPreview.chosen != ""): Rectangle {
+                height: 1px;
+                background: Theme.line;
+            }
+            if LibraryFocus.page == 8: CanvasPresetApplyBar {
+                images: CanvasTargets.images;
+                videos: CanvasTargets.videos;
+            }
+            if LibraryFocus.page == 9: ParticleApplyBar { }
+            if LibraryFocus.page == 6 && CaptionPresetPreview.chosen != "": CaptionPresetApplyBar { }
         }
 
         // ── details ──────────────────────────────────────────────────────
