@@ -525,7 +525,7 @@ mod tests {
             custom.set_key(key.property, key.at, key.value, key.ease);
         }
         // Explicit hold ends the animation early; remaining frames stay hidden.
-        assert!(custom.value_at(KeyProperty::Opacity, 0.15) < clip.opacity);
+        assert!(custom.value_at(KeyProperty::Opacity, 0.22) < clip.opacity);
         assert_eq!(custom.value_at(KeyProperty::Opacity, 0.5), 0.0);
     }
 
