@@ -276,9 +276,15 @@ export component ConfigPane inherits Rectangle {
     /// anything at all on a title — so the index is pulled back in when the
     /// shape of the strip changes, and left alone when it has not.
     property <ClipKind> strip-kind;
+    property <string> browsing-selection-id;
     changed selected => {
-        // Explicit timeline selection takes precedence over library browsing.
-        if (root.selected.present) { LibraryFocus.page = -1; }
+        // Only an actual change of timeline selection closes browsing.
+        // Preview/property publishes of the *same* clip must not kick the
+        // user out of Canvas, Transitions or Effects settings.
+        if (root.selected.id != root.browsing-selection-id) {
+            root.browsing-selection-id = root.selected.id;
+            LibraryFocus.page = -1;
+        }
         if (root.selected.kind != root.strip-kind) {
             root.strip-kind = root.selected.kind;
             // Clamped rather than reset: going from a video to a still should
