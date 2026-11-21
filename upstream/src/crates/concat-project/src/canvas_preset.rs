@@ -77,15 +77,32 @@ pub struct Config {
     pub background_color: String,
     pub background_tint: String,
     pub tint_opacity: f64,
+    /// Optional native shape shadow. Defaults preserve old v1 profiles.
+    #[serde(default)]
+    pub shadow_opacity: f64,
+    #[serde(default)]
+    pub shadow_offset: f64,
+    #[serde(default = "default_shadow_color")]
+    pub shadow_color: String,
+    /// Extra lower margin of a photo-print mat, as a canvas fraction.
+    #[serde(default)]
+    pub mat_bottom: f64,
+    #[serde(default = "default_mat_color")]
+    pub mat_color: String,
+    /// Foreground and native decorative shape tilt; legacy profiles keep their source rotation.
+    #[serde(default)]
+    pub rotation: f64,
     pub headline: Label,
     pub badge: Label,
 }
+fn default_shadow_color() -> String { "#000000".into() }
+fn default_mat_color() -> String { "#ffffff".into() }
 fn color(s: &str) -> bool {
     matches!(s.len(), 7 | 9) && s.starts_with('#') && s[1..].bytes().all(|b| b.is_ascii_hexdigit())
 }
 impl Config {
     pub fn preset(number: u32) -> Option<Self> {
-        if !(1..=3).contains(&number) {
+        if !(1..=8).contains(&number) {
             return None;
         }
         let (border, bg, fg, text, bar, weight, size) = match number {
@@ -198,7 +215,7 @@ impl Config {
             outline_width: 0.0,
             uppercase: true,
         };
-        Some(Self {
+        let mut config = Self {
             version: 1,
             preset: number,
             foreground: fg,
@@ -216,12 +233,56 @@ impl Config {
             background_color: "#000000".into(),
             background_tint: "#000000".into(),
             tint_opacity: 0.0,
+            shadow_opacity: 0.0,
+            shadow_offset: 0.0,
+            shadow_color: default_shadow_color(),
+            mat_bottom: 0.0,
+            mat_color: default_mat_color(),
+            rotation: 0.0,
             headline,
             badge,
-        })
+        };
+        // ID 3 already is Adaptive Blur: do not introduce a duplicate preset.
+        // IDs 1 and 2 stay untouched legacy styles, regardless of their colors.
+        match number {
+            4 => { // Gallery Mat: centered picture with balanced neutral margins.
+                config.foreground = Rect { x: 0.09, y: 0.12, width: 0.82, height: 0.76 };
+                config.background = "color".into();
+                config.background_color = "#e4e0d6".into();
+                config.border_color = "#f8f7f2".into();
+                config.border_width = 0.008;
+            }
+            5 => { // Floating Card: elevated rounded source above a colored canvas.
+                config.foreground = Rect { x: 0.08, y: 0.10, width: 0.84, height: 0.76 };
+                config.background = "color".into();
+                config.background_color = "#152336".into();
+                config.radius = 0.025;
+                config.shadow_opacity = 0.38;
+                config.shadow_offset = 0.018;
+            }
+            6 => { // Photo Print: a genuine larger lower margin and tilted backing.
+                config.foreground = Rect { x: 0.10, y: 0.08, width: 0.80, height: 0.70 };
+                config.background = "color".into();
+                config.background_color = "#25303a".into();
+                config.mat_bottom = 0.10;
+                config.rotation = -3.0;
+            }
+            7 => { // Cinema Frame: matte/letterbox space without added caption bars.
+                config.foreground = Rect { x: 0.025, y: 0.145, width: 0.95, height: 0.71 };
+                config.background = "color".into();
+                config.background_color = "#050505".into();
+            }
+            8 => { // Editorial Panel: reserved negative space, no generated title.
+                config.foreground = Rect { x: 0.38, y: 0.08, width: 0.56, height: 0.84 };
+                config.background = "color".into();
+                config.background_color = "#f1e7dc".into();
+            }
+            _ => {}
+        }
+        Some(config)
     }
     pub fn validate(&self) -> Result<(), String> {
-        if self.version != 1 || !(1..=3).contains(&self.preset) || !self.foreground.validate() {
+        if self.version != 1 || !(1..=8).contains(&self.preset) || !self.foreground.validate() {
             return Err("Unsupported canvas version/preset or unsafe foreground bounds".into());
         }
         if !matches!(
@@ -235,15 +296,23 @@ impl Config {
             ("borderWidth", self.border_width, 0.1),
             ("blur", self.blur, 1.0),
             ("tintOpacity", self.tint_opacity, 1.0),
+            ("shadowOpacity", self.shadow_opacity, 1.0),
+            ("shadowOffset", self.shadow_offset, 0.08),
+            ("matBottom", self.mat_bottom, 0.2),
         ] {
             if !value.is_finite() || value < 0.0 || value > max {
                 return Err(format!("Invalid canvas {name}"));
             }
         }
+        if !self.rotation.is_finite() || self.rotation.abs() > 12.0 {
+            return Err("Invalid canvas rotation (max 12 degrees)".into());
+        }
         for value in [
             &self.border_color,
             &self.background_color,
             &self.background_tint,
+            &self.shadow_color,
+            &self.mat_color,
         ] {
             if !color(value) {
                 return Err("Canvas colors must be #rrggbb[aa]".into());
@@ -621,9 +690,42 @@ pub fn apply(
                 config.tint_opacity,
             ));
         }
+        // Native decorative shapes stay tied to this same source and are
+        // replaced atomically on reapply. No separate media slot is created.
+        if config.shadow_opacity > 0.0 {
+            let offset = config.shadow_offset;
+            let shadow_rect = Rect {
+                x: actual.x + offset, y: actual.y + offset,
+                width: actual.width, height: actual.height,
+            };
+            if !shadow_rect.validate() {
+                return Err(error("Shadow exceeds canvas; reduce offset or media size"));
+            }
+            let shadow_lane = track(&mut staged, mint, &original.track_id, "shadow", true);
+            let mut shadow = rectangle(mint, &original, &shadow_lane, "shadow",
+                shadow_rect, &config.shadow_color, config.radius, config.shadow_opacity);
+            Arc::make_mut(&mut shadow).rotation = config.rotation;
+            layers.push(shadow);
+        }
+        if config.mat_bottom > 0.0 {
+            let margin = 0.02;
+            let mat_rect = Rect {
+                x: actual.x - margin, y: actual.y - margin,
+                width: actual.width + 2.0 * margin,
+                height: actual.height + margin + config.mat_bottom,
+            };
+            if !mat_rect.validate() {
+                return Err(error("Photo mat exceeds canvas; reduce mat bottom or foreground size"));
+            }
+            let mat_lane = track(&mut staged, mint, &original.track_id, "mat", true);
+            let mut mat = rectangle(mint, &original, &mat_lane, "mat",
+                mat_rect, &config.mat_color, config.radius, 1.0);
+            Arc::make_mut(&mut mat).rotation = config.rotation;
+            layers.push(mat);
+        }
         if config.border_width > 0.0 {
             let frame_lane = track(&mut staged, mint, &original.track_id, "frame", true);
-            layers.push(rectangle(
+            let mut frame = rectangle(
                 mint,
                 &original,
                 &frame_lane,
@@ -637,7 +739,9 @@ pub fn apply(
                 &config.border_color,
                 config.radius + config.border_width,
                 1.0,
-            ));
+            );
+            Arc::make_mut(&mut frame).rotation = config.rotation;
+            layers.push(frame);
         }
         // Canvas never generates a headline bar, fake caption text or even
         // an empty headline track. The legacy config.headline JSON field is
@@ -671,6 +775,9 @@ pub fn apply(
             .clip_mut(&id)
             .ok_or(CommandError::MediaGone)?;
         foreground.scale = scale;
+        if config.preset >= 4 {
+            foreground.rotation = config.rotation;
+        }
         let (x, y) = actual.center();
         foreground.offset_x = x;
         foreground.offset_y = y;
@@ -792,7 +899,7 @@ mod tests {
     }
     #[test]
     fn independent_presets_validate_and_round_trip() {
-        for n in 1..=3 {
+        for n in 1..=8 {
             let p = Config::preset(n).unwrap();
             p.validate().unwrap();
             assert_eq!(
@@ -803,6 +910,28 @@ mod tests {
             assert!(!p.headline.enabled);
             assert!(!p.badge.enabled);
         }
+    }
+    #[test]
+    fn planned_families_are_real_compositions_not_new_color_variants() {
+        let blur = Config::preset(3).unwrap();
+        let gallery = Config::preset(4).unwrap();
+        let floating = Config::preset(5).unwrap();
+        let print = Config::preset(6).unwrap();
+        let cinema = Config::preset(7).unwrap();
+        let editorial = Config::preset(8).unwrap();
+        assert_eq!(blur.background, "blur");
+        assert_eq!(gallery.foreground.x, 0.09);
+        assert!(floating.shadow_opacity > 0.0);
+        assert!(print.mat_bottom > 0.0 && print.rotation != 0.0);
+        assert!(cinema.foreground.height < 0.75);
+        assert!(editorial.foreground.x > 0.3);
+        assert!(Config::preset(9).is_none());
+        // Old JSON omits the new optional fields, and must still be loadable.
+        let mut old = serde_json::to_value(Config::preset(1).unwrap()).unwrap();
+        for key in ["shadowOpacity", "shadowOffset", "shadowColor", "matBottom", "matColor", "rotation"] {
+            old.as_object_mut().unwrap().remove(key);
+        }
+        Config::from_json(&old.to_string()).unwrap();
     }
     #[test]
     fn native_layers_preserve_media_timing_and_reapplication_replaces_owned_layers() {
@@ -831,7 +960,7 @@ mod tests {
     }
     #[test]
     fn selected_and_all_canvas_apply_preserve_real_captions_and_other_source() {
-        for preset in 1..=3 {
+        for preset in 1..=8 {
             let (mut project, mut mint) = fixture();
             let mut second = Clip::blank("c2", "T1", ClipKind::Video, "second", 7.0, 2.0);
             second.media_id = "m1".into();
@@ -1005,7 +1134,7 @@ mod tests {
             rate_den: 1,
         };
         let document = crate::doc::to_document(&settings, &project);
-        for preset in 1..=3 {
+        for preset in 1..=8 {
             let mut editor = crate::editor::Editor::from_document(&document).unwrap();
             let before = serde_json::to_value(editor.project()).unwrap();
             editor
@@ -1130,7 +1259,7 @@ mod tests {
 
     #[test]
     fn generated_canvas_documents_reopen_with_editable_layers() {
-        for number in 1..=3 {
+        for number in 1..=8 {
             for portrait in [true, false] {
                 let (mut p, mut mint) = fixture();
                 p.media[0].path = "source.mp4".into();

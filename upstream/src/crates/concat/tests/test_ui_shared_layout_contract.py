@@ -84,6 +84,27 @@ class SharedLayoutContractTests(unittest.TestCase):
         self.assertIn("No starred caption presets", self.caption)
         self.assertIn("no selectable template gallery yet", self.media)
 
+    def test_canvas_presets_retain_legacy_ids_and_distinct_single_media_families(self):
+        for name in ("Sports Frame", "Orange Frame", "Adaptive Blur (Blurred Fill)",
+                     "Gallery Mat", "Floating Card", "Photo Print",
+                     "Cinema Frame", "Editorial Panel"):
+            self.assertIn(name, self.canvas)
+        self.assertIn('property <[string]> names:', self.canvas)
+        self.assertIn('CanvasPresets.toggle-favourite(index + 1);', self.canvas)
+        self.assertIn('CanvasPresets.edit-number("borderWidth", v);', self.canvas)
+        self.assertIn('CanvasPresets.edit-colour("borderColor", c);', self.canvas)
+        self.assertIn('CanvasPresets.edit-number("rotation", v);', self.canvas)
+        self.assertIn('minimum: 0; maximum: 0.1;', self.canvas)
+        self.assertIn('CanvasPresets.save-default(CanvasPresets.profile);', self.canvas)
+        self.assertIn('CanvasPresets.reset-default();', self.canvas)
+        self.assertIn('if root.advanced-open: Rectangle', self.canvas)
+        for excluded in ("Split Screen", "Picture-in-Picture",
+                         "Three-Panel Story", "Collage Grid"):
+            self.assertNotIn(excluded, self.canvas)
+        self.assertIn('["Animations", "Transform", "Canvas", "Canvas Presets"]', self.media)
+        self.assertIn('if root.animation-page == 3: VerticalLayout', self.media)
+        self.assertIn('if LibraryFocus.page == 8: CanvasPresetApplyBar', self.inspector)
+
     def test_stable_canvas_and_particle_target_scopes(self):
         self.assertIn("CanvasPresets.apply(CanvasPresets.profile, false, root.images, root.videos);", self.canvas)
         self.assertIn("CanvasPresets.apply(CanvasPresets.profile, true, root.images, root.videos);", self.canvas)

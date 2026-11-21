@@ -1,0 +1,36 @@
+name: Bug report
+description: Report a reproducible application or build problem.
+title: "[Bug]: "
+body:
+  - type: input
+    id: component
+    attributes:
+      label: Application or component
+      description: Include the app name and source folder for repositories containing several apps.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or source commit
+      description: Include the release tag or full commit SHA, operating system, and relevant GPU/app version.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Use a small synthetic example. Do not upload private media, tokens, or production databases.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence
+      description: Optional error excerpt, screenshot, or failed GitHub Actions run link. Remove secrets and personal data.

@@ -1757,6 +1757,114 @@ component Empty inherits VerticalLayout {
     }
 }
 
+export struct AnimationCardData {
+    index: int,
+    name: string,
+    family: string,
+    mark: string,
+}
+
+component AnimationCard inherits Rectangle {
+    in property <AnimationCardData> item;
+    in property <bool> current;
+    callback picked(index: int);
+    callback starred(index: int);
+
+    height: 104px;
+    border-radius: Theme.r-sm;
+    background: root.current ? Theme.field-active : Theme.field;
+    border-width: 1px;
+    border-color: root.current ? Theme.accent : Theme.line;
+
+    Rectangle {
+        x: 6px; y: 6px;
+        width: parent.width - 12px;
+        height: 52px;
+        border-radius: Theme.r-sm;
+        background: Theme.accent-soft;
+        Text {
+            text: root.item.mark;
+            font-size: 24px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            color: Theme.fg;
+        }
+        Text {
+            x: 5px; y: 3px;
+            text: root.item.family;
+            font-size: Theme.fs-xs;
+            color: Theme.fg-muted;
+        }
+    }
+    // Selection is keyboard accessible and never applies a clip animation.
+    Button {
+        x: 6px; y: 64px;
+        width: parent.width - 44px;
+        height: 32px;
+        label: root.item.name;
+        clicked => { root.picked(root.item.index); }
+    }
+    Button {
+        x: parent.width - 36px; y: 64px;
+        width: 30px;
+        height: 32px;
+        label: Keyframes.physics-favourites[root.item.index] ? "★" : "☆";
+        clicked => { root.starred(root.item.index); }
+    }
+}
+
+component AnimationCardGrid inherits Rectangle {
+    in property <[AnimationCardData]> entries;
+    callback picked(index: int);
+    callback starred(index: int);
+    property <length> gap: 6px;
+    property <length> min-card: 140px;
+    property <int> cols: Math.max(1, Math.floor((root.width + root.gap) / (root.min-card + root.gap)));
+    property <length> card-w: (root.width - (root.cols - 1) * root.gap) / root.cols;
+    property <length> card-h: 104px;
+    property <int> rows: Math.ceil(root.entries.length / root.cols);
+    height: root.rows > 0 ? root.rows * (root.card-h + root.gap) - root.gap : 0px;
+    for entry[index] in root.entries: AnimationCard {
+        x: Math.mod(index, root.cols) * (root.card-w + root.gap);
+        y: Math.floor(index / root.cols) * (root.card-h + root.gap);
+        width: root.card-w;
+        height: root.card-h;
+        item: entry;
+        current: Keyframes.animation-selected == entry.index;
+        picked(id) => { root.picked(id); }
+        starred(id) => { root.starred(id); }
+    }
+}
+
+// Star filtering collapses non-favorite rows rather than leaving card holes.
+// A single column is intentional here: it remains usable in narrow panels.
+component AnimationFavoriteCards inherits VerticalLayout {
+    in property <[AnimationCardData]> basic;
+    in property <[AnimationCardData]> canvas;
+    callback picked(index: int);
+    callback starred(index: int);
+    spacing: 0px;
+
+    for entry in root.basic: AnimationCard {
+        width: parent.width;
+        visible: Keyframes.physics-favourites[entry.index];
+        height: Keyframes.physics-favourites[entry.index] ? 104px : 0px;
+        item: entry;
+        current: Keyframes.animation-selected == entry.index;
+        picked(id) => { root.picked(id); }
+        starred(id) => { root.starred(id); }
+    }
+    for entry in root.canvas: AnimationCard {
+        width: parent.width;
+        visible: Keyframes.physics-favourites[entry.index];
+        height: Keyframes.physics-favourites[entry.index] ? 104px : 0px;
+        item: entry;
+        current: Keyframes.animation-selected == entry.index;
+        picked(id) => { root.picked(id); }
+        starred(id) => { root.starred(id); }
+    }
+}
+
 export component MediaPane inherits Rectangle {
     /// The bin, already narrowed to `filter`. Filtering happens on the Rust
     /// side because a Slint model cannot be filtered in the language, and
@@ -1912,7 +2020,7 @@ export component MediaPane inherits Rectangle {
             : root.tab == 7 && root.adjustments-category == 1 ? 5
             : root.tab == 1 && root.text-category >= 1 ? 6
             : root.tab == 6 ? 7
-            : root.tab == 10 && root.animation-page == 2 ? 8
+            : root.tab == 10 && root.animation-page == 3 ? 8
             : -1;
         LibraryFocus.selected-id = "";
         LibraryFocus.selected-name = "";
@@ -1922,6 +2030,7 @@ export component MediaPane inherits Rectangle {
     changed tab => {
         Sounds.shown(root.tab == 0 && root.media-audio-view);
         CaptionPresetPreview.scope(root.tab == 1 && root.text-category == 1 && GpuCompatibility.enabled);
+        Keyframes.animation-browser = root.tab == 10 && root.animation-page == 0 && GpuCompatibility.enabled;
         root.show-library();
     }
     changed media-audio-view => { Sounds.shown(root.tab == 0 && root.media-audio-view); }
@@ -1932,7 +2041,10 @@ export component MediaPane inherits Rectangle {
     property <int> physics-preset: 0;
     property <bool> canvas-motion-page: false;
     property <int> animation-page: 0;
-    changed animation-page => { if (root.tab == 10) { root.show-library(); } }
+    changed animation-page => {
+        Keyframes.animation-browser = root.tab == 10 && root.animation-page == 0 && GpuCompatibility.enabled;
+        if (root.tab == 10) { root.show-library(); }
+    }
     /// The Audio page's shelf: 0 = Mine, 1 = Concat, 10 = Voices,
     /// 11 = Styles.
     property <int> audio-category;
@@ -1963,6 +2075,43 @@ export component MediaPane inherits Rectangle {
     property <bool> audio-open: true;
     /// The shelf the Effects page is reading from, in `Library`'s numbers.
     property <int> effects-shelf: root.audio-shelf ? 2 : 1;
+
+    property <int> animation-filter: 0;
+    property <[AnimationCardData]> animation-basic-cards: [
+        {index: 0, name: "Spring Zoom", family: "Physics", mark: "↗"},
+        {index: 1, name: "Pendulum Swing", family: "Physics", mark: "↶"},
+        {index: 2, name: "Gravity Bounce", family: "Physics", mark: "↕"},
+        {index: 3, name: "Elastic Pop", family: "Physics", mark: "◉"},
+        {index: 4, name: "Inertia Glide", family: "Physics", mark: "→"},
+        {index: 5, name: "Damped Shake", family: "Physics", mark: "≈"},
+        {index: 6, name: "Push In", family: "Basic", mark: "＋"},
+        {index: 7, name: "Pan Right", family: "Basic", mark: "→"},
+        {index: 8, name: "Fade In", family: "Basic", mark: "◐"}
+    ];
+    property <[AnimationCardData]> animation-canvas-cards: [
+        {index: 9, name: "Top-left to Center", family: "Canvas", mark: "↘"},
+        {index: 10, name: "Top-right to Center", family: "Canvas", mark: "↙"},
+        {index: 11, name: "Bottom-left to Center", family: "Canvas", mark: "↗"},
+        {index: 12, name: "Bottom-right to Center", family: "Canvas", mark: "↖"},
+        {index: 13, name: "Center Pop", family: "Canvas", mark: "◉"},
+        {index: 14, name: "Zoom at Left", family: "Canvas", mark: "＋"},
+        {index: 15, name: "Zoom at Center", family: "Canvas", mark: "⊕"},
+        {index: 16, name: "Zoom at Right", family: "Canvas", mark: "＋"},
+        {index: 17, name: "Reverse to Corner", family: "Canvas", mark: "↖"},
+        {index: 18, name: "Slide from Left", family: "Canvas", mark: "→"},
+        {index: 19, name: "Slide from Right", family: "Canvas", mark: "←"},
+        {index: 20, name: "Slide from Top", family: "Canvas", mark: "↓"},
+        {index: 21, name: "Slide from Bottom", family: "Canvas", mark: "↑"},
+        {index: 22, name: "Diagonal Fly-in", family: "Canvas", mark: "↗"},
+        {index: 23, name: "Spring Settle", family: "Canvas", mark: "≋"},
+        {index: 24, name: "Documentary Pan", family: "Canvas", mark: "↔"},
+        {index: 25, name: "Fade and Scale", family: "Canvas", mark: "◐"},
+        {index: 26, name: "Alternating Inset", family: "Canvas", mark: "◇"},
+        {index: 27, name: "Breathing Loop", family: "Canvas", mark: "∿"},
+        {index: 28, name: "In / Hold / Out", family: "Canvas", mark: "▰"},
+        {index: 29, name: "Focus Journey", family: "Canvas", mark: "⌁"}
+    ];
+
 
     /// The category column. In-out, because it is dragged.
     in-out property <length> sidebar-w: 104px;
@@ -2463,7 +2612,7 @@ export component MediaPane inherits Rectangle {
                     // to the sound is on the Effects page.
                     if root.tab == 10 && GpuCompatibility.enabled: VerticalLayout {
                         spacing: 1px;
-                        for label[index] in ["Animations", "Transform", "Canvas"]: CategoryRow {
+                        for label[index] in ["Animations", "Transform", "Canvas", "Canvas Presets"]: CategoryRow {
                             label: label; height: 30px;
                             current: root.animation-page == index;
                             clicked => { root.animation-page = index; }
@@ -2951,145 +3100,67 @@ export component MediaPane inherits Rectangle {
                 if root.animation-page == 0: VerticalLayout {
                     padding: 8px;
                     spacing: 8px;
-
+                    Text { text: "Animations"; color: Theme.fg; font-size: Theme.fs; }
                     Text {
-                        text: "Animations";
-                        font-size: Theme.fs;
-                        color: Theme.fg;
+                        text: "Choose a card. The selected preset's settings and Apply actions appear in Details on the right.";
+                        color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
                     }
-                    Text {
-                        text: "Basic, physics and canvas motion presets all create editable animation keyframes.";
-                        color: Theme.fg-muted;
-                        font-size: Theme.fs-sm;
-                        wrap: word-wrap;
+                    Select {
+                        options: ["All", "Basic / Physics", "Canvas Motion", "Favorites"];
+                        current: root.animation-filter;
+                        changed(index) => { root.animation-filter = index; }
                     }
                     HorizontalLayout {
                         spacing: 8px;
-                        Check {
-                            checked: root.physics-images;
-                            toggled(on) => { root.physics-images = on; }
-                        }
-                        Text {
-                            text: "Images";
-                            vertical-alignment: center;
-                            color: Theme.fg;
-                        }
-                        Check {
-                            checked: root.physics-videos;
-                            toggled(on) => { root.physics-videos = on; }
-                        }
-                        Text {
-                            text: "Video Clips";
-                            vertical-alignment: center;
-                            color: Theme.fg;
-                        }
+                        Check { checked: Keyframes.animation-images; toggled(on) => { Keyframes.animation-images = on; } }
+                        Text { text: "Images"; vertical-alignment: center; color: Theme.fg; }
+                        Check { checked: Keyframes.animation-videos; toggled(on) => { Keyframes.animation-videos = on; } }
+                        Text { text: "Video Clips"; vertical-alignment: center; color: Theme.fg; }
                     }
                     HorizontalLayout {
-                        spacing: 8px;
-                        Text {
-                            text: "Bulk scope";
-                            color: Theme.fg-muted;
-                            vertical-alignment: center;
-                        }
+                        Text { text: "Bulk scope"; vertical-alignment: center; color: Theme.fg-muted; }
                         Select {
                             options: ["Whole timeline", "Selected media"];
-                            current: root.physics-scope;
-                            changed(index) => { root.physics-scope = index; }
+                            current: Keyframes.animation-scope;
+                            changed(index) => { Keyframes.animation-scope = index; }
                         }
                     }
-                    Button { label: root.canvas-motion-page ? "Basic / Physics" : "Canvas Motion"; clicked => {root.canvas-motion-page = !root.canvas-motion-page;} }
-                    if root.canvas-motion-page: CanvasMotionPanel {images:root.physics-images; videos:root.physics-videos; selected-only:root.physics-scope==1;}
-                    if !root.canvas-motion-page: VerticalLayout { spacing:8px;
-                    Param { label: "Strength"; value <=> Keyframes.physics-strength; minimum: 0.1; maximum: 2; step: 0.1; fmt: ParamFormat.fraction; }
-                    Param { label: "Duration (clip fraction)"; value <=> Keyframes.physics-duration; minimum: 0.1; maximum: 1; step: 0.05; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; }
-                    Param { label: "Speed"; value <=> Keyframes.physics-speed; minimum: 0.25; maximum: 3; step: 0.05; fmt: ParamFormat.fraction; }
-                    Param { label: "Physics Intensity"; value <=> Keyframes.physics-intensity; minimum: 0.2; maximum: 2; step: 0.1; fmt: ParamFormat.fraction; }
-                    for label[index] in [
-                        "Spring Zoom", "Pendulum Swing", "Gravity Bounce",
-                        "Elastic Pop", "Inertia Glide", "Damped Shake",
-                        "Push In", "Pan Right", "Fade In"
-                    ]: HorizontalLayout {
-                        spacing: 8px;
-                        Button {
-                            horizontal-stretch: 1;
-                            block: true;
-                            label: root.physics-preset == index ? "✓ " + label : label;
-                            clicked => { root.physics-preset = index; }
-                        }
-                        Button {
-                            label: Keyframes.physics-favourites[index] ? "★" : "☆";
-                            clicked => { Keyframes.toggle-physics-favourite(index); }
+                    if root.animation-filter == 0 || root.animation-filter == 1: VerticalLayout {
+                        spacing: 6px;
+                        Text { text: "Basic / Physics"; color: Theme.fg-muted; font-size: Theme.fs-sm; }
+                        AnimationCardGrid {
+                            entries: root.animation-basic-cards;
+                            picked(index) => { Keyframes.animation-selected = index; }
+                            starred(index) => { Keyframes.toggle-physics-favourite(index); }
                         }
                     }
-                    Text {
-                        text: "Manual keyframes are protected. Every bulk operation is a single Undo/Redo step.";
-                        color: Theme.fg-muted;
-                        font-size: Theme.fs-sm;
-                        wrap: word-wrap;
-                    }
-                    HorizontalLayout {
-                        spacing: 8px;
-                        Button {
-                            label: "Apply Selected";
-                            enabled: root.physics-images || root.physics-videos;
-                            clicked => {
-                                Keyframes.apply-physics-bulk(root.physics-preset, 0,
-                                    root.physics-images, root.physics-videos, true,
-                                    Keyframes.physics-strength, Keyframes.physics-duration,
-                                    Keyframes.physics-speed, Keyframes.physics-intensity);
-                            }
-                        }
-                        Button {
-                            label: "Apply All";
-                            enabled: root.physics-images || root.physics-videos;
-                            clicked => {
-                                Keyframes.apply-physics-bulk(root.physics-preset, 0,
-                                    root.physics-images, root.physics-videos,
-                                    false,
-                                    Keyframes.physics-strength, Keyframes.physics-duration,
-                                    Keyframes.physics-speed, Keyframes.physics-intensity);
-                            }
+                    if root.animation-filter == 0 || root.animation-filter == 2: VerticalLayout {
+                        spacing: 6px;
+                        Text { text: "Canvas Motion"; color: Theme.fg-muted; font-size: Theme.fs-sm; }
+                        AnimationCardGrid {
+                            entries: root.animation-canvas-cards;
+                            picked(index) => { Keyframes.animation-selected = index; }
+                            starred(index) => { Keyframes.toggle-physics-favourite(index); }
                         }
                     }
-                    Button {
-                        label: "Apply All Randomly";
-                        enabled: root.physics-images || root.physics-videos;
-                        clicked => {
-                            Keyframes.apply-physics-bulk(root.physics-preset, 2,
-                                root.physics-images, root.physics-videos, root.physics-scope == 1,
-                                Keyframes.physics-strength, Keyframes.physics-duration,
-                                Keyframes.physics-speed, Keyframes.physics-intensity);
+                    if root.animation-filter == 3: VerticalLayout {
+                        spacing: 6px;
+                        Text { text: "Starred presets from both families"; color: Theme.fg-muted; font-size: Theme.fs-sm; }
+                        AnimationFavoriteCards {
+                            basic: root.animation-basic-cards;
+                            canvas: root.animation-canvas-cards;
+                            picked(index) => { Keyframes.animation-selected = index; }
+                            starred(index) => { Keyframes.toggle-physics-favourite(index); }
                         }
                     }
-                    Button {
-                        label: "Apply Favorites Randomly";
-                        enabled: root.physics-images || root.physics-videos;
-                        clicked => {
-                            Keyframes.apply-physics-bulk(root.physics-preset, 3,
-                                root.physics-images, root.physics-videos, root.physics-scope == 1,
-                                Keyframes.physics-strength, Keyframes.physics-duration,
-                                Keyframes.physics-speed, Keyframes.physics-intensity);
-                        }
-                    }
-                }
                 }
                     if root.animation-page == 1: MediaLayoutPanel { canvas: false; }
-                    if root.animation-page == 2: VerticalLayout {
+                    if root.animation-page == 2: MediaLayoutPanel { canvas: true; }
+                    if root.animation-page == 3: VerticalLayout {
                         spacing: 8px;
                         padding: 8px;
-                        Text {
-                            text: "Canvas Presets";
-                            color: Theme.fg;
-                            font-size: Theme.fs;
-                            font-weight: Theme.weight-title;
-                        }
+                        Text { text: "Canvas Presets"; color: Theme.fg; font-size: Theme.fs; font-weight: Theme.weight-title; }
                         CanvasPresetLibrary { }
-                        Text {
-                            text: "Select a layout here; edit framing and Apply in the right inspector.";
-                            color: Theme.fg-muted;
-                            font-size: Theme.fs-sm;
-                            wrap: word-wrap;
-                        }
                     }
                 }
 

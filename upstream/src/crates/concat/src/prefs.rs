@@ -64,8 +64,9 @@ pub struct Preferences {
     /// Explicitly saved editor Canvas defaults. Unlike project data these only
     /// seed the Canvas editor; they never rewrite an existing project.
     pub canvas_default: Option<String>,
-    /// Built-in Canvas preset indices (1–3) starred for this app, not project.
-    pub canvas_preset_favourites: Vec<u32>,
+    /// Stable Canvas preset IDs starred for this app (never project data).
+    /// Legacy saved string keys use canvas:1 through canvas:8.
+    pub canvas_preset_favourites: Vec<String>,
     /// Optional defaults for NEW transition applications only; existing cuts
     /// continue to use their own project-stored duration and intensity.
     pub transition_default_duration: Option<f64>,
@@ -549,12 +550,12 @@ mod tests {
     #[test]
     fn canvas_favorites_are_independent_of_projects_and_survive_settings_round_trip() {
         let prefs = Preferences {
-            canvas_preset_favourites: vec![1, 3],
+            canvas_preset_favourites: vec!["canvas:1".into(), "canvas:3".into()],
             ..Preferences::default()
         };
         let restored: Preferences = serde_json::from_str(
             &serde_json::to_string(&prefs).unwrap()).unwrap();
-        assert_eq!(restored.canvas_preset_favourites, vec![1, 3]);
+        assert_eq!(restored.canvas_preset_favourites, vec!["canvas:1", "canvas:3"]);
         let old: Preferences = serde_json::from_str(r#"{"dark":false}"#).unwrap();
         assert!(old.canvas_preset_favourites.is_empty());
     }

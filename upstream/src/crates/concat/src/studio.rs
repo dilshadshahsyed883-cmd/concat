@@ -9162,6 +9162,12 @@ impl Studio {
             }
         };
         let editor = app.global::<Editor>();
+        let canvas_stars = (1..=8)
+            .map(|id| format!("canvas:{id}"))
+            .map(|id| self.prefs.canvas_preset_favourites.iter().any(|held| held == &id))
+            .collect::<Vec<_>>();
+        app.global::<crate::ui::CanvasPresets>()
+            .set_favourites(ModelRc::new(VecModel::from(canvas_stars)));
         editor.set_cb_media_folder(self.c_builder.folder.clone().into());
         editor.set_cb_narration(self.c_builder.narration.clone().into());
         editor.set_cb_duration(self.c_builder.duration.unwrap_or_default() as f32);
@@ -9458,7 +9464,7 @@ impl Studio {
         let parameters=self.selected_transition().and_then(|c|c.transition_in.as_ref()).map(|t|&t.params);
         app.global::<crate::ui::TransitionControls>().set_params(parameters.and_then(|p|serde_json::to_string_pretty(p).ok()).unwrap_or_else(||"{}".into()).into());
         let keys = app.global::<Keyframes>();
-        let physics_stars: Vec<bool> = (0..27).filter_map(bulk_presets::animation_favourite_id)
+        let physics_stars: Vec<bool> = (0..30).filter_map(bulk_presets::animation_favourite_id)
             .map(|preset| self.prefs.physics_motion_favourites.iter().any(|id| id == preset))
             .collect();
         keys.set_physics_favourites(slint::ModelRc::new(VecModel::from(physics_stars)));
@@ -10662,6 +10668,18 @@ impl Studio {
             self.prefs.physics_motion_favourites.retain(|entry| entry != id);
         } else {
             self.prefs.physics_motion_favourites.push(id.to_owned());
+        }
+        self.prefs.save(&self.host.dirs);
+    }
+
+    /// Toggle a stable Canvas preset preference, never a project edit.
+    pub fn toggle_canvas_preset_favourite(&mut self, preset: i32) {
+        if !(1..=8).contains(&preset) { return; }
+        let id = format!("canvas:{preset}");
+        if self.prefs.canvas_preset_favourites.iter().any(|key| key == &id) {
+            self.prefs.canvas_preset_favourites.retain(|key| key != &id);
+        } else {
+            self.prefs.canvas_preset_favourites.push(id);
         }
         self.prefs.save(&self.host.dirs);
     }

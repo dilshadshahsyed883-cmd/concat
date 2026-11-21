@@ -7,3 +7,17 @@ The native File menu's **Send to GPU (CUDA)** action saves the project and start
 Windows File menu also offers **Prepare ZIP Only (Offline)...**, immediately below **Send to GPU**. This saves the current project using the same atomic save path, then asks for a local `.zip` destination and displays creation progress and the final file location. The archive uses the unchanged `Concat-Bundle` worker format, with a private temporary `concat.json` snapshot just like queued GPU preparation. No Salad credentials, connection, queue submission, VPS access, or Drive access is needed. Existing destination files and original media are never overwritten or removed. The prepared ZIP can be uploaded manually elsewhere for later GPU rendering.
 
 The upstream editor retains its AGPL-3.0-or-later licence and third-party notices.
+
+## Source and release map
+
+| Component | Canonical source | Verification |
+| --- | --- | --- |
+| Windows editor | `upstream/src/` | Rust tests and frozen Windows smoke in `.github/workflows/concat-windows.yml` |
+| Project bundle and GPU worker | `cloud_render/concat/` | `.github/workflows/concat-linux.yml` and component tests |
+| Desktop GPU client | `concat_gpu/` | Offline packaging and queue-contract checks in the Windows workflow |
+
+Main Windows publishing checks for a matching GPU candidate before creating a commit-specific prerelease. Read that release's acceptance notes: a successful build or container startup is not real-GPU acceptance. Preserve `upstream/LICENSE` and third-party notices when distributing the editor.
+
+## Repository maintenance
+
+See the [repository guide](docs/REPOSITORY_GUIDE.md) for source ownership, validation and release/storage policy, and [CONTRIBUTING.md](CONTRIBUTING.md) for changes and review.
