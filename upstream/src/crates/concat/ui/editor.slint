@@ -357,6 +357,8 @@ export global Editor {
     callback transition-duration-set(seconds: float);
     callback transition-duration-all(seconds: float);
     callback transition-intensity-set(amount: float);
+    callback transition-default-save(seconds: float, intensity: float);
+    callback transition-default-reset();
 
     // ── the timeline ──
     in-out property <[TimelineTabData]> timeline-tabs;
