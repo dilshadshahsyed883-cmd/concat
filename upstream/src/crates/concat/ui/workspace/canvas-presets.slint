@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { Theme } from "../theme/theme.slint";
 import { Button } from "../primitives/modal.slint";
+import { IconButton } from "../primitives/panel.slint";
+import { Glyph } from "../icons.slint";
 export global CanvasTargets {
     in-out property <bool> images: true;
     in-out property <bool> videos: true;
@@ -8,6 +10,8 @@ export global CanvasTargets {
 
 export global CanvasPresets {
     in-out property <int> selected: 1;
+    in property <[bool]> favourites;
+    callback toggle-favourite(index: int);
     in-out property <string> profile;
     callback choose(preset: int);
     callback apply(profile: string, all: bool, images: bool, videos: bool);
@@ -52,9 +56,17 @@ export component CanvasPresetPanel inherits VerticalLayout {
 
 export component CanvasPresetLibrary inherits VerticalLayout {
     property <[string]> names: ["Sports Frame", "Orange Frame", "Blurred Fill"];
+    property <bool> favourites-only: false;
     spacing: 8px;
+    Button {
+        label: root.favourites-only ? "★ Favorites" : "☆ Favorites";
+        clicked => { root.favourites-only = !root.favourites-only; }
+    }
     for name[index] in root.names: Rectangle {
-        height: 62px;
+        property <bool> show-item: !root.favourites-only
+            || (CanvasPresets.favourites.length > index && CanvasPresets.favourites[index]);
+        visible: self.show-item;
+        height: self.show-item ? 62px : 0px;
         border-width: CanvasPresets.selected == index + 1 ? 2px : 1px;
         border-color: CanvasPresets.selected == index + 1 ? Theme.accent : Theme.line;
         border-radius: Theme.r;
@@ -78,11 +90,23 @@ export component CanvasPresetLibrary inherits VerticalLayout {
             font-size: Theme.fs-sm;
         }
         TouchArea {
+            x: 0;
+            y: 0;
+            width: parent.width - 38px;
+            height: parent.height;
             mouse-cursor: pointer;
             clicked => {
                 CanvasPresets.selected = index + 1;
                 CanvasPresets.choose(index + 1);
             }
+        }
+        IconButton {
+            x: parent.width - self.width - 5px;
+            y: 8px;
+            glyph: Glyph.mask-star;
+            checked: CanvasPresets.favourites.length > index && CanvasPresets.favourites[index];
+            label: "Toggle favorite for " + name;
+            clicked => { CanvasPresets.toggle-favourite(index + 1); }
         }
     }
 }
