@@ -2142,6 +2142,8 @@ export component TransitionPanel inherits VerticalLayout {
     callback duration-set(seconds: float);
     callback duration-all(seconds: float);
     callback intensity-set(amount: float);
+    callback save-default(seconds: float, intensity: float);
+    callback reset-default();
 
     property <float> duration;
     // Preserve the entered bulk value when the selected short cut clamps its
@@ -2265,6 +2267,19 @@ export component TransitionPanel inherits VerticalLayout {
                 changed(v) => { root.intensity-set(v); }
             }
             if root.transition.intensity-supported: CreativeTransitionEditor { }
+            HorizontalLayout {
+                padding-left: Theme.pad;
+                padding-right: Theme.pad;
+                spacing: 8px;
+                Button {
+                    label: "Save as Default";
+                    clicked => { root.save-default(root.bulk-duration, root.intensity); }
+                }
+                Button {
+                    label: "Reset Default";
+                    clicked => { root.reset-default(); }
+                }
+            }
             if GpuCompatibility.enabled: Text {
                 text: "Controls are saved with the cut and shared with native preview and GPU export.";
                 color: Theme.fg-muted;
