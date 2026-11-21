@@ -113,6 +113,46 @@ use panes::voiceover::VoiceoverMsg;
 use studio::{ASPECTS, Models, OUTPUTS, RATES, SIZES, Studio};
 use ui::*;
 
+
+fn canvas_picker_color(hex: &str) -> slint::Color {
+    let digits = hex.trim_start_matches('#');
+    let rgb = digits.get(..6).and_then(|s| u32::from_str_radix(s, 16).ok()).unwrap_or(0);
+    slint::Color::from_rgb_u8((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8)
+}
+fn canvas_publish(app: &App, config: &concat_project::canvas_preset::Config) {
+    let panel = app.global::<CanvasPresets>();
+    panel.set_profile(serde_json::to_string_pretty(config).unwrap_or_default().into());
+    panel.set_selected(config.preset as i32);
+    panel.set_foreground_x(config.foreground.x as f32);
+    panel.set_foreground_y(config.foreground.y as f32);
+    panel.set_foreground_width(config.foreground.width as f32);
+    panel.set_foreground_height(config.foreground.height as f32);
+    panel.set_border_width(config.border_width as f32);
+    panel.set_radius(config.radius as f32);
+    panel.set_blur(config.blur as f32);
+    panel.set_tint_opacity(config.tint_opacity as f32);
+    panel.set_shadow_opacity(config.shadow_opacity as f32);
+    panel.set_shadow_offset(config.shadow_offset as f32);
+    panel.set_mat_bottom(config.mat_bottom as f32);
+    panel.set_rotation(config.rotation as f32);
+    panel.set_background_mode(match config.background.as_str() {
+        "blur" => 1, "color" => 2, "none" => 3, _ => 0,
+    });
+    panel.set_border_color(canvas_picker_color(&config.border_color));
+    panel.set_background_color(canvas_picker_color(&config.background_color));
+    panel.set_tint_color(canvas_picker_color(&config.background_tint));
+    panel.set_shadow_color(canvas_picker_color(&config.shadow_color));
+    panel.set_mat_color(canvas_picker_color(&config.mat_color));
+}
+fn canvas_modify(app: &App, edit: impl FnOnce(&mut concat_project::canvas_preset::Config)) {
+    let panel = app.global::<CanvasPresets>();
+    let Ok(mut config) = concat_project::canvas_preset::Config::from_json(&panel.get_profile()) else {
+        return; // Keep invalid Advanced JSON drafts intact.
+    };
+    edit(&mut config);
+    if config.validate().is_ok() { canvas_publish(app, &config); }
+}
+
 /// Opens this run's log file and makes it where the app writes things down.
 ///
 /// Each entry point calls this before [`run`], because each knows where its
@@ -816,7 +856,61 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     app.global::<CanvasPresets>().on_choose(move |index| {
         Shell::with(|_, app| {
             if let Some(config) = concat_project::canvas_preset::Config::preset(index as u32) {
-                app.global::<CanvasPresets>().set_profile(serde_json::to_string_pretty(&config).unwrap_or_default().into());
+                canvas_publish(app, &config);
+            }
+        });
+    });
+    app.global::<CanvasPresets>().on_edit_number(move |field, value| {
+        Shell::with(|_, app| {
+            canvas_modify(app, |config| {
+                let value = value as f64;
+                match field.as_str() {
+                    "foregroundX" => config.foreground.x = value,
+                    "foregroundY" => config.foreground.y = value,
+                    "foregroundWidth" => config.foreground.width = value,
+                    "foregroundHeight" => config.foreground.height = value,
+                    "borderWidth" => config.border_width = value,
+                    "radius" => config.radius = value,
+                    "blur" => config.blur = value,
+                    "tintOpacity" => config.tint_opacity = value,
+                    "shadowOpacity" => config.shadow_opacity = value,
+                    "shadowOffset" => config.shadow_offset = value,
+                    "matBottom" => config.mat_bottom = value,
+                    "rotation" => config.rotation = value,
+                    _ => {}
+                }
+            });
+        });
+    });
+    app.global::<CanvasPresets>().on_edit_colour(move |field, value| {
+        Shell::with(|_, app| {
+            canvas_modify(app, |config| {
+                let hex = format!("#{:02x}{:02x}{:02x}", value.red(), value.green(), value.blue());
+                match field.as_str() {
+                    "borderColor" => config.border_color = hex,
+                    "backgroundColor" => config.background_color = hex,
+                    "backgroundTint" => config.background_tint = hex,
+                    "shadowColor" => config.shadow_color = hex,
+                    "matColor" => config.mat_color = hex,
+                    _ => {}
+                }
+            });
+        });
+    });
+    app.global::<CanvasPresets>().on_edit_mode(move |mode| {
+        Shell::with(|_, app| {
+            canvas_modify(app, |config| {
+                config.background = match mode {
+                    1 => "blur", 2 => "color", 3 => "none", _ => "source",
+                }.into();
+            });
+        });
+    });
+    app.global::<CanvasPresets>().on_sync_profile(move || {
+        Shell::with(|_, app| {
+            let panel = app.global::<CanvasPresets>();
+            if let Ok(config) = concat_project::canvas_preset::Config::from_json(&panel.get_profile()) {
+                canvas_publish(app, &config);
             }
         });
     });
@@ -826,8 +920,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     app.global::<CanvasPresets>().on_toggle_favourite(on_window!(|state, preset: i32| {
         state.toggle_canvas_preset_favourite(preset);
     }));
-    app.global::<CanvasPresets>().set_profile(serde_json::to_string_pretty(
-        &concat_project::canvas_preset::Config::preset(1).expect("sports canvas default")).unwrap_or_default().into());
+    canvas_publish(app, &concat_project::canvas_preset::Config::preset(1).expect("sports canvas default"));
     app.on_start_c_builder(on_window!(|studio| {studio.builder_home();}));
     app.on_c_builder_return_home(on_window!(|studio,profile:SharedString| {studio.builder_return_home(&profile);}));
     app.on_c_builder_open_generated(on_window!(|studio| {studio.builder_open_generated();}));
