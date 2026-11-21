@@ -1907,7 +1907,7 @@ export component MediaPane inherits Rectangle {
             : root.tab == 4 ? (root.audio-shelf ? 3 : 2)
             : root.tab == 5 ? 4
             : root.tab == 7 && root.adjustments-category == 1 ? 5
-            : root.tab == 1 ? 6
+            : root.tab == 1 && root.text-category >= 1 ? 6
             : root.tab == 6 ? 7
             : root.tab == 10 && root.animation-page == 2 ? 8
             : -1;
@@ -1944,6 +1944,7 @@ export component MediaPane inherits Rectangle {
     property <bool> text-open: true;
     /// 0 = Titles, 1 = Styles, 2 = Languages
     property <int> text-category;
+    changed text-category => { if (root.tab == 1) { root.show-library(); } }
     property <bool> stickers-open: true;
     property <bool> transitions-open: true;
     property <bool> effects-open: true;
