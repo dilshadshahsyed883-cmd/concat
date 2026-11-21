@@ -2401,7 +2401,7 @@ export component AudioPanel inherits VerticalLayout {
                 value <=> root.fade-in;
                 minimum: 0;
                 maximum: root.fade-limit;
-                step: 0.05;
+                step: 0.1;
                 fmt: ParamFormat.seconds2;
                 unit: "s";
                 changed(v) => { root.set(ClipField.fade-in, v); root.commit(); }
@@ -2413,7 +2413,7 @@ export component AudioPanel inherits VerticalLayout {
                 value <=> root.fade-out;
                 minimum: 0;
                 maximum: root.fade-limit;
-                step: 0.05;
+                step: 0.1;
                 fmt: ParamFormat.seconds2;
                 unit: "s";
                 changed(v) => { root.set(ClipField.fade-out, v); root.commit(); }
@@ -2693,7 +2693,7 @@ export component FilterPanel inherits VerticalLayout {
                 value <=> root.fade-in;
                 minimum: 0;
                 maximum: root.ramp-limit;
-                step: 0.05;
+                step: 0.1;
                 fmt: ParamFormat.seconds2;
                 unit: "s";
                 changed(v) => { root.set(ClipField.fade-in, v); root.commit(); }
@@ -2704,7 +2704,7 @@ export component FilterPanel inherits VerticalLayout {
                 value <=> root.fade-out;
                 minimum: 0;
                 maximum: root.ramp-limit;
-                step: 0.05;
+                step: 0.1;
                 fmt: ParamFormat.seconds2;
                 unit: "s";
                 changed(v) => { root.set(ClipField.fade-out, v); root.commit(); }
