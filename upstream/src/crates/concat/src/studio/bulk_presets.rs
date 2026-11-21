@@ -27,7 +27,7 @@ pub(super) fn animation_favourite_id(index: i32) -> Option<&'static str> {
     match index {
         0..=5 => PhysicsPreset::from_index(index).map(PhysicsPreset::id),
         6 => Some("motion.push-in"), 7 => Some("motion.pan-right"), 8 => Some("motion.fade-in"),
-        9..=28 => CanvasMotionPreset::from_index(index-9).map(CanvasMotionPreset::id),
+        9..=29 => CanvasMotionPreset::from_index(index-9).map(CanvasMotionPreset::id),
         _ => None,
     }
 }
@@ -785,6 +785,8 @@ impl Studio {
             duration_seconds: f64::from(settings.duration), delay_seconds: f64::from(settings.delay),
             entry_seconds: f64::from(settings.entry_seconds), hold_seconds: f64::from(settings.hold_seconds),
             exit_seconds: f64::from(settings.exit_seconds),
+            focus_middle: [f64::from(settings.focus_middle_x), f64::from(settings.focus_middle_y)],
+            focus_hold_seconds: f64::from(settings.focus_hold),
             speed: f64::from(settings.speed), strength: f64::from(settings.strength),
             intensity: f64::from(settings.intensity), blur: f64::from(settings.blur), reverse: settings.reverse,
             start_anchor: settings.custom_anchors.then_some([f64::from(settings.start_x),f64::from(settings.start_y)]),
