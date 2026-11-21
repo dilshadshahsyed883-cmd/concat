@@ -5,11 +5,18 @@ import { Fmt } from "../util.slint";
 import { Select } from "../primitives/select.slint";
 import { ColourField } from "../inspector/controls.slint";
 import { Button } from "../primitives/modal.slint";
+import { IconButton } from "../primitives/panel.slint";
+import { Glyph } from "../icons.slint";
 
 export struct CaptionPreviewCard { id: string, name: string, thumbnail: image }
 
 export global CaptionPresetPreview {
     in property <[CaptionPreviewCard]> cards;
+    // Stars are app preferences, never caption edits or project state.
+    in property <[bool]> favourites;
+    in-out property <bool> favourites-only: false;
+    callback toggle-favourite(id: string);
+    callback filter-favourites(on: bool);
     in property <string> chosen;
     in property <string> applied;
     in property <string> status;
@@ -57,20 +64,9 @@ export component CaptionPresetPreviewPanel inherits VerticalLayout {
             value: Fmt.color-of(CaptionPresetPreview.background-hex, #000000);
             changed(c) => { CaptionPresetPreview.style-color("background", Fmt.hex-of(c, false)); }
         }
-        Button {
-            label: "Apply to All Captions";
-            enabled: CaptionPresetPreview.can-apply-all;
-            primary: true;
-            clicked => { CaptionPresetPreview.apply(true); }
-        }
         Text {
-            text: "Sets the project preset and requests GPU captions, even if none exist yet.";
+            text: "Apply to All sets the project preset and requests GPU captions, even if none exist yet. Apply actions stay visible below the inspector settings.";
             color: Theme.fg-muted; font-size: Theme.fs-xs; wrap: word-wrap;
-        }
-        Button {
-            label: "Apply to Selected Captions";
-            enabled: CaptionPresetPreview.can-apply-selected;
-            clicked => { CaptionPresetPreview.apply(false); }
         }
         if !CaptionPresetPreview.can-apply-selected: Text {
             text: "Select an existing caption clip to use Apply to Selected. Apply to All does not require one.";
@@ -84,8 +80,14 @@ export component CaptionPresetPreviewPanel inherits VerticalLayout {
             label: "Cancel Preview"; clicked => { CaptionPresetPreview.cancel(); }
         }
     }
+    if !root.inspector-only: Button {
+        label: CaptionPresetPreview.favourites-only ? "★ Favorites" : "☆ Favorites";
+        clicked => { CaptionPresetPreview.filter-favourites(!CaptionPresetPreview.favourites-only); }
+    }
     if !root.inspector-only && CaptionPresetPreview.cards.length == 0: Text {
-        text: "No caption presets loaded. Preset browsing does not require a selected caption. Reopen this shelf after the preset library is ready.";
+        text: CaptionPresetPreview.favourites-only
+            ? "No starred caption presets. Turn off Favorites to see all available looks."
+            : "No caption presets loaded. Preset browsing does not require a selected caption. Reopen this shelf after the preset library is ready.";
         color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
     }
     if !root.inspector-only: Rectangle {
@@ -119,7 +121,34 @@ export component CaptionPresetPreviewPanel inherits VerticalLayout {
                 wrap: word-wrap; horizontal-alignment: center; vertical-alignment: center;
             }
             touch := TouchArea { mouse-cursor: pointer; clicked => { CaptionPresetPreview.stage(card.id); } }
+            // Separate top-level action: starring never stages or applies a look.
+            IconButton {
+                x: parent.width - self.width - 6px;
+                y: 6px;
+                glyph: Glyph.mask-star;
+                checked: CaptionPresetPreview.favourites.length > index && CaptionPresetPreview.favourites[index];
+                label: (CaptionPresetPreview.favourites.length > index && CaptionPresetPreview.favourites[index] ? "Remove " + card.name + " from Favorites" : "Add " + card.name + " to Favorites");
+                clicked => { CaptionPresetPreview.toggle-favourite(card.id); }
+            }
         }
+    }
+}
+
+// Fixed inspector footer, outside its scrolling settings. The selected/apply-all
+// scopes are unchanged; stage/preview remains a separate non-project action.
+export component CaptionPresetApplyBar inherits VerticalLayout {
+    spacing: 5px;
+    padding: 8px;
+    Button {
+        label: "Apply to All Captions";
+        enabled: CaptionPresetPreview.can-apply-all;
+        primary: true;
+        clicked => { CaptionPresetPreview.apply(true); }
+    }
+    Button {
+        label: "Apply to Selected Captions";
+        enabled: CaptionPresetPreview.can-apply-selected;
+        clicked => { CaptionPresetPreview.apply(false); }
     }
 }
 
