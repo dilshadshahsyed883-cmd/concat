@@ -34,7 +34,7 @@ export component CanvasMotionPanel inherits VerticalLayout {
     if root.preset == 20: Text { text: "Moves between Start, Middle and End points with an adjustable pause at Middle. Enable custom anchors to edit Start/End."; color: Theme.fg-muted; wrap: word-wrap; font-size: Theme.fs-sm; }
     if root.preset == 20: Param { label: "Middle X"; value <=> root.settings.focus-middle-x; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
     if root.preset == 20: Param { label: "Middle Y"; value <=> root.settings.focus-middle-y; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
-    if root.preset == 20: Param { label: "Middle Hold (seconds)"; value <=> root.settings.focus-hold; minimum: 0; maximum: 60; step: 0.1; fmt: ParamFormat.steps; }
+    if root.preset == 20: Param { label: "Middle Hold (seconds)"; value <=> root.settings.focus-hold; minimum: 0; maximum: root.settings.duration * 0.8 / root.settings.speed; step: 0.1; fmt: ParamFormat.steps; }
     if root.preset == 17: Param { label: "Random Seed"; value: root.settings.seed; changed(v) => { root.settings.seed = Math.round(v); } minimum: 0; maximum: 65535; step: 1; fmt: ParamFormat.steps; }
     if root.settings.custom-anchors && root.preset != 18: Param { label: "Start X"; value <=> root.settings.start-x; minimum: -0.5; maximum: 0.5; step: 0.01; fmt: ParamFormat.steps; }
     if root.settings.custom-anchors && root.preset != 18: Param { label: "Start Y"; value <=> root.settings.start-y; minimum: -0.5; maximum: 0.5; step: 0.01; fmt: ParamFormat.steps; }
