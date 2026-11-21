@@ -42,8 +42,12 @@ class MergedConcatContractTests(unittest.TestCase):
         self.assertIn("fn strength_and_speed_change_baked_motion_without_project_extensions()", physics)
 
         ui = (source / "concat/ui/workspace/media-pane.slint").read_text()
-        self.assertIn("Apply to Selected Randomly", ui)
-        self.assertIn("Apply Favorites to All Randomly", ui)
+        inspector = (source / "concat/ui/workspace/config-pane.slint").read_text()
+        for label in ("Apply to Selected Randomly", "Apply Favorites to All Randomly"):
+            self.assertNotIn(label, ui)
+            self.assertIn(label, inspector)
+        self.assertIn("Editor.library-apply-random-transitions(1)", inspector)
+        self.assertIn("Editor.library-apply-random-transitions(2)", inspector)
 
         captions = (source / "concat/src/panes/captions.rs").read_text()
         self.assertIn("karaoke_words_aligned(&segments, subject.start, subject.speed)", captions)
