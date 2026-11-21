@@ -1,12 +1,22 @@
-Concat matching release request — 2026-11-18.
+Concat matching release request — 2026-11-21.
 
-PR #56 merged with all seven feature sources and eight green source CI runs.
-Build Windows x64 EXE and Salad GPU candidate strictly from the same triggering
-main SHA. Embed and verify source revision and render contract. Include small
-ASR model assets, all nine presets, PNG/JPEG, actual worker startup and contract
-checks. Publish Windows release only after matching image verification.
+Source of truth: the exact main commit produced when this request lands.
+Build one portable Windows x64 Concat EXE and one Salad CUDA GPU candidate image
+from that IDENTICAL Git commit SHA. This includes the #87/#91/#93/#94/#96
+integrated desktop changes from PR #99 and the verified ONNX Linux CI recovery.
 
-No VPS deployment, Drive Bridge changes, production Salad swap or Auto Script.
+Gate: preserve the pinned Concat-CUDA hybrid v1 project/render contract,
+existing saved-project schemas, PNG/JPEG + alpha handling, all nine caption
+presets, and ASR small model. Record immutable image digest, EXE/ZIP SHA-256
+and exact source SHA. Run release preflight, native Windows DLL/launch smoke,
+GPU worker import/entrypoint/auth/capabilities/compatibility source tests.
 
-Release recovery: reopen the HTTP smoke connection after expected 401; rebuild BOTH
-Windows and GPU candidates from the new triggering main SHA. No production swap.
+Publish a versioned GitHub prerelease only when the matching Windows and GPU
+candidate workflows pass and the release verification script confirms their
+same SHA. Mark real NVIDIA RTX 3060 Ti render and Windows 100/125/150% manual
+visual accessibility/preview parity as NOT VERIFIED until separately executed.
+Do not claim image startup equals real GPU rendering acceptance.
+
+NO live Salad deployment, VPS restart, Drive Bridge changes, production
+traffic switch, Auto Script, or deletion of previous verified release.
+Keep the last working release and image for rollback.
