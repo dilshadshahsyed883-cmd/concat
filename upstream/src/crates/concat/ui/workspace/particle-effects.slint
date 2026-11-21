@@ -7,6 +7,21 @@ import { IconButton } from "../primitives/panel.slint";
 import { Glyph } from "../icons.slint";
 import { LibraryFocus } from "library-focus.slint";
 export global ParticleBulk {
+    pure public function index-of(id: string) -> int {
+        return id == "concat.particles-stars" ? 0 :
+            id == "concat.particles-gold-sparkles" ? 1 :
+            id == "concat.particles-embers" ? 2 :
+            id == "concat.particles-fireflies" ? 3 :
+            id == "concat.particles-bokeh" ? 4 :
+            id == "concat.particles-dust-motes" ? 5 :
+            id == "concat.particles-snow" ? 6 :
+            id == "concat.particles-rain" ? 7 :
+            id == "concat.particles-ash" ? 8 :
+            id == "concat.particles-light-leaks" ? 9 :
+            id == "concat.particles-shooting-stars" ? 10 :
+            id == "concat.particles-confetti" ? 11 : -1;
+    }
+
     callback apply(preset: int, mode: int, selected-only: bool, images: bool, videos: bool);
     callback toggle-favourite(index: int);
     in property <[bool]> favourites;
@@ -20,14 +35,15 @@ export component ParticleEffectsPanel inherits VerticalLayout {
     property <bool> videos <=> ParticleBulk.videos;
     spacing: 8px;
     Text { text: "Particle Overlay Settings"; color: Theme.fg; font-size: Theme.fs; }
-    Select { options: ["White Twinkling Stars", "Golden Sparkles", "Orange Embers", "Fireflies", "Bokeh Lights", "Dust Motes", "Snow", "Rain", "Ash", "Light Leaks", "Shooting Stars", "Confetti"]; current <=> root.preset; }
+    Text { text: LibraryFocus.selected-name; color: Theme.fg-muted; wrap: word-wrap; }
+
     HorizontalLayout {
         Check { checked: root.images; toggled(on) => { root.images = on; } }
         Text { text: "Images"; color: Theme.fg; }
         Check { checked: root.videos; toggled(on) => { root.videos = on; } }
         Text { text: "Videos"; color: Theme.fg; }
     }
-    Text { text: "Select a preset from the left gallery; Apply does not change Favorites. Existing overlay layers and their parameters remain editable in Effects.";
+    Text { text: "Applied overlay parameters remain editable in Effects.";
         color: Theme.fg-muted; wrap: word-wrap; font-size: Theme.fs-sm; }
 }
 

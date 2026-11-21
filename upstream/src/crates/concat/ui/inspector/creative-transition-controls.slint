@@ -6,13 +6,18 @@ export global TransitionControls {
     callback apply(params: string);
 }
 export component CreativeTransitionEditor inherits VerticalLayout {
+    property <bool> expanded: false;
     spacing: 6px;
-    Text { text: "Creative transition controls (JSON)"; color: Theme.fg; font-size: Theme.fs-sm; }
-    Text { text: "direction 0–3, reverse 0/1, speed .25–4, easing 0/1, seed 0–65535, softness .1–4, roughness 0–2, fiber 0–1, shadow 0–2, paper_red/green/blue 0–1. Supported package controls are validated.";
-        color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
-    Rectangle { height: 120px; background: Theme.field;
-        TextInput { x: 6px; y: 6px; width: parent.width - 12px; height: parent.height - 12px;
-            text <=> TransitionControls.params; color: Theme.fg; font-size: Theme.fs-sm; wrap: word-wrap; }
+    Button { label: root.expanded ? "Close Advanced Transition Controls" : "Advanced Transition Controls";
+        clicked => { root.expanded = !root.expanded; } }
+    if root.expanded: VerticalLayout {
+        spacing: 6px;
+        Text { text: "direction 0–3, reverse 0/1, speed .25–4, easing 0/1, seed 0–65535, softness .1–4, roughness 0–2, fiber 0–1, shadow 0–2, paper_red/green/blue 0–1. Supported package controls are validated.";
+            color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
+        Rectangle { height: 120px; background: Theme.field;
+            TextInput { x: 6px; y: 6px; width: parent.width - 12px; height: parent.height - 12px;
+                text <=> TransitionControls.params; color: Theme.fg; font-size: Theme.fs-sm; wrap: word-wrap; }
+        }
+        Button { label: "Apply Transition Controls"; clicked => { TransitionControls.apply(TransitionControls.params); } }
     }
-    Button { label: "Apply Transition Controls"; clicked => { TransitionControls.apply(TransitionControls.params); } }
 }

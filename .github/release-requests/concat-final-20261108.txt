@@ -31,3 +31,12 @@ and PR #105 is included in main. Rebuild BOTH image and EXE from this newly
 triggered main SHA and require exact source-SHA/render-contract match.
 Do not pair the old ab97c6d image with the corrected Windows EXE.
 No production redeployment or deletion of rollback candidate.
+
+REBUILD REQUEST — 2026-11-22 issue #107 UI cleanup
+Build the Windows portable EXE and Salad CUDA candidate from the SAME new main
+commit after all seven #107 items pass source checks. Includes the unified
+Effects library, consolidated Canvas/Transform controls, animation inspector
+targets and shared generated-key ownership guard, transition disclosure and
+right-side random actions, and staged caption inspector cleanup. Preserve
+existing render contracts and keep previous verified artifacts for rollback.
+No live worker/VPS deployment is requested.

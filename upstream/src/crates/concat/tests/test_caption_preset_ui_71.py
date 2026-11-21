@@ -110,7 +110,7 @@ class CaptionPresetRegression(unittest.TestCase):
             self.assertIn(token, PREVIEW)
         for token in ("CaptionPresetPreview.applied", "CaptionPresetPreview.previewing",
                       "Apply to All Captions", "Apply to Selected Captions",
-                      "Select an existing caption clip",
+                      "Select a caption to enable Apply Selected.",
                       "CaptionPresetPreview.stage(card.id)",
                       "CaptionPresetPreview.cancel()"):
             self.assertIn(token, UI)
