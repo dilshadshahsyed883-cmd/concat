@@ -53,10 +53,10 @@ export component CanvasPresetPanel inherits VerticalLayout {
 
 // Kept outside the inspector scroller so Apply stays visible at small window
 // heights and 100/125/150% Windows display scaling.
-export component CanvasPresetApplyBar inherits HorizontalLayout {
+export component CanvasPresetApplyBar inherits VerticalLayout {
     in property <bool> images: true;
     in property <bool> videos: true;
-    spacing: 8px;
+    spacing: 5px;
     padding: 8px;
     Button { label: "Apply Selected"; enabled: root.images || root.videos; clicked => { CanvasPresets.apply(CanvasPresets.profile, false, root.images, root.videos); } }
     Button { label: "Apply All"; enabled: root.images || root.videos; clicked => { CanvasPresets.apply(CanvasPresets.profile, true, root.images, root.videos); } }
@@ -99,7 +99,7 @@ export component CanvasPresetLibrary inherits VerticalLayout {
         Text {
             x: 10px;
             y: 8px;
-            width: parent.width - 20px;
+            width: parent.width - 52px;
             text: name;
             color: Theme.fg;
             font-size: Theme.fs;
@@ -108,7 +108,7 @@ export component CanvasPresetLibrary inherits VerticalLayout {
         Text {
             x: 10px;
             y: 33px;
-            width: parent.width - 20px;
+            width: parent.width - 52px;
             text: index == 0 ? "Framed picture"
                 : index == 1 ? "Offset frame" : "Background fill";
             color: Theme.fg-muted;
