@@ -20,3 +20,14 @@ Do not claim image startup equals real GPU rendering acceptance.
 NO live Salad deployment, VPS restart, Drive Bridge changes, production
 traffic switch, Auto Script, or deletion of previous verified release.
 Keep the last working release and image for rollback.
+
+REBUILD REQUEST — 2026-11-21 native Canvas callback fix (#105)
+Original candidate main SHA ab97c6d246269e5262aa324555948729e8e9dbb0
+was published to GHCR but Linux native compilation surfaced borrow mismatches
+in Canvas callbacks. The seven references are corrected on PR #105.
+
+This request must be merged only AFTER the native source/typecheck gate passes
+and PR #105 is included in main. Rebuild BOTH image and EXE from this newly
+triggered main SHA and require exact source-SHA/render-contract match.
+Do not pair the old ab97c6d image with the corrected Windows EXE.
+No production redeployment or deletion of rollback candidate.
