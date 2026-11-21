@@ -66,6 +66,15 @@ export component ParticlePresetLibrary inherits VerticalLayout {
     ];
     property <bool> favourites-only: false;
     property <int> category: 0;
+    function inspect(index: int, name: string) {
+        ParticleBulk.preset = index;
+        LibraryFocus.page = 9;
+        LibraryFocus.selected-id = "concat.particles-" + root.ids[index];
+        LibraryFocus.selected-name = name;
+        LibraryFocus.selected-category = index < 4 ? "Light"
+            : index < 6 ? "Atmosphere" : index < 9 ? "Weather" : "Motion";
+        LibraryFocus.selected-description = "Apply to selected or all compatible visual clips. Overlay parameters remain editable on the applied clip.";
+    }
     // The backend publishes all twelve stable IDs in preset order.
     property <bool> has-starred:
         ParticleBulk.favourites.length >= 12 &&
@@ -133,15 +142,14 @@ export component ParticlePresetLibrary inherits VerticalLayout {
             width: parent.width - 38px;
             height: parent.height;
             mouse-cursor: pointer;
-            clicked => {
-                ParticleBulk.preset = index;
-                LibraryFocus.page = 9;
-                LibraryFocus.selected-id = "concat.particles-" + root.ids[index];
-                LibraryFocus.selected-name = name;
-                LibraryFocus.selected-category = index < 4 ? "Light"
-                    : index < 6 ? "Atmosphere" : index < 9 ? "Weather" : "Motion";
-                LibraryFocus.selected-description = "Apply to selected or all compatible visual clips. Overlay parameters remain editable on the applied clip.";
-            }
+            clicked => { root.inspect(index, name); }
+        }
+        IconButton {
+            x: parent.width - self.width - 5px;
+            y: 35px;
+            glyph: Glyph.info;
+            label: "Inspect " + name + " without applying";
+            clicked => { root.inspect(index, name); }
         }
         IconButton {
             x: parent.width - self.width - 5px;
