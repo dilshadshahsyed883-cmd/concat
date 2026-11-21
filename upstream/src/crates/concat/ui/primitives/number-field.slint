@@ -59,7 +59,7 @@ export component NumberField inherits Rectangle {
     property <length> keyframe-slot: root.keyframe ? 27px : 0px;
     // Reserve the up/down area so the scrub gesture cannot steal button presses.
     property <length> stepper-slot: 23px;
-    property <length> unit-slot: root.unit != "" ? unit-label.preferred-width + 19px : 0px;
+    property <length> unit-slot: root.unit != "" ? 54px : 0px;
 
     height: Theme.h;
     min-width: 66px;
