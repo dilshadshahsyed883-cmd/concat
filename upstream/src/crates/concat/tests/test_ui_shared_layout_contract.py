@@ -51,7 +51,7 @@ class SharedLayoutContractTests(unittest.TestCase):
         self.assertIn("vertical-stretch: 1;", self.inspector)
         self.assertIn("if LibraryFocus.page == 8: CanvasPresetApplyBar", self.inspector)
         self.assertIn("if LibraryFocus.page == 9: ParticleApplyBar", self.inspector)
-        self.assertIn("if LibraryFocus.page == 6 && CaptionPresetPreview.chosen != \"\": CaptionPresetApplyBar", self.inspector)
+        self.assertIn("if LibraryFocus.page == 6 && GpuCompatibility.enabled && CaptionPresetPreview.chosen != \"\": CaptionPresetApplyBar", self.inspector)
         self.assertIn('label: "Apply Selected"', self.canvas)
         self.assertIn('label: "Apply All"', self.canvas)
         for label in ("Apply Selected", "Apply All", "Random All",
