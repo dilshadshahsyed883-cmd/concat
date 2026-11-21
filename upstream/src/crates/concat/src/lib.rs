@@ -868,13 +868,13 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     app.global::<CanvasPresets>().on_choose(move |index| {
         Shell::with(|_, app| {
             if let Some(config) = concat_project::canvas_preset::Config::preset(index as u32) {
-                canvas_publish(app, &config);
+                canvas_publish(&app, &config);
             }
         });
     });
     app.global::<CanvasPresets>().on_edit_number(move |field, value| {
         Shell::with(|_, app| {
-            canvas_modify(app, |config| {
+            canvas_modify(&app, |config| {
                 let value = value as f64;
                 match field.as_str() {
                     "foregroundX" => config.foreground.x = value,
@@ -896,7 +896,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     });
     app.global::<CanvasPresets>().on_edit_colour(move |field, value| {
         Shell::with(|_, app| {
-            canvas_modify(app, |config| {
+            canvas_modify(&app, |config| {
                 let hex = format!("#{:02x}{:02x}{:02x}", value.red(), value.green(), value.blue());
                 match field.as_str() {
                     "borderColor" => config.border_color = hex,
@@ -911,7 +911,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     });
     app.global::<CanvasPresets>().on_edit_mode(move |mode| {
         Shell::with(|_, app| {
-            canvas_modify(app, |config| {
+            canvas_modify(&app, |config| {
                 config.background = match mode {
                     1 => "blur", 2 => "color", 3 => "none", _ => "source",
                 }.into();
@@ -922,7 +922,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         Shell::with(|_, app| {
             let panel = app.global::<CanvasPresets>();
             if let Ok(config) = concat_project::canvas_preset::Config::from_json(&panel.get_profile()) {
-                canvas_publish(app, &config);
+                canvas_publish(&app, &config);
             }
         });
     });
@@ -966,7 +966,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             drop(studio);
             let sports = concat_project::canvas_preset::Config::preset(1)
                 .expect("sports canvas default");
-            canvas_publish(app, &sports);
+            canvas_publish(&app, &sports);
             app.global::<CanvasPresets>().set_default_status(
                 "Canvas default reset to Sports Frame.".into());
         });
@@ -981,7 +981,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                 .iter().any(|held| held == &format!("canvas:{index}")))
             .collect::<Vec<_>>();
         app.global::<CanvasPresets>().set_favourites(ModelRc::new(VecModel::from(stars)));
-        canvas_publish(app, &remembered);
+        canvas_publish(&app, &remembered);
     });
     app.on_start_c_builder(on_window!(|studio| {studio.builder_home();}));
     app.on_c_builder_return_home(on_window!(|studio,profile:SharedString| {studio.builder_return_home(&profile);}));
