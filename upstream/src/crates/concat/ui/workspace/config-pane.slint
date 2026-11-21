@@ -6,6 +6,11 @@ import { I18n } from "../i18n.slint";
 import { Button, Theme, SegmentedControl } from "../primitives/primitives.slint";
 import { Select } from "../primitives/select.slint";
 import { Pane, PaneBody, PaneScroll } from "pane.slint";
+import { LibraryFocus } from "library-focus.slint";
+import { CanvasPresetPanel, CanvasTargets } from "canvas-presets.slint";
+import { MediaLayoutPanel } from "media-layout.slint";
+import { ParticleEffectsPanel } from "particle-effects.slint";
+import { CaptionPresetPreviewPanel } from "caption-preset-preview.slint";
 import { PaneKind, PaneSwitcher } from "pane-switcher.slint";
 import { EffectData } from "../demo/effects-panel.slint";
 import {
@@ -272,6 +277,8 @@ export component ConfigPane inherits Rectangle {
     /// shape of the strip changes, and left alone when it has not.
     property <ClipKind> strip-kind;
     changed selected => {
+        // Explicit timeline selection takes precedence over library browsing.
+        if (root.selected.present) { LibraryFocus.page = -1; }
         if (root.selected.kind != root.strip-kind) {
             root.strip-kind = root.selected.kind;
             // Clamped rather than reset: going from a video to a still should
@@ -364,8 +371,199 @@ export component ConfigPane inherits Rectangle {
     init => { root.jump(); }
 
     Pane {
+
+        // Browser selection is transient UI state. An explicit card Inspect
+        // enters this view without touching the timeline. Back restores the
+        // original clip/project inspector and its full bindings.
+        if LibraryFocus.page >= 0: Rectangle {
+            height: 52px;
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                background: Theme.line;
+            }
+            HorizontalLayout {
+                padding-left: Theme.pad;
+                padding-right: 8px;
+                spacing: 8px;
+                Text {
+                    text: LibraryFocus.page == 1 ? "Transitions"
+                        : LibraryFocus.page == 2 ? "Video Effects"
+                        : LibraryFocus.page == 3 ? "Audio Effects"
+                        : LibraryFocus.page == 4 ? "Filters"
+                        : LibraryFocus.page == 5 ? "LUTs"
+                        : LibraryFocus.page == 6 ? "Text / Captions"
+                        : LibraryFocus.page == 7 ? "Templates"
+                        : LibraryFocus.page == 8 ? "Canvas Presets"
+                        : "Particle Effects";
+                    color: Theme.fg;
+                    font-size: Theme.fs-sm;
+                    font-weight: Theme.weight-title;
+                    vertical-alignment: center;
+                }
+                Rectangle { horizontal-stretch: 1; }
+                Button {
+                    label: "Back";
+                    clicked => { LibraryFocus.page = -1; }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    PaneSwitcher {
+                        kind: PaneKind.inspector;
+                        seat: root.pane-seat;
+                        removable: root.pane-removable;
+                        picked(kind) => { root.pane-picked(kind); }
+                        removed => { root.pane-removed(); }
+                    }
+                }
+            }
+        }
+        if LibraryFocus.page >= 0: PaneBody {
+            padding: 0px;
+            spacing: 0px;
+            PaneScroll {
+                VerticalLayout {
+                    spacing: 8px;
+                    padding: 8px;
+                    if LibraryFocus.selected-name != "": VerticalLayout {
+                        spacing: 3px;
+                        Text {
+                            text: LibraryFocus.selected-name;
+                            font-size: Theme.fs-lg;
+                            font-weight: Theme.weight-title;
+                            color: Theme.fg;
+                            wrap: word-wrap;
+                        }
+                        if LibraryFocus.selected-category != "": Text {
+                            text: LibraryFocus.selected-category;
+                            font-size: Theme.fs-sm;
+                            color: Theme.fg-muted;
+                        }
+                        if LibraryFocus.selected-description != "": Text {
+                            text: LibraryFocus.selected-description;
+                            font-size: Theme.fs-sm;
+                            color: Theme.fg-muted;
+                            wrap: word-wrap;
+                        }
+                    }
+                    if LibraryFocus.page == 8: VerticalLayout {
+                        spacing: 8px;
+                        MediaLayoutPanel {
+                            canvas: true;
+                            images <=> CanvasTargets.images;
+                            videos <=> CanvasTargets.videos;
+                        }
+                        CanvasPresetPanel {
+                            images: CanvasTargets.images;
+                            videos: CanvasTargets.videos;
+                        }
+                    }
+                    if LibraryFocus.page == 9: ParticleEffectsPanel { }
+                    if LibraryFocus.page == 1 && root.on-transition: TransitionPanel {
+                        transition: root.transition;
+                        remove => { root.transition-remove(); }
+                        duration-set(seconds) => { root.transition-duration-set(seconds); }
+                        duration-all(seconds) => { root.transition-duration-all(seconds); }
+                        intensity-set(amount) => { root.transition-intensity-set(amount); }
+                        save-default(seconds, amount) => { root.transition-default-save(seconds, amount); }
+                        reset-default => { root.transition-default-reset(); }
+                    }
+                    if LibraryFocus.page == 1 && !root.on-transition: Text {
+                        text: "Choose a transition card to apply it to an eligible cut. Select the cut on the timeline to adjust duration or intensity in the inspector. The card's Info action only browses details.";
+                        color: Theme.fg-muted;
+                        font-size: Theme.fs-sm;
+                        wrap: word-wrap;
+                    }
+                    if LibraryFocus.page == 2 && root.has-selection: PresetStack {
+                        noun: I18n.t("common.effect");
+                        library-title: I18n.t("common.effects");
+                        library: false;
+                        shelf: 1;
+                        group-labels: root.effect-groups;
+                        catalogue: root.catalogue-effects;
+                        applied: root.applied-visual;
+                        params: root.visual-params;
+                        wheel-groups: root.visual-wheels;
+                        curve-groups: root.visual-curves;
+                        colours: root.visual-colours;
+                        add(id) => { root.chain-add(false, id); }
+                        toggle(index) => { root.chain-toggle(false, index); }
+                        move-by(index, delta) => { root.chain-move-by(false, index, delta); }
+                        remove(index) => { root.chain-remove(false, index); }
+                        set-param(index, key, value) => {
+                            root.chain-set-param(false, index, key, value);
+                        }
+                        set-colour(index, key, value) => {
+                            root.chain-set-colour(index, key, value);
+                        }
+                        curve-point(index, key, point, x, y) => {
+                            root.curve-point(index, key, point, x, y);
+                        }
+                        curve-remove(index, key, point) => {
+                            root.curve-remove(index, key, point);
+                        }
+                        commit => { root.clip-commit(); }
+                    }
+                    if LibraryFocus.page == 3 && root.has-selection: PresetStack {
+                        noun: I18n.t("common.audioEffect");
+                        library-title: I18n.t("configPane.audioEffects");
+                        library: false;
+                        shelf: 2;
+                        group-labels: root.audio-groups;
+                        catalogue: root.catalogue-audio;
+                        applied: root.applied-audio;
+                        params: GpuCompatibility.enabled ? [] : root.audio-params;
+                        add(id) => { root.chain-add(true, id); }
+                        toggle(index) => { root.chain-toggle(true, index); }
+                        move-by(index, delta) => { root.chain-move-by(true, index, delta); }
+                        remove(index) => { root.chain-remove(true, index); }
+                        set-param(index, key, value) => {
+                            root.chain-set-param(true, index, key, value);
+                        }
+                        commit => { root.clip-commit(); }
+                    }
+                    if (LibraryFocus.page == 2 || LibraryFocus.page == 3) && !root.has-selection: Text {
+                        text: "Select a compatible clip to edit its applied effect parameters. Browsing and starring library presets do not modify a clip.";
+                        color: Theme.fg-muted;
+                        font-size: Theme.fs-sm;
+                        wrap: word-wrap;
+                    }
+                    if (LibraryFocus.page == 4 || LibraryFocus.page == 5) && root.is-layer && root.has-selection: FilterPanel {
+                        selected: root.selected;
+                        set(field, value) => { root.clip-set(field, value); }
+                        commit => { root.clip-commit(); }
+                    }
+                    if (LibraryFocus.page == 4 || LibraryFocus.page == 5) && (!root.is-layer || !root.has-selection): Text {
+                        text: "Browse or audition a look on the left. Select an applied filter or adjustment layer on the timeline to edit supported controls; imported LUTs do not gain invented parameters.";
+                        color: Theme.fg-muted;
+                        font-size: Theme.fs-sm;
+                        wrap: word-wrap;
+                    }
+                    if LibraryFocus.page == 6: CaptionPresetPreviewPanel {
+                        inspector-only: true;
+                    }
+                    if LibraryFocus.page == 6 && root.is-text && root.has-selection: TextPanel {
+                        selected: root.selected;
+                        families: root.font-families;
+                        set(field, value) => { root.clip-set(field, value); }
+                        set-text(field, value) => { root.clip-set-text(field, value); }
+                        set-colour(field, value) => { root.clip-set-colour(field, value); }
+                        commit => { root.clip-commit(); }
+                        import-font => { root.import-font(); }
+                        set-default => { root.text-style-default(); }
+                    }
+                    if LibraryFocus.page == 7: Text {
+                        text: "Use Save Project Template in the left library. The existing template save flow remains unchanged; no template editing controls are exposed until the selected template supports them.";
+                        color: Theme.fg-muted;
+                        font-size: Theme.fs-sm;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+        }
+
         // ── details ──────────────────────────────────────────────────────
-        if !root.has-selection && !root.on-transition: Rectangle {
+        if !root.has-selection && !root.on-transition && LibraryFocus.page < 0: Rectangle {
             // The same 52px as the panes either side of it; see PaneHeader.
             height: 52px;
 
@@ -413,7 +611,7 @@ export component ConfigPane inherits Rectangle {
             }
         }
 
-        if !root.has-selection && !root.on-transition: PaneBody {
+        if !root.has-selection && !root.on-transition && LibraryFocus.page < 0: PaneBody {
             padding: 0px;
             spacing: 0px;
 
@@ -448,7 +646,7 @@ export component ConfigPane inherits Rectangle {
             }
         }
 
-        if !root.has-selection && !root.on-transition: Rectangle {
+        if !root.has-selection && !root.on-transition && LibraryFocus.page < 0: Rectangle {
             height: 49px;
 
             Rectangle {
@@ -491,7 +689,7 @@ export component ConfigPane inherits Rectangle {
         }
 
         // ── a transition ─────────────────────────────────────────────────
-        if root.on-transition: Rectangle {
+        if root.on-transition && LibraryFocus.page < 0: Rectangle {
             height: 52px;
 
             Rectangle {
@@ -531,7 +729,7 @@ export component ConfigPane inherits Rectangle {
             }
         }
 
-        if root.on-transition: PaneBody {
+        if root.on-transition && LibraryFocus.page < 0: PaneBody {
             padding: 0px;
             spacing: 0px;
 
@@ -549,7 +747,7 @@ export component ConfigPane inherits Rectangle {
         }
 
         // ── the clip inspector ───────────────────────────────────────────
-        if root.has-selection: Rectangle {
+        if root.has-selection && LibraryFocus.page < 0: Rectangle {
             // Matched to the Details bar above, or the top of the column
             // would jump by four pixels every time a clip was selected.
             height: 52px;
@@ -613,7 +811,7 @@ export component ConfigPane inherits Rectangle {
         // The tab's sections, as a second strip under the first, in the
         // same segmented style. One section needs no strip: the tab already
         // says where you are.
-        if root.has-selection && root.sections.length > 1: Rectangle {
+        if root.has-selection && root.sections.length > 1 && LibraryFocus.page < 0: Rectangle {
             height: 40px;
             background: Theme.panel;
 
@@ -647,7 +845,7 @@ export component ConfigPane inherits Rectangle {
             }
         }
 
-        if root.has-selection: PaneBody {
+        if root.has-selection && LibraryFocus.page < 0: PaneBody {
             // No padding: the inspector rows carry their own 14px inset, and
             // sections run edge to edge so their hairlines reach both sides.
             padding: 0px;
