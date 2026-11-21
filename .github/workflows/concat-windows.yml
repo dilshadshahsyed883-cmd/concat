@@ -2,6 +2,12 @@ name: Concat native development build
 
 on:
   workflow_dispatch:
+    inputs:
+      artifact_retention_days:
+        description: Keep an active integration candidate for 7 or 30 days
+        type: choice
+        options: ['7', '30']
+        default: '7'
   push:
     branches: [main]
     paths: ['.github/release-requests/concat-final-20261108.txt']
@@ -232,7 +238,7 @@ jobs:
           name: Concat-Windows-x64-dev
           path: dist/Concat-0.2.8-GPU-Windows-x64/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: ${{ inputs.artifact_retention_days || 7 }}
 
   publish-main-release:
     needs: native-editor-windows
