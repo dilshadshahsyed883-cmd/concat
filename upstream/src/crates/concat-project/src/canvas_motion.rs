@@ -27,9 +27,10 @@ pub enum CanvasMotionPreset {
     FadeScale,
     Alternating,
     BreathingLoop,
+    InHoldOut,
 }
 impl CanvasMotionPreset {
-    pub const ALL: [Self; 19] = [
+    pub const ALL: [Self; 20] = [
         Self::TopLeft,
         Self::TopRight,
         Self::BottomLeft,
@@ -49,6 +50,7 @@ impl CanvasMotionPreset {
         Self::FadeScale,
         Self::Alternating,
         Self::BreathingLoop,
+        Self::InHoldOut,
     ];
     pub fn from_index(index: i32) -> Option<Self> {
         usize::try_from(index)
@@ -76,6 +78,7 @@ impl CanvasMotionPreset {
             Self::FadeScale => "canvas-motion.fade-scale",
             Self::Alternating => "canvas-motion.alternating",
             Self::BreathingLoop => "canvas-motion.breathing-loop",
+            Self::InHoldOut => "canvas-motion.in-hold-out",
         }
     }
     pub fn anchors(self, seed: u64) -> ([f64; 2], [f64; 2]) {
@@ -144,11 +147,31 @@ impl CanvasMotionPreset {
             to = anchor;
         }
         let delay = (controls.delay_seconds / frame).round().min(last - 1.0);
-        let end = (delay
-            + (controls.duration_seconds / controls.speed / frame)
-                .round()
-                .max(1.0))
-        .min(last);
+        if self == Self::InHoldOut && last - delay < 2.0 {
+            return Err(PresetError::TooShort);
+        }
+        let end = if self == Self::InHoldOut {
+            (delay + (controls.entry_seconds / controls.speed / frame)
+                .round().max(1.0)).min(last - 1.0)
+        } else {
+            (delay + (controls.duration_seconds / controls.speed / frame)
+                .round().max(1.0)).min(last)
+        };
+        let (exit_start, exit_end) = if self == Self::InHoldOut {
+            let exit_frames = (controls.exit_seconds / controls.speed / frame)
+                .round().max(1.0).min(last - end);
+            // Hold = 0 means automatic: fill the rest of the clip until exit.
+            let hold_frames = if controls.hold_seconds == 0.0 {
+                last - end - exit_frames
+            } else {
+                (controls.hold_seconds / controls.speed / frame)
+                    .round().max(0.0).min(last - end - exit_frames)
+            };
+            let start = end + hold_frames;
+            (start, start + exit_frames)
+        } else {
+            (last, last)
+        };
         // Periodic motion needs denser samples than single-shot entrances,
         // especially on longer clips. Every key remains a visible source frame.
         let samples = if self == Self::BreathingLoop {
@@ -159,7 +182,7 @@ impl CanvasMotionPreset {
         let mut frames: Vec<f64> = (0..=samples)
             .map(|i| (i as f64 * last / samples as f64).round())
             .collect();
-        frames.extend([0.0, delay, ((delay + end) / 2.0).round(), end, last]);
+        frames.extend([0.0, delay, ((delay + end) / 2.0).round(), end, exit_start, exit_end, last]);
         frames.sort_by(f64::total_cmp);
         frames.dedup();
         let mut keys = Vec::with_capacity(frames.len() * 4);
@@ -223,12 +246,18 @@ impl CanvasMotionPreset {
             let room = (1.0 - scale) / 2.0;
             x = x.clamp(-room, room);
             y = y.clamp(-room, room);
-            let opacity = clip.opacity
-                * if self == Self::FadeScale {
-                    eased
-                } else {
-                    1.0
+            let opacity = if self == Self::InHoldOut {
+                let fade_in = if controls.reverse { 1.0 - eased } else { eased };
+                let exit_u = ((f - exit_start) / (exit_end - exit_start))
+                    .clamp(0.0, 1.0);
+                let fade_out = match controls.easing {
+                    MotionEasing::Linear => exit_u,
+                    MotionEasing::Smooth => exit_u * exit_u * (3.0 - 2.0 * exit_u),
                 };
+                clip.opacity * fade_in * (1.0 - fade_out)
+            } else {
+                clip.opacity * if self == Self::FadeScale { eased } else { 1.0 }
+            };
             for (property, value) in [
                 (KeyProperty::Scale, scale),
                 (KeyProperty::OffsetX, x),
@@ -288,6 +317,10 @@ pub struct CanvasMotionControls {
     pub start_scale: f64,
     pub end_scale: f64,
     pub duration_seconds: f64,
+    pub entry_seconds: f64,
+    /// Zero means automatically hold until exit begins near the clip end.
+    pub hold_seconds: f64,
+    pub exit_seconds: f64,
     pub delay_seconds: f64,
     pub speed: f64,
     pub strength: f64,
@@ -305,6 +338,9 @@ impl Default for CanvasMotionControls {
             start_scale: 0.30,
             end_scale: 0.92,
             duration_seconds: 3.0,
+            entry_seconds: 0.5,
+            hold_seconds: 0.0,
+            exit_seconds: 0.5,
             delay_seconds: 0.0,
             speed: 1.0,
             strength: 1.0,
@@ -326,6 +362,10 @@ impl CanvasMotionControls {
             && self.duration_seconds.is_finite()
             && self.duration_seconds > 0.0
             && self.duration_seconds <= 3600.0
+            && [self.entry_seconds, self.exit_seconds].iter()
+                .all(|v| v.is_finite() && *v > 0.0 && *v <= 3600.0)
+            && self.hold_seconds.is_finite()
+            && (0.0..=3600.0).contains(&self.hold_seconds)
             && self.delay_seconds.is_finite()
             && self.delay_seconds >= 0.0
             && self.delay_seconds <= 3600.0
@@ -449,6 +489,38 @@ mod tests {
         assert!(scale.iter().all(|k| k.value <= 1.0 && k.value >= 0.05));
         assert_eq!(CanvasMotionPreset::from_index(18), Some(CanvasMotionPreset::BreathingLoop));
         assert_eq!(CanvasMotionPreset::BreathingLoop.id(), "canvas-motion.breathing-loop");
+    }
+
+    #[test]
+    fn in_hold_out_uses_independent_timing_and_auto_hold_by_default() {
+        let clip = Clip::blank("c1", "T1", ClipKind::Image, "image", 0.0, 4.0);
+        let frame = 1.0 / 30.0;
+        let mut after = clip.clone();
+        let keys = CanvasMotionPreset::InHoldOut.keys(
+            &clip, frame, CanvasMotionControls::default()
+        ).unwrap();
+        for key in keys {
+            after.set_key(key.property, key.at, key.value, key.ease);
+        }
+        assert_eq!(after.value_at(KeyProperty::Opacity, 0.0), 0.0);
+        assert!(after.value_at(KeyProperty::Opacity, 0.05) > 0.0);
+        assert!((after.value_at(KeyProperty::Opacity, 0.25) - clip.opacity).abs() < 1e-8);
+        assert!((after.value_at(KeyProperty::Opacity, 0.8) - clip.opacity).abs() < 1e-8);
+        assert!(after.value_at(KeyProperty::Opacity, 0.99) < clip.opacity);
+        assert_eq!(CanvasMotionPreset::from_index(19), Some(CanvasMotionPreset::InHoldOut));
+
+        let mut custom = clip.clone();
+        for key in CanvasMotionPreset::InHoldOut.keys(
+            &clip, frame, CanvasMotionControls {
+                entry_seconds: 0.25, hold_seconds: 0.5, exit_seconds: 0.25,
+                ..Default::default()
+            }
+        ).unwrap() {
+            custom.set_key(key.property, key.at, key.value, key.ease);
+        }
+        // Explicit hold ends the animation early; remaining frames stay hidden.
+        assert!(custom.value_at(KeyProperty::Opacity, 0.15) < clip.opacity);
+        assert_eq!(custom.value_at(KeyProperty::Opacity, 0.5), 0.0);
     }
 
     #[test]
