@@ -2440,6 +2440,9 @@ impl Studio {
         ));
         // The effects shelf starts on "All", not whatever a stale default
         // would leave it on.
+        // Start Filters with every existing look visible; category rows narrow the shelf.
+        studio.library[0].category = "All".to_owned();
+        studio.library[0].group = -1;
         studio.library[1].category = "All".to_owned();
         studio.library[1].group = -1;
         studio
