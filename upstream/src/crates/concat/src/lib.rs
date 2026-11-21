@@ -823,6 +823,9 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     app.global::<CanvasPresets>().on_apply(on_window!(|state, json: SharedString, all: bool, images:bool, videos:bool| {
         state.apply_canvas_preset(&json, all, images, videos);
     }));
+    app.global::<CanvasPresets>().on_toggle_favourite(on_window!(|state, preset: i32| {
+        state.toggle_canvas_preset_favourite(preset);
+    }));
     app.global::<CanvasPresets>().set_profile(serde_json::to_string_pretty(
         &concat_project::canvas_preset::Config::preset(1).expect("sports canvas default")).unwrap_or_default().into());
     app.on_start_c_builder(on_window!(|studio| {studio.builder_home();}));
