@@ -397,7 +397,7 @@ export component Param inherits VerticalLayout {
 
         if !root.rail: Rectangle { width: 8px; }
         if !root.rail: NumberField {
-            width: root.unit == "" ? 64px : 84px;
+            width: root.unit == "" ? 84px : 104px;
             value <=> root.value;
             minimum: root.minimum;
             maximum: root.maximum;
@@ -449,7 +449,7 @@ export component Param inherits VerticalLayout {
         }
 
         NumberField {
-            width: root.unit == "" ? 64px : 84px;
+            width: root.unit == "" ? 84px : 104px;
             value <=> root.value;
             minimum: root.minimum;
             maximum: root.maximum;
