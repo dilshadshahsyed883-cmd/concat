@@ -1,0 +1,24 @@
+name: Feature request
+description: Propose an improvement with clear acceptance criteria.
+title: "[Feature]: "
+body:
+  - type: input
+    id: component
+    attributes:
+      label: Application or component
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: Describe the task you cannot currently complete and a concrete example.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Proposed behavior and acceptance criteria
+      description: Explain what a successful result looks like and any compatibility requirements.
+    validations:
+      required: true
