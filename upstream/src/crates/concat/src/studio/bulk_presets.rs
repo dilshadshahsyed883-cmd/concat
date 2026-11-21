@@ -1221,6 +1221,10 @@ mod tests {
         let (length, span) = transition_length(&previous, &incoming).unwrap();
         assert_eq!(length, 0.5);
         assert_eq!((span.start, span.end), (23, 38));
+        let (remembered, _) = transition_length_with_default(&previous, &incoming, 0.7).unwrap();
+        assert!((remembered - 0.7).abs() < 1e-12);
+        let (clamped, _) = transition_length_with_default(&previous, &incoming, 2.0).unwrap();
+        assert_eq!(clamped, 1.0);
         incoming.kind = ClipKind::Video;
         let (_, span) = transition_length(&previous, &incoming).unwrap();
         assert_eq!((span.start, span.end), (30, 45));
