@@ -555,7 +555,7 @@ export component ConfigPane inherits Rectangle {
                         font-size: Theme.fs-sm;
                         wrap: word-wrap;
                     }
-                    if LibraryFocus.page == 6: CaptionPresetPreviewPanel {
+                    if LibraryFocus.page == 6 && GpuCompatibility.enabled: CaptionPresetPreviewPanel {
                         inspector-only: true;
                     }
                     if LibraryFocus.page == 6 && root.is-text && root.has-selection: TextPanel {
@@ -579,7 +579,7 @@ export component ConfigPane inherits Rectangle {
             // The canvas, particle, and caption actions remain visible below
             // the scrollable settings at narrow sizes and Windows DPI scaling.
             if LibraryFocus.page == 8 || LibraryFocus.page == 9 ||
-                (LibraryFocus.page == 6 && CaptionPresetPreview.chosen != ""): Rectangle {
+                (LibraryFocus.page == 6 && GpuCompatibility.enabled && CaptionPresetPreview.chosen != ""): Rectangle {
                 height: 1px;
                 background: Theme.line;
             }
@@ -588,7 +588,7 @@ export component ConfigPane inherits Rectangle {
                 videos: CanvasTargets.videos;
             }
             if LibraryFocus.page == 9: ParticleApplyBar { }
-            if LibraryFocus.page == 6 && CaptionPresetPreview.chosen != "": CaptionPresetApplyBar { }
+            if LibraryFocus.page == 6 && GpuCompatibility.enabled && CaptionPresetPreview.chosen != "": CaptionPresetApplyBar { }
         }
 
         // ── details ──────────────────────────────────────────────────────
