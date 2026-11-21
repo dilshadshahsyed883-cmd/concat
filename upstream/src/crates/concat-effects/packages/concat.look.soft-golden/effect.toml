@@ -4,7 +4,7 @@ format = 2
 id = "concat.look.soft-golden"
 name = "Soft Golden"
 kind = "filter"
-category = "Timeline Looks"
+category = "Warm & Golden"
 order = 6
 description = "SDR whole-timeline color grading preset."
 

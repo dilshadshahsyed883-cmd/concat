@@ -4,7 +4,7 @@ format = 2
 id = "concat.look.honey-brown"
 name = "Honey Brown"
 kind = "filter"
-category = "Timeline Looks"
+category = "Warm & Golden"
 order = 18
 description = "SDR whole-timeline color grading preset."
 

@@ -4,7 +4,7 @@ format = 2
 id = "concat.look.iced-fog"
 name = "Iced Fog"
 kind = "filter"
-category = "Timeline Looks"
+category = "Cool & Moody"
 order = 5
 description = "SDR whole-timeline color grading preset."
 
