@@ -48,6 +48,7 @@ jobs:
           for module in upstream/src/crates/concat/src/{c_builder,lib,studio}.rs; do
             rustfmt --edition 2024 --emit stdout "$module" > /dev/null
           done
+          rustfmt --edition 2024 --emit stdout upstream/src/crates/concat/src/studio/caption_preview.rs > /dev/null
       - name: Worker and desktop source regressions
         run: |
           python -m compileall -q cloud_render/concat
