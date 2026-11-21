@@ -88,8 +88,18 @@ class DesktopUiContractTests(unittest.TestCase):
         self.assertIn("if root.tab == 1 && GpuCompatibility.enabled && root.text-category == 1: CaptionPresetPreviewPanel {", pages)
         for page in ("root.animation-page == 0", "root.animation-page == 1", "root.animation-page == 2"):
             self.assertIn(page, pages)
-        for panel in ("CanvasMotionPanel", "CanvasPresetPanel", "MediaLayoutPanel { canvas: false; }", "MediaLayoutPanel { canvas: true; }"):
+        # #93 moves Canvas preset editing into ConfigPane. The left viewport
+        # renders only the gallery; both panes own one scroll container.
+        for panel in ("CanvasMotionPanel", "CanvasPresetLibrary",
+                      "ParticlePresetLibrary", "MediaLayoutPanel { canvas: false; }"):
             self.assertIn(panel, pages)
+        config = (ROOT / "ui/workspace/config-pane.slint").read_text(encoding="utf-8")
+        self.assertIn("CanvasPresetPanel {", config)
+        self.assertIn("MediaLayoutPanel {", config)
+        self.assertIn("canvas: true;", config)
+        self.assertIn("LibraryFocus.page == 8", config)
+        self.assertIn("library-only: true;", pages)
+        self.assertIn("inspector-only: true;", config)
 
     def test_explicit_transform_canvas_scopes_and_selection_fallback(self):
         layout = (ROOT / "ui/workspace/media-layout.slint").read_text(encoding="utf-8")
