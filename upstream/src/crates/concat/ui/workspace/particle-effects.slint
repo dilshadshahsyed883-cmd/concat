@@ -5,6 +5,7 @@ import { Select } from "../primitives/select.slint";
 import { Check } from "../inspector/controls.slint";
 import { IconButton } from "../primitives/panel.slint";
 import { Glyph } from "../icons.slint";
+import { LibraryFocus } from "library-focus.slint";
 export global ParticleBulk {
     callback apply(preset: int, mode: int, selected-only: bool, images: bool, videos: bool);
     callback toggle-favourite(index: int);
@@ -45,6 +46,11 @@ export component ParticlePresetLibrary inherits VerticalLayout {
         "White Twinkling Stars", "Golden Sparkles", "Orange Embers",
         "Fireflies", "Bokeh Lights", "Dust Motes", "Snow", "Rain", "Ash",
         "Light Leaks", "Shooting Stars", "Confetti"
+    ];
+    property <[string]> ids: [
+        "stars", "gold-sparkles", "embers", "fireflies", "bokeh",
+        "dust-motes", "snow", "rain", "ash", "light-leaks",
+        "shooting-stars", "confetti"
     ];
     property <bool> favourites-only: false;
     property <int> category: 0;
@@ -94,7 +100,15 @@ export component ParticlePresetLibrary inherits VerticalLayout {
             width: parent.width - 38px;
             height: parent.height;
             mouse-cursor: pointer;
-            clicked => { ParticleBulk.preset = index; }
+            clicked => {
+                ParticleBulk.preset = index;
+                LibraryFocus.page = 9;
+                LibraryFocus.selected-id = "concat.particles-" + root.ids[index];
+                LibraryFocus.selected-name = name;
+                LibraryFocus.selected-category = index < 4 ? "Light"
+                    : index < 6 ? "Atmosphere" : index < 9 ? "Weather" : "Motion";
+                LibraryFocus.selected-description = "Apply to selected or all compatible visual clips. Overlay parameters remain editable on the applied clip.";
+            }
         }
         IconButton {
             x: parent.width - self.width - 5px;
