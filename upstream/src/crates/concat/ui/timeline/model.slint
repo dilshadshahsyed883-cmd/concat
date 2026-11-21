@@ -259,6 +259,15 @@ export global Keyframes {
     /// Apply the inspector's motion preset for this field.
     callback apply-motion-preset(field: ClipField);
     callback apply-random-motion();
+    // The animation library publishes its selection to the opposite inspector.
+    // Only the browsing tab controls this state, and a card click never applies keys.
+    in-out property <bool> animation-browser: false;
+    // 0..8 = physics/basic, 9..28 = Canvas Motion; existing IDs are unchanged.
+    in-out property <int> animation-selected: 0;
+    in-out property <bool> animation-images: true;
+    in-out property <bool> animation-videos: true;
+    in-out property <int> animation-scope: 0;
+
     // Inspector and Animations tab share these live physics settings.
     in-out property <float> physics-strength: 1;
     in-out property <float> physics-duration: 1;
