@@ -61,6 +61,9 @@ pub struct Preferences {
     /// like library favourites; older settings.json files default to none.
     #[serde(default)]
     pub physics_motion_favourites: Vec<String>,
+    /// Explicitly saved editor Canvas defaults. Unlike project data these only
+    /// seed the Canvas editor; they never rewrite an existing project.
+    pub canvas_default: Option<concat_project::canvas_preset::Config>,
     /// The playhead stops at the end of the content instead of going where
     /// it is put. Off by default: a click past the last clip lands there, so
     /// a clip can be dropped at the playhead beyond everything else.
