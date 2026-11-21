@@ -64,6 +64,10 @@ pub struct Preferences {
     /// Explicitly saved editor Canvas defaults. Unlike project data these only
     /// seed the Canvas editor; they never rewrite an existing project.
     pub canvas_default: Option<concat_project::canvas_preset::Config>,
+    /// Optional defaults for NEW transition applications only; existing cuts
+    /// continue to use their own project-stored duration and intensity.
+    pub transition_default_duration: Option<f64>,
+    pub transition_default_intensity: Option<f64>,
     /// The playhead stops at the end of the content instead of going where
     /// it is put. Off by default: a click past the last clip lands there, so
     /// a clip can be dropped at the playhead beyond everything else.
@@ -522,6 +526,22 @@ mod tests {
         assert_eq!(back.keybinds.get("mute").map(String::as_str), Some(""));
         let older: Preferences = serde_json::from_str(r#"{"dark": false}"#).unwrap();
         assert!(older.keybinds.is_empty());
+    }
+
+    #[test]
+    fn transition_defaults_round_trip_and_legacy_file_uses_bundled_settings() {
+        let prefs = Preferences {
+            transition_default_duration: Some(0.7),
+            transition_default_intensity: Some(0.65),
+            ..Preferences::default()
+        };
+        let text = serde_json::to_string(&prefs).unwrap();
+        let back: Preferences = serde_json::from_str(&text).unwrap();
+        assert_eq!(back.transition_default_duration, Some(0.7));
+        assert_eq!(back.transition_default_intensity, Some(0.65));
+        let legacy: Preferences = serde_json::from_str(r#"{"dark":true}"#).unwrap();
+        assert_eq!(legacy.transition_default_duration, None);
+        assert_eq!(legacy.transition_default_intensity, None);
     }
 
     #[test]
