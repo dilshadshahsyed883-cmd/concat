@@ -1,5 +1,6 @@
 """Unix intake failures must never fall back to Concat's private rclone."""
 import hashlib
+import errno
 import io
 import json
 from pathlib import Path
@@ -7,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-from app.modules.concat.engine.drive_socket import DriveSocket
+from app.modules.concat.engine.drive_socket import DriveSocket, RetryableDriveError
 from app.modules.concat.engine.cloud_render import CloudRender
 from app.modules.concat.tenant import owner_key
 
@@ -87,6 +88,36 @@ class SocketTests(unittest.TestCase):
                         with self.assertRaises(RuntimeError):
                             DriveSocket("a" * 64).request("download", {"row": ROW}, target)
                         self.assertFalse(target.exists())
+
+    def test_only_temporary_bridge_errors_are_retryable(self):
+        for status, code, retryable in ((503, "unavailable", True),
+                                        (429, "rate_limited", True),
+                                        (502, "source_denied", False),
+                                        (502, "source_missing", False),
+                                        (502, "authentication", False),
+                                        (502, "configuration", False),
+                                        (400, "invalid_request", False)):
+            with self.subTest(code=code):
+                response = Response(json.dumps({"error": code}).encode())
+                response.status = status
+                context, _ = self.reply(response)
+                with context, self.assertRaises(RuntimeError) as error:
+                    DriveSocket("a" * 64).request("download", {}, Path("unused"))
+                self.assertEqual(isinstance(error.exception, RetryableDriveError), retryable)
+
+    def test_connection_failure_is_retryable_but_local_disk_failure_is_not(self):
+        conn = Mock()
+        conn.request.side_effect = ConnectionResetError()
+        with patch("app.modules.concat.engine.drive_socket.UnixHTTP", return_value=conn):
+            with self.assertRaises(RetryableDriveError):
+                DriveSocket("a" * 64).request("download", {}, Path("unused"))
+        context, _ = self.reply(Response(b"zip", {"Content-Length": "3",
+            "X-Content-SHA256": hashlib.sha256(b"zip").hexdigest(), "X-Zip-Name": '"bundle.zip"'}))
+        with context, patch("app.modules.concat.engine.drive_socket.os.open",
+                            side_effect=OSError(errno.ENOSPC, "full")):
+            with self.assertRaises(RuntimeError) as error:
+                DriveSocket("a" * 64).request("download", {}, Path("unused"))
+        self.assertNotIsInstance(error.exception, RetryableDriveError)
 
     def test_destination_symlink_is_never_followed(self):
         with tempfile.TemporaryDirectory() as temp:

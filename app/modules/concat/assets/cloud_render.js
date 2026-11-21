@@ -120,7 +120,8 @@
     for (const [action, state] of [["start","stopped"],["pause","running"],["resume","paused"]]) {
       $("cr-"+action+"-queue").disabled = data.state !== state;
     }
-    const key = JSON.stringify(data.items);
+    const key = JSON.stringify(data.items) + (data.items.some(item => item.state === "Retrying Drive")
+      ? Math.floor(Date.now() / 1000) : "");
     if (key === previousQueue) return;
     previousQueue = key;
     const list = $("cr-production-list");
@@ -139,6 +140,10 @@
       name.textContent = item.name;
       const status = document.createElement("small");
       status.textContent = item.state + (item.cancel_requested && item.state !== "Cancelled" ? " · Cancel requested" : "");
+      if (item.state === "Retrying Drive") {
+        const seconds = Math.max(0, Math.ceil(item.intake_retry_at - Date.now() / 1000));
+        status.textContent = "Drive retry " + item.intake_retries + "/5 · next attempt in " + seconds + "s";
+      }
       head.append(name, status);
       card.append(head);
       if (item.error) {

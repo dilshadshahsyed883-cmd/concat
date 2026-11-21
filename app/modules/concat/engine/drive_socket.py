@@ -15,6 +15,10 @@ MAX_JSON = 16 * 1024 * 1024
 MAX_ZIP = 4 * 1024 ** 3
 
 
+class RetryableDriveError(RuntimeError):
+    """Temporary intake transfer failure; safe to retry the same Drive item."""
+
+
 class UnixHTTP(http.client.HTTPConnection):
     def __init__(self, path, timeout):
         super().__init__("localhost", timeout=timeout)
@@ -35,6 +39,7 @@ class DriveSocket:
 
     def request(self, operation, obj, destination=None):
         connection = UnixHTTP(self.path, 7500 if destination else 5 if operation == "health" else 90)
+        local_io = False
         try:
             connection.request("POST", "/v1/" + operation,
                                json.dumps({"owner": self.owner, **obj}),
@@ -51,7 +56,10 @@ class DriveSocket:
                     "authentication": "Canonical Drive authentication expired or unauthorized",
                     "configuration": "Canonical Drive Bridge configuration unavailable",
                 }.get(code, "Canonical Drive Bridge operation unavailable; intake stopped")
-                raise RuntimeError(message)
+                permanent = code in ("source_denied", "source_missing", "authentication", "configuration")
+                error = RetryableDriveError if not permanent and (
+                    response.status in (408, 429) or response.status >= 500) else RuntimeError
+                raise error(message)
             if destination is None:
                 body = response.read(MAX_JSON + 1)
                 if len(body) > MAX_JSON:
@@ -66,24 +74,37 @@ class DriveSocket:
                 raise ValueError()
             digest, received = hashlib.sha256(), 0
             # Exclusive creation refuses symlinks and pre-existing files.
+            local_io = True
             fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             try:
                 with os.fdopen(fd, "wb") as stream:
-                    while chunk := response.read(min(1024 * 1024, size - received + 1)):
+                    while True:
+                        try:
+                            chunk = response.read(min(1024 * 1024, size - received + 1))
+                        except OSError:
+                            raise RetryableDriveError("Canonical Drive Bridge connection interrupted") from None
+                        if not chunk:
+                            break
                         received += len(chunk)
                         if received > size:
                             raise ValueError()
                         digest.update(chunk)
                         stream.write(chunk)
                     if received != size or not hmac.compare_digest(digest.hexdigest(), sha):
-                        raise ValueError()
+                        raise RetryableDriveError("Drive transfer incomplete or checksum mismatch")
                     stream.flush()
                     os.fsync(stream.fileno())
             except BaseException:
                 Path(destination).unlink(missing_ok=True)
                 raise
             return name
-        except (OSError, http.client.HTTPException, ValueError, TypeError):
+        except OSError:
+            if local_io:
+                raise RuntimeError("VPS Drive ZIP operation failed. Check storage and permissions.") from None
+            raise RetryableDriveError("Canonical Drive Bridge connection unavailable") from None
+        except http.client.HTTPException:
+            raise RetryableDriveError("Canonical Drive Bridge connection interrupted") from None
+        except (ValueError, TypeError):
             raise RuntimeError("Canonical Drive Bridge unavailable or invalid response; intake stopped") from None
         finally:
             connection.close()

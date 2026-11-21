@@ -28,6 +28,8 @@ CHUNK = 8 * 1024 ** 2
 DRIVE_ID = re.compile(r"[A-Za-z0-9_-]{1,200}")
 SHA256 = re.compile(r"[0-9a-f]{64}")
 TERMINAL = ("Completed", "Failed", "Cancelled")
+INTAKE_RETRIES = 5
+INTAKE_RETRY_DELAY = 10
 
 
 class JobError(RuntimeError):
@@ -346,6 +348,10 @@ class ProductionQueue:
                 rerender INTEGER NOT NULL DEFAULT 0, output_sha TEXT NOT NULL DEFAULT '',
                 output_size INTEGER NOT NULL DEFAULT 0
             )""")
+            columns = {row[1] for row in con.execute("PRAGMA table_info(production_jobs)")}
+            for column in ("intake_retries", "intake_retry_at"):
+                if column not in columns:
+                    con.execute(f"ALTER TABLE production_jobs ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0")
             con.execute("INSERT OR IGNORE INTO config VALUES('production_queue', 'stopped')")
             # Pre-split releases could wait for a worker BEFORE Drive download.
             # Revalidate their local ZIP (if present), otherwise fetch it.
@@ -443,7 +449,7 @@ class ProductionQueue:
     def snapshot(self):
         with self.media.connection() as con:
             items = [dict(row) for row in con.execute(
-                "SELECT id,name,state,error,cancel_requested FROM production_jobs ORDER BY id")]
+                "SELECT id,name,state,error,cancel_requested,intake_retries,intake_retry_at FROM production_jobs ORDER BY id")]
             concurrency = int(self.media.get(con, "render_concurrency") or "1")
             active = sum(item["state"] in ("Waiting for Worker", "Uploading to GPU", "Rendering", "Delivering") for item in items)
             intake = sum(item["state"] in ("Downloading", "Verifying ZIP") for item in items)
@@ -469,7 +475,9 @@ class ProductionQueue:
             if row is None:
                 raise HTTPException(404, "Project not found.")
             if action == "cancel" and row["state"] not in TERMINAL:
-                if row["state"] == "Queued":
+                if row["state"] in ("Queued", "Retrying Drive"):
+                    if row["state"] == "Retrying Drive":
+                        self.clean_input(job)
                     con.execute("UPDATE production_jobs SET state='Cancelled',error='' WHERE id=?", (job,))
                 else:
                     con.execute("UPDATE production_jobs SET cancel_requested=1,error='' WHERE id=?", (job,))
@@ -477,7 +485,8 @@ class ProductionQueue:
                 if row["rerender"]:
                     con.execute("""UPDATE production_jobs SET remote_id=?,endpoint='',submitted_at=0,rerender=0
                                    WHERE id=?""", (self.new_remote_id(), job))
-                con.execute("UPDATE production_jobs SET state='Queued',error='',cancel_requested=0 WHERE id=?", (job,))
+                con.execute("""UPDATE production_jobs SET state='Queued',error='',cancel_requested=0,
+                               intake_retries=0,intake_retry_at=0 WHERE id=?""", (job,))
             elif action == "delete" and row["state"] in (*TERMINAL, "Queued"):
                 self.clean_input(job)
                 self.output_part(job).unlink(missing_ok=True)
@@ -554,11 +563,18 @@ class ProductionQueue:
         return 5
 
     def tick_intake(self):
+        from .drive_socket import RetryableDriveError
         with self.media.lock, self.media.connection() as con:
             row = con.execute("""SELECT * FROM production_jobs
-                WHERE state IN ('Queued','Downloading','Verifying ZIP')
-                ORDER BY id LIMIT 1""").fetchone()
+                WHERE state IN ('Queued','Downloading','Verifying ZIP','Retrying Drive')
+                  AND (intake_retry_at<=? OR cancel_requested=1)
+                ORDER BY id LIMIT 1""", (time.time(),)).fetchone()
         if row is None:
+            with self.media.connection() as con:
+                due = con.execute("""SELECT MIN(intake_retry_at) FROM production_jobs
+                    WHERE state='Retrying Drive'""").fetchone()[0]
+            if due is not None:
+                return max(0, min(3, due - time.time()))
             return 3
         try:
             self.prepare(row)
@@ -569,6 +585,15 @@ class ProductionQueue:
                 self.clean_input(row["id"])
                 self.update(row["id"], state="Cancelled")
             return 2
+        except RetryableDriveError as exc:
+            if row["intake_retries"] < INTAKE_RETRIES:
+                self.update(row["id"], state="Retrying Drive", error=str(exc)[:350],
+                            intake_retries=row["intake_retries"] + 1,
+                            intake_retry_at=time.time() + INTAKE_RETRY_DELAY)
+            else:
+                self.update(row["id"], state="Failed",
+                            error=f"Drive intake failed after {INTAKE_RETRIES} retries. {exc}"[:350],
+                            intake_retry_at=0)
         except (JobError, RuntimeError, HTTPException) as exc:
             self.update(row["id"], state="Failed", error=str(getattr(exc, "detail", str(exc)))[:350])
         except OSError:
@@ -633,7 +658,7 @@ class ProductionQueue:
                 AND state NOT IN ('Failed','Cancelled')""", (digest, job)).fetchone()
             if same:
                 raise JobError("An identical Concat ZIP is already in Production.")
-            con.execute("UPDATE production_jobs SET state='Ready for GPU',digest=?,error='' WHERE id=?",
+            con.execute("UPDATE production_jobs SET state='Ready for GPU',digest=?,error='',intake_retry_at=0 WHERE id=?",
                         (digest, job))
         self.wake.set()
 

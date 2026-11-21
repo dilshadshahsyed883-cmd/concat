@@ -82,6 +82,96 @@ class IndependentDriveIntakeTests(unittest.TestCase):
         with self.media.connection() as con:
             return con.execute("SELECT * FROM production_jobs WHERE id=?", (job,)).fetchone()
 
+    def temporary_failure(self, row, destination):
+        from app.modules.concat.engine.drive_socket import RetryableDriveError
+        self.download_calls += 1
+        destination.write_bytes(b"partial")
+        raise RetryableDriveError("connection interrupted")
+
+    def test_retry_waits_ten_seconds_then_recovers_and_cleans_partial(self):
+        good_download = self.queue.drive.download
+        self.queue.drive.download = self.temporary_failure
+        with patch("app.modules.concat.engine.cloud_render_production.time.time", return_value=100):
+            self.queue.tick_intake()
+        self.assertEqual(self.state()["state"], "Retrying Drive")
+        self.assertEqual(self.state()["intake_retries"], 1)
+        self.assertEqual(self.state()["intake_retry_at"], 110)
+        self.assertEqual(self.queue.snapshot()["active"], 0)
+        self.queue.drive.download = good_download
+        with patch("app.modules.concat.engine.cloud_render_production.time.time", return_value=109):
+            self.assertEqual(self.queue.tick_intake(), 1)
+        self.assertEqual(self.download_calls, 1)
+        with patch("app.modules.concat.engine.cloud_render_production.time.time", return_value=110):
+            self.queue.tick_intake()
+        self.assertEqual(self.download_calls, 2)
+        self.assertEqual(self.state()["state"], "Ready for GPU")
+        self.assertEqual(self.state()["intake_retry_at"], 0)
+        self.assertEqual(self.queue.archive(1).read_bytes(), self.fixture.read_bytes())
+
+    def test_exactly_five_retries_then_manual_retry_resets_budget(self):
+        self.queue.drive.download = self.temporary_failure
+        for attempt in range(6):
+            with patch("app.modules.concat.engine.cloud_render_production.time.time", return_value=100 + 10 * attempt):
+                self.queue.tick_intake()
+            self.assertEqual(self.state()["state"], "Failed" if attempt == 5 else "Retrying Drive")
+        self.assertEqual(self.download_calls, 6)
+        self.assertEqual(self.state()["intake_retries"], 5)
+        self.queue.tick_intake()
+        self.assertEqual(self.download_calls, 6)
+        self.queue.action(1, "retry")
+        self.assertEqual(self.state()["intake_retries"], 0)
+        self.assertEqual(self.state()["intake_retry_at"], 0)
+        self.assertEqual(self.state()["state"], "Queued")
+
+    def test_existing_database_migration_preserves_jobs(self):
+        from app.modules.concat.engine.cloud_render_production import ProductionQueue
+        with self.media.connection() as con:
+            con.execute("ALTER TABLE production_jobs DROP COLUMN intake_retries")
+            con.execute("ALTER TABLE production_jobs DROP COLUMN intake_retry_at")
+        restored = ProductionQueue(self.media, self.queue.worker_factory)
+        self.assertEqual(self.state()["intake_retries"], 0)
+        self.assertEqual(self.state()["intake_retry_at"], 0)
+        self.assertEqual(restored.snapshot()["items"][0]["name"], "source.zip")
+        ProductionQueue(self.media, self.queue.worker_factory)
+        self.assertEqual(self.state()["state"], "Queued")
+
+    def test_restart_preserves_retry_deadline_and_budget(self):
+        from app.modules.concat.engine.cloud_render_production import ProductionQueue
+        self.queue.drive.download = self.temporary_failure
+        with patch("app.modules.concat.engine.cloud_render_production.time.time", return_value=100):
+            self.queue.tick_intake()
+        restored = ProductionQueue(self.media, self.queue.worker_factory)
+        restored.drive.download = self.temporary_failure
+        with patch("app.modules.concat.engine.cloud_render_production.time.time", return_value=109):
+            restored.tick_intake()
+        self.assertEqual(self.download_calls, 1)
+        self.assertEqual(self.state()["intake_retries"], 1)
+        with patch("app.modules.concat.engine.cloud_render_production.time.time", return_value=110):
+            restored.tick_intake()
+        self.assertEqual(self.download_calls, 2)
+        self.assertEqual(self.state()["intake_retries"], 2)
+
+    def test_retry_wait_does_not_block_other_job_or_cancel(self):
+        self.queue.drive.download = self.temporary_failure
+        with patch("app.modules.concat.engine.cloud_render_production.time.time", return_value=100):
+            self.queue.tick_intake()
+        self.add_job("second-drive")
+        self.queue.drive.download = lambda row, destination: (destination.write_bytes(
+            self.fixture.read_bytes()) and "source.zip")
+        with patch("app.modules.concat.engine.cloud_render_production.time.time", return_value=101):
+            self.queue.tick_intake()
+        self.assertEqual(self.state(2)["state"], "Ready for GPU")
+        self.queue.action(1, "cancel")
+        self.queue.tick_intake()
+        self.assertEqual(self.state()["state"], "Cancelled")
+        self.assertEqual(self.download_calls, 1)
+
+    def test_permanent_drive_error_does_not_retry(self):
+        self.queue.drive.download = lambda *args: (_ for _ in ()).throw(RuntimeError("permission denied"))
+        self.queue.tick_intake()
+        self.assertEqual(self.state()["state"], "Failed")
+        self.assertEqual(self.state()["intake_retries"], 0)
+
     def test_offline_intake_ready_without_worker(self):
         self.queue.worker_factory = lambda pinned: self.fail("GPU worker used during Drive intake")
         self.assertEqual(self.queue.tick_intake(), 0)
