@@ -826,6 +826,24 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             state.library_favourite(&key, !starred);
         }
     }));
+    app.global::<CanvasPresets>().on_toggle_favourite(move |index| {
+        Shell::with(|shell, app| {
+            if !(1..=3).contains(&index) { return; }
+            let mut studio = shell.studio.borrow_mut();
+            let id = index as u32;
+            if studio.prefs.canvas_preset_favourites.contains(&id) {
+                studio.prefs.canvas_preset_favourites.retain(|saved| *saved != id);
+            } else {
+                studio.prefs.canvas_preset_favourites.push(id);
+            }
+            studio.prefs.save(&studio.host.dirs);
+            let stars = (1..=3_u32)
+                .map(|preset| studio.prefs.canvas_preset_favourites.contains(&preset))
+                .collect::<Vec<_>>();
+            app.global::<CanvasPresets>()
+                .set_favourites(ModelRc::new(VecModel::from(stars)));
+        });
+    });
     app.global::<CanvasPresets>().on_choose(move |index| {
         Shell::with(|_, app| {
             if let Some(config) = concat_project::canvas_preset::Config::preset(index as u32) {
@@ -876,6 +894,10 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             .and_then(|json| concat_project::canvas_preset::Config::from_json(json).ok())
             .unwrap_or_else(|| concat_project::canvas_preset::Config::preset(1)
                 .expect("sports canvas default"));
+        let stars = (1..=3_u32)
+            .map(|preset| shell.studio.borrow().prefs.canvas_preset_favourites.contains(&preset))
+            .collect::<Vec<_>>();
+        app.global::<CanvasPresets>().set_favourites(ModelRc::new(VecModel::from(stars)));
         app.global::<CanvasPresets>().set_selected(remembered.preset as i32);
         app.global::<CanvasPresets>().set_profile(
             serde_json::to_string_pretty(&remembered).unwrap_or_default().into());
