@@ -123,7 +123,7 @@
       {% endif %}
       </div>
       {% if engine_instance == 'concat' %}
-      <label class="lum-field"><span>Thumbnail — optional</span><input id="concat-thumbnail" name="thumbnail" type="file" accept="image/png,image/jpeg"></label>
+      <label class="lum-field"><span>Thumbnail — optional (JPG/PNG, maximum {{ max_thumbnail_bytes // (1024 * 1024) }} MB)</span><input id="concat-thumbnail" data-max-thumbnail-bytes="{{ max_thumbnail_bytes }}" name="thumbnail" type="file" accept="image/png,image/jpeg"></label>
       <div class="concat-thumbnail-preview" data-concat-thumbnail-preview hidden><img alt="Selected thumbnail preview"></div>
       <p class="concat-thumbnail-error" data-concat-thumbnail-error role="alert" hidden></p>
       {% else %}

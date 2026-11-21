@@ -27,7 +27,7 @@
       input.setCustomValidity(message);
       if (error) { error.textContent = message; error.hidden = false; }
     }
-    if (file.size > 2 * 1024 * 1024) return fail("Thumbnail must be 2 MB or smaller.");
+    if (file.size > Number(input.dataset.maxThumbnailBytes)) return fail("Thumbnail must be 50 MB or smaller.");
     if (!["image/jpeg", "image/png"].includes(file.type) &&
         !(!file.type && /\.(jpe?g|png)$/i.test(file.name))) {
       return fail("Choose a JPG or PNG thumbnail.");

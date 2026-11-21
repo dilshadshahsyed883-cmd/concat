@@ -9,6 +9,7 @@ from typing import Any, Dict, Iterable, List
 from .path_utils import resolve_stored_path
 from .token_utils import VALID_TOKEN, classify_google_json
 from .upload_status import UploadStatus
+from .thumbnail_limits import MAX_THUMBNAIL_BYTES
 
 ACTIVE_QUEUE_STATUSES = {
     UploadStatus.QUEUED.value,
@@ -103,14 +104,15 @@ def validate_job(job: Dict[str, Any]) -> List[PreflightIssue]:
         issues.append(PreflightIssue(video_id, "ERROR", "THUMBNAIL_MISSING", "Engine 2 requires a thumbnail before upload."))
     if os.environ.get("LUM_ENGINE_INSTANCE", "engine1").strip().lower() == "song" and not thumb_raw:
         issues.append(PreflightIssue(video_id, "ERROR", "THUMBNAIL_MISSING", "Song Uploader requires a thumbnail before upload."))
+    thumbnail_limit = MAX_THUMBNAIL_BYTES if os.environ.get("LUM_ENGINE_INSTANCE", "").strip().lower() == "concat" else 2 * 1024 * 1024
     if thumb_raw:
         thumb = resolve_stored_path(thumb_raw)
         if not thumb.exists() or not thumb.is_file() or thumb.stat().st_size <= 0:
             issues.append(PreflightIssue(video_id, "ERROR", "THUMBNAIL_MISSING", f"Thumbnail file missing or empty: {thumb}"))
         elif thumb.suffix.lower() not in {".jpg", ".jpeg", ".png"}:
             issues.append(PreflightIssue(video_id, "WARNING", "THUMBNAIL_FORMAT", f"Thumbnail format may not be supported: {thumb.name}"))
-        elif thumb.stat().st_size > 2 * 1024 * 1024:
-            issues.append(PreflightIssue(video_id, "WARNING", "THUMBNAIL_LARGE", f"Thumbnail is larger than 2 MB: {thumb.name}"))
+        elif thumb.stat().st_size > thumbnail_limit:
+            issues.append(PreflightIssue(video_id, "WARNING", "THUMBNAIL_LARGE", f"Thumbnail is larger than {thumbnail_limit // (1024 * 1024)} MB: {thumb.name}"))
 
     if video_path.exists():
         try:

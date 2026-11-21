@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import os
 import secrets
 import shutil
@@ -35,6 +36,7 @@ from .four_modes import registry as four_mode_registry, validate_mode as validat
 from .mode_gateway import forward as forward_engine_request, MODE_PORTS as ENGINE_PORTS
 from .reports import generate_health_report, list_reports, report_path
 from .worker import VPSUploadWorker
+from desktop_core.modules.thumbnail_limits import MAX_THUMBNAIL_BYTES
 from desktop_core.modules.auth_manager import AuthManager
 from desktop_core.modules.database import Database
 from desktop_core.modules.token_utils import classify_google_json, token_status_label
@@ -690,6 +692,7 @@ def app_page(request: Request, tab: str = "", message: str = "", error: str = ""
             pass
     return templates.TemplateResponse("app.html", {
         "request": request,
+        "max_thumbnail_bytes": MAX_THUMBNAIL_BYTES if engine_instance == "concat" else 2 * 1024 * 1024,
         "user": user,
         "mode": mode,
         "tab": selected,
@@ -971,11 +974,12 @@ async def add_video(
             suffix = Path(thumbnail.filename).suffix.lower()
             if suffix not in {".jpg", ".jpeg", ".png"}:
                 raise ValueError("Thumbnail must be JPG or PNG")
-            payload = await thumbnail.read()
+            thumbnail_limit = MAX_THUMBNAIL_BYTES if upload_instance == "concat" else 2 * 1024 * 1024
+            payload = await thumbnail.read(thumbnail_limit + 1)
             if not payload:
                 raise ValueError("Thumbnail must not be empty")
-            if len(payload) > 2 * 1024 * 1024:
-                raise ValueError("Thumbnail must be 2 MB or smaller")
+            if len(payload) > thumbnail_limit:
+                raise ValueError(f"Thumbnail must be {thumbnail_limit // (1024 * 1024)} MB or smaller")
             temp = THUMBNAIL_ROOT / f"pending_{os.urandom(8).hex()}{suffix}"
             temp.write_bytes(payload); thumb_path = str(temp)
         app_upload_at_utc = app_upload_at
