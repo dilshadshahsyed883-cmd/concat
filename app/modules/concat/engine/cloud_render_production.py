@@ -213,6 +213,15 @@ def bundle_manifest(path):
                 expected.add(member)
             if expected != members.keys():
                 raise JobError("Concat ZIP contains unexpected files.")
+            # Checking just the ZIP directory is not sufficient: truncated or
+            # corrupt media may otherwise fail only on the paid GPU worker.
+            for member, digest in verified.items():
+                actual = hashlib.sha256()
+                with archive.open(member) as stream:
+                    while block := stream.read(CHUNK):
+                        actual.update(block)
+                if actual.hexdigest() != digest:
+                    raise JobError("Concat ZIP media checksum mismatch.")
             return manifest
     except (zipfile.BadZipFile, KeyError, TypeError, ValueError, OSError, RecursionError, NotImplementedError):
         raise JobError("Invalid Concat ZIP. Use a bundle made with Prepare ZIP Only.") from None
@@ -320,8 +329,10 @@ class ProductionQueue:
             raise RuntimeError("Cloud Render Production directory cannot be a symlink.")
         self.spool.mkdir(mode=0o700, exist_ok=True)
         self.wake = threading.Event()
+        self.intake_wake = threading.Event()
         self.stop = threading.Event()
         self.thread = None
+        self.intake_thread = None
         self.observation_cursor = 0
         with manager.connection() as con:
             con.execute("""CREATE TABLE IF NOT EXISTS production_jobs(
@@ -336,17 +347,26 @@ class ProductionQueue:
                 output_size INTEGER NOT NULL DEFAULT 0
             )""")
             con.execute("INSERT OR IGNORE INTO config VALUES('production_queue', 'stopped')")
+            # Pre-split releases could wait for a worker BEFORE Drive download.
+            # Revalidate their local ZIP (if present), otherwise fetch it.
+            con.execute("""UPDATE production_jobs SET state='Queued'
+                           WHERE state='Waiting for Worker' AND submitted_at=0""")
 
     def start(self):
         self.stop.clear()
         self.thread = threading.Thread(target=self.run, name="cloud-render-production", daemon=True)
+        self.intake_thread = threading.Thread(target=self.run_intake, name="cloud-render-drive-intake", daemon=True)
+        self.intake_thread.start()
         self.thread.start()
 
     def close(self):
         self.stop.set()
         self.wake.set()
+        self.intake_wake.set()
         if self.thread:
             self.thread.join(timeout=2)
+        if self.intake_thread:
+            self.intake_thread.join(timeout=2)
 
     def run(self):
         # The Scene web service normally runs one process. An OS lock also
@@ -366,6 +386,25 @@ class ProductionQueue:
                     delay = 8
                 self.wake.wait(delay)
                 self.wake.clear()
+
+    def run_intake(self):
+        # Separate lock/thread: a slow rclone download never consumes a GPU
+        # render slot or blocks worker status polling, even across restarts.
+        with (self.spool / ".intake.lock").open("a") as lock:
+            while not self.stop.is_set():
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    self.stop.wait(2)
+            while not self.stop.is_set():
+                try:
+                    delay = self.tick_intake()
+                except Exception:
+                    LOG.exception("Cloud Render Drive intake failed")
+                    delay = 8
+                self.intake_wake.wait(delay)
+                self.intake_wake.clear()
 
     def scan(self, link):
         try:
@@ -389,6 +428,11 @@ class ProductionQueue:
                     remote_id,drive_id,name,resource_keys,drive_size,drive_md5,folder_id,drive_path)
                     VALUES(?,?,?,?,?,?,?,?)""", (self.new_remote_id(), drive_id, name, keys, size, md5, folder, path))
                 added += 1
+            # Scanning arms dispatch automatically, but never overrides a
+            # deliberate Pause. Intake runs even while GPU is paused/stopped.
+            if candidates and self.media.get(con, "production_queue") == "stopped":
+                self.media.put(con, "production_queue", "running")
+        self.intake_wake.set()
         self.wake.set()
         return {"added": added, "duplicates": len(candidates) - added}
 
@@ -401,9 +445,12 @@ class ProductionQueue:
             items = [dict(row) for row in con.execute(
                 "SELECT id,name,state,error,cancel_requested FROM production_jobs ORDER BY id")]
             concurrency = int(self.media.get(con, "render_concurrency") or "1")
-            active = sum(item["state"] not in TERMINAL and item["state"] != "Queued" for item in items)
+            active = sum(item["state"] in ("Uploading to GPU", "Rendering", "Delivering") for item in items)
+            intake = sum(item["state"] in ("Downloading", "Verifying ZIP") for item in items)
+            ready = sum(item["state"] == "Ready for GPU" for item in items)
             return {"state": self.media.get(con, "production_queue"),
-                    "concurrency": concurrency, "active": active, "items": items}
+                    "concurrency": concurrency, "active": active,
+                    "intake_active": intake, "ready_for_gpu": ready, "items": items}
 
     def control(self, action):
         state = {"start": "running", "pause": "paused", "resume": "running"}.get(action)
@@ -438,6 +485,7 @@ class ProductionQueue:
             else:
                 raise HTTPException(409, "This action is unavailable in the current project state.")
         self.wake.set()
+        self.intake_wake.set()
         return {"ok": True}
 
     def update(self, job, *, state, error="", **values):
@@ -461,23 +509,21 @@ class ProductionQueue:
 
     def tick(self):
         with self.media.lock, self.media.connection() as con:
-            # Nonterminal jobs occupy queue slots, including GPU rendering,
-            # download, retry and output delivery. No VRAM/CPU checks.
+            # GPU slots count only dispatched/waiting jobs, never Drive intake.
             active = con.execute("""SELECT * FROM production_jobs
-                WHERE state NOT IN ('Completed','Failed','Cancelled','Queued')
+                WHERE state IN ('Waiting for Worker','Uploading to GPU','Rendering','Delivering')
                 ORDER BY id""").fetchall()
             limit = int(self.media.get(con, "render_concurrency") or "1")
             row = None
             if len(active) < limit and self.media.get(con, "production_queue") == "running":
-                row = con.execute("SELECT * FROM production_jobs WHERE state='Queued' ORDER BY id LIMIT 1").fetchone()
+                row = con.execute("SELECT * FROM production_jobs WHERE state='Ready for GPU' ORDER BY id LIMIT 1").fetchone()
                 if row is not None:
-                    con.execute("UPDATE production_jobs SET state='Downloading' WHERE id=?", (row["id"],))
+                    con.execute("UPDATE production_jobs SET state='Waiting for Worker' WHERE id=?", (row["id"],))
             if row is None and active:
                 row = active[self.observation_cursor % len(active)]
                 self.observation_cursor += 1
         if row is None:
-            # A crash between recording completion and unlinking the input is
-            # safe. Reap only files whose jobs are durably completed.
+            # Delete only completed private copies, never Drive originals.
             for path in self.spool.glob("*.zip"):
                 if path.stem.isascii() and path.stem.isdigit():
                     with self.media.connection() as con:
@@ -485,7 +531,7 @@ class ProductionQueue:
                                            (int(path.stem),)).fetchone()
                     if done:
                         self.clean_input(int(path.stem))
-            return 8
+            return 3
         try:
             self.process(row)
         except Checkpoint:
@@ -496,10 +542,94 @@ class ProductionQueue:
             self.update(row["id"], state="Failed", error=str(getattr(exc, "detail", str(exc)))[:350])
             return 0
         except OSError:
-            LOG.exception("Cloud Render Production local I/O failed")
+            LOG.exception("Cloud Render Production GPU operation failed")
             self.update(row["id"], state="Failed", error="VPS file operation failed. Check storage and retry.")
             return 0
         return 5
+
+    def tick_intake(self):
+        with self.media.lock, self.media.connection() as con:
+            row = con.execute("""SELECT * FROM production_jobs
+                WHERE state IN ('Queued','Downloading','Verifying ZIP')
+                ORDER BY id LIMIT 1""").fetchone()
+        if row is None:
+            return 3
+        try:
+            self.prepare(row)
+        except Checkpoint:
+            with self.media.connection() as con:
+                cancelled = con.execute("SELECT cancel_requested FROM production_jobs WHERE id=?", (row["id"],)).fetchone()
+            if cancelled and cancelled["cancel_requested"]:
+                self.clean_input(row["id"])
+                self.update(row["id"], state="Cancelled")
+            return 2
+        except (JobError, RuntimeError, HTTPException) as exc:
+            self.update(row["id"], state="Failed", error=str(getattr(exc, "detail", str(exc)))[:350])
+        except OSError:
+            LOG.exception("Cloud Render Drive intake I/O failed")
+            self.update(row["id"], state="Failed", error="VPS Drive ZIP operation failed. Check storage and retry.")
+        return 0
+
+    def intake_checkpoint(self, job):
+        # Intake is independent of GPU Pause and never requires a Salad worker.
+        if self.stop.is_set():
+            raise Checkpoint()
+        with self.media.connection() as con:
+            row = con.execute("SELECT cancel_requested,state FROM production_jobs WHERE id=?", (job,)).fetchone()
+        if row is None or row["cancel_requested"] or row["state"] == "Cancelled":
+            raise Checkpoint()
+
+    def prepare(self, row):
+        job = row["id"]
+        self.intake_checkpoint(job)
+        path = self.archive(job)
+        if path.is_symlink():
+            raise JobError("Unsafe local Concat ZIP path.")
+        if not path.is_file():
+            self.update(job, state="Downloading")
+            part = path.with_suffix(".part")
+            if part.is_symlink():
+                raise JobError("Unsafe partial Concat ZIP path.")
+            part.unlink(missing_ok=True)
+            name = self.drive.download(row, part)
+            self.intake_checkpoint(job)
+            if not part.is_file() or not 0 < part.stat().st_size <= MAX_ZIP:
+                raise JobError("Drive download is empty or exceeds the Concat ZIP size limit.")
+            if row["drive_size"] > 0 and part.stat().st_size != row["drive_size"]:
+                raise JobError("Drive ZIP size changed after the scan. Delete the job and scan again.")
+            if row["drive_md5"]:
+                with part.open("rb") as stream:
+                    if hashlib.file_digest(stream, "md5").hexdigest() != row["drive_md5"]:
+                        raise JobError("Drive ZIP content changed after the scan. Delete the job and scan again.")
+            self.update(job, state="Verifying ZIP", name=name)
+            bundle_manifest(part)
+            with part.open("rb") as stream:
+                digest = hashlib.file_digest(stream, "sha256").hexdigest()
+            if row["digest"] and digest != row["digest"]:
+                raise JobError("Cached Concat ZIP SHA256 mismatch.")
+            self.intake_checkpoint(job)
+            os.replace(part, path)
+        else:
+            self.update(job, state="Verifying ZIP")
+            if not 0 < path.stat().st_size <= MAX_ZIP:
+                raise JobError("Cached Concat ZIP exceeds size limit.")
+            bundle_manifest(path)
+            with path.open("rb") as stream:
+                digest = hashlib.file_digest(stream, "sha256").hexdigest()
+            if row["digest"] and digest != row["digest"]:
+                raise JobError("Cached Concat ZIP SHA256 mismatch.")
+        self.intake_checkpoint(job)
+        with self.media.lock, self.media.connection() as con:
+            current = con.execute("SELECT cancel_requested FROM production_jobs WHERE id=?", (job,)).fetchone()
+            if current is None or current["cancel_requested"]:
+                raise Checkpoint()
+            same = con.execute("""SELECT 1 FROM production_jobs WHERE digest=? AND id<>?
+                AND state NOT IN ('Failed','Cancelled')""", (digest, job)).fetchone()
+            if same:
+                raise JobError("An identical Concat ZIP is already in Production.")
+            con.execute("UPDATE production_jobs SET state='Ready for GPU',digest=?,error='' WHERE id=?",
+                        (digest, job))
+        self.wake.set()
 
     def checkpoint(self, job, *, submit=False):
         if self.stop.is_set():
@@ -540,36 +670,19 @@ class ProductionQueue:
                 self.update(job, state="Cancelled")
             return
 
+        # Drive intake already downloaded and SHA-verified this archive.
+        # Never contact Drive or occupy a GPU slot to perform a download.
         self.checkpoint(job)
         path = self.archive(job)
-        if not path.exists():
-            self.update(job, state="Downloading")
-            part = path.with_suffix(".part")
-            part.unlink(missing_ok=True)
-            name = self.drive.download(row, part)
-            self.update(job, state="Downloading", name=name)
-            self.checkpoint(job)
-            if not part.is_file() or not 0 < part.stat().st_size <= MAX_ZIP:
-                raise JobError("Drive download is empty or exceeds the Concat ZIP size limit.")
-            if row["drive_size"] > 0 and part.stat().st_size != row["drive_size"]:
-                raise JobError("Drive ZIP size changed after the scan. Delete the job and scan again.")
-            if row["drive_md5"]:
-                with part.open("rb") as stream:
-                    if hashlib.file_digest(stream, "md5").hexdigest() != row["drive_md5"]:
-                        raise JobError("Drive ZIP content changed after the scan. Delete the job and scan again.")
-            manifest = bundle_manifest(part)
-            os.replace(part, path)
-        else:
-            manifest = bundle_manifest(path)
+        if not path.is_file() or path.is_symlink():
+            raise JobError("Verified ZIP missing from VPS. Retry the job to recover it.")
         digest = row["digest"]
         if not digest:
-            with path.open("rb") as stream:
-                digest = hashlib.file_digest(stream, "sha256").hexdigest()
-        with self.media.connection() as con:
-            same = con.execute("""SELECT 1 FROM production_jobs WHERE digest=? AND id<>?
-                AND state NOT IN ('Failed','Cancelled')""", (digest, job)).fetchone()
-        if same:
-            raise JobError("An identical Concat ZIP is already in Production.")
+            raise JobError("Verified ZIP SHA256 missing. Retry the job to verify again.")
+        with path.open("rb") as stream:
+            if hashlib.file_digest(stream, "sha256").hexdigest() != digest:
+                raise JobError("Verified ZIP changed on VPS. Retry after restoring the source.")
+        manifest = bundle_manifest(path)
         self.update(job, state="Waiting for Worker", digest=digest)
         worker.upload(remote_id, path, path.stat().st_size, digest, manifest,
                       lambda: self.checkpoint(job),
