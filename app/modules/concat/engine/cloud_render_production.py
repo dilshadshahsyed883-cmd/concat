@@ -445,7 +445,7 @@ class ProductionQueue:
             items = [dict(row) for row in con.execute(
                 "SELECT id,name,state,error,cancel_requested FROM production_jobs ORDER BY id")]
             concurrency = int(self.media.get(con, "render_concurrency") or "1")
-            active = sum(item["state"] in ("Uploading to GPU", "Rendering", "Delivering") for item in items)
+            active = sum(item["state"] in ("Waiting for Worker", "Uploading to GPU", "Rendering", "Delivering") for item in items)
             intake = sum(item["state"] in ("Downloading", "Verifying ZIP") for item in items)
             ready = sum(item["state"] == "Ready for GPU" for item in items)
             return {"state": self.media.get(con, "production_queue"),
