@@ -10,18 +10,18 @@ class PhysicsControlContractTests(unittest.TestCase):
         physics = (ROOT / "upstream/src/crates/concat-project/src/physics_motion.rs").read_text()
         ui = (ROOT / "upstream/src/crates/concat/ui/inspector/clip-inspector.slint").read_text()
         lib = (ROOT / "upstream/src/crates/concat/src/lib.rs").read_text()
-        media_ui = (ROOT / "upstream/src/crates/concat/ui/workspace/media-pane.slint").read_text()
+        inspector_ui = (ROOT / "upstream/src/crates/concat/ui/workspace/config-pane.slint").read_text()
         timeline_ui = (ROOT / "upstream/src/crates/concat/ui/timeline/model.slint").read_text()
         for control in ("strength", "duration", "speed", "intensity"):
             self.assertIn("pub " + control + ": f64", physics)
-            # All animation controls now live together in the left Animations page.
-            self.assertIn("Keyframes.physics-" + control, media_ui)
+            # #95 keeps the gallery on the left; typed settings live in Details.
+            self.assertIn("Keyframes.physics-" + control, inspector_ui)
             self.assertNotIn("Keyframes.physics-" + control, ui)
             self.assertIn("in-out property <float> physics-" + control, timeline_ui)
         self.assertIn("pub fn command_with(", physics)
         self.assertIn("state.apply_physics_motion(index, strength, duration, speed, intensity)", lib)
-        self.assertEqual(media_ui.count("Keyframes.apply-physics-bulk("), 4)
-        self.assertIn("Keyframes.physics-intensity", media_ui)
+        self.assertEqual(inspector_ui.count("Keyframes.apply-physics-bulk("), 4)
+        self.assertIn("Keyframes.physics-intensity", inspector_ui)
 
 
 if __name__ == "__main__":

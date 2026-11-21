@@ -4,7 +4,7 @@ format = 2
 id = "concat.look.urban-gray"
 name = "Urban Gray"
 kind = "filter"
-category = "Timeline Looks"
+category = "Cinematic & Film"
 order = 7
 description = "SDR whole-timeline color grading preset."
 

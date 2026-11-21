@@ -4,7 +4,7 @@ format = 2
 id = "concat.look.red-tide"
 name = "Red Tide"
 kind = "filter"
-category = "Timeline Looks"
+category = "Vivid & Colorful"
 order = 4
 description = "SDR whole-timeline color grading preset."
 

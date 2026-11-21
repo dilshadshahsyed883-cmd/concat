@@ -50,12 +50,13 @@ class DesktopUiContractTests(unittest.TestCase):
         self.assertIn("Keyframes.toggle-physics-favourite(index);", MEDIA)
 
     def test_type_scope_and_shared_inspector_controls(self):
+        config = (ROOT / "ui/workspace/config-pane.slint").read_text(encoding="utf-8")
         for typ in ("images", "videos"):
-            self.assertIn("checked: root.physics-" + typ + ";", MEDIA)
-        self.assertIn("root.physics-scope == 1", MEDIA)
-        self.assertIn("enabled: root.physics-images || root.physics-videos", MEDIA)
+            self.assertIn("checked: Keyframes.animation-" + typ + ";", MEDIA)
+        self.assertIn("Keyframes.animation-scope == 1", config)
+        self.assertIn("enabled: Keyframes.animation-images || Keyframes.animation-videos", config)
         for knob in ("strength", "duration", "speed", "intensity"):
-            self.assertIn("value <=> Keyframes.physics-" + knob + ";", MEDIA)
+            self.assertIn("value <=> Keyframes.physics-" + knob + ";", config)
             self.assertIn("in-out property <float> physics-" + knob + ": 1;", KEYFRAMES)
         self.assertIn("callback apply-physics-bulk(", KEYFRAMES)
         self.assertIn("keys.on_apply_physics_bulk(", LIB)
@@ -66,7 +67,7 @@ class DesktopUiContractTests(unittest.TestCase):
 
     def test_left_layout_subtabs_and_consolidated_motion_presets(self):
         layout = (ROOT / "ui/workspace/media-layout.slint").read_text(encoding="utf-8")
-        self.assertIn('["Animations", "Transform", "Canvas"]', MEDIA)
+        self.assertIn('["Animations", "Transform", "Canvas", "Canvas Presets"]', MEDIA)
         for name in ("Push In", "Pan Right", "Fade In"):
             self.assertIn('"' + name + '"', MEDIA)
         self.assertIn('if root.animation-page == 1: MediaLayoutPanel { canvas: false; }', MEDIA)
@@ -86,10 +87,21 @@ class DesktopUiContractTests(unittest.TestCase):
         self.assertNotIn("if root.tab == 1 && GpuCompatibility.enabled && root.text-category == 1: PaneScroll {", pages)
         self.assertIn("if root.tab == 10 && GpuCompatibility.enabled: VerticalLayout {", pages)
         self.assertIn("if root.tab == 1 && GpuCompatibility.enabled && root.text-category == 1: CaptionPresetPreviewPanel {", pages)
-        for page in ("root.animation-page == 0", "root.animation-page == 1", "root.animation-page == 2"):
+        for page in ("root.animation-page == 0", "root.animation-page == 1", "root.animation-page == 2", "root.animation-page == 3"):
             self.assertIn(page, pages)
-        for panel in ("CanvasMotionPanel", "CanvasPresetPanel", "MediaLayoutPanel { canvas: false; }", "MediaLayoutPanel { canvas: true; }"):
+        # #93 moves Canvas preset editing into ConfigPane. The left viewport
+        # renders only the gallery; both panes own one scroll container.
+        for panel in ("CanvasPresetLibrary", "ParticlePresetLibrary",
+                      "MediaLayoutPanel { canvas: false; }"):
             self.assertIn(panel, pages)
+        self.assertIn("CanvasMotionPanel", (ROOT / "ui/workspace/config-pane.slint").read_text())
+        config = (ROOT / "ui/workspace/config-pane.slint").read_text(encoding="utf-8")
+        self.assertIn("CanvasPresetPanel {", config)
+        self.assertIn("MediaLayoutPanel {", config)
+        self.assertIn("canvas: true;", config)
+        self.assertIn("LibraryFocus.page == 8", config)
+        self.assertIn("library-only: true;", pages)
+        self.assertIn("inspector-only: true;", config)
 
     def test_explicit_transform_canvas_scopes_and_selection_fallback(self):
         layout = (ROOT / "ui/workspace/media-layout.slint").read_text(encoding="utf-8")

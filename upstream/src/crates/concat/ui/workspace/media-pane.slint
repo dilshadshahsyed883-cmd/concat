@@ -6,6 +6,8 @@ import { GpuCompatibility } from "../gpu-compatibility.slint";
 import { Button } from "../primitives/modal.slint";
 import { I18n } from "../i18n.slint";
 import { Theme, Fmt, Glyph, Icon, Payload, Tip } from "../primitives/primitives.slint";
+import { IconButton } from "../primitives/panel.slint";
+import { LibraryFocus } from "library-focus.slint";
 import { Pane, PaneScroll } from "pane.slint";
 import { HairlineSplitter } from "splitter.slint";
 import { PaneKind, PaneSwitcher } from "pane-switcher.slint";
@@ -18,10 +20,10 @@ import { ContextMenu, MenuItemData } from "../primitives/context-menu.slint";
 import { SourcePreview } from "source-preview.slint";
 import { Sounds, SoundList, VoiceList } from "audio-page.slint";
 import { CaptionPresetPreview, CaptionPresetPreviewPanel } from "caption-preset-preview.slint";
-import { CanvasPresetPanel } from "canvas-presets.slint";
+import { CanvasPresetLibrary } from "canvas-presets.slint";
 import { MediaLayoutPanel } from "media-layout.slint";
 import { CanvasMotionPanel } from "canvas-motion.slint";
-import { ParticleEffectsPanel } from "particle-effects.slint";
+import { ParticlePresetLibrary } from "particle-effects.slint";
 
 export { SourcePreview }
 
@@ -935,6 +937,12 @@ component CatalogueCard inherits Rectangle {
     /// Transitions and audio effects have nothing to show but their name,
     /// and a name in a box says it in a third of the room.
     in property <bool> compact;
+    // Star actions are independent from click/double-click/drag application.
+    in property <bool> favouriteable: false;
+    in property <bool> favourite: false;
+    callback favourited(on: bool);
+    callback inspected();
+    in property <bool> selected: false;
 
     property <float> sweep: card.has-hover ? 1.0 : 0.0;
     animate sweep { duration: 1.2s; easing: ease-in-out; iteration-count: -1; }
@@ -973,8 +981,8 @@ component CatalogueCard inherits Rectangle {
                 border-radius: Theme.r;
                 background: root.compact && card.has-hover && root.item.enabled
                     ? Theme.field : Theme.well;
-                border-width: root.auditioning ? 2px : 1px;
-                border-color: root.auditioning ? Theme.accent
+                border-width: root.auditioning || root.selected ? 2px : 1px;
+                border-color: (root.auditioning || root.selected) ? Theme.accent
                     : (card.has-hover && root.item.enabled)
                     ? Theme.line-strong : Theme.line;
                 clip: true;
@@ -1100,6 +1108,27 @@ component CatalogueCard inherits Rectangle {
             }
         }
     }
+    // Inspect independently of click-to-apply. Previewing card metadata
+    // never changes the selected clip or the project.
+    IconButton {
+        x: root.width - self.width - 4px;
+        y: 4px;
+        glyph: Glyph.info;
+        label: "Inspect " + root.item.label + " without applying";
+        clicked => { root.inspected(); }
+    }
+
+    // Top-level overlay: never bubbles into the DragArea / card apply handler.
+    // IconButton supplies keyboard Space/Enter and an accessible label.
+    if root.favouriteable: IconButton {
+        x: 4px;
+        y: 4px;
+        glyph: Glyph.mask-star;
+        checked: root.favourite;
+        label: (root.favourite ? "Remove " : "Add ") + root.item.label + (root.favourite ? " from favorites" : " to favorites");
+        clicked => { root.favourited(!root.favourite); }
+    }
+
 }
 
 // The text page: the one title style that exists, as a card. Clicking adds a
@@ -1289,6 +1318,7 @@ export component ShelfGrid inherits Rectangle {
     in property <string> payload-kind;
 
     callback applied(id: string, label: string);
+    in property <int> page-kind: -1;
     /// See CatalogueCard: a shelf whose cards show before they add.
     in property <bool> auditions;
     in property <string> auditioning;
@@ -1323,6 +1353,17 @@ export component ShelfGrid inherits Rectangle {
             glyph: root.glyph,
         };
         compact: root.compact;
+        favouriteable: true;
+        favourite: entry.favourite;
+        selected: LibraryFocus.page == root.page-kind && LibraryFocus.selected-id == entry.id;
+        favourited(on) => { Library.favourite(entry.id, on); }
+        inspected => {
+            LibraryFocus.page = root.page-kind;
+            LibraryFocus.selected-id = entry.id;
+            LibraryFocus.selected-name = entry.name;
+            LibraryFocus.selected-category = entry.category;
+            LibraryFocus.selected-description = entry.description;
+        }
         payload: root.payload-kind == "" ? ""
             : "\{root.payload-kind}:\{entry.id}:\{entry.name}";
         auditions: root.auditions;
@@ -1426,6 +1467,10 @@ export component ShelfSearch inherits HorizontalLayout {
         edited(text) => { Library.query-changed(root.shelf, text); }
         property <string> held: Library.view(root.shelf).query;
         changed held => { self.text = self.held; }
+    }
+    Button {
+        label: Library.view(root.shelf).favourites ? "★ Favorites" : "☆ Favorites";
+        clicked => { Library.favourites-changed(root.shelf, !Library.view(root.shelf).favourites); }
     }
 }
 
@@ -1712,7 +1757,6 @@ component Empty inherits VerticalLayout {
     }
 }
 
-
 export struct AnimationCardData {
     index: int,
     name: string,
@@ -1917,7 +1961,10 @@ export component MediaPane inherits Rectangle {
     // Opens the existing speech/captions dialog (including SRT and Whisper).
     callback generate-captions();
     property <string> active-caption-preset: "cuda-caption.classic-subtitle";
-    changed text-category => { CaptionPresetPreview.scope(root.tab == 1 && root.text-category == 1 && GpuCompatibility.enabled); }
+    changed text-category => {
+        CaptionPresetPreview.scope(root.tab == 1 && root.text-category == 1 && GpuCompatibility.enabled);
+        if (root.tab == 1) { root.show-library(); }
+    }
     /// Stickers page: add the figure `shape` names at the playhead, as a
     /// clip called `label`.
     callback add-shape(shape: string, label: string);
@@ -1966,10 +2013,25 @@ export component MediaPane inherits Rectangle {
     // Audio is a Media sub-view, not a ninth top-level tab. Keep the existing
     // sounds, voice and import implementation accessible from the Media sidebar.
     property <bool> media-audio-view: false;
+    function show-library() {
+        LibraryFocus.page = root.tab == 3 ? 1
+            : root.tab == 4 ? (root.audio-shelf ? 3 : 2)
+            : root.tab == 5 ? 4
+            : root.tab == 7 && root.adjustments-category == 1 ? 5
+            : root.tab == 1 && root.text-category >= 1 ? 6
+            : root.tab == 6 ? 7
+            : root.tab == 10 && root.animation-page == 3 ? 8
+            : -1;
+        LibraryFocus.selected-id = "";
+        LibraryFocus.selected-name = "";
+        LibraryFocus.selected-category = "";
+        LibraryFocus.selected-description = "";
+    }
     changed tab => {
         Sounds.shown(root.tab == 0 && root.media-audio-view);
         CaptionPresetPreview.scope(root.tab == 1 && root.text-category == 1 && GpuCompatibility.enabled);
         Keyframes.animation-browser = root.tab == 10 && root.animation-page == 0 && GpuCompatibility.enabled;
+        root.show-library();
     }
     changed media-audio-view => { Sounds.shown(root.tab == 0 && root.media-audio-view); }
     property <bool> physics-images: true;
@@ -1979,9 +2041,10 @@ export component MediaPane inherits Rectangle {
     property <int> physics-preset: 0;
     property <bool> canvas-motion-page: false;
     property <int> animation-page: 0;
-    // Canvas Presets targeting survives navigation and remains separate from animations.
-    property <bool> canvas-preset-images: true;
-    property <bool> canvas-preset-videos: true;
+    changed animation-page => {
+        Keyframes.animation-browser = root.tab == 10 && root.animation-page == 0 && GpuCompatibility.enabled;
+        if (root.tab == 10) { root.show-library(); }
+    }
     /// The Audio page's shelf: 0 = Mine, 1 = Concat, 10 = Voices,
     /// 11 = Styles.
     property <int> audio-category;
@@ -2003,10 +2066,12 @@ export component MediaPane inherits Rectangle {
     property <bool> adjustments-open: true;
     /// 0 = Adjustment layer, 1 = LUTs
     property <int> adjustments-category;
+    changed adjustments-category => { if (root.tab == 7) { root.show-library(); } }
     property <bool> templates-open: true;
     /// The Effects page shows the sound's shelves rather than the
     /// picture's: whichever heading's row was picked last.
     property <bool> audio-shelf;
+    changed audio-shelf => { if (root.tab == 4) { root.show-library(); } }
     property <bool> audio-open: true;
     /// The shelf the Effects page is reading from, in `Library`'s numbers.
     property <int> effects-shelf: root.audio-shelf ? 2 : 1;
@@ -2046,9 +2111,7 @@ export component MediaPane inherits Rectangle {
         {index: 28, name: "In / Hold / Out", family: "Canvas", mark: "▰"},
         {index: 29, name: "Focus Journey", family: "Canvas", mark: "⌁"}
     ];
-    changed animation-page => {
-        Keyframes.animation-browser = root.tab == 10 && root.animation-page == 0 && GpuCompatibility.enabled;
-    }
+
 
     /// The category column. In-out, because it is dragged.
     in-out property <length> sidebar-w: 104px;
@@ -2567,6 +2630,13 @@ export component MediaPane inherits Rectangle {
                         }
                         if root.filters-open: VerticalLayout {
                             spacing: 1px;
+                            // All is a browsable view, never an applied filter.
+                            CategoryRow {
+                                height: 24px;
+                                label: "All";
+                                current: Library.view(0).category == "All";
+                                clicked => { Library.category-changed(0, "All"); }
+                            }
                             for label[index] in root.filter-groups: CategoryRow {
                                 height: 24px;
                                 label: label;
@@ -2898,6 +2968,7 @@ export component MediaPane inherits Rectangle {
                 // Caption cards stage a local monitor preview. Only explicit Apply edits the document.
                 if root.tab == 1 && GpuCompatibility.enabled && root.text-category == 1: CaptionPresetPreviewPanel {
                     padding: 8px;
+                    library-only: true;
                 }
                 if root.tab == 1 && !GpuCompatibility.enabled && root.text-category >= 1: VerticalLayout {
                     padding: 8px;
@@ -2943,16 +3014,32 @@ export component MediaPane inherits Rectangle {
                     }
                     ShelfGrid {
                         entries: root.catalogue-transitions;
+                        page-kind: 1;
                         glyph: Glyph.transition;
                         // Transitions apply directly on single-click — no audition overlay.
                         auditions: false;
                         applied(id, label) => { root.apply-transition(id); }
                     }
+                    if root.catalogue-transitions.length == 0: Text {
+                        text: Library.view(3).favourites ? "No starred transitions match this view. Turn off Favorites or choose another category." : "No transitions match the current search or category.";
+                        color: Theme.fg-muted;
+                        font-size: Theme.fs-sm;
+                        wrap: word-wrap;
+                    }
                 }
 
                 if root.tab == 4: VerticalLayout {
-                    ParticleEffectsPanel { }
                     padding: 8px;
+                    if !root.audio-shelf: VerticalLayout {
+                        spacing: 6px;
+                        Text {
+                            text: "Particle Overlays";
+                            color: Theme.fg;
+                            font-size: Theme.fs;
+                            font-weight: Theme.weight-title;
+                        }
+                        ParticlePresetLibrary { }
+                    }
 
                     // A package folder written while the app runs - the
                     // user's own effect, or one shared with them - is read
@@ -2973,6 +3060,7 @@ export component MediaPane inherits Rectangle {
                     }
                     ShelfGrid {
                         entries: root.audio-shelf ? root.catalogue-audio : root.catalogue-effects;
+                        page-kind: root.audio-shelf ? 3 : 2;
                         glyph: root.audio-shelf ? Glyph.waveform : Glyph.sparkle;
                         // A sound has no picture: its cards are the compact kind.
                         compact: root.audio-shelf;
@@ -2986,6 +3074,22 @@ export component MediaPane inherits Rectangle {
                                 root.apply-effect(id);
                             }
                         }
+                    }
+                    if !root.audio-shelf && root.catalogue-effects.length == 0: Text {
+                        text: Library.view(1).favourites
+                            ? "No starred video effects match this view. Turn off Favorites or change category."
+                            : "No video effects match the current search or category.";
+                        color: Theme.fg-muted;
+                        font-size: Theme.fs-sm;
+                        wrap: word-wrap;
+                    }
+                    if root.audio-shelf && root.catalogue-audio.length == 0: Text {
+                        text: Library.view(2).favourites
+                            ? "No starred audio effects match this view. Turn off Favorites or change category."
+                            : "No audio effects match the current search or category.";
+                        color: Theme.fg-muted;
+                        font-size: Theme.fs-sm;
+                        wrap: word-wrap;
                     }
                 }
 
@@ -3052,10 +3156,11 @@ export component MediaPane inherits Rectangle {
                 }
                     if root.animation-page == 1: MediaLayoutPanel { canvas: false; }
                     if root.animation-page == 2: MediaLayoutPanel { canvas: true; }
-                    if root.animation-page == 3: CanvasPresetPanel {
+                    if root.animation-page == 3: VerticalLayout {
+                        spacing: 8px;
                         padding: 8px;
-                        images <=> root.canvas-preset-images;
-                        videos <=> root.canvas-preset-videos;
+                        Text { text: "Canvas Presets"; color: Theme.fg; font-size: Theme.fs; font-weight: Theme.weight-title; }
+                        CanvasPresetLibrary { }
                     }
                 }
 
@@ -3078,11 +3183,20 @@ export component MediaPane inherits Rectangle {
                     }
                     ShelfGrid {
                         entries: root.catalogue-filters;
+                        page-kind: 4;
                         payload-kind: "filter";
                         auditions: true;
                         auditioning: root.audition;
                         auditioned(id) => { root.audition-filter(id); }
                         applied(id, label) => { root.apply-filter(id, label); }
+                    }
+                    if root.catalogue-filters.length == 0: Text {
+                        text: Library.view(0).favourites
+                            ? "No starred filters match this view. Turn off Favorites or choose another category."
+                            : "No filters match the current search or category.";
+                        color: Theme.fg-muted;
+                        font-size: Theme.fs-sm;
+                        wrap: word-wrap;
                     }
                 }
 
@@ -3125,6 +3239,7 @@ export component MediaPane inherits Rectangle {
                     }
                     ShelfGrid {
                         entries: root.catalogue-luts;
+                        page-kind: 5;
                         glyph: Glyph.sun;
                         payload-kind: "filter";
                         auditions: false;
@@ -3135,16 +3250,25 @@ export component MediaPane inherits Rectangle {
                 if root.tab == 7 && root.adjustments-category == 1
                     && root.catalogue-luts.length == 0: Empty {
                     glyph: Glyph.sun;
-                    text: I18n.t("mediaPane.noLutsYet");
+                    text: Library.view(4).favourites
+                        ? "No starred LUTs in this view. Turn off Favorites or import a LUT."
+                        : I18n.t("mediaPane.noLutsYet");
                 }
 
                 // Templates: the save affordance, then the gallery of saved
                 // templates, which shows its empty state until one is saved.
-                if root.tab == 6: PaneScroll {
-                    HorizontalLayout { padding: 8px;
+                if root.tab == 6: VerticalLayout {
+                    padding: 8px;
+                    spacing: 8px;
+                    HorizontalLayout {
                         ImportButton { label: I18n.t("mediaPane.saveProjectTemplate"); glyph: Glyph.slot; clicked => { root.save-template(); } }
                     }
-
+                    Text {
+                        text: "Use Save Project Template to export the current project as a template. This editor has no selectable template gallery yet; no unavailable preset cards are shown.";
+                        color: Theme.fg-muted;
+                        font-size: Theme.fs-sm;
+                        wrap: word-wrap;
+                    }
                 }
 
             }

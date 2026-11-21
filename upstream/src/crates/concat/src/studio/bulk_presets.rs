@@ -200,6 +200,12 @@ fn transition_span(previous: &Clip, incoming: &Clip, duration: f64, native: bool
 /// Match the worker's 30fps lane rounding and the native transition's
 /// requirement to fit both sides of the seam.
 fn transition_length(previous: &Clip, incoming: &Clip) -> Option<(f64, CutSpan)> {
+    transition_length_with_default(previous, incoming, 0.5)
+}
+
+fn transition_length_with_default(
+    previous: &Clip, incoming: &Clip, default_duration: f64,
+) -> Option<(f64, CutSpan)> {
     let previous_end = previous.start + previous.duration;
     if (previous_end - incoming.start).abs() >= 0.5 / FPS
         || frame(previous_end) != frame(incoming.start)
@@ -209,7 +215,7 @@ fn transition_length(previous: &Clip, incoming: &Clip) -> Option<(f64, CutSpan)>
     let requested = incoming
         .transition_in
         .as_ref()
-        .map_or(0.5, |cut| cut.duration);
+        .map_or(default_duration, |cut| cut.duration);
     let length = requested
         .max(2.0 / FPS)
         .min(previous.duration)
@@ -487,7 +493,12 @@ impl Studio {
                     }
                 }
                 if !self.locked(&incoming.track_id)
-                    && let Some((duration, span)) = transition_length(previous, incoming)
+                    && let Some((duration, span)) = transition_length_with_default(
+                        previous, incoming,
+                        self.prefs.transition_default_duration
+                            .filter(|d| d.is_finite() && (0.1..=5.0).contains(d))
+                            .unwrap_or(0.5),
+                    )
                 {
                     plans.push((incoming, duration, old, span));
                 }
@@ -514,6 +525,8 @@ impl Studio {
         }
         let options: Vec<_> = plans.iter().map(|plan| (presets.len(), plan.2)).collect();
 
+        let saved_intensity = self.prefs.transition_default_intensity
+            .filter(|v| v.is_finite() && (0.0..=1.0).contains(v));
         let mut generated = Vec::new();
         let commands: Vec<_> = plans
             .into_iter()
@@ -525,7 +538,7 @@ impl Studio {
                 let transition = Transition {
                     id: presets[chosen].to_owned(),
                     duration,
-                    intensity: None,
+                    intensity: saved_intensity,
                     params: Default::default(),
                 };
                 generated.push((
@@ -1212,6 +1225,10 @@ mod tests {
         let (length, span) = transition_length(&previous, &incoming).unwrap();
         assert_eq!(length, 0.5);
         assert_eq!((span.start, span.end), (23, 38));
+        let (remembered, _) = transition_length_with_default(&previous, &incoming, 0.7).unwrap();
+        assert!((remembered - 0.7).abs() < 1e-12);
+        let (clamped, _) = transition_length_with_default(&previous, &incoming, 2.0).unwrap();
+        assert_eq!(clamped, 1.0);
         incoming.kind = ClipKind::Video;
         let (_, span) = transition_length(&previous, &incoming).unwrap();
         assert_eq!((span.start, span.end), (30, 45));

@@ -1,92 +1,245 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { Theme } from "../theme/theme.slint";
+import { Select } from "../primitives/select.slint";
+import { ColourField, Param, ParamFormat } from "../inspector/controls.slint";
 import { Button } from "../primitives/modal.slint";
-import { Check } from "../inspector/controls.slint";
-export global CanvasPresets {
-    in-out property <string> profile;
-    /// True for legacy preset IDs 1, 2, 3; sourced from saved app preferences.
-    in property <[bool]> favourites;
-    callback toggle-favourite(preset: int);
-    callback choose(preset: int);
-    callback apply(profile: string, all: bool, images: bool, videos: bool);
-}
-export component CanvasPresetPanel inherits VerticalLayout {
+import { IconButton } from "../primitives/panel.slint";
+import { Glyph } from "../icons.slint";
+import { LibraryFocus } from "library-focus.slint";
+export global CanvasTargets {
     in-out property <bool> images: true;
     in-out property <bool> videos: true;
+}
+
+export global CanvasPresets {
+    in-out property <int> selected: 1;
+    in property <[bool]> favourites;
+    callback edit-number(field: string, value: float);
+    callback edit-colour(field: string, value: color);
+    callback edit-mode(mode: int);
+    callback sync-profile();
+    callback toggle-favourite(index: int);
+    in property <float> foreground-x: 0.04;
+    in property <float> foreground-y: 0.035;
+    in property <float> foreground-width: 0.92;
+    in property <float> foreground-height: 0.80;
+    in property <float> border-width: 0.006;
+    in property <float> radius: 0;
+    in property <float> blur: 0;
+    in property <float> tint-opacity: 0;
+    in property <float> shadow-opacity: 0;
+    in property <float> shadow-offset: 0;
+    in property <float> mat-bottom: 0;
+    in property <float> rotation: 0;
+    in property <int> background-mode: 0;
+    in property <color> border-color: #ff153a;
+    in property <color> background-color: #000000;
+    in property <color> tint-color: #000000;
+    in property <color> shadow-color: #000000;
+    in property <color> mat-color: #ffffff;
+    in-out property <string> profile;
+    callback choose(preset: int);
+    callback apply(profile: string, all: bool, images: bool, videos: bool);
+    callback save-default(profile: string);
+    callback reset-default();
+    in-out property <string> default-status;
+}
+export component CanvasPresetPanel inherits VerticalLayout {
+    in property <bool> images: true;
+    in property <bool> videos: true;
     property <bool> advanced-open: false;
-    property <bool> favourites-only: false;
-    property <int> chosen: 1;
     spacing: 8px;
-    Text { text: "Canvas Presets"; color: Theme.fg; font-size: Theme.fs; }
-    HorizontalLayout {
-        spacing: 8px;
-        Check { checked: root.images; toggled(on) => { root.images = on; } }
-        Text { text: "Images"; color: Theme.fg; vertical-alignment: center; }
-        Check { checked: root.videos; toggled(on) => { root.videos = on; } }
-        Text { text: "Video Clips"; color: Theme.fg; vertical-alignment: center; }
+    Text { text: "Preset settings"; color: Theme.fg; font-size: Theme.fs; font-weight: Theme.weight-title; }
+    Text {
+        text: CanvasPresets.selected == 1 ? "Sports Frame"
+            : CanvasPresets.selected == 2 ? "Orange Frame"
+            : CanvasPresets.selected == 3 ? "Adaptive Blur (Blurred Fill)"
+            : CanvasPresets.selected == 4 ? "Gallery Mat"
+            : CanvasPresets.selected == 5 ? "Floating Card"
+            : CanvasPresets.selected == 6 ? "Photo Print"
+            : CanvasPresets.selected == 7 ? "Cinema Frame" : "Editorial Panel";
+        color: Theme.fg-muted; font-size: Theme.fs-sm;
     }
-    HorizontalLayout {
-        spacing: 8px;
-        Button {
-            label: root.favourites-only ? "All" : "✓ All";
-            clicked => { root.favourites-only = false; }
+    VerticalLayout {
+        spacing: 7px;
+        Param { label: "Left"; value: CanvasPresets.foreground-x; minimum: 0; maximum: 1 - CanvasPresets.foreground-width; step: 0.005; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("foregroundX", v); } }
+        Param { label: "Top"; value: CanvasPresets.foreground-y; minimum: 0; maximum: 1 - CanvasPresets.foreground-height; step: 0.005; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("foregroundY", v); } }
+        Param { label: "Width"; value: CanvasPresets.foreground-width; minimum: 0.05; maximum: 1 - CanvasPresets.foreground-x; step: 0.005; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("foregroundWidth", v); } }
+        Param { label: "Height"; value: CanvasPresets.foreground-height; minimum: 0.05; maximum: 1 - CanvasPresets.foreground-y; step: 0.005; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("foregroundHeight", v); } }
+        Param { label: "Border thickness"; value: CanvasPresets.border-width; minimum: 0; maximum: 0.1; step: 0.001; fmt: ParamFormat.outline; changed(v) => { CanvasPresets.edit-number("borderWidth", v); } }
+        ColourField { label: "Border color"; value: CanvasPresets.border-color; changed(c) => { CanvasPresets.edit-colour("borderColor", c); } }
+        Param { label: "Corner radius"; value: CanvasPresets.radius; minimum: 0; maximum: 0.5; step: 0.005; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("radius", v); } }
+        Text { text: "Background"; color: Theme.fg-muted; font-size: Theme.fs-sm; }
+        Select {
+            options: ["Source", "Blurred source", "Solid color", "None"];
+            current: CanvasPresets.background-mode;
+            changed(index) => { CanvasPresets.edit-mode(index); }
         }
-        Button {
-            label: root.favourites-only ? "✓ Favorites" : "Favorites";
-            clicked => { root.favourites-only = true; }
+        if CanvasPresets.background-mode == 1: Param {
+            label: "Blur softness"; value: CanvasPresets.blur; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction;
+            changed(v) => { CanvasPresets.edit-number("blur", v); }
         }
-    }
-    if !root.favourites-only || CanvasPresets.favourites[0]: HorizontalLayout {
-        spacing: 8px;
-        Button {
-            horizontal-stretch: 1;
-            label: root.chosen == 1 ? "✓ Sports Frame" : "Sports Frame";
-            clicked => { root.chosen = 1; CanvasPresets.choose(1); }
+        if CanvasPresets.background-mode == 2: ColourField {
+            label: "Background color"; value: CanvasPresets.background-color;
+            changed(c) => { CanvasPresets.edit-colour("backgroundColor", c); }
         }
-        Button {
-            label: CanvasPresets.favourites[0] ? "★" : "☆";
-            clicked => { CanvasPresets.toggle-favourite(1); }
+        ColourField { label: "Background tint"; value: CanvasPresets.tint-color; changed(c) => { CanvasPresets.edit-colour("backgroundTint", c); } }
+        Param { label: "Tint opacity"; value: CanvasPresets.tint-opacity; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("tintOpacity", v); } }
+        Param { label: "Shadow opacity"; value: CanvasPresets.shadow-opacity; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("shadowOpacity", v); } }
+        if CanvasPresets.shadow-opacity > 0: VerticalLayout {
+            spacing: 4px;
+            Param { label: "Shadow offset"; value: CanvasPresets.shadow-offset; minimum: 0; maximum: 0.08; step: 0.001; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("shadowOffset", v); } }
+            ColourField { label: "Shadow color"; value: CanvasPresets.shadow-color; changed(c) => { CanvasPresets.edit-colour("shadowColor", c); } }
         }
-    }
-    if !root.favourites-only || CanvasPresets.favourites[1]: HorizontalLayout {
-        spacing: 8px;
-        Button {
-            horizontal-stretch: 1;
-            label: root.chosen == 2 ? "✓ Orange Frame" : "Orange Frame";
-            clicked => { root.chosen = 2; CanvasPresets.choose(2); }
+        if CanvasPresets.selected == 6: VerticalLayout {
+            spacing: 4px;
+            Param { label: "Print bottom mat"; value: CanvasPresets.mat-bottom; minimum: 0; maximum: 0.2; step: 0.005; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("matBottom", v); } }
+            ColourField { label: "Print mat color"; value: CanvasPresets.mat-color; changed(c) => { CanvasPresets.edit-colour("matColor", c); } }
         }
-        Button {
-            label: CanvasPresets.favourites[1] ? "★" : "☆";
-            clicked => { CanvasPresets.toggle-favourite(2); }
+        if CanvasPresets.selected >= 4: Param {
+            label: "Rotation"; value: CanvasPresets.rotation; minimum: -12; maximum: 12; step: 1; fmt: ParamFormat.degrees;
+            changed(v) => { CanvasPresets.edit-number("rotation", v); }
         }
-    }
-    if !root.favourites-only || CanvasPresets.favourites[2]: HorizontalLayout {
-        spacing: 8px;
-        Button {
-            horizontal-stretch: 1;
-            label: root.chosen == 3 ? "✓ Blurred Fill" : "Blurred Fill";
-            clicked => { root.chosen = 3; CanvasPresets.choose(3); }
-        }
-        Button {
-            label: CanvasPresets.favourites[2] ? "★" : "☆";
-            clicked => { CanvasPresets.toggle-favourite(3); }
-        }
-    }
-    if root.favourites-only && !CanvasPresets.favourites[0] && !CanvasPresets.favourites[1] && !CanvasPresets.favourites[2]: Text {
-        text: "No favorite Canvas Presets yet. Star a preset in All.";
-        color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
     }
     Button {
         label: root.advanced-open ? "Hide Advanced JSON" : "Advanced JSON";
-        clicked => { root.advanced-open = !root.advanced-open; }
+        clicked => {
+            if (root.advanced-open) { CanvasPresets.sync-profile(); }
+            root.advanced-open = !root.advanced-open;
+        }
     }
     if root.advanced-open: Rectangle {
         height: 220px; background: Theme.field; border-radius: Theme.r;
-        TextInput { x: 6px; y: 6px; width: parent.width - 12px; height: parent.height - 12px;
-            text <=> CanvasPresets.profile; color: Theme.fg; font-size: Theme.fs-sm; wrap: word-wrap; }
+        TextInput {
+            x: 6px; y: 6px; width: parent.width - 12px; height: parent.height - 12px;
+            text <=> CanvasPresets.profile; color: Theme.fg; font-size: Theme.fs-sm; wrap: word-wrap;
+        }
     }
     HorizontalLayout {
-        Button { label: "Apply Selected"; enabled: root.images || root.videos; clicked => { CanvasPresets.apply(CanvasPresets.profile, false, root.images, root.videos); } }
-        Button { label: "Apply All"; enabled: root.images || root.videos; clicked => { CanvasPresets.apply(CanvasPresets.profile, true, root.images, root.videos); } }
+        spacing: 8px;
+        Button { label: "Save as Default"; clicked => { CanvasPresets.save-default(CanvasPresets.profile); } }
+        Button { label: "Reset Default"; clicked => { CanvasPresets.reset-default(); } }
+    }
+    if CanvasPresets.default-status != "": Text {
+        text: CanvasPresets.default-status;
+        color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
+    }
+}
+
+// Kept outside the inspector scroller so Apply stays visible at small window
+// heights and 100/125/150% Windows display scaling.
+export component CanvasPresetApplyBar inherits VerticalLayout {
+    in property <bool> images: true;
+    in property <bool> videos: true;
+    spacing: 5px;
+    padding: 8px;
+    Button { label: "Apply Selected"; enabled: root.images || root.videos; clicked => { CanvasPresets.apply(CanvasPresets.profile, false, root.images, root.videos); } }
+    Button { label: "Apply All"; enabled: root.images || root.videos; clicked => { CanvasPresets.apply(CanvasPresets.profile, true, root.images, root.videos); } }
+}
+
+export component CanvasPresetLibrary inherits VerticalLayout {
+    property <[string]> names: ["Sports Frame", "Orange Frame", "Adaptive Blur (Blurred Fill)", "Gallery Mat", "Floating Card", "Photo Print", "Cinema Frame", "Editorial Panel"];
+    property <bool> favourites-only: false;
+    function inspect(index: int, name: string) {
+        CanvasPresets.selected = index + 1;
+        CanvasPresets.choose(index + 1);
+        LibraryFocus.page = 8;
+        LibraryFocus.selected-id = "concat.canvas-\{index + 1}";
+        LibraryFocus.selected-name = name;
+        LibraryFocus.selected-category = "Canvas Preset";
+        LibraryFocus.selected-description = "Configure framing and target scope in the right inspector. Browsing does not apply a preset.";
+    }
+    spacing: 8px;
+    Button {
+        label: root.favourites-only ? "★ Favorites" : "☆ Favorites";
+        clicked => { root.favourites-only = !root.favourites-only; }
+    }
+    if root.favourites-only
+        && !(CanvasPresets.favourites.length >= 8 &&
+            (CanvasPresets.favourites[0] || CanvasPresets.favourites[1] || CanvasPresets.favourites[2]
+            || CanvasPresets.favourites[3] || CanvasPresets.favourites[4]
+            || CanvasPresets.favourites[5] || CanvasPresets.favourites[6] || CanvasPresets.favourites[7])): Text {
+        text: "No starred Canvas presets. Turn off Favorites to browse all presets.";
+        color: Theme.fg-muted;
+        font-size: Theme.fs-sm;
+        wrap: word-wrap;
+    }
+    for name[index] in root.names: Rectangle {
+        property <bool> show-item: !root.favourites-only
+            || (CanvasPresets.favourites.length > index && CanvasPresets.favourites[index]);
+        visible: self.show-item;
+        height: self.show-item ? 62px : 0px;
+        border-width: CanvasPresets.selected == index + 1 ? 2px : 1px;
+        border-color: CanvasPresets.selected == index + 1 ? Theme.accent : Theme.line;
+        border-radius: Theme.r;
+        background: Theme.field;
+        // Schematic previews show composition, never a second media source.
+        Rectangle {
+            x: 7px; y: 8px; width: 54px; height: 46px;
+            border-radius: Theme.r;
+            background: index == 0 ? #b51c3e
+                : index == 1 ? #f49a4b
+                : index == 3 ? #e4e0d6
+                : index == 4 ? #152336
+                : index == 5 ? #25303a
+                : index == 6 ? #050505
+                : index == 7 ? #f1e7dc : #596e8f;
+            Rectangle {
+                x: index == 7 ? 21px : index == 6 ? 3px : 8px;
+                y: index == 6 ? 12px : index == 5 ? 5px : 7px;
+                width: index == 7 ? 29px : index == 6 ? 48px : 38px;
+                height: index == 6 ? 22px : index == 5 ? 29px : 32px;
+                background: #8899ac;
+                border-radius: index == 4 ? 5px : 1px;
+                border-width: index < 2 ? 2px : 0px;
+                border-color: index == 0 ? #ff153a : #ff914d;
+            }
+        }
+        Text {
+            x: 70px;
+            y: 8px;
+            width: parent.width - 112px;
+            text: name;
+            color: Theme.fg;
+            font-size: Theme.fs;
+            font-weight: Theme.weight-title;
+        }
+        Text {
+            x: 70px;
+            y: 33px;
+            width: parent.width - 112px;
+            text: index == 0 ? "Legacy sports style"
+                : index == 1 ? "Legacy orange style"
+                : index == 2 ? "Same-source blur"
+                : index == 3 ? "Balanced picture mat"
+                : index == 4 ? "Rounded elevated card"
+                : index == 5 ? "Tilted photo mat"
+                : index == 6 ? "Letterbox composition" : "Open editorial space";
+            color: Theme.fg-muted;
+            font-size: Theme.fs-sm;
+        }
+        TouchArea {
+            x: 0;
+            y: 0;
+            width: parent.width - 38px;
+            height: parent.height;
+            mouse-cursor: pointer;
+            clicked => { root.inspect(index, name); }
+        }
+        IconButton {
+            x: parent.width - self.width - 5px;
+            y: 35px;
+            glyph: Glyph.info;
+            label: "Inspect " + name + " without applying";
+            clicked => { root.inspect(index, name); }
+        }
+        IconButton {
+            x: parent.width - self.width - 5px;
+            y: 8px;
+            glyph: Glyph.mask-star;
+            checked: CanvasPresets.favourites.length > index && CanvasPresets.favourites[index];
+            label: "Toggle favorite for " + name;
+            clicked => { CanvasPresets.toggle-favourite(index + 1); }
+        }
     }
 }

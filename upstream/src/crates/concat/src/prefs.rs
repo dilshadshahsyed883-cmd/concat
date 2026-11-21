@@ -61,10 +61,16 @@ pub struct Preferences {
     /// like library favourites; older settings.json files default to none.
     #[serde(default)]
     pub physics_motion_favourites: Vec<String>,
-    /// Canvas composition profile stars, stored by stable id and kept separate
-    /// from animation and effect-package favourites. Old preferences default empty.
-    #[serde(default)]
+    /// Explicitly saved editor Canvas defaults. Unlike project data these only
+    /// seed the Canvas editor; they never rewrite an existing project.
+    pub canvas_default: Option<String>,
+    /// Stable Canvas preset IDs starred for this app (never project data).
+    /// Legacy saved string keys use canvas:1 through canvas:8.
     pub canvas_preset_favourites: Vec<String>,
+    /// Optional defaults for NEW transition applications only; existing cuts
+    /// continue to use their own project-stored duration and intensity.
+    pub transition_default_duration: Option<f64>,
+    pub transition_default_intensity: Option<f64>,
     /// The playhead stops at the end of the content instead of going where
     /// it is put. Off by default: a click past the last clip lands there, so
     /// a clip can be dropped at the playhead beyond everything else.
@@ -524,4 +530,59 @@ mod tests {
         let older: Preferences = serde_json::from_str(r#"{"dark": false}"#).unwrap();
         assert!(older.keybinds.is_empty());
     }
+
+    #[test]
+    fn transition_defaults_round_trip_and_legacy_file_uses_bundled_settings() {
+        let prefs = Preferences {
+            transition_default_duration: Some(0.7),
+            transition_default_intensity: Some(0.65),
+            ..Preferences::default()
+        };
+        let text = serde_json::to_string(&prefs).unwrap();
+        let back: Preferences = serde_json::from_str(&text).unwrap();
+        assert_eq!(back.transition_default_duration, Some(0.7));
+        assert_eq!(back.transition_default_intensity, Some(0.65));
+        let legacy: Preferences = serde_json::from_str(r#"{"dark":true}"#).unwrap();
+        assert_eq!(legacy.transition_default_duration, None);
+        assert_eq!(legacy.transition_default_intensity, None);
+    }
+
+    #[test]
+    fn canvas_favorites_are_independent_of_projects_and_survive_settings_round_trip() {
+        let prefs = Preferences {
+            canvas_preset_favourites: vec!["canvas:1".into(), "canvas:3".into()],
+            ..Preferences::default()
+        };
+        let restored: Preferences = serde_json::from_str(
+            &serde_json::to_string(&prefs).unwrap()).unwrap();
+        assert_eq!(restored.canvas_preset_favourites, vec!["canvas:1", "canvas:3"]);
+        let old: Preferences = serde_json::from_str(r#"{"dark":false}"#).unwrap();
+        assert!(old.canvas_preset_favourites.is_empty());
+    }
+
+    #[test]
+    fn canvas_editor_default_round_trips_and_legacy_file_has_none() {
+        let config = concat_project::canvas_preset::Config::preset(2).unwrap();
+        let prefs = Preferences {
+            canvas_default: Some(serde_json::to_string(&config).unwrap()),
+            ..Preferences::default()
+        };
+        let json = serde_json::to_string(&prefs).unwrap();
+        let restored: Preferences = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            restored.canvas_default.as_deref()
+                .and_then(|json| concat_project::canvas_preset::Config::from_json(json).ok()),
+            Some(config)
+        );
+        let legacy: Preferences = serde_json::from_str(r#"{"dark":true}"#).unwrap();
+        assert!(legacy.canvas_default.is_none());
+        // A malformed Canvas profile must not discard unrelated preferences.
+        let malformed: Preferences = serde_json::from_str(
+            r#"{"dark":true,"canvasDefault":"{not valid JSON"}"#).unwrap();
+        assert_eq!(malformed.dark, Some(true));
+        assert!(malformed.canvas_default.as_deref()
+            .and_then(|json| concat_project::canvas_preset::Config::from_json(json).ok())
+            .is_none());
+    }
+
 }

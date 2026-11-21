@@ -56,6 +56,35 @@ class TimelineFilterLookTests(unittest.TestCase):
                               "exposure", "sharpen"):
                     self.assertIn(f"{item[field]:.6f}", shader)
 
+    def test_existing_filter_categories_are_complete_and_sub_tabs_start_on_all(self):
+        # Only the display categories change: IDs, shader recipes and output stay intact.
+        expected = {
+            "Warm & Golden": {"concat.look.crystal-honey", "concat.look.soft-golden", "concat.look.honey-brown"},
+            "Cool & Moody": {"concat.look.iced-fog", "concat.look.aquamarine", "concat.look.cold-thriller"},
+            "Vivid & Colorful": {"concat.look.bright-summer", "concat.look.red-tide", "concat.look.sun-glitter", "concat.look.spring-paint"},
+            "Soft & Pastel": {"concat.look.milky-fog", "concat.look.autumn-pastel", "concat.look.velvet-halo"},
+            "Cinematic & Film": {"concat.look.urban-gray", "concat.look.coastal-dusk", "concat.look.city-lights", "concat.look.payphone-talk", "concat.look.pulp-retro-film"},
+            "Detail & Clarity": {"concat.look.4k", "concat.look.8k", "concat.look.hdr-look"},
+        }
+        by_id = {item["id"]: item for item in LOOK_CATALOGUE}
+        self.assertEqual(set().union(*expected.values()), set(by_id))
+        for category, ids in expected.items():
+            for effect_id in ids:
+                with self.subTest(effect=effect_id):
+                    manifest = tomllib.loads(
+                        (ROOT / "upstream/src/crates/concat-effects/packages" /
+                         effect_id / "effect.toml").read_text()
+                    )
+                    self.assertEqual(manifest["effect"]["category"], category)
+                    self.assertEqual(manifest["effect"]["id"], effect_id)
+
+        ui = (ROOT / "upstream/src/crates/concat/ui/workspace/media-pane.slint").read_text()
+        controller = (ROOT / "upstream/src/crates/concat/src/studio.rs").read_text()
+        self.assertIn('Library.category-changed(0, "All")', ui)
+        self.assertIn('Library.group-changed(0, index)', ui)
+        self.assertIn('studio.library[0].category = "All".to_owned()', controller)
+        self.assertIn('studio.library[0].group = -1;', controller)
+
     def test_each_preset_renders_as_a_master_layer(self):
         for effect_id, settings in FILTER_LOOKS.items():
             with self.subTest(id=effect_id):

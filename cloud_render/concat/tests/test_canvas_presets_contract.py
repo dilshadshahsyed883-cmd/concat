@@ -47,7 +47,7 @@ class CanvasPresetContracts(unittest.TestCase):
         directory=os.environ.get('CONCAT_CANVAS_FIXTURE_DIR')
         if not directory:self.skipTest('Run Rust canvas fixture tests with CONCAT_CANVAS_FIXTURE_DIR to validate cross-language serialization')
         files=list(Path(directory).glob('canvas-*.json'))
-        self.assertEqual(len(files),6)
+        self.assertEqual(len(files),16)
         for file in files:
             with self.subTest(file=file.name):
                 document = json.loads(file.read_text())
@@ -62,8 +62,11 @@ class CanvasPresetContracts(unittest.TestCase):
                 self.assertFalse(any(t.get('canvasRole') in ('banner', 'headline')
                                      for t in timeline['tracks']))
                 self.assertTrue(any(c.get('canvasRole') == 'backdrop' for c in clips))
-                self.assertTrue(any(c.get('canvasRole') == 'frame' for c in clips)
-                                if 'canvas-3-' not in file.name else True)
+                # A frame is optional for blur, floating-card, photo-print,
+                # cinema and editorial layouts. All still preserve the
+                # original clip and provide a native backdrop.
+                if file.name.startswith(('canvas-1-', 'canvas-2-', 'canvas-4-')):
+                    self.assertTrue(any(c.get('canvasRole') == 'frame' for c in clips))
                 self.assertEqual(len([c for c in clips if c.get('canvasRole') == 'badgeText']), 1)
                 # Native fixtures point to source.mp4. The worker's manifest
                 # loader resolves real ZIP-relative paths; supply the expected

@@ -9,6 +9,7 @@ import { SegmentedControl } from "../primitives/segmented-control.slint";
 import { Select } from "../primitives/select.slint";
 import { AvatarData } from "../primitives/avatar.slint";
 import { Rail } from "../inspector/controls.slint";
+import { NumberField } from "../primitives/number-field.slint";
 import { Wave } from "../primitives/wave.slint";
 import { Fmt } from "../util.slint";
 
@@ -506,14 +507,16 @@ export component SpeechDialog inherits Modal {
                     default-value: 1;
                     changed(v) => { root.speed-changed(v); }
                 }
-                Text {
-                    width: 52px;
-                    text: "\{Fmt.round-to(root.speed-v, 2)}×";
-                    color: Theme.fg-muted;
-                    font-family: Theme.font-technical;
-                    font-size: Theme.fs-sm;
-                    vertical-alignment: center;
-                    horizontal-alignment: right;
+                NumberField {
+                    width: 94px;
+                    horizontal-stretch: 0;
+                    value <=> root.speed-v;
+                    minimum: 0.5;
+                    maximum: 2;
+                    step: 0.05;
+                    precision: 2;
+                    unit: "×";
+                    changed(v) => { root.speed-changed(v); }
                 }
             }
 
@@ -525,6 +528,16 @@ export component SpeechDialog inherits Modal {
                     maximum: 1;
                     step: 0.05;
                     default-value: 0.2;
+                    changed(v) => { root.pauses-changed(v); }
+                }
+                NumberField {
+                    width: 90px;
+                    horizontal-stretch: 0;
+                    value <=> root.pauses-v;
+                    minimum: 0;
+                    maximum: 1;
+                    step: 0.05;
+                    precision: 2;
                     changed(v) => { root.pauses-changed(v); }
                 }
                 Text {
@@ -597,8 +610,19 @@ export component SpeechDialog inherits Modal {
                     value <=> root.reference-start-v;
                     minimum: 0;
                     maximum: Math.max(0, root.data.reference-length - 1);
-                    step: 0.5;
+                    step: 0.1;
                     default-value: 0;
+                    changed(v) => { root.reference-start-changed(v); }
+                }
+                NumberField {
+                    width: 92px;
+                    horizontal-stretch: 0;
+                    value <=> root.reference-start-v;
+                    minimum: 0;
+                    maximum: Math.max(0, root.data.reference-length - 1);
+                    step: 0.1;
+                    precision: 1;
+                    unit: "s";
                     changed(v) => { root.reference-start-changed(v); }
                 }
                 Text {

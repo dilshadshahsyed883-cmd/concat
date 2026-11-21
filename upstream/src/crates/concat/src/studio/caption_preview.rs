@@ -6,7 +6,7 @@ use concat_core::frame::Frame;
 use concat_export::ExportClip;
 use concat_project::caption_preview::{card_sample, stage_actual, stage_sample};
 use concat_project::model::{Clip, ClipKind, CustomFont, Project, TextStyle, Track};
-use slint::{ComponentHandle, ModelRc, VecModel};
+use slint::{ComponentHandle, Model, ModelRc, VecModel};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -331,6 +331,25 @@ impl Studio {
         if !self.caption_preview.browsing {
             return;
         }
+        // Keep the original rendered-card cache intact: filtering changes only
+        // the visible catalogue and its aligned star states, never thumbnails,
+        // staged caption style, selection, or project data.
+        let show_cards = |model: &ModelRc<CaptionPreviewCard>| {
+            let mut shown = Vec::new();
+            let mut stars = Vec::new();
+            for index in 0..model.row_count() {
+                if let Some(card) = model.row_data(index) {
+                    let starred = self.prefs.favourites.iter()
+                        .any(|id| id.as_str() == card.id.as_str());
+                    if !ui.get_favourites_only() || starred {
+                        shown.push(card);
+                        stars.push(starred);
+                    }
+                }
+            }
+            ui.set_favourites(ModelRc::new(VecModel::from(stars)));
+            ui.set_cards(ModelRc::new(VecModel::from(shown)));
+        };
         let signature = self
             .text_presets
             .iter()
@@ -340,7 +359,7 @@ impl Studio {
             .join(";");
         if let Some((old, model)) = self.caption_preview.card_model.borrow().as_ref() {
             if old == &signature {
-                ui.set_cards(model.clone());
+                show_cards(model);
                 return;
             }
         }
@@ -381,7 +400,7 @@ impl Studio {
             });
         }
         let model = ModelRc::from(Rc::new(VecModel::from(cards)));
-        ui.set_cards(model.clone());
+        show_cards(&model);
         *self.caption_preview.card_model.borrow_mut() = Some((signature, model));
     }
 }
@@ -389,6 +408,28 @@ impl Studio {
 /// Install isolated callbacks; the root window calls this once during setup.
 pub(crate) fn install(app: &App) {
     let ui = app.global::<CaptionPresetPreview>();
+    ui.on_toggle_favourite(|id| {
+        crate::host::Shell::with(|shell, app| {
+            {
+                let mut studio = shell.studio.borrow_mut();
+                if !studio.text_presets.iter()
+                    .any(|preset| preset.id == id.as_str()
+                        && preset.id.starts_with("cuda-caption.")) {
+                    return;
+                }
+                let starred = studio.prefs.favourites.iter()
+                    .any(|entry| entry.as_str() == id.as_str());
+                studio.library_favourite(id.as_str(), !starred);
+            }
+            shell.studio.borrow().publish(&app, &shell.models);
+        })
+    });
+    ui.on_filter_favourites(|only| {
+        crate::host::Shell::with(|shell, app| {
+            app.global::<CaptionPresetPreview>().set_favourites_only(only);
+            shell.studio.borrow().publish(&app, &shell.models);
+        })
+    });
     ui.on_stage(|id| {
         crate::host::Shell::with(|shell, app| {
             {

@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// UI-only browsing context. This never writes project media or a render
+// manifest. The library owns selection; the existing inspector owns edits.
+export global LibraryFocus {
+    // -1 = normal project/clip inspector, otherwise the active library:
+    // 1 Transitions, 2 Visual Effects, 3 Audio Effects, 4 Filters,
+    // 5 LUTs, 6 Text/Captions, 7 Templates, 8 Canvas, 9 Particles.
+    in-out property <int> page: -1;
+    in-out property <string> selected-id;
+    in-out property <string> selected-name;
+    in-out property <string> selected-category;
+    in-out property <string> selected-description;
+}

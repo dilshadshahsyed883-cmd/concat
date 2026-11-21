@@ -4,7 +4,7 @@ format = 2
 id = "concat.look.velvet-halo"
 name = "Velvet Halo"
 kind = "filter"
-category = "Timeline Looks"
+category = "Soft & Pastel"
 order = 17
 description = "SDR whole-timeline color grading preset."
 

@@ -113,6 +113,45 @@ use panes::voiceover::VoiceoverMsg;
 use studio::{ASPECTS, Models, OUTPUTS, RATES, SIZES, Studio};
 use ui::*;
 
+fn canvas_picker_color(hex: &str) -> slint::Color {
+    let digits = hex.trim_start_matches('#');
+    let rgb = digits.get(..6).and_then(|s| u32::from_str_radix(s, 16).ok()).unwrap_or(0);
+    slint::Color::from_rgb_u8((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8)
+}
+fn canvas_publish(app: &App, config: &concat_project::canvas_preset::Config) {
+    let panel = app.global::<CanvasPresets>();
+    panel.set_profile(serde_json::to_string_pretty(config).unwrap_or_default().into());
+    panel.set_selected(config.preset as i32);
+    panel.set_foreground_x(config.foreground.x as f32);
+    panel.set_foreground_y(config.foreground.y as f32);
+    panel.set_foreground_width(config.foreground.width as f32);
+    panel.set_foreground_height(config.foreground.height as f32);
+    panel.set_border_width(config.border_width as f32);
+    panel.set_radius(config.radius as f32);
+    panel.set_blur(config.blur as f32);
+    panel.set_tint_opacity(config.tint_opacity as f32);
+    panel.set_shadow_opacity(config.shadow_opacity as f32);
+    panel.set_shadow_offset(config.shadow_offset as f32);
+    panel.set_mat_bottom(config.mat_bottom as f32);
+    panel.set_rotation(config.rotation as f32);
+    panel.set_background_mode(match config.background.as_str() {
+        "blur" => 1, "color" => 2, "none" => 3, _ => 0,
+    });
+    panel.set_border_color(canvas_picker_color(&config.border_color));
+    panel.set_background_color(canvas_picker_color(&config.background_color));
+    panel.set_tint_color(canvas_picker_color(&config.background_tint));
+    panel.set_shadow_color(canvas_picker_color(&config.shadow_color));
+    panel.set_mat_color(canvas_picker_color(&config.mat_color));
+}
+fn canvas_modify(app: &App, edit: impl FnOnce(&mut concat_project::canvas_preset::Config)) {
+    let panel = app.global::<CanvasPresets>();
+    let Ok(mut config) = concat_project::canvas_preset::Config::from_json(&panel.get_profile()) else {
+        return; // Keep invalid Advanced JSON drafts intact.
+    };
+    edit(&mut config);
+    if config.validate().is_ok() { canvas_publish(app, &config); }
+}
+
 /// Opens this run's log file and makes it where the app writes things down.
 ///
 /// Each entry point calls this before [`run`], because each knows where its
@@ -813,21 +852,137 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     app.global::<ParticleBulk>().on_apply(on_window!(|state, preset:i32, mode:i32, selected_only:bool, images:bool, videos:bool| {
         state.apply_particle_bulk(preset,mode,selected_only,images,videos);
     }));
+    app.global::<ParticleBulk>().on_toggle_favourite(on_window!(|state, index: i32| {
+        const PARTICLE_IDS: [&str; 12] = [
+            "stars", "gold-sparkles", "embers", "fireflies", "bokeh",
+            "dust-motes", "snow", "rain", "ash", "light-leaks",
+            "shooting-stars", "confetti",
+        ];
+        if let Some(id) = usize::try_from(index)
+            .ok().and_then(|index| PARTICLE_IDS.get(index)) {
+            let key = format!("concat.particles-{id}");
+            let starred = state.prefs.favourites.iter().any(|entry| entry == &key);
+            state.library_favourite(&key, !starred);
+        }
+    }));
     app.global::<CanvasPresets>().on_choose(move |index| {
         Shell::with(|_, app| {
             if let Some(config) = concat_project::canvas_preset::Config::preset(index as u32) {
-                app.global::<CanvasPresets>().set_profile(serde_json::to_string_pretty(&config).unwrap_or_default().into());
+                canvas_publish(app, &config);
+            }
+        });
+    });
+    app.global::<CanvasPresets>().on_edit_number(move |field, value| {
+        Shell::with(|_, app| {
+            canvas_modify(app, |config| {
+                let value = value as f64;
+                match field.as_str() {
+                    "foregroundX" => config.foreground.x = value,
+                    "foregroundY" => config.foreground.y = value,
+                    "foregroundWidth" => config.foreground.width = value,
+                    "foregroundHeight" => config.foreground.height = value,
+                    "borderWidth" => config.border_width = value,
+                    "radius" => config.radius = value,
+                    "blur" => config.blur = value,
+                    "tintOpacity" => config.tint_opacity = value,
+                    "shadowOpacity" => config.shadow_opacity = value,
+                    "shadowOffset" => config.shadow_offset = value,
+                    "matBottom" => config.mat_bottom = value,
+                    "rotation" => config.rotation = value,
+                    _ => {}
+                }
+            });
+        });
+    });
+    app.global::<CanvasPresets>().on_edit_colour(move |field, value| {
+        Shell::with(|_, app| {
+            canvas_modify(app, |config| {
+                let hex = format!("#{:02x}{:02x}{:02x}", value.red(), value.green(), value.blue());
+                match field.as_str() {
+                    "borderColor" => config.border_color = hex,
+                    "backgroundColor" => config.background_color = hex,
+                    "backgroundTint" => config.background_tint = hex,
+                    "shadowColor" => config.shadow_color = hex,
+                    "matColor" => config.mat_color = hex,
+                    _ => {}
+                }
+            });
+        });
+    });
+    app.global::<CanvasPresets>().on_edit_mode(move |mode| {
+        Shell::with(|_, app| {
+            canvas_modify(app, |config| {
+                config.background = match mode {
+                    1 => "blur", 2 => "color", 3 => "none", _ => "source",
+                }.into();
+            });
+        });
+    });
+    app.global::<CanvasPresets>().on_sync_profile(move || {
+        Shell::with(|_, app| {
+            let panel = app.global::<CanvasPresets>();
+            if let Ok(config) = concat_project::canvas_preset::Config::from_json(&panel.get_profile()) {
+                canvas_publish(app, &config);
             }
         });
     });
     app.global::<CanvasPresets>().on_apply(on_window!(|state, json: SharedString, all: bool, images:bool, videos:bool| {
         state.apply_canvas_preset(&json, all, images, videos);
     }));
-    app.global::<CanvasPresets>().on_toggle_favourite(on_window!(|state, preset: i32| {
-        state.toggle_canvas_preset_favourite(preset);
-    }));
-    app.global::<CanvasPresets>().set_profile(serde_json::to_string_pretty(
-        &concat_project::canvas_preset::Config::preset(1).expect("sports canvas default")).unwrap_or_default().into());
+    app.global::<CanvasPresets>().on_toggle_favourite(move |preset| {
+        Shell::with(|shell, app| {
+            shell.studio.borrow_mut().toggle_canvas_preset_favourite(preset);
+            let stars = (1..=8).map(|index|
+                shell.studio.borrow().prefs.canvas_preset_favourites
+                    .iter().any(|held| held == &format!("canvas:{index}"))
+            ).collect::<Vec<_>>();
+            app.global::<CanvasPresets>().set_favourites(ModelRc::new(VecModel::from(stars)));
+        });
+    });
+    // Project-specific edits remain separate; only an explicitly saved Canvas
+    // profile seeds the editor on a future launch/new project.
+    app.global::<CanvasPresets>().on_save_default(move |profile| {
+        Shell::with(|shell, app| {
+            match concat_project::canvas_preset::Config::from_json(profile.as_str()) {
+                Ok(config) => {
+                    let mut studio = shell.studio.borrow_mut();
+                    studio.prefs.canvas_default = serde_json::to_string(&config).ok();
+                    studio.prefs.save(&studio.host.dirs);
+                    app.global::<CanvasPresets>().set_default_status(
+                        "Canvas default saved for future projects and restarts.".into());
+                }
+                Err(reason) => {
+                    app.global::<CanvasPresets>().set_default_status(
+                        format!("Canvas default not saved: {reason}").into());
+                }
+            }
+        });
+    });
+    app.global::<CanvasPresets>().on_reset_default(move || {
+        Shell::with(|shell, app| {
+            let mut studio = shell.studio.borrow_mut();
+            studio.prefs.canvas_default = None;
+            studio.prefs.save(&studio.host.dirs);
+            drop(studio);
+            let sports = concat_project::canvas_preset::Config::preset(1)
+                .expect("sports canvas default");
+            canvas_publish(app, &sports);
+            app.global::<CanvasPresets>().set_default_status(
+                "Canvas default reset to Sports Frame.".into());
+        });
+    });
+    Shell::with(|shell, app| {
+        let remembered = shell.studio.borrow().prefs.canvas_default.as_deref()
+            .and_then(|json| concat_project::canvas_preset::Config::from_json(json).ok())
+            .unwrap_or_else(|| concat_project::canvas_preset::Config::preset(1)
+                .expect("sports canvas default"));
+        let stars = (1..=8)
+            .map(|index| shell.studio.borrow().prefs.canvas_preset_favourites
+                .iter().any(|held| held == &format!("canvas:{index}")))
+            .collect::<Vec<_>>();
+        app.global::<CanvasPresets>().set_favourites(ModelRc::new(VecModel::from(stars)));
+        canvas_publish(app, &remembered);
+    });
     app.on_start_c_builder(on_window!(|studio| {studio.builder_home();}));
     app.on_c_builder_return_home(on_window!(|studio,profile:SharedString| {studio.builder_return_home(&profile);}));
     app.on_c_builder_open_generated(on_window!(|studio| {studio.builder_open_generated();}));
@@ -1866,6 +2021,12 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     }));
     editor.on_transition_intensity_set(on_window!(|state, amount: f32| {
         state.set_transition_intensity(amount as f64);
+    }));
+    editor.on_transition_default_save(on_window!(|state, seconds: f32, amount: f32| {
+        state.save_transition_default(seconds as f64, amount as f64);
+    }));
+    editor.on_transition_default_reset(on_window!(|state| {
+        state.reset_transition_default();
     }));
 
     // ── the context menu ──

@@ -4,7 +4,7 @@ format = 2
 id = "concat.look.spring-paint"
 name = "Spring Paint"
 kind = "filter"
-category = "Timeline Looks"
+category = "Vivid & Colorful"
 order = 13
 description = "SDR whole-timeline color grading preset."
 

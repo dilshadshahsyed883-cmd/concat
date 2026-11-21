@@ -4,7 +4,7 @@ format = 2
 id = "concat.look.autumn-pastel"
 name = "Autumn Pastel"
 kind = "filter"
-category = "Timeline Looks"
+category = "Soft & Pastel"
 order = 14
 description = "SDR whole-timeline color grading preset."
 

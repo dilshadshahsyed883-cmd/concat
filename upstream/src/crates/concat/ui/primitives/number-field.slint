@@ -57,9 +57,12 @@ export component NumberField inherits Rectangle {
 
     property <string> display: root.format(root.value);
     property <length> keyframe-slot: root.keyframe ? 27px : 0px;
+    // Reserve the up/down area so the scrub gesture cannot steal button presses.
+    property <length> stepper-slot: 23px;
+    property <length> unit-slot: root.unit != "" ? 54px : 0px;
 
     height: Theme.h;
-    min-width: 44px;
+    min-width: 66px;
     horizontal-stretch: 1;
     border-top-left-radius: root.radius-left;
     border-bottom-left-radius: root.radius-left;
@@ -81,9 +84,14 @@ export component NumberField inherits Rectangle {
     }
 
     function apply(next: float, fine: bool) {
-        root.value = Fmt.round-to(Fmt.clamp(next, root.minimum, root.maximum),
-            fine ? root.precision + 1 : root.precision);
-        root.changed(root.value);
+        // Do not emit an extra project commit when a focus change repeats the
+        // same value after a button press or keyboard nudge.
+        if (root.value != Fmt.round-to(Fmt.clamp(next, root.minimum, root.maximum),
+                fine ? root.precision + 1 : root.precision)) {
+            root.value = Fmt.round-to(Fmt.clamp(next, root.minimum, root.maximum),
+                fine ? root.precision + 1 : root.precision);
+            root.changed(root.value);
+        }
     }
 
     function nudge(direction: float, shift: bool, alt: bool) {
@@ -167,6 +175,60 @@ export component NumberField inherits Rectangle {
             }
         }
 
+        // A compact visible counterpart to the TextInput's Up/Down keyboard nudges.
+        // This shares nudge(), including min/max clamping and per-field units.
+        VerticalLayout {
+            width: 18px;
+            height: root.height;
+            spacing: 0px;
+
+            Rectangle {
+                height: root.height / 2;
+                border-radius: Theme.r-xs;
+                background: step-up.has-hover && root.enabled ? Theme.field-active : Colors.transparent;
+                Icon {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    glyph: Glyph.chevron-up;
+                    size: 11px;
+                    tint: Theme.fg-muted;
+                }
+                step-up := TouchArea {
+                    enabled: root.enabled;
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.nudge(1, false, false);
+                        // An already-focused TextInput keeps its text while
+                        // typing; an explicit button nudge must refresh it.
+                        ti.text = root.display;
+                    }
+                }
+            }
+
+            Rectangle {
+                height: root.height / 2;
+                border-radius: Theme.r-xs;
+                background: step-down.has-hover && root.enabled ? Theme.field-active : Colors.transparent;
+                Icon {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    glyph: Glyph.chevron-down;
+                    size: 11px;
+                    tint: Theme.fg-muted;
+                }
+                step-down := TouchArea {
+                    enabled: root.enabled;
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.nudge(-1, false, false);
+                        // An already-focused TextInput keeps its text while
+                        // typing; an explicit button nudge must refresh it.
+                        ti.text = root.display;
+                    }
+                }
+            }
+        }
+
         // Wrapped, because a layout start-aligns a fixed-size child on the
         // cross axis: an 18px button in a 28px field would ride 5px high.
         if root.keyframe: VerticalLayout {
@@ -230,7 +292,7 @@ export component NumberField inherits Rectangle {
     scrub := TouchArea {
         x: 0;
         y: 0;
-        width: root.width - root.keyframe-slot;
+        width: Math.max(0px, root.width - root.keyframe-slot - root.stepper-slot - root.unit-slot);
         height: root.height;
         enabled: root.enabled && !ti.has-focus;
         mouse-cursor: ew-resize;

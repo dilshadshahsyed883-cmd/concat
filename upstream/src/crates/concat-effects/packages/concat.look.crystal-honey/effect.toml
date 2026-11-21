@@ -4,7 +4,7 @@ format = 2
 id = "concat.look.crystal-honey"
 name = "Crystal Honey"
 kind = "filter"
-category = "Timeline Looks"
+category = "Warm & Golden"
 order = 1
 description = "SDR whole-timeline color grading preset."
 

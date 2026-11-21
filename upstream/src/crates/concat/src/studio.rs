@@ -2438,8 +2438,9 @@ impl Studio {
         studio.handle(crate::panes::Msg::Settings(
             crate::panes::settings::SettingsMsg::Restore,
         ));
-        // The effects shelf starts on "All", not whatever a stale default
-        // would leave it on.
+        // Filters and Effects both start on All; category tabs only narrow browsing.
+        studio.library[0].category = "All".to_owned();
+        studio.library[0].group = -1;
         studio.library[1].category = "All".to_owned();
         studio.library[1].group = -1;
         studio
@@ -4510,7 +4511,12 @@ impl Studio {
             self.notify(&t("studio.selectVideoImageClip"), true);
             return;
         }
-        let Some(duration) = self.transition_duration(clip, 0.5) else {
+        let requested = self.prefs.transition_default_duration
+            .filter(|value| value.is_finite() && (0.1..=5.0).contains(value))
+            .unwrap_or(0.5);
+        let intensity_default = self.prefs.transition_default_intensity
+            .filter(|value| value.is_finite() && (0.0..=1.0).contains(value));
+        let Some(duration) = self.transition_duration(clip, requested) else {
             self.notify(&t("studio.noRoomForTransition"), true);
             return;
         };
@@ -4520,12 +4526,33 @@ impl Studio {
                 transition_in: Some(Some(Transition {
                     id: id.to_owned(),
                     duration,
-                    intensity: None,
+                    intensity: intensity_default,
                     params: Default::default(),
                 })),
                 ..ClipPatch::default()
             },
         });
+    }
+
+    /// Only explicit user intent changes application defaults, never selection
+    /// or navigation. The project keeps its own authored transition values.
+    pub fn save_transition_default(&mut self, duration: f64, intensity: f64) {
+        if !duration.is_finite() || !(0.1..=5.0).contains(&duration)
+            || !intensity.is_finite() || !(0.0..=1.0).contains(&intensity) {
+            self.notify("Cannot save transition defaults outside supported ranges", true);
+            return;
+        }
+        self.prefs.transition_default_duration = Some(duration);
+        self.prefs.transition_default_intensity = Some(intensity);
+        self.prefs.save(&self.host.dirs);
+        self.notify("Default transition settings saved for new transitions", false);
+    }
+
+    pub fn reset_transition_default(&mut self) {
+        self.prefs.transition_default_duration = None;
+        self.prefs.transition_default_intensity = None;
+        self.prefs.save(&self.host.dirs);
+        self.notify("New transitions use bundled defaults again", false);
     }
 
     /// The clip whose incoming transition is selected: the one picked on
@@ -9135,6 +9162,12 @@ impl Studio {
             }
         };
         let editor = app.global::<Editor>();
+        let canvas_stars = (1..=8)
+            .map(|id| format!("canvas:{id}"))
+            .map(|id| self.prefs.canvas_preset_favourites.iter().any(|held| held == &id))
+            .collect::<Vec<_>>();
+        app.global::<crate::ui::CanvasPresets>()
+            .set_favourites(ModelRc::new(VecModel::from(canvas_stars)));
         editor.set_cb_media_folder(self.c_builder.folder.clone().into());
         editor.set_cb_narration(self.c_builder.narration.clone().into());
         editor.set_cb_duration(self.c_builder.duration.unwrap_or_default() as f32);
@@ -9435,6 +9468,17 @@ impl Studio {
             .map(|preset| self.prefs.physics_motion_favourites.iter().any(|id| id == preset))
             .collect();
         keys.set_physics_favourites(slint::ModelRc::new(VecModel::from(physics_stars)));
+        // These stable particle package IDs use the same preference store as
+        // effect-library stars, so Favorites Randomly never sees a second list.
+        let particle_stars = [
+            "stars", "gold-sparkles", "embers", "fireflies", "bokeh",
+            "dust-motes", "snow", "rain", "ash", "light-leaks",
+            "shooting-stars", "confetti",
+        ].into_iter().map(|id| {
+            self.prefs.favourites.iter().any(|saved| saved == &format!("concat.particles-{id}"))
+        }).collect::<Vec<_>>();
+        app.global::<crate::ui::ParticleBulk>()
+            .set_favourites(slint::ModelRc::new(VecModel::from(particle_stars)));
         // The Keyframes panel: set whole, since a row holds a model of its
         // keys and cannot be compared for a diff.
         models.key_editor_rows.set_vec(self.key_editor_rows());
@@ -10628,15 +10672,12 @@ impl Studio {
         self.prefs.save(&self.host.dirs);
     }
 
-    /// Canvas preset stars are separate from animation and effects favourites.
-    /// Legacy numeric profiles remain valid; future families get new stable IDs.
+    /// Toggle a stable Canvas preset preference, never a project edit.
     pub fn toggle_canvas_preset_favourite(&mut self, preset: i32) {
-        if !(1..=3).contains(&preset) {
-            return;
-        }
+        if !(1..=8).contains(&preset) { return; }
         let id = format!("canvas:{preset}");
-        if self.prefs.canvas_preset_favourites.iter().any(|entry| entry == &id) {
-            self.prefs.canvas_preset_favourites.retain(|entry| entry != &id);
+        if self.prefs.canvas_preset_favourites.iter().any(|key| key == &id) {
+            self.prefs.canvas_preset_favourites.retain(|key| key != &id);
         } else {
             self.prefs.canvas_preset_favourites.push(id);
         }
@@ -11130,12 +11171,6 @@ impl Studio {
     /// The menus, the dialogs, the bin and the engine lists.
     pub fn publish_chrome(&self, app: &App, models: &Models) {
         let editor = app.global::<Editor>();
-        let canvas_stars: Vec<bool> = (1..=3)
-            .map(|id| format!("canvas:{id}"))
-            .map(|id| self.prefs.canvas_preset_favourites.iter().any(|held| held == &id))
-            .collect();
-        app.global::<crate::ui::CanvasPresets>()
-            .set_favourites(ModelRc::new(VecModel::from(canvas_stars)));
         #[cfg(windows)]
         {
             let profile = app.global::<crate::ui::GpuCompatibility>();

@@ -2142,6 +2142,8 @@ export component TransitionPanel inherits VerticalLayout {
     callback duration-set(seconds: float);
     callback duration-all(seconds: float);
     callback intensity-set(amount: float);
+    callback save-default(seconds: float, intensity: float);
+    callback reset-default();
 
     property <float> duration;
     // Preserve the entered bulk value when the selected short cut clamps its
@@ -2228,13 +2230,13 @@ export component TransitionPanel inherits VerticalLayout {
                 HorizontalLayout {
                     spacing: 6px;
                     NumberField {
-                        width: 72px;
+                        width: 92px;
                         horizontal-stretch: 0;
                         value <=> root.duration;
                         minimum: 0.1;
                         maximum: 5;
-                        step: 0.05;
-                        precision: 2;
+                        step: 0.1;
+                        precision: 1;
                         unit: "s";
                         changed(v) => { root.bulk-duration = v; root.duration-set(v); }
                     }
@@ -2265,6 +2267,19 @@ export component TransitionPanel inherits VerticalLayout {
                 changed(v) => { root.intensity-set(v); }
             }
             if root.transition.intensity-supported: CreativeTransitionEditor { }
+            HorizontalLayout {
+                padding-left: Theme.pad;
+                padding-right: Theme.pad;
+                spacing: 8px;
+                Button {
+                    label: "Save as Default";
+                    clicked => { root.save-default(root.bulk-duration, root.intensity); }
+                }
+                Button {
+                    label: "Reset Default";
+                    clicked => { root.reset-default(); }
+                }
+            }
             if GpuCompatibility.enabled: Text {
                 text: "Controls are saved with the cut and shared with native preview and GPU export.";
                 color: Theme.fg-muted;
@@ -2401,7 +2416,7 @@ export component AudioPanel inherits VerticalLayout {
                 value <=> root.fade-in;
                 minimum: 0;
                 maximum: root.fade-limit;
-                step: 0.05;
+                step: 0.1;
                 fmt: ParamFormat.seconds2;
                 unit: "s";
                 changed(v) => { root.set(ClipField.fade-in, v); root.commit(); }
@@ -2413,7 +2428,7 @@ export component AudioPanel inherits VerticalLayout {
                 value <=> root.fade-out;
                 minimum: 0;
                 maximum: root.fade-limit;
-                step: 0.05;
+                step: 0.1;
                 fmt: ParamFormat.seconds2;
                 unit: "s";
                 changed(v) => { root.set(ClipField.fade-out, v); root.commit(); }
@@ -2693,7 +2708,7 @@ export component FilterPanel inherits VerticalLayout {
                 value <=> root.fade-in;
                 minimum: 0;
                 maximum: root.ramp-limit;
-                step: 0.05;
+                step: 0.1;
                 fmt: ParamFormat.seconds2;
                 unit: "s";
                 changed(v) => { root.set(ClipField.fade-in, v); root.commit(); }
@@ -2704,7 +2719,7 @@ export component FilterPanel inherits VerticalLayout {
                 value <=> root.fade-out;
                 minimum: 0;
                 maximum: root.ramp-limit;
-                step: 0.05;
+                step: 0.1;
                 fmt: ParamFormat.seconds2;
                 unit: "s";
                 changed(v) => { root.set(ClipField.fade-out, v); root.commit(); }
