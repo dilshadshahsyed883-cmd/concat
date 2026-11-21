@@ -1276,13 +1276,20 @@ fn shelves(
         let name = meta.name.clone();
         let description = meta.description.clone();
         let starred = favourites.iter().any(|held| held == &meta.id);
-        let shown = if view.favourites {
-            starred
+        let matches_query = query.is_empty()
+            || name.to_lowercase().contains(&query)
+            || description.to_lowercase().contains(&query);
+        let shown = if kind == PackageKind::Effect && view.category.starts_with("Effects:") {
+            let family = match view.category.as_str() {
+                "Effects:Particles" => meta.category == "Particles",
+                "Effects:Favorites" => starred,
+                _ => meta.category != "Particles",
+            };
+            family && matches_query
+        } else if view.favourites {
+            starred && matches_query
         } else if !query.is_empty() {
-            // Across every shelf while a query is live. Someone typing
-            // "echo" wants the echo, not the echo that happens to be filed
-            // where they were already looking.
-            name.to_lowercase().contains(&query) || description.to_lowercase().contains(&query)
+            matches_query
         } else if !view.category.is_empty() {
             package.matches_category(&view.category)
         } else if view.group >= 0 {
@@ -9744,7 +9751,11 @@ impl Studio {
         if let Some(view) = self.library_at(shelf) {
             view.category = category.to_owned();
             view.group = -1;
-            view.query.clear();
+            if shelf == 1 && category.starts_with("Effects:") {
+                view.favourites = false;
+            } else {
+                view.query.clear();
+            }
         }
     }
 

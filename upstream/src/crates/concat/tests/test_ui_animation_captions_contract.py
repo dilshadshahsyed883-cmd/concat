@@ -52,7 +52,8 @@ class DesktopUiContractTests(unittest.TestCase):
     def test_type_scope_and_shared_inspector_controls(self):
         config = (ROOT / "ui/workspace/config-pane.slint").read_text(encoding="utf-8")
         for typ in ("images", "videos"):
-            self.assertIn("checked: Keyframes.animation-" + typ + ";", MEDIA)
+            self.assertIn("checked: Keyframes.animation-" + typ + ";", config)
+            self.assertNotIn("checked: Keyframes.animation-" + typ + ";", MEDIA)
         self.assertIn("Keyframes.animation-scope == 1", config)
         self.assertIn("enabled: Keyframes.animation-images || Keyframes.animation-videos", config)
         for knob in ("strength", "duration", "speed", "intensity"):
@@ -91,14 +92,14 @@ class DesktopUiContractTests(unittest.TestCase):
             self.assertIn(page, pages)
         # #93 moves Canvas preset editing into ConfigPane. The left viewport
         # renders only the gallery; both panes own one scroll container.
-        for panel in ("CanvasPresetLibrary", "ParticlePresetLibrary",
+        for panel in ("CanvasPresetLibrary", "ShelfGrid",
                       "MediaLayoutPanel { canvas: false; }"):
             self.assertIn(panel, pages)
         self.assertIn("CanvasMotionPanel", (ROOT / "ui/workspace/config-pane.slint").read_text())
         config = (ROOT / "ui/workspace/config-pane.slint").read_text(encoding="utf-8")
         self.assertIn("CanvasPresetPanel {", config)
-        self.assertIn("MediaLayoutPanel {", config)
-        self.assertIn("canvas: true;", config)
+        self.assertNotIn("MediaLayoutPanel {", config)
+        self.assertIn("checked: CanvasTargets.images;", config)
         self.assertIn("LibraryFocus.page == 8", config)
         self.assertIn("library-only: true;", pages)
         self.assertIn("inspector-only: true;", config)
@@ -108,7 +109,7 @@ class DesktopUiContractTests(unittest.TestCase):
         for item in ("root.selected.count == 0", "root.selected.count > 1",
                      "root.apply(3, true);", "root.apply(3, false);",
                      "root.videos, true);", "root.videos, false);",
-                     'label: "Fit";', 'label: "Fill";'):
+                     'options: ["Framing…", "Fit", "Fill"];', 'root.apply(index == 2 ? 5 : 4'):
             self.assertIn(item, layout)
 
     def test_caption_gallery_preview_staged_separately_from_apply(self):

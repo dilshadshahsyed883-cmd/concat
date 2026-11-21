@@ -5,6 +5,27 @@
 use crate::Command;
 use crate::model::{Clip, ClipKey, ClipKind, KeyEase, KeyProperty, ranges};
 
+/// Return an unkeyed working copy only when every existing key is recognized.
+/// All preset families share this rule; manual or ambiguous reopened keys are
+/// protected. Historical signatures support undo/redo within the editing session.
+pub fn preset_base<'a, 's>(
+    clip: &'a Clip,
+    signatures: impl IntoIterator<Item = &'s [ClipKey]>,
+) -> Option<std::borrow::Cow<'a, Clip>> {
+    if clip.keys.is_empty() {
+        Some(std::borrow::Cow::Borrowed(clip))
+    } else if signatures
+        .into_iter()
+        .any(|keys| keys == clip.keys.as_slice())
+    {
+        let mut clean = clip.clone();
+        clean.keys.clear();
+        Some(std::borrow::Cow::Owned(clean))
+    } else {
+        None
+    }
+}
+
 /// The starter animations available from the native picture inspector.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MotionPreset {
@@ -160,6 +181,47 @@ mod tests {
             clip.set_key(property, at, value, ease);
         }
         preview
+    }
+
+    #[test]
+    fn cross_family_replacement_keeps_one_preset_and_protects_authored_keys() {
+        use crate::canvas_motion::{CanvasMotionControls, CanvasMotionPreset};
+        use crate::physics_motion::{PhysicsControls, PhysicsPreset};
+        for kind in [ClipKind::Image, ClipKind::Video] {
+            let mut clip = Clip::blank("c1", "t1", kind, "media", 0.0, 6.0);
+            let mut signatures: Vec<Vec<ClipKey>> = Vec::new();
+            for family in [0, 1, 2, 1, 0, 0] {
+                let base = preset_base(&clip, signatures.iter().map(Vec::as_slice)).unwrap();
+                assert!(base.keys.is_empty());
+                let keys = match family {
+                    0 => {
+                        PhysicsPreset::SpringZoom
+                            .keys_with(&base, FRAME, PhysicsControls::default())
+                            .unwrap()
+                            .0
+                    }
+                    1 => CanvasMotionPreset::ALL[0]
+                        .keys(&base, FRAME, CanvasMotionControls::default())
+                        .unwrap(),
+                    _ => MotionPreset::PushIn.keys(&base, FRAME).unwrap().0.to_vec(),
+                };
+                clip.keys = keys.clone();
+                signatures.push(keys);
+                assert!(
+                    preset_base(&clip, signatures.iter().map(Vec::as_slice))
+                        .unwrap()
+                        .keys
+                        .is_empty()
+                );
+            }
+            // Undo to an earlier generated signature remains replaceable.
+            clip.keys = signatures[0].clone();
+            assert!(preset_base(&clip, signatures.iter().map(Vec::as_slice)).is_some());
+            // A reload with no ownership record must not erase ambiguous keys.
+            assert!(preset_base(&clip, std::iter::empty()).is_none());
+            clip.keys[0].value += 0.123;
+            assert!(preset_base(&clip, signatures.iter().map(Vec::as_slice)).is_none());
+        }
     }
 
     #[test]

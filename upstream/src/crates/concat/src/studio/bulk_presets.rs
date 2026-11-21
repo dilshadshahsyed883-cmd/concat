@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasher, RandomState};
 use std::path::Path;
@@ -314,16 +313,9 @@ fn motion_choices_with_controls(
     let previous = generated
         .iter()
         .find(|motion| clip.keys.as_slice() == motion.keys.as_slice());
-    let base = if clip.keys.is_empty() {
-        Cow::Borrowed(clip)
-    } else if previous.is_some() {
-        let mut clean = clip.clone();
-        clean.keys.clear();
-        Cow::Owned(clean)
-    } else {
-        // Keys from the inspector or a project opened from disk are authored.
-        return None;
-    };
+    let base = concat_project::motion_preset::preset_base(
+        clip, generated.iter().map(|motion| motion.keys.as_slice()),
+    )?;
     let choices: Vec<_> = MOTION_PRESETS
         .into_iter()
         .filter(|preset| permitted.contains(preset))
@@ -826,9 +818,8 @@ impl Studio {
             let target = (timeline.id.clone(), clip.id.clone());
             let previous = self.bulk_motion.0.get(&target).and_then(|held|
                 held.iter().find(|held| held.keys == clip.keys));
-            // All manual keys are protected, including reopened or manually changed generated keys.
-            if !clip.keys.is_empty() && previous.is_none() { continue; }
-            let mut base = clip.as_ref().clone(); base.keys.clear();
+            let held = self.bulk_motion.0.get(&target).map_or(&[][..], Vec::as_slice);
+            let Some(base) = concat_project::motion_preset::preset_base(clip, held.iter().map(|motion| motion.keys.as_slice())) else { continue; };
             let mut per_clip = controls;
             per_clip.seed = clip.id.bytes().fold(controls.seed.wrapping_add(0xcbf29ce484222325), |h,b| (h ^ u64::from(b)).wrapping_mul(0x100000001b3));
             let choices: Vec<_> = permitted.iter().filter_map(|preset|
@@ -856,7 +847,7 @@ impl Studio {
                 background:Some(Some(concat_project::model::Background::Blur {amount:controls.blur})),mask,..Default::default() }});
             updates.push((target,generated));
         }
-        if commands.is_empty() {self.notify("No unkeyed, visible, unlocked media to animate.",true);return;}
+        if commands.is_empty() {self.notify("No eligible media. Manual/reopened keyframes are protected; check targets, selection and locked/hidden tracks.",true);return;}
         let revision=self.revision;self.apply(Command::Batch {commands});
         if self.revision!=revision {for (target,motion) in updates {self.bulk_motion.remember(target,motion);}}
     }

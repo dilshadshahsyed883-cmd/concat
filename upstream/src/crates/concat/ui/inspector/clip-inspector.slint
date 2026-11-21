@@ -2267,24 +2267,7 @@ export component TransitionPanel inherits VerticalLayout {
                 changed(v) => { root.intensity-set(v); }
             }
             if root.transition.intensity-supported: CreativeTransitionEditor { }
-            HorizontalLayout {
-                padding-left: Theme.pad;
-                padding-right: Theme.pad;
-                spacing: 8px;
-                Button {
-                    label: "Save as Default";
-                    clicked => { root.save-default(root.bulk-duration, root.intensity); }
-                }
-                Button {
-                    label: "Reset Default";
-                    clicked => { root.reset-default(); }
-                }
-            }
-            if GpuCompatibility.enabled: Text {
-                text: "Controls are saved with the cut and shared with native preview and GPU export.";
-                color: Theme.fg-muted;
-                wrap: word-wrap;
-            }
+
         }
     }
 }

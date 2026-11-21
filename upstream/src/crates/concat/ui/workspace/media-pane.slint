@@ -5,7 +5,7 @@ import { CBuilderKeywordData } from "c-builder-selection.slint";
 import { GpuCompatibility } from "../gpu-compatibility.slint";
 import { Button } from "../primitives/modal.slint";
 import { I18n } from "../i18n.slint";
-import { Theme, Fmt, Glyph, Icon, Payload, Tip } from "../primitives/primitives.slint";
+import { Theme, Fmt, Glyph, Icon, Payload, Tip, SegmentedControl } from "../primitives/primitives.slint";
 import { IconButton } from "../primitives/panel.slint";
 import { LibraryFocus } from "library-focus.slint";
 import { Pane, PaneScroll } from "pane.slint";
@@ -23,7 +23,7 @@ import { CaptionPresetPreview, CaptionPresetPreviewPanel } from "caption-preset-
 import { CanvasPresetLibrary } from "canvas-presets.slint";
 import { MediaLayoutPanel } from "media-layout.slint";
 import { CanvasMotionPanel } from "canvas-motion.slint";
-import { ParticlePresetLibrary } from "particle-effects.slint";
+import { ParticleBulk } from "particle-effects.slint";
 
 export { SourcePreview }
 
@@ -921,6 +921,7 @@ component CatalogueCard inherits Rectangle {
     /// A card that shows before it adds: a click is `auditioned`, and only
     /// a double-click or the plus is `applied`. Otherwise a click applies.
     in property <bool> auditions;
+    in property <bool> inspect-only: false;
     /// This card's look is the one being shown; it draws itself picked.
     in property <bool> auditioning;
     /// What this card leaves on the timeline when it is dragged there, or
@@ -969,7 +970,7 @@ component CatalogueCard inherits Rectangle {
             // here first and takes the showing off; the add that follows
             // is what the gesture meant, and Rust drops the showing anyway.
             clicked => {
-                if (root.auditions) { root.auditioned(); } else { root.applied(); }
+                if root.inspect-only { root.inspected(); } else if (root.auditions) { root.auditioned(); } else { root.applied(); }
             }
             double-clicked => {
                 if (root.auditions) { root.applied(); }
@@ -1321,6 +1322,7 @@ export component ShelfGrid inherits Rectangle {
     in property <int> page-kind: -1;
     /// See CatalogueCard: a shelf whose cards show before they add.
     in property <bool> auditions;
+    in property <bool> inspect-only: false;
     in property <string> auditioning;
     callback auditioned(id: string);
 
@@ -1355,10 +1357,13 @@ export component ShelfGrid inherits Rectangle {
         compact: root.compact;
         favouriteable: true;
         favourite: entry.favourite;
-        selected: LibraryFocus.page == root.page-kind && LibraryFocus.selected-id == entry.id;
+        selected: (LibraryFocus.page == root.page-kind || (root.page-kind == 2 && LibraryFocus.page == 9)) && LibraryFocus.selected-id == entry.id;
         favourited(on) => { Library.favourite(entry.id, on); }
         inspected => {
-            LibraryFocus.page = root.page-kind;
+            LibraryFocus.page = root.page-kind == 2 && entry.category == "Particles" ? 9 : root.page-kind;
+            if root.page-kind == 2 && entry.category == "Particles" {
+                ParticleBulk.preset = ParticleBulk.index-of(entry.id);
+            }
             LibraryFocus.selected-id = entry.id;
             LibraryFocus.selected-name = entry.name;
             LibraryFocus.selected-category = entry.category;
@@ -1366,11 +1371,16 @@ export component ShelfGrid inherits Rectangle {
         }
         payload: root.payload-kind == "" ? ""
             : "\{root.payload-kind}:\{entry.id}:\{entry.name}";
+        inspect-only: root.inspect-only;
         auditions: root.auditions;
         auditioning: root.auditions && root.auditioning == entry.id;
 
         auditioned => { root.auditioned(entry.id); }
-        applied => { root.applied(entry.id, entry.name); }
+        applied => {
+            if root.page-kind == 2 && entry.category == "Particles" {
+                ParticleBulk.apply(ParticleBulk.index-of(entry.id), 0, true, ParticleBulk.images, ParticleBulk.videos);
+            } else { root.applied(entry.id, entry.name); }
+        }
     }
 }
 
@@ -1424,6 +1434,7 @@ export component ShelfSearch inherits HorizontalLayout {
     in property <string> placeholder;
     /// Show the reload square, for the shelves custom packages land on.
     in property <bool> reloads;
+    in property <bool> show-favourites: true;
     callback reload();
 
     // A little over a standard control: the field leads the page, and the
@@ -1468,7 +1479,7 @@ export component ShelfSearch inherits HorizontalLayout {
         property <string> held: Library.view(root.shelf).query;
         changed held => { self.text = self.held; }
     }
-    Button {
+    if root.show-favourites: Button {
         label: Library.view(root.shelf).favourites ? "★ Favorites" : "☆ Favorites";
         clicked => { Library.favourites-changed(root.shelf, !Library.view(root.shelf).favourites); }
     }
@@ -2014,6 +2025,12 @@ export component MediaPane inherits Rectangle {
     // sounds, voice and import implementation accessible from the Media sidebar.
     property <bool> media-audio-view: false;
     function show-library() {
+        if root.tab == 4 && !root.audio-shelf
+            && Library.view(1).category != "Effects:Color"
+            && Library.view(1).category != "Effects:Particles"
+            && Library.view(1).category != "Effects:Favorites" {
+            Library.category-changed(1, "Effects:Color");
+        }
         LibraryFocus.page = root.tab == 3 ? 1
             : root.tab == 4 ? (root.audio-shelf ? 3 : 2)
             : root.tab == 5 ? 4
@@ -2569,13 +2586,13 @@ export component MediaPane inherits Rectangle {
                     // catalogue's own groups, on one page called Effects.
                     if root.tab == 4: VerticalLayout {
                         spacing: 1px;
-                        CategoryHeading {
+                        if root.audio-shelf: CategoryHeading {
                             height: 26px;
                             title: I18n.t("mediaPane.videoEffects");
                             open: root.effects-open;
                             toggled => { root.effects-open = !root.effects-open; }
                         }
-                        if root.effects-open: VerticalLayout {
+                        if root.audio-shelf && root.effects-open: VerticalLayout {
                             spacing: 1px;
                             for label[index] in root.effect-groups: CategoryRow {
                                 height: 24px;
@@ -2997,21 +3014,6 @@ export component MediaPane inherits Rectangle {
                         shelf: 3;
                         placeholder: I18n.t1("common.searchKind", I18n.t("mediaPane.transition"));
                     }
-                    if GpuCompatibility.enabled && GpuCompatibility.transitions: VerticalLayout {
-                        spacing: 5px;
-                        Button {
-                            label: I18n.t("common.applyAllRandomly");
-                            clicked => { root.apply-random-transitions(0); }
-                        }
-                        Button {
-                            label: "Apply to Selected Randomly";
-                            clicked => { root.apply-random-transitions(1); }
-                        }
-                        Button {
-                            label: "Apply Favorites to All Randomly";
-                            clicked => { root.apply-random-transitions(2); }
-                        }
-                    }
                     ShelfGrid {
                         entries: root.catalogue-transitions;
                         page-kind: 1;
@@ -3030,33 +3032,19 @@ export component MediaPane inherits Rectangle {
 
                 if root.tab == 4: VerticalLayout {
                     padding: 8px;
-                    if !root.audio-shelf: VerticalLayout {
-                        spacing: 6px;
-                        Text {
-                            text: "Particle Overlays";
-                            color: Theme.fg;
-                            font-size: Theme.fs;
-                            font-weight: Theme.weight-title;
-                        }
-                        ParticlePresetLibrary { }
+                    if !root.audio-shelf: SegmentedControl {
+                        options: ["Color", "Particles", "Favorites"];
+                        current: Library.view(1).category == "Effects:Particles" ? 1 : Library.view(1).category == "Effects:Favorites" ? 2 : 0;
+                        changed(index) => { Library.category-changed(1, index == 1 ? "Effects:Particles" : index == 2 ? "Effects:Favorites" : "Effects:Color"); }
                     }
-
-                    // A package folder written while the app runs - the
-                    // user's own effect, or one shared with them - is read
-                    // in from the square before the search, without a
-                    // restart. No category pills: the search finds an
-                    // effect, and the room goes to the cards.
                     ShelfSearch {
                         shelf: root.effects-shelf;
+                        show-favourites: root.audio-shelf;
                         placeholder: root.audio-shelf
                             ? I18n.t1("common.searchKind", I18n.t("common.audioEffect"))
                             : I18n.t1("common.searchKind", I18n.t("common.effect"));
                         reloads: true;
                         reload => { root.reload-packages(); }
-                    }
-                    if GpuCompatibility.enabled && GpuCompatibility.video-effects && !root.audio-shelf: Button {
-                        label: I18n.t("common.applyAllRandomly");
-                        clicked => { root.apply-random-effects(); }
                     }
                     ShelfGrid {
                         entries: root.audio-shelf ? root.catalogue-audio : root.catalogue-effects;
@@ -3064,8 +3052,9 @@ export component MediaPane inherits Rectangle {
                         glyph: root.audio-shelf ? Glyph.waveform : Glyph.sparkle;
                         // A sound has no picture: its cards are the compact kind.
                         compact: root.audio-shelf;
-                        // Effects apply directly on single-click to the selected clip —
-                        // auditions:false means click = apply, no monitor overlay confusion.
+                        inspect-only: !root.audio-shelf;
+                        // Visual cards inspect; only explicit plus / Apply changes clips.
+                        // Audio retains its existing application behavior.
                         auditions: false;
                         applied(id, label) => {
                             if (root.audio-shelf) {
@@ -3076,7 +3065,7 @@ export component MediaPane inherits Rectangle {
                         }
                     }
                     if !root.audio-shelf && root.catalogue-effects.length == 0: Text {
-                        text: Library.view(1).favourites
+                        text: Library.view(1).category == "Effects:Favorites"
                             ? "No starred video effects match this view. Turn off Favorites or change category."
                             : "No video effects match the current search or category.";
                         color: Theme.fg-muted;
@@ -3105,27 +3094,12 @@ export component MediaPane inherits Rectangle {
                         text: "Choose a card. The selected preset's settings and Apply actions appear in Details on the right.";
                         color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
                     }
-                    Select {
-                        options: ["All", "Basic / Physics", "Canvas Motion", "Favorites"];
+                    SegmentedControl {
+                        options: ["Basic", "Canvas", "Favorites"];
                         current: root.animation-filter;
                         changed(index) => { root.animation-filter = index; }
                     }
-                    HorizontalLayout {
-                        spacing: 8px;
-                        Check { checked: Keyframes.animation-images; toggled(on) => { Keyframes.animation-images = on; } }
-                        Text { text: "Images"; vertical-alignment: center; color: Theme.fg; }
-                        Check { checked: Keyframes.animation-videos; toggled(on) => { Keyframes.animation-videos = on; } }
-                        Text { text: "Video Clips"; vertical-alignment: center; color: Theme.fg; }
-                    }
-                    HorizontalLayout {
-                        Text { text: "Bulk scope"; vertical-alignment: center; color: Theme.fg-muted; }
-                        Select {
-                            options: ["Whole timeline", "Selected media"];
-                            current: Keyframes.animation-scope;
-                            changed(index) => { Keyframes.animation-scope = index; }
-                        }
-                    }
-                    if root.animation-filter == 0 || root.animation-filter == 1: VerticalLayout {
+                    if root.animation-filter == 0: VerticalLayout {
                         spacing: 6px;
                         Text { text: "Basic / Physics"; color: Theme.fg-muted; font-size: Theme.fs-sm; }
                         AnimationCardGrid {
@@ -3134,7 +3108,7 @@ export component MediaPane inherits Rectangle {
                             starred(index) => { Keyframes.toggle-physics-favourite(index); }
                         }
                     }
-                    if root.animation-filter == 0 || root.animation-filter == 2: VerticalLayout {
+                    if root.animation-filter == 1: VerticalLayout {
                         spacing: 6px;
                         Text { text: "Canvas Motion"; color: Theme.fg-muted; font-size: Theme.fs-sm; }
                         AnimationCardGrid {
@@ -3143,7 +3117,7 @@ export component MediaPane inherits Rectangle {
                             starred(index) => { Keyframes.toggle-physics-favourite(index); }
                         }
                     }
-                    if root.animation-filter == 3: VerticalLayout {
+                    if root.animation-filter == 2: VerticalLayout {
                         spacing: 6px;
                         Text { text: "Starred presets from both families"; color: Theme.fg-muted; font-size: Theme.fs-sm; }
                         AnimationFavoriteCards {

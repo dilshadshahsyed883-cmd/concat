@@ -65,11 +65,11 @@ export component CaptionPresetPreviewPanel inherits VerticalLayout {
             changed(c) => { CaptionPresetPreview.style-color("background", Fmt.hex-of(c, false)); }
         }
         Text {
-            text: "Apply to All sets the project preset and requests GPU captions, even if none exist yet. Apply actions stay visible below the inspector settings.";
+            text: "Apply All sets the project preset and requests GPU captions.";
             color: Theme.fg-muted; font-size: Theme.fs-xs; wrap: word-wrap;
         }
         if !CaptionPresetPreview.can-apply-selected: Text {
-            text: "Select an existing caption clip to use Apply to Selected. Apply to All does not require one.";
+            text: "Select a caption to enable Apply Selected.";
             color: Theme.fg-muted; font-size: Theme.fs-xs; wrap: word-wrap;
         }
         if CaptionPresetPreview.sample: Button {
