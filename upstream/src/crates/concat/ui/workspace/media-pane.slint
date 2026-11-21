@@ -1360,8 +1360,8 @@ export component ShelfGrid inherits Rectangle {
         selected: (LibraryFocus.page == root.page-kind || (root.page-kind == 2 && LibraryFocus.page == 9)) && LibraryFocus.selected-id == entry.id;
         favourited(on) => { Library.favourite(entry.id, on); }
         inspected => {
-            LibraryFocus.page = root.page-kind == 2 && entry.category == "Particles" ? 9 : root.page-kind;
-            if root.page-kind == 2 && entry.category == "Particles" {
+            LibraryFocus.page = root.page-kind == 2 && ParticleBulk.index-of(entry.id) >= 0 ? 9 : root.page-kind;
+            if root.page-kind == 2 && ParticleBulk.index-of(entry.id) >= 0 {
                 ParticleBulk.preset = ParticleBulk.index-of(entry.id);
             }
             LibraryFocus.selected-id = entry.id;
@@ -1377,7 +1377,7 @@ export component ShelfGrid inherits Rectangle {
 
         auditioned => { root.auditioned(entry.id); }
         applied => {
-            if root.page-kind == 2 && entry.category == "Particles" {
+            if root.page-kind == 2 && ParticleBulk.index-of(entry.id) >= 0 {
                 ParticleBulk.apply(ParticleBulk.index-of(entry.id), 0, true, ParticleBulk.images, ParticleBulk.videos);
             } else { root.applied(entry.id, entry.name); }
         }
