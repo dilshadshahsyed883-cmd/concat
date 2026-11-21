@@ -537,7 +537,13 @@ class ProductionQueue:
         except Checkpoint:
             return 2
         except WorkerWait as exc:
-            self.update(row["id"], state="Waiting for Worker", error=str(exc)[:350])
+            # An offline GPU must not hold a render slot before submission.
+            # Already-submitted jobs keep their slot for status/delivery recovery.
+            with self.media.connection() as con:
+                saved = con.execute("SELECT submitted_at FROM production_jobs WHERE id=?", (row["id"],)).fetchone()
+            pending = bool(saved and saved["submitted_at"])
+            self.update(row["id"], state="Waiting for Worker" if pending else "Ready for GPU",
+                        error=str(exc)[:350])
         except (JobError, RuntimeError, HTTPException) as exc:
             self.update(row["id"], state="Failed", error=str(getattr(exc, "detail", str(exc)))[:350])
             return 0
