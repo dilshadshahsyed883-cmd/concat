@@ -121,6 +121,13 @@ export component CaptionPresetPreviewPanel inherits VerticalLayout {
                 wrap: word-wrap; horizontal-alignment: center; vertical-alignment: center;
             }
             touch := TouchArea { mouse-cursor: pointer; clicked => { CaptionPresetPreview.stage(card.id); } }
+            IconButton {
+                x: 6px;
+                y: 6px;
+                glyph: Glyph.info;
+                label: "Preview " + card.name + " without applying";
+                clicked => { CaptionPresetPreview.stage(card.id); }
+            }
             // Separate top-level action: starring never stages or applies a look.
             IconButton {
                 x: parent.width - self.width - 6px;
