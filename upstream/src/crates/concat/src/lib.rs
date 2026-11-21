@@ -829,6 +829,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     app.global::<CanvasPresets>().on_choose(move |index| {
         Shell::with(|_, app| {
             if let Some(config) = concat_project::canvas_preset::Config::preset(index as u32) {
+                app.global::<CanvasPresets>().set_selected(index);
                 app.global::<CanvasPresets>().set_profile(serde_json::to_string_pretty(&config).unwrap_or_default().into());
             }
         });
@@ -863,6 +864,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             drop(studio);
             let sports = concat_project::canvas_preset::Config::preset(1)
                 .expect("sports canvas default");
+            app.global::<CanvasPresets>().set_selected(1);
             app.global::<CanvasPresets>().set_profile(
                 serde_json::to_string_pretty(&sports).unwrap_or_default().into());
             app.global::<CanvasPresets>().set_default_status(
@@ -874,6 +876,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             .filter(|profile| profile.validate().is_ok())
             .unwrap_or_else(|| concat_project::canvas_preset::Config::preset(1)
                 .expect("sports canvas default"));
+        app.global::<CanvasPresets>().set_selected(remembered.preset as i32);
         app.global::<CanvasPresets>().set_profile(
             serde_json::to_string_pretty(&remembered).unwrap_or_default().into());
     });
