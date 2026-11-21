@@ -1,6 +1,6 @@
 # Issue #94 — Canvas Presets implementation and compatibility plan
 
-Status: staged UI separation on `issue-94-canvas-presets`; remaining work not yet implemented or runtime-verified. This plan is subordinate to [issue #94](https://github.com/dilshadshahsyed883-cmd/concat/issues/94).
+Status: staged UI separation, independent media targeting, collapsed Advanced JSON and persistent favorites for the three legacy presets on `issue-94-canvas-presets`; remaining work not yet implemented or runtime-verified. This plan is subordinate to [issue #94](https://github.com/dilshadshahsyed883-cmd/concat/issues/94).
 
 ## Scope and design invariants
 
@@ -43,7 +43,7 @@ The proposed IDs 4–8 are **reserved in the plan, not active runtime identifier
 ## Implementation stages
 
 1. **Navigation separation (started):** Add a fourth child page under Animations called Canvas Presets; keep Canvas responsible only for fill/background. Preserve independent image/video targeting across page changes; collapse Advanced JSON. This does not change renderer/project schema.
-2. **Catalogue and persistent favorites:** Introduce immutable stable IDs, real visually distinguishable thumbnail cards, selection with no side effects, and separate All/Favorites browsing. Favorites persist through the existing application preferences architecture (#91); do not borrow index positions from the 27 animation favorites.
+2. **Catalogue and persistent favorites (partially implemented):** Legacy IDs 1–3 now have independent saved stars and All/Favorites browsing using app preferences without borrowing the 27 animation-star positions. Remaining: real visually distinguishable thumbnail cards, stable identity mapping for future IDs, and full selection/inspector integration.
 3. **Typed style editor and right inspector:** Route the selected preset to the right-side inspector without editing a clip on selection. Build typed native edit operations rather than browser-side JSON string replacement. Expose only genuinely supported fields, including border width 0 = off, border/background/tint colors, normalized margins, opacity/blur and radius. Retain collapsible Advanced JSON and preserve unknown fields for valid legacy versions. Coordinate numeric stepping with #87 and shared inspector layout with #93.
 4. **Add distinct family geometry:** Implement Gallery Mat and Editorial Panel using the existing normalized rectangle/background contract first; add Photo Print only after rotation bounds semantics are defined. Implement Floating Card only with native/GPU shadow parity; Cinema Frame only with explicit crop/fit and aspect-ratio policy. Reconcile Blurred Fill/Adaptive Blur without duplication.
 5. **Compatibility and acceptance:** Validate Apply Selected/All, lock/hidden-track skip, undo/redo, save/reopen, manual keyframe conflict behavior, old JSON round-trip, and aspect-ratio range (portrait, landscape, square, 4:1 boundary). Update Rust fixtures and GPU manifest tests without weakening current negative tests; verify preview vs GPU output before release.
@@ -51,8 +51,8 @@ The proposed IDs 4–8 are **reserved in the plan, not active runtime identifier
 ## Stage-1 code changes on branch
 
 - `media-pane.slint`: Canvas Presets appears as fourth sub-navigation item; existing preset panel removed from Canvas background page.
-- `canvas-presets.slint`: existing media targets are explicit and editable; JSON can be expanded from Advanced rather than filling the main UI.
-- Existing `CanvasPresets.choose`, `apply`, `Config::preset` and renderer behavior are intentionally unchanged.
+- `canvas-presets.slint`: existing media targets are explicit and editable; JSON can be expanded from Advanced; legacy presets have separate stars and an All/Favorites filter.
+- `prefs.rs`, `studio.rs`, `lib.rs`: stars for stable legacy IDs are stored in `canvasPresetFavourites`, toggled via a dedicated callback and published to the UI. Existing `CanvasPresets.choose`, `apply`, `Config::preset` and renderer behavior are intentionally unchanged.
 
 ## Verification status
 
@@ -61,5 +61,6 @@ The proposed IDs 4–8 are **reserved in the plan, not active runtime identifier
 - [x] Separate Canvas and Canvas Presets in source; preserve target toggles.
 - [ ] Slint build (toolchain not available in this tool session).
 - [ ] Desktop visual inspection, Windows scaling and keyboard navigation.
-- [ ] Implement persistent favorites/cards and right inspector.
+- [x] Add persisted favorites and All/Favorites browsing for legacy profiles 1–3 (source-level only).
+- [ ] Implement visual thumbnail cards and right-side inspector.
 - [ ] Implement/verify remaining distinct families and GPU parity.
