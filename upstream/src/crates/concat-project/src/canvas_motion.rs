@@ -189,7 +189,7 @@ impl CanvasMotionPreset {
             x = x.clamp(-room, room);
             y = y.clamp(-room, room);
             let opacity = clip.opacity
-                * if matches!(self, Self::FadeScale | Self::CenterPop) {
+                * if self == Self::FadeScale {
                     eased
                 } else {
                     1.0
@@ -386,6 +386,20 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn center_pop_is_not_a_duplicate_of_fade_and_scale() {
+        let clip = Clip::blank("c1", "T1", ClipKind::Image, "image", 0.0, 4.0);
+        let controls = CanvasMotionControls::default();
+        let center = CanvasMotionPreset::CenterPop.keys(&clip, 1.0 / 30.0, controls).unwrap();
+        let fade = CanvasMotionPreset::FadeScale.keys(&clip, 1.0 / 30.0, controls).unwrap();
+        let first_opacity = |keys: &Vec<ClipKey>| keys.iter()
+            .find(|k| k.property == KeyProperty::Opacity && k.at == 0.0)
+            .unwrap().value;
+        assert_eq!(first_opacity(&center), clip.opacity);
+        assert_eq!(first_opacity(&fade), 0.0);
+        assert_ne!(center, fade);
+    }
+
     #[test]
     fn reverse_delay_and_round_trip_are_one_undo() {
         let mut c = Clip::blank("c1", "T1", ClipKind::Image, "source", 0.0, 6.0);
