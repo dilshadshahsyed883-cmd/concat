@@ -20,10 +20,10 @@ import { ContextMenu, MenuItemData } from "../primitives/context-menu.slint";
 import { SourcePreview } from "source-preview.slint";
 import { Sounds, SoundList, VoiceList } from "audio-page.slint";
 import { CaptionPresetPreview, CaptionPresetPreviewPanel } from "caption-preset-preview.slint";
-import { CanvasPresetPanel } from "canvas-presets.slint";
+import { CanvasPresetLibrary } from "canvas-presets.slint";
 import { MediaLayoutPanel } from "media-layout.slint";
 import { CanvasMotionPanel } from "canvas-motion.slint";
-import { ParticleEffectsPanel } from "particle-effects.slint";
+import { ParticlePresetLibrary } from "particle-effects.slint";
 
 export { SourcePreview }
 
@@ -2869,8 +2869,17 @@ export component MediaPane inherits Rectangle {
                 }
 
                 if root.tab == 4: VerticalLayout {
-                    ParticleEffectsPanel { }
                     padding: 8px;
+                    if !root.audio-shelf: VerticalLayout {
+                        spacing: 6px;
+                        Text {
+                            text: "Particle Overlays";
+                            color: Theme.fg;
+                            font-size: Theme.fs;
+                            font-weight: Theme.weight-title;
+                        }
+                        ParticlePresetLibrary { }
+                    }
 
                     // A package folder written while the app runs - the
                     // user's own effect, or one shared with them - is read
@@ -3040,11 +3049,19 @@ export component MediaPane inherits Rectangle {
                     if root.animation-page == 1: MediaLayoutPanel { canvas: false; }
                     if root.animation-page == 2: VerticalLayout {
                         spacing: 8px;
-                        canvas-layout := MediaLayoutPanel { canvas: true; }
-                        CanvasPresetPanel {
-                            padding: 8px;
-                            images: canvas-layout.images;
-                            videos: canvas-layout.videos;
+                        padding: 8px;
+                        Text {
+                            text: "Canvas Presets";
+                            color: Theme.fg;
+                            font-size: Theme.fs;
+                            font-weight: Theme.weight-title;
+                        }
+                        CanvasPresetLibrary { }
+                        Text {
+                            text: "Select a layout here; edit framing and Apply in the right inspector.";
+                            color: Theme.fg-muted;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
                         }
                     }
                 }
