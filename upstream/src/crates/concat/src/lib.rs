@@ -823,8 +823,47 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     app.global::<CanvasPresets>().on_apply(on_window!(|state, json: SharedString, all: bool, images:bool, videos:bool| {
         state.apply_canvas_preset(&json, all, images, videos);
     }));
-    app.global::<CanvasPresets>().set_profile(serde_json::to_string_pretty(
-        &concat_project::canvas_preset::Config::preset(1).expect("sports canvas default")).unwrap_or_default().into());
+    // Project-specific edits remain separate; only an explicitly saved Canvas
+    // profile seeds the editor on a future launch/new project.
+    app.global::<CanvasPresets>().on_save_default(move |profile| {
+        Shell::with(|shell, app| {
+            match concat_project::canvas_preset::Config::from_json(profile.as_str()) {
+                Ok(config) => {
+                    let mut studio = shell.studio.borrow_mut();
+                    studio.prefs.canvas_default = Some(config);
+                    studio.prefs.save(&studio.host.dirs);
+                    app.global::<CanvasPresets>().set_default_status(
+                        "Canvas default saved for future projects and restarts.".into());
+                }
+                Err(reason) => {
+                    app.global::<CanvasPresets>().set_default_status(
+                        format!("Canvas default not saved: {reason}").into());
+                }
+            }
+        });
+    });
+    app.global::<CanvasPresets>().on_reset_default(move || {
+        Shell::with(|shell, app| {
+            let mut studio = shell.studio.borrow_mut();
+            studio.prefs.canvas_default = None;
+            studio.prefs.save(&studio.host.dirs);
+            drop(studio);
+            let sports = concat_project::canvas_preset::Config::preset(1)
+                .expect("sports canvas default");
+            app.global::<CanvasPresets>().set_profile(
+                serde_json::to_string_pretty(&sports).unwrap_or_default().into());
+            app.global::<CanvasPresets>().set_default_status(
+                "Canvas default reset to Sports Frame.".into());
+        });
+    });
+    Shell::with(|shell, app| {
+        let remembered = shell.studio.borrow().prefs.canvas_default.clone()
+            .filter(|profile| profile.validate().is_ok())
+            .unwrap_or_else(|| concat_project::canvas_preset::Config::preset(1)
+                .expect("sports canvas default"));
+        app.global::<CanvasPresets>().set_profile(
+            serde_json::to_string_pretty(&remembered).unwrap_or_default().into());
+    });
     app.on_start_c_builder(on_window!(|studio| {studio.builder_home();}));
     app.on_c_builder_return_home(on_window!(|studio,profile:SharedString| {studio.builder_return_home(&profile);}));
     app.on_c_builder_open_generated(on_window!(|studio| {studio.builder_open_generated();}));
