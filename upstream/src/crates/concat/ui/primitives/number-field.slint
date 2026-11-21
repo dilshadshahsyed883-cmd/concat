@@ -84,9 +84,14 @@ export component NumberField inherits Rectangle {
     }
 
     function apply(next: float, fine: bool) {
-        root.value = Fmt.round-to(Fmt.clamp(next, root.minimum, root.maximum),
-            fine ? root.precision + 1 : root.precision);
-        root.changed(root.value);
+        // Do not emit an extra project commit when a focus change repeats the
+        // same value after a button press or keyboard nudge.
+        if (root.value != Fmt.round-to(Fmt.clamp(next, root.minimum, root.maximum),
+                fine ? root.precision + 1 : root.precision)) {
+            root.value = Fmt.round-to(Fmt.clamp(next, root.minimum, root.maximum),
+                fine ? root.precision + 1 : root.precision);
+            root.changed(root.value);
+        }
     }
 
     function nudge(direction: float, shift: bool, alt: bool) {
@@ -191,7 +196,12 @@ export component NumberField inherits Rectangle {
                 step-up := TouchArea {
                     enabled: root.enabled;
                     mouse-cursor: pointer;
-                    clicked => { root.nudge(1, false, false); }
+                    clicked => {
+                        root.nudge(1, false, false);
+                        // An already-focused TextInput keeps its text while
+                        // typing; an explicit button nudge must refresh it.
+                        ti.text = root.display;
+                    }
                 }
             }
 
@@ -209,7 +219,12 @@ export component NumberField inherits Rectangle {
                 step-down := TouchArea {
                     enabled: root.enabled;
                     mouse-cursor: pointer;
-                    clicked => { root.nudge(-1, false, false); }
+                    clicked => {
+                        root.nudge(-1, false, false);
+                        // An already-focused TextInput keeps its text while
+                        // typing; an explicit button nudge must refresh it.
+                        ti.text = root.display;
+                    }
                 }
             }
         }
