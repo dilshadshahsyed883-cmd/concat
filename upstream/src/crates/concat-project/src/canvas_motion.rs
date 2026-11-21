@@ -26,9 +26,10 @@ pub enum CanvasMotionPreset {
     Documentary,
     FadeScale,
     Alternating,
+    BreathingLoop,
 }
 impl CanvasMotionPreset {
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 19] = [
         Self::TopLeft,
         Self::TopRight,
         Self::BottomLeft,
@@ -47,6 +48,7 @@ impl CanvasMotionPreset {
         Self::Documentary,
         Self::FadeScale,
         Self::Alternating,
+        Self::BreathingLoop,
     ];
     pub fn from_index(index: i32) -> Option<Self> {
         usize::try_from(index)
@@ -73,6 +75,7 @@ impl CanvasMotionPreset {
             Self::Documentary => "canvas-motion.documentary",
             Self::FadeScale => "canvas-motion.fade-scale",
             Self::Alternating => "canvas-motion.alternating",
+            Self::BreathingLoop => "canvas-motion.breathing-loop",
         }
     }
     pub fn anchors(self, seed: u64) -> ([f64; 2], [f64; 2]) {
@@ -146,7 +149,16 @@ impl CanvasMotionPreset {
                 .round()
                 .max(1.0))
         .min(last);
-        let mut frames: Vec<f64> = (0..=64).map(|i| (i as f64 * last / 64.0).round()).collect();
+        // Periodic motion needs denser samples than single-shot entrances,
+        // especially on longer clips. Every key remains a visible source frame.
+        let samples = if self == Self::BreathingLoop {
+            (last as usize).clamp(64, 240)
+        } else {
+            64
+        };
+        let mut frames: Vec<f64> = (0..=samples)
+            .map(|i| (i as f64 * last / samples as f64).round())
+            .collect();
         frames.extend([0.0, delay, ((delay + end) / 2.0).round(), end, last]);
         frames.sort_by(f64::total_cmp);
         frames.dedup();
@@ -179,11 +191,34 @@ impl CanvasMotionPreset {
             } else {
                 (controls.start_scale, controls.end_scale)
             };
-            let scale = (end_scale
-                + (start_scale - end_scale) * (1.0 - progress) * controls.strength)
-                .clamp(0.05, 1.0);
-            let mut x = from[0] + (to[0] - from[0]) * eased;
-            let mut y = from[1] + (to[1] - from[1]) * eased;
+            let scale = if self == Self::BreathingLoop {
+                // A whole number of zoom cycles guarantees the same framing
+                // on the first and last visible frame; no loop-boundary jump.
+                let active_frames = (last - delay).max(1.0);
+                let ideal_cycles = active_frames * frame * controls.speed
+                    / controls.duration_seconds;
+                let cycles = ideal_cycles.round().clamp(
+                    1.0, (samples as f64 / 12.0).max(1.0)
+                );
+                let phase = ((f - delay) / active_frames).clamp(0.0, 1.0);
+                let rise = 0.5 * (1.0 - (std::f64::consts::TAU * cycles * phase).cos());
+                (end_scale + (1.0 - end_scale).min(0.05 * controls.strength) * rise)
+                    .clamp(0.05, 1.0)
+            } else {
+                (end_scale
+                    + (start_scale - end_scale) * (1.0 - progress) * controls.strength)
+                    .clamp(0.05, 1.0)
+            };
+            let mut x = if self == Self::BreathingLoop {
+                from[0]
+            } else {
+                from[0] + (to[0] - from[0]) * eased
+            };
+            let mut y = if self == Self::BreathingLoop {
+                from[1]
+            } else {
+                from[1] + (to[1] - from[1]) * eased
+            };
             // Conservative bounds also fit portrait sources, whose fitted width is smaller.
             let room = (1.0 - scale) / 2.0;
             x = x.clamp(-room, room);
@@ -398,6 +433,22 @@ mod tests {
         assert_eq!(first_opacity(&center), clip.opacity);
         assert_eq!(first_opacity(&fade), 0.0);
         assert_ne!(center, fade);
+    }
+
+    #[test]
+    fn breathing_loop_returns_to_its_base_scale_at_the_last_visible_frame() {
+        let clip = Clip::blank("c1", "T1", ClipKind::Video, "video", 0.0, 6.0);
+        let keys = CanvasMotionPreset::BreathingLoop.keys(
+            &clip, 1.0 / 30.0, CanvasMotionControls::default()
+        ).unwrap();
+        let scale: Vec<_> = keys.iter().filter(|k| k.property == KeyProperty::Scale).collect();
+        assert!(scale.len() > 64);
+        assert!((scale.first().unwrap().value - 0.92).abs() < 1e-8);
+        assert!((scale.last().unwrap().value - 0.92).abs() < 1e-8);
+        assert!(scale.iter().any(|k| k.value > 0.95));
+        assert!(scale.iter().all(|k| k.value <= 1.0 && k.value >= 0.05));
+        assert_eq!(CanvasMotionPreset::from_index(18), Some(CanvasMotionPreset::BreathingLoop));
+        assert_eq!(CanvasMotionPreset::BreathingLoop.id(), "canvas-motion.breathing-loop");
     }
 
     #[test]
