@@ -7,6 +7,7 @@ import { Button } from "../primitives/modal.slint";
 import { I18n } from "../i18n.slint";
 import { Theme, Fmt, Glyph, Icon, Payload, Tip } from "../primitives/primitives.slint";
 import { IconButton } from "../primitives/panel.slint";
+import { LibraryFocus } from "library-focus.slint";
 import { Pane, PaneScroll } from "pane.slint";
 import { HairlineSplitter } from "splitter.slint";
 import { PaneKind, PaneSwitcher } from "pane-switcher.slint";
@@ -940,6 +941,8 @@ component CatalogueCard inherits Rectangle {
     in property <bool> favouriteable: false;
     in property <bool> favourite: false;
     callback favourited(on: bool);
+    callback inspected();
+    in property <bool> selected: false;
 
     property <float> sweep: card.has-hover ? 1.0 : 0.0;
     animate sweep { duration: 1.2s; easing: ease-in-out; iteration-count: -1; }
@@ -978,8 +981,8 @@ component CatalogueCard inherits Rectangle {
                 border-radius: Theme.r;
                 background: root.compact && card.has-hover && root.item.enabled
                     ? Theme.field : Theme.well;
-                border-width: root.auditioning ? 2px : 1px;
-                border-color: root.auditioning ? Theme.accent
+                border-width: root.auditioning || root.selected ? 2px : 1px;
+                border-color: (root.auditioning || root.selected) ? Theme.accent
                     : (card.has-hover && root.item.enabled)
                     ? Theme.line-strong : Theme.line;
                 clip: true;
@@ -1105,6 +1108,16 @@ component CatalogueCard inherits Rectangle {
             }
         }
     }
+    // Inspect independently of click-to-apply. Previewing card metadata
+    // never changes the selected clip or the project.
+    IconButton {
+        x: root.width - self.width - 4px;
+        y: 4px;
+        glyph: Glyph.info;
+        label: "Inspect " + root.item.label + " without applying";
+        clicked => { root.inspected(); }
+    }
+
     // Top-level overlay: never bubbles into the DragArea / card apply handler.
     // IconButton supplies keyboard Space/Enter and an accessible label.
     if root.favouriteable: IconButton {
@@ -1305,6 +1318,7 @@ export component ShelfGrid inherits Rectangle {
     in property <string> payload-kind;
 
     callback applied(id: string, label: string);
+    in property <int> page-kind: -1;
     /// See CatalogueCard: a shelf whose cards show before they add.
     in property <bool> auditions;
     in property <string> auditioning;
@@ -1341,7 +1355,15 @@ export component ShelfGrid inherits Rectangle {
         compact: root.compact;
         favouriteable: true;
         favourite: entry.favourite;
+        selected: LibraryFocus.page == root.page-kind && LibraryFocus.selected-id == entry.id;
         favourited(on) => { Library.favourite(entry.id, on); }
+        inspected => {
+            LibraryFocus.page = root.page-kind;
+            LibraryFocus.selected-id = entry.id;
+            LibraryFocus.selected-name = entry.name;
+            LibraryFocus.selected-category = entry.category;
+            LibraryFocus.selected-description = entry.description;
+        }
         payload: root.payload-kind == "" ? ""
             : "\{root.payload-kind}:\{entry.id}:\{entry.name}";
         auditions: root.auditions;
@@ -1880,9 +1902,24 @@ export component MediaPane inherits Rectangle {
     // Audio is a Media sub-view, not a ninth top-level tab. Keep the existing
     // sounds, voice and import implementation accessible from the Media sidebar.
     property <bool> media-audio-view: false;
+    function show-library() {
+        LibraryFocus.page = root.tab == 3 ? 1
+            : root.tab == 4 ? (root.audio-shelf ? 3 : 2)
+            : root.tab == 5 ? 4
+            : root.tab == 7 && root.adjustments-category == 1 ? 5
+            : root.tab == 1 ? 6
+            : root.tab == 6 ? 7
+            : root.tab == 10 && root.animation-page == 2 ? 8
+            : -1;
+        LibraryFocus.selected-id = "";
+        LibraryFocus.selected-name = "";
+        LibraryFocus.selected-category = "";
+        LibraryFocus.selected-description = "";
+    }
     changed tab => {
         Sounds.shown(root.tab == 0 && root.media-audio-view);
         CaptionPresetPreview.scope(root.tab == 1 && root.text-category == 1 && GpuCompatibility.enabled);
+        root.show-library();
     }
     changed media-audio-view => { Sounds.shown(root.tab == 0 && root.media-audio-view); }
     property <bool> physics-images: true;
@@ -1892,6 +1929,7 @@ export component MediaPane inherits Rectangle {
     property <int> physics-preset: 0;
     property <bool> canvas-motion-page: false;
     property <int> animation-page: 0;
+    changed animation-page => { if (root.tab == 10) { root.show-library(); } }
     /// The Audio page's shelf: 0 = Mine, 1 = Concat, 10 = Voices,
     /// 11 = Styles.
     property <int> audio-category;
@@ -1913,10 +1951,12 @@ export component MediaPane inherits Rectangle {
     property <bool> adjustments-open: true;
     /// 0 = Adjustment layer, 1 = LUTs
     property <int> adjustments-category;
+    changed adjustments-category => { if (root.tab == 7) { root.show-library(); } }
     property <bool> templates-open: true;
     /// The Effects page shows the sound's shelves rather than the
     /// picture's: whichever heading's row was picked last.
     property <bool> audio-shelf;
+    changed audio-shelf => { if (root.tab == 4) { root.show-library(); } }
     property <bool> audio-open: true;
     /// The shelf the Effects page is reading from, in `Library`'s numbers.
     property <int> effects-shelf: root.audio-shelf ? 2 : 1;
@@ -2814,6 +2854,7 @@ export component MediaPane inherits Rectangle {
                     }
                     ShelfGrid {
                         entries: root.catalogue-transitions;
+                        page-kind: 1;
                         glyph: Glyph.transition;
                         // Transitions apply directly on single-click — no audition overlay.
                         auditions: false;
@@ -2850,6 +2891,7 @@ export component MediaPane inherits Rectangle {
                     }
                     ShelfGrid {
                         entries: root.audio-shelf ? root.catalogue-audio : root.catalogue-effects;
+                        page-kind: root.audio-shelf ? 3 : 2;
                         glyph: root.audio-shelf ? Glyph.waveform : Glyph.sparkle;
                         // A sound has no picture: its cards are the compact kind.
                         compact: root.audio-shelf;
@@ -3026,6 +3068,7 @@ export component MediaPane inherits Rectangle {
                     }
                     ShelfGrid {
                         entries: root.catalogue-filters;
+                        page-kind: 4;
                         payload-kind: "filter";
                         auditions: true;
                         auditioning: root.audition;
@@ -3073,6 +3116,7 @@ export component MediaPane inherits Rectangle {
                     }
                     ShelfGrid {
                         entries: root.catalogue-luts;
+                        page-kind: 5;
                         glyph: Glyph.sun;
                         payload-kind: "filter";
                         auditions: false;
