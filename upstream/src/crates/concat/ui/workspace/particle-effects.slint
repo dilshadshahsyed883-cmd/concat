@@ -29,15 +29,27 @@ export component ParticleEffectsPanel inherits VerticalLayout {
     }
     Text { text: "Select a preset from the left gallery; Apply does not change Favorites. Existing overlay layers and their parameters remain editable in Effects.";
         color: Theme.fg-muted; wrap: word-wrap; font-size: Theme.fs-sm; }
+}
+
+// The inspector scrolls settings, but not the five existing Apply actions.
+// No new bulk modes are introduced; the Rust dispatch parameters are unchanged.
+export component ParticleApplyBar inherits VerticalLayout {
+    property <int> preset <=> ParticleBulk.preset;
+    property <bool> images <=> ParticleBulk.images;
+    property <bool> videos <=> ParticleBulk.videos;
+    spacing: 5px;
+    padding: 8px;
     HorizontalLayout {
-        Button { label: "Apply Selected"; clicked => { ParticleBulk.apply(root.preset, 0, true, root.images, root.videos); } }
-        Button { label: "Apply All"; clicked => { ParticleBulk.apply(root.preset, 0, false, root.images, root.videos); } }
+        spacing: 6px;
+        Button { label: "Apply Selected"; enabled: root.images || root.videos; clicked => { ParticleBulk.apply(root.preset, 0, true, root.images, root.videos); } }
+        Button { label: "Apply All"; enabled: root.images || root.videos; clicked => { ParticleBulk.apply(root.preset, 0, false, root.images, root.videos); } }
     }
     HorizontalLayout {
-        Button { label: "Random All"; clicked => { ParticleBulk.apply(root.preset, 1, false, root.images, root.videos); } }
-        Button { label: "Random Selected"; clicked => { ParticleBulk.apply(root.preset, 1, true, root.images, root.videos); } }
+        spacing: 6px;
+        Button { label: "Random All"; enabled: root.images || root.videos; clicked => { ParticleBulk.apply(root.preset, 1, false, root.images, root.videos); } }
+        Button { label: "Random Selected"; enabled: root.images || root.videos; clicked => { ParticleBulk.apply(root.preset, 1, true, root.images, root.videos); } }
     }
-    Button { label: "Favorites Randomly"; clicked => { ParticleBulk.apply(root.preset, 2, false, root.images, root.videos); } }
+    Button { label: "Favorites Randomly"; enabled: root.images || root.videos; clicked => { ParticleBulk.apply(root.preset, 2, false, root.images, root.videos); } }
 }
 
 // Left library: stable preset order matches Studio::apply_particle_bulk IDS.
@@ -54,6 +66,15 @@ export component ParticlePresetLibrary inherits VerticalLayout {
     ];
     property <bool> favourites-only: false;
     property <int> category: 0;
+    // The backend publishes all twelve stable IDs in preset order.
+    property <bool> has-starred:
+        ParticleBulk.favourites.length >= 12 &&
+        (ParticleBulk.favourites[0] || ParticleBulk.favourites[1] ||
+         ParticleBulk.favourites[2] || ParticleBulk.favourites[3] ||
+         ParticleBulk.favourites[4] || ParticleBulk.favourites[5] ||
+         ParticleBulk.favourites[6] || ParticleBulk.favourites[7] ||
+         ParticleBulk.favourites[8] || ParticleBulk.favourites[9] ||
+         ParticleBulk.favourites[10] || ParticleBulk.favourites[11]);
     spacing: 8px;
     HorizontalLayout {
         spacing: 6px;
@@ -65,6 +86,18 @@ export component ParticlePresetLibrary inherits VerticalLayout {
             options: ["All", "Light", "Atmosphere", "Weather", "Motion"];
             current <=> root.category;
         }
+    }
+    if root.favourites-only && !root.has-starred: Text {
+        text: "No starred particle presets. Turn off Favorites to browse all twelve.";
+        color: Theme.fg-muted;
+        font-size: Theme.fs-sm;
+        wrap: word-wrap;
+    }
+    if root.favourites-only && root.has-starred: Text {
+        text: "Only Favorites in the selected category are shown. Choose All to see every starred preset.";
+        color: Theme.fg-muted;
+        font-size: Theme.fs-xs;
+        wrap: word-wrap;
     }
     for name[index] in root.names: Rectangle {
         property <int> group: index < 4 ? 1 : index < 6 ? 2 : index < 9 ? 3 : 4;
