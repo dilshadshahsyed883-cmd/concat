@@ -2809,6 +2809,7 @@ export component MediaPane inherits Rectangle {
                 // Caption cards stage a local monitor preview. Only explicit Apply edits the document.
                 if root.tab == 1 && GpuCompatibility.enabled && root.text-category == 1: CaptionPresetPreviewPanel {
                     padding: 8px;
+                    library-only: true;
                 }
                 if root.tab == 1 && !GpuCompatibility.enabled && root.text-category >= 1: VerticalLayout {
                     padding: 8px;
