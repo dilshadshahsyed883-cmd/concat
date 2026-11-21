@@ -3,15 +3,22 @@ import { Theme } from "../theme/theme.slint";
 import { Button } from "../primitives/modal.slint";
 import { Select } from "../primitives/select.slint";
 import { Check } from "../inspector/controls.slint";
+import { IconButton } from "../primitives/panel.slint";
+import { Glyph } from "../icons.slint";
 export global ParticleBulk {
     callback apply(preset: int, mode: int, selected-only: bool, images: bool, videos: bool);
+    callback toggle-favourite(index: int);
+    in property <[bool]> favourites;
+    in-out property <int> preset: 0;
+    in-out property <bool> images: true;
+    in-out property <bool> videos: true;
 }
 export component ParticleEffectsPanel inherits VerticalLayout {
-    property <int> preset: 0;
-    property <bool> images: true;
-    property <bool> videos: true;
+    property <int> preset <=> ParticleBulk.preset;
+    property <bool> images <=> ParticleBulk.images;
+    property <bool> videos <=> ParticleBulk.videos;
     spacing: 8px;
-    Text { text: "Particle Overlays"; color: Theme.fg; font-size: Theme.fs; }
+    Text { text: "Particle Overlay Settings"; color: Theme.fg; font-size: Theme.fs; }
     Select { options: ["White Twinkling Stars", "Golden Sparkles", "Orange Embers", "Fireflies", "Bokeh Lights", "Dust Motes", "Snow", "Rain", "Ash", "Light Leaks", "Shooting Stars", "Confetti"]; current <=> root.preset; }
     HorizontalLayout {
         Check { checked: root.images; toggled(on) => { root.images = on; } }
@@ -19,7 +26,7 @@ export component ParticleEffectsPanel inherits VerticalLayout {
         Check { checked: root.videos; toggled(on) => { root.videos = on; } }
         Text { text: "Videos"; color: Theme.fg; }
     }
-    Text { text: "Overlays stack independently. Adjust density, color, timing, speed and seed or reorder layers in the existing Effects inspector.";
+    Text { text: "Select a preset from the left gallery; Apply does not change Favorites. Existing overlay layers and their parameters remain editable in Effects.";
         color: Theme.fg-muted; wrap: word-wrap; font-size: Theme.fs-sm; }
     HorizontalLayout {
         Button { label: "Apply Selected"; clicked => { ParticleBulk.apply(root.preset, 0, true, root.images, root.videos); } }
@@ -30,4 +37,72 @@ export component ParticleEffectsPanel inherits VerticalLayout {
         Button { label: "Random Selected"; clicked => { ParticleBulk.apply(root.preset, 1, true, root.images, root.videos); } }
     }
     Button { label: "Favorites Randomly"; clicked => { ParticleBulk.apply(root.preset, 2, false, root.images, root.videos); } }
+}
+
+// Left library: stable preset order matches Studio::apply_particle_bulk IDS.
+export component ParticlePresetLibrary inherits VerticalLayout {
+    property <[string]> names: [
+        "White Twinkling Stars", "Golden Sparkles", "Orange Embers",
+        "Fireflies", "Bokeh Lights", "Dust Motes", "Snow", "Rain", "Ash",
+        "Light Leaks", "Shooting Stars", "Confetti"
+    ];
+    property <bool> favourites-only: false;
+    property <int> category: 0;
+    spacing: 8px;
+    HorizontalLayout {
+        spacing: 6px;
+        Button {
+            label: root.favourites-only ? "★ Favorites" : "☆ Favorites";
+            clicked => { root.favourites-only = !root.favourites-only; }
+        }
+        Select {
+            options: ["All", "Light", "Atmosphere", "Weather", "Motion"];
+            current <=> root.category;
+        }
+    }
+    for name[index] in root.names: Rectangle {
+        property <int> group: index < 4 ? 1 : index < 6 ? 2 : index < 9 ? 3 : 4;
+        visible: (root.category == 0 || root.category == self.group)
+            && (!root.favourites-only ||
+                (ParticleBulk.favourites.length > index && ParticleBulk.favourites[index]));
+        height: self.visible ? 62px : 0px;
+        border-radius: Theme.r;
+        border-width: ParticleBulk.preset == index ? 2px : 1px;
+        border-color: ParticleBulk.preset == index ? Theme.accent : Theme.line;
+        background: Theme.field;
+        Text {
+            x: 10px;
+            y: 7px;
+            width: parent.width - 58px;
+            height: 23px;
+            text: name;
+            color: Theme.fg;
+            font-size: Theme.fs-sm;
+            overflow: elide;
+        }
+        Text {
+            x: 10px;
+            y: 34px;
+            width: parent.width - 58px;
+            height: 18px;
+            text: index < 4 ? "Light" : index < 6 ? "Atmosphere"
+                : index < 9 ? "Weather" : "Motion";
+            color: Theme.fg-muted;
+            font-size: Theme.fs-xs;
+        }
+        touch := TouchArea {
+            width: parent.width - 38px;
+            height: parent.height;
+            mouse-cursor: pointer;
+            clicked => { ParticleBulk.preset = index; }
+        }
+        IconButton {
+            x: parent.width - self.width - 5px;
+            y: 8px;
+            glyph: Glyph.mask-star;
+            checked: ParticleBulk.favourites.length > index && ParticleBulk.favourites[index];
+            label: "Toggle favorite for " + name;
+            clicked => { ParticleBulk.toggle-favourite(index); }
+        }
+    }
 }
