@@ -46,8 +46,8 @@ class StageProfilerTests(TestCase):
 class SourceFrameCacheTests(TestCase):
     def setUp(self):
         self.source = Path("video.mp4")
-        self.clip = SimpleNamespace(path=self.source,
-                                    span=SimpleNamespace(start=0),
+        self.clip = SimpleNamespace(id="cache-fixture", path=self.source,
+                                    span=SimpleNamespace(start=0, end=240),
                                     speed=1.0, source_start=0.0)
         self.decoder = Mock()
         self.decoder.__len__ = Mock(return_value=240)
