@@ -25,7 +25,9 @@ class TransitionInspectorUiTests(unittest.TestCase):
         duration_row = panel.split("HorizontalLayout {", 2)[2].split('text: "All cuts: "', 1)[0]
         self.assertIn("NumberField {", duration_row)
         self.assertIn('label: "Apply Duration to All"', duration_row)
-        self.assertIn("width: 72px;", duration_row)
+        self.assertIn("width: 92px;", duration_row)
+        self.assertIn("step: 0.1;", duration_row)
+        self.assertIn("precision: 1;", duration_row)
         self.assertIn("wrap: word-wrap;", panel)
         self.assertIn("root.bulk-duration = v; root.duration-set(v);", panel)
         self.assertIn("root.duration-all(root.bulk-duration)", panel)
