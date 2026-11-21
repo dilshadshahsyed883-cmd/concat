@@ -31,13 +31,15 @@ export global CaptionPresetPreview {
 }
 
 export component CaptionPresetPreviewPanel inherits VerticalLayout {
+    in property <bool> library-only: false;
+    in property <bool> inspector-only: false;
     spacing: 8px;
-    Text {
+    if !root.library-only: Text {
         text: CaptionPresetPreview.chosen == "" ? "Select a caption look to preview it. Apply to All works before captions exist."
             : CaptionPresetPreview.status;
         color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
     }
-    if CaptionPresetPreview.chosen != "": VerticalLayout {
+    if !root.library-only && CaptionPresetPreview.chosen != "": VerticalLayout {
         spacing: 6px;
         Text { text: "Font"; color: Theme.fg-muted; font-size: Theme.fs-sm; }
         Select {
@@ -82,11 +84,11 @@ export component CaptionPresetPreviewPanel inherits VerticalLayout {
             label: "Cancel Preview"; clicked => { CaptionPresetPreview.cancel(); }
         }
     }
-    if CaptionPresetPreview.cards.length == 0: Text {
+    if !root.inspector-only && CaptionPresetPreview.cards.length == 0: Text {
         text: "No caption presets loaded. Preset browsing does not require a selected caption. Reopen this shelf after the preset library is ready.";
         color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
     }
-    Rectangle {
+    if !root.inspector-only: Rectangle {
         property <length> gap: 8px;
         property <length> min-card: 144px;
         property <int> cols: Math.max(1, Math.floor((self.width + self.gap) / (self.min-card + self.gap)));
