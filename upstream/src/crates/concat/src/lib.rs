@@ -813,6 +813,19 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     app.global::<ParticleBulk>().on_apply(on_window!(|state, preset:i32, mode:i32, selected_only:bool, images:bool, videos:bool| {
         state.apply_particle_bulk(preset,mode,selected_only,images,videos);
     }));
+    app.global::<ParticleBulk>().on_toggle_favourite(on_window!(|state, index: i32| {
+        const PARTICLE_IDS: [&str; 12] = [
+            "stars", "gold-sparkles", "embers", "fireflies", "bokeh",
+            "dust-motes", "snow", "rain", "ash", "light-leaks",
+            "shooting-stars", "confetti",
+        ];
+        if let Some(id) = usize::try_from(index)
+            .ok().and_then(|index| PARTICLE_IDS.get(index)) {
+            let key = format!("concat.particles-{id}");
+            let starred = state.prefs.favourites.iter().any(|entry| entry == &key);
+            state.library_favourite(&key, !starred);
+        }
+    }));
     app.global::<CanvasPresets>().on_choose(move |index| {
         Shell::with(|_, app| {
             if let Some(config) = concat_project::canvas_preset::Config::preset(index as u32) {
