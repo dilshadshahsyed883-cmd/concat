@@ -216,6 +216,8 @@ export struct ClipKeyData {
 /// Canvas Motion settings are declarative authoring inputs; renderers read ordinary generated keys.
 export struct CanvasMotionData {
     start-scale: float, end-scale: float, duration: float, delay: float,
+    entry-seconds: float, hold-seconds: float, exit-seconds: float,
+    focus-middle-x: float, focus-middle-y: float, focus-hold: float,
     speed: float, strength: float, intensity: float, blur: float, reverse: bool,
     custom-anchors: bool, start-x: float, start-y: float, end-x: float, end-y: float,
     easing: int, seed: int, corner-radius: float,
@@ -258,6 +260,15 @@ export global Keyframes {
     /// Apply the inspector's motion preset for this field.
     callback apply-motion-preset(field: ClipField);
     callback apply-random-motion();
+    // The animation library publishes its selection to the opposite inspector.
+    // Only the browsing tab controls this state, and a card click never applies keys.
+    in-out property <bool> animation-browser: false;
+    // 0..8 = physics/basic, 9..28 = Canvas Motion; existing IDs are unchanged.
+    in-out property <int> animation-selected: 0;
+    in-out property <bool> animation-images: true;
+    in-out property <bool> animation-videos: true;
+    in-out property <int> animation-scope: 0;
+
     // Inspector and Animations tab share these live physics settings.
     in-out property <float> physics-strength: 1;
     in-out property <float> physics-duration: 1;
@@ -266,7 +277,10 @@ export global Keyframes {
     // Physics presets resolve into ordinary GPU-compatible transform keyframes.
     in property <[bool]> physics-favourites;
     in-out property <CanvasMotionData> canvas-motion: {
-        start-scale:0.3,end-scale:0.92,duration:3,delay:0,speed:1,strength:1,intensity:1,
+        start-scale:0.3,end-scale:0.92,duration:3,delay:0,
+        entry-seconds:0.5,hold-seconds:0,exit-seconds:0.5,
+        focus-middle-x:0,focus-middle-y:0,focus-hold:0.5,
+        speed:1,strength:1,intensity:1,
         blur:0.65,reverse:false,custom-anchors:false,start-x:-0.32,start-y:-0.32,end-x:0,end-y:0,
         easing:1,seed:1,corner-radius:0.04,
     };

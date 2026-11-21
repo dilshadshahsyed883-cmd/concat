@@ -6,6 +6,8 @@ import { I18n } from "../i18n.slint";
 import { Button, Theme, SegmentedControl } from "../primitives/primitives.slint";
 import { Select } from "../primitives/select.slint";
 import { Pane, PaneBody, PaneScroll } from "pane.slint";
+import { Param, ParamFormat } from "../inspector/controls.slint";
+import { CanvasMotionPanel } from "canvas-motion.slint";
 import { PaneKind, PaneSwitcher } from "pane-switcher.slint";
 import { EffectData } from "../demo/effects-panel.slint";
 import {
@@ -18,7 +20,7 @@ import {
 } from "../inspector/grading.slint";
 import { TextPanel } from "../inspector/text-panel.slint";
 import {
-    Backdrop, ClipField, ClipKind, ClipTextField, SelectedClipData, SelectedTransitionData,
+    Backdrop, ClipField, ClipKind, ClipTextField, Keyframes, SelectedClipData, SelectedTransitionData,
 } from "../timeline/model.slint";
 
 // The inspector column, in its two states:
@@ -216,6 +218,18 @@ export component ConfigPane inherits Rectangle {
     callback transition-intensity-set(amount: float);
 
 
+    property <[string]> animation-basic-names: [
+        "Spring Zoom", "Pendulum Swing", "Gravity Bounce", "Elastic Pop",
+        "Inertia Glide", "Damped Shake", "Push In", "Pan Right", "Fade In"
+    ];
+    property <[string]> animation-canvas-names: [
+        "Top-left to Center", "Top-right to Center", "Bottom-left to Center", "Bottom-right to Center",
+        "Center Pop", "Zoom at Left", "Zoom at Center", "Zoom at Right", "Reverse to Corner",
+        "Slide from Left", "Slide from Right", "Slide from Top", "Slide from Bottom",
+        "Diagonal Fly-in", "Spring Settle", "Documentary Pan", "Fade and Scale",
+        "Alternating Inset", "Breathing Loop", "In / Hold / Out", "Focus Journey"
+    ];
+
     // The tab strip follows the selection, and stays short: three tabs at
     // most, each with a dropdown of its sections, because seven tabs on a
     // strip this narrow cannot be read. Video holds what happens to the
@@ -361,7 +375,135 @@ export component ConfigPane inherits Rectangle {
     changed jump-token => { root.jump(); }
     init => { root.jump(); }
 
-    Pane {
+
+    // While browsing Animations, Details becomes a preset inspector. The
+    // original clip/project inspector is retained below and restored on exit.
+    if Keyframes.animation-browser: Pane {
+        Rectangle {
+            height: 52px;
+            Rectangle {
+                x: 0; y: parent.height - 1px;
+                width: parent.width; height: 1px; background: Theme.line;
+            }
+            HorizontalLayout {
+                padding-left: Theme.pad;
+                padding-right: 8px;
+                Text {
+                    text: "ANIMATION SETTINGS";
+                    vertical-alignment: center;
+                    color: Theme.fg-muted;
+                    font-size: Theme.fs-sm;
+                    font-weight: Theme.weight-title;
+                    letter-spacing: 1px;
+                }
+                Rectangle { horizontal-stretch: 1; }
+                VerticalLayout {
+                    alignment: center;
+                    PaneSwitcher {
+                        kind: PaneKind.inspector;
+                        seat: root.pane-seat;
+                        removable: root.pane-removable;
+                        picked(kind) => { root.pane-picked(kind); }
+                        removed => { root.pane-removed(); }
+                    }
+                }
+            }
+        }
+        PaneBody {
+            padding: 0px;
+            PaneScroll {
+                VerticalLayout {
+                    padding: 10px;
+                    spacing: 8px;
+                    Text {
+                        text: Keyframes.animation-selected < 9
+                            ? root.animation-basic-names[Keyframes.animation-selected]
+                            : root.animation-canvas-names[Keyframes.animation-selected - 9];
+                        color: Theme.fg;
+                        font-size: Theme.fs;
+                        font-weight: Theme.weight-title;
+                    }
+                    Text {
+                        text: Keyframes.animation-selected < 6 ? "Physics"
+                            : Keyframes.animation-selected < 9 ? "Basic" : "Canvas Motion";
+                        color: Theme.fg-muted;
+                        font-size: Theme.fs-sm;
+                    }
+
+                    if Keyframes.animation-selected < 9: VerticalLayout {
+                        spacing: 8px;
+                        Param { label: "Strength"; value <=> Keyframes.physics-strength;
+                            minimum: 0.1; maximum: 2; step: 0.1; fmt: ParamFormat.fraction; }
+                        Param { label: "Duration (clip fraction)"; value <=> Keyframes.physics-duration;
+                            minimum: 0.1; maximum: 1; step: 0.05; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; }
+                        Param { label: "Speed"; value <=> Keyframes.physics-speed;
+                            minimum: 0.25; maximum: 3; step: 0.05; fmt: ParamFormat.fraction; }
+                        if Keyframes.animation-selected < 6: Param {
+                            label: "Physics Intensity"; value <=> Keyframes.physics-intensity;
+                            minimum: 0.2; maximum: 2; step: 0.1; fmt: ParamFormat.fraction;
+                        }
+                        Text { text: "Choose which clips to affect on the left. Selection alone never changes a clip.";
+                            color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
+                        Button {
+                            label: "Apply Selected";
+                            enabled: Keyframes.animation-images || Keyframes.animation-videos;
+                            clicked => {
+                                Keyframes.apply-physics-bulk(Keyframes.animation-selected, 0,
+                                    Keyframes.animation-images, Keyframes.animation-videos, true,
+                                    Keyframes.physics-strength, Keyframes.physics-duration,
+                                    Keyframes.physics-speed, Keyframes.physics-intensity);
+                            }
+                        }
+                        Button {
+                            label: "Apply All";
+                            enabled: Keyframes.animation-images || Keyframes.animation-videos;
+                            clicked => {
+                                Keyframes.apply-physics-bulk(Keyframes.animation-selected, 0,
+                                    Keyframes.animation-images, Keyframes.animation-videos, false,
+                                    Keyframes.physics-strength, Keyframes.physics-duration,
+                                    Keyframes.physics-speed, Keyframes.physics-intensity);
+                            }
+                        }
+                        Button {
+                            label: "Apply All Randomly";
+                            enabled: Keyframes.animation-images || Keyframes.animation-videos;
+                            clicked => {
+                                Keyframes.apply-physics-bulk(Keyframes.animation-selected, 2,
+                                    Keyframes.animation-images, Keyframes.animation-videos,
+                                    Keyframes.animation-scope == 1,
+                                    Keyframes.physics-strength, Keyframes.physics-duration,
+                                    Keyframes.physics-speed, Keyframes.physics-intensity);
+                            }
+                        }
+                        Button {
+                            label: "Apply Favorites Randomly";
+                            enabled: Keyframes.animation-images || Keyframes.animation-videos;
+                            clicked => {
+                                Keyframes.apply-physics-bulk(Keyframes.animation-selected, 3,
+                                    Keyframes.animation-images, Keyframes.animation-videos,
+                                    Keyframes.animation-scope == 1,
+                                    Keyframes.physics-strength, Keyframes.physics-duration,
+                                    Keyframes.physics-speed, Keyframes.physics-intensity);
+                            }
+                        }
+                    }
+                    if Keyframes.animation-selected >= 9: CanvasMotionPanel {
+                        inspector-mode: true;
+                        preset: Keyframes.animation-selected - 9;
+                        images: Keyframes.animation-images;
+                        videos: Keyframes.animation-videos;
+                        selected-only: Keyframes.animation-scope == 1;
+                    }
+                    Text {
+                        text: "Generated keys remain editable. Existing manual keyframes are protected; bulk Apply is one Undo step.";
+                        color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
+                    }
+                }
+            }
+        }
+    }
+
+    if !Keyframes.animation-browser: Pane {
         // ── details ──────────────────────────────────────────────────────
         if !root.has-selection && !root.on-transition: Rectangle {
             // The same 52px as the panes either side of it; see PaneHeader.
