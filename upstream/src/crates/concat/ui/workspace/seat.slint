@@ -316,6 +316,8 @@ export component Seat inherits Rectangle {
             transition-duration-set(seconds) => { Editor.transition-duration-set(seconds); }
             transition-duration-all(seconds) => { Editor.transition-duration-all(seconds); }
             transition-intensity-set(amount) => { Editor.transition-intensity-set(amount); }
+            transition-default-save(seconds, amount) => { Editor.transition-default-save(seconds, amount); }
+            transition-default-reset => { Editor.transition-default-reset(); }
 
             project-name: Editor.project-name;
             project-folder: Editor.project-folder;
