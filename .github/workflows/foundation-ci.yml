@@ -38,6 +38,16 @@ jobs:
           node tests/js/salad_auto_worker.test.js
       - name: Thumbnail browser limit regressions
         run: node tests/js/thumbnail_limits.test.js
+      - name: Uploader JavaScript regressions
+        run: |
+          node --check reused/uploader/part01/static/concat_media_picker.js
+          node tests/js/channel_picker.test.js
+          node tests/js/concat_media_picker.test.js
+      - name: Concat Media desktop and mobile browser regressions
+        run: |
+          python -m pip install playwright==1.62.0
+          python -m playwright install --with-deps chromium
+          python tests/browser/concat_media_picker_layout.py
       - name: VPS1-style Concat shell UX and authentication regressions
         run: python -m unittest discover -s tests -p 'test_scene_shell_ui.py' -v
       - name: Release script syntax (no SSH or deployment)

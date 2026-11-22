@@ -58,6 +58,7 @@ def new_job(owner, channel, schedule=""):
         "source_mode": "local_file", "source_origin": "concat_link",
         "staging_path": str(media), "source_file_name": media.name,
         "source_file_size": media.stat().st_size,
+        "concat_job_id": "video-" + str(channel),
         "source_fingerprint": str(channel), "title": "Scheduled job",
         "privacy_status": "unlisted", "channel_db_id": channel,
         "group_name": "my group", "app_upload_at": schedule,
