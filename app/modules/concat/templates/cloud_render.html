@@ -66,16 +66,11 @@
         <div class="cr-field"><label for="cr-salad-key">Salad API Key</label><input id="cr-salad-key" type="password" autocomplete="new-password" placeholder="Leave blank to keep saved key"><small id="cr-salad-key-state">Not saved</small></div>
         <div class="cr-field"><label for="cr-worker-key">RENDERER_API_TOKEN</label><input id="cr-worker-key" type="password" autocomplete="new-password" placeholder="Leave blank to keep saved token"><small id="cr-worker-key-state">Not saved</small></div>
       </div>
-      <div class="cr-fields">
-        <div class="cr-field"><label for="cr-priority">Salad priority</label><select id="cr-priority"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></div>
-        <div class="cr-field"><label for="cr-timeout">Request timeout (seconds)</label><input id="cr-timeout" type="number" min="10" max="1800"></div>
-      </div>
       <div class="cr-field"><label for="cr-concurrency">GPU render concurrency (1 Salad replica)</label>
         <select id="cr-concurrency"><option value="1">1 — Sequential (default)</option><option value="2">2 — Parallel renders</option></select>
         <small>Same GPU, maximum 2 simultaneous renders. Changes do not interrupt running jobs.</small>
         <small id="cr-concurrency-status" role="status">Setting is applied when the worker is reachable.</small>
       </div>
-      <div class="cr-field"><label for="cr-health-path">Health path</label><input id="cr-health-path" value="/health/ready"></div>
       <div class="cr-row cr-row-wrap">
         <button class="cr-btn primary" id="cr-save-gpu" type="button">Save GPU Config</button>
         <button class="cr-btn secondary" id="cr-test" type="button">Test Connection</button>
@@ -93,5 +88,5 @@
     </div>
   </section>
 </section>
-<script defer src="/concat/assets/cloud_render.js?v=20261118-media-copy-link-1"></script>
+<script defer src="/concat/assets/cloud_render.js?v=20261122-gpu-config-cleanup-1"></script>
 {% endblock %}
