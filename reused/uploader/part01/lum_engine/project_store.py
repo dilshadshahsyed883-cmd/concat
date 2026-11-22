@@ -79,6 +79,7 @@ class ProjectStore:
                     updated_at TEXT NOT NULL,
                     source_fingerprint TEXT NOT NULL DEFAULT '',
                     source_origin TEXT NOT NULL DEFAULT '',
+                    concat_job_id TEXT NOT NULL DEFAULT '',
                     vps_folder TEXT NOT NULL DEFAULT '',
                     archived_at TEXT
                 )
@@ -90,6 +91,8 @@ class ProjectStore:
                 conn.execute("ALTER TABLE projects ADD COLUMN publish_at TEXT NOT NULL DEFAULT ''")
             if "source_origin" not in columns:
                 conn.execute("ALTER TABLE projects ADD COLUMN source_origin TEXT NOT NULL DEFAULT ''")
+            if "concat_job_id" not in columns:
+                conn.execute("ALTER TABLE projects ADD COLUMN concat_job_id TEXT NOT NULL DEFAULT ''")
             if "vps_folder" not in columns:
                 conn.execute("ALTER TABLE projects ADD COLUMN vps_folder TEXT NOT NULL DEFAULT ''")
             if "archived_at" not in columns:
@@ -101,6 +104,27 @@ class ProjectStore:
                 WHERE source_origin='folder' AND status!='CANCELLED'
             """)
             conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_copyright_source_channel ON projects(owner_username,channel_db_id,source_fingerprint) WHERE source_fingerprint != '' AND status != 'CANCELLED'")
+            # A database trigger makes admission atomic even with concurrent browsers or
+            # requests to different YouTube channels. Historical rows without a job ID
+            # are still matched by the verified MP4 fingerprint.
+            conn.execute("""
+                CREATE TRIGGER IF NOT EXISTS tr_concat_unique_upload_source
+                BEFORE INSERT ON projects
+                WHEN NEW.source_origin='concat_link' AND
+                    (NEW.concat_job_id='' OR EXISTS (
+                        SELECT 1 FROM projects p
+                        WHERE p.owner_username=NEW.owner_username COLLATE NOCASE
+                          AND p.source_origin='concat_link'
+                          AND (p.concat_job_id=NEW.concat_job_id OR
+                              (NEW.source_fingerprint!='' AND p.source_fingerprint=NEW.source_fingerprint))
+                          AND (p.status NOT IN ('CANCELLED','FAILED')
+                               OR COALESCE(p.remote_verified_at,'')!=''
+                               OR COALESCE(p.youtube_video_id,'')!='')
+                    ))
+                BEGIN
+                    SELECT RAISE(ABORT, 'Concat video already queued or uploaded');
+                END
+            """)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS copyright_profiles (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -275,24 +299,27 @@ class ProjectStore:
             str(data.get("source_origin") or ""),
             str(data.get("vps_folder") or ""),
             str(data.get("publish_at") or ""),
+            str(data.get("concat_job_id") or ""),
         )
         if not values[0]:
             raise ValueError("Project owner is required")
         if values[13] <= 0:
             raise ValueError("Channel is required")
-        if values[-3] not in {"folder", "pc_upload", "drive_link", "concat_link", ""}:
+        if values[-4] not in {"folder", "pc_upload", "drive_link", "concat_link", ""}:
             raise ValueError("Invalid source origin")
-        if values[-3] == "folder" and not str(data.get("source_file_name") or ""):
+        if values[-4] == "folder" and not str(data.get("source_file_name") or ""):
             raise ValueError("Folder video name is required")
         with self.connect() as conn:
             try:
                 cur = conn.execute("""
                 INSERT INTO projects(owner_username,ui_mode,source_mode,drive_url,thumbnail_path,title,description,tags,
                     category_id,privacy_status,app_upload_at,made_for_kids,playlist_id,channel_db_id,group_name,status,created_at,updated_at,
-                    staging_path,source_file_name,source_file_size,source_fingerprint,source_origin,vps_folder,publish_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    staging_path,source_file_name,source_file_size,source_fingerprint,source_origin,vps_folder,publish_at,concat_job_id)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """, values)
             except sqlite3.IntegrityError as exc:
+                if data.get("source_origin") == "concat_link":
+                    raise ValueError("This Concat video is already queued or uploaded") from exc
                 raise ValueError("This video was already queued or uploaded to the selected channel") from exc
             project_id = int(cur.lastrowid)
             # Keep the manual queue paused on Concat admission. A timed job
@@ -495,6 +522,37 @@ class ProjectStore:
                      AND vps_folder=? AND source_origin='folder' AND status!='CANCELLED'
                      AND source_file_name IS NOT NULL""",
                 (owner,folder))}
+
+    def concat_reserved_sources(self, owner: str) -> tuple[set[str], set[str]]:
+        """Owner-wide queued/uploaded Concat sources, including archived history.
+
+        Failed/cancelled projects without any remote upload can be re-admitted.
+        Failed jobs with a YouTube ID are held for safe recovery, not reuploaded.
+        """
+        with self.connect() as conn:
+            rows = conn.execute("""
+                SELECT concat_job_id,source_fingerprint FROM projects
+                WHERE owner_username=? COLLATE NOCASE AND source_origin='concat_link'
+                  AND (status NOT IN ('CANCELLED','FAILED')
+                       OR COALESCE(remote_verified_at,'')!=''
+                       OR COALESCE(youtube_video_id,'')!='')
+            """, (owner,)).fetchall()
+        return (
+            {str(r["concat_job_id"]) for r in rows if r["concat_job_id"]},
+            {str(r["source_fingerprint"]).lower() for r in rows if r["source_fingerprint"]},
+        )
+
+    def concat_has_other_active(self, project_id: int, owner: str, job_id: str, fingerprint: str) -> bool:
+        """Do not delete an original still needed by another active queue item."""
+        with self.connect() as conn:
+            return conn.execute("""
+                SELECT 1 FROM projects
+                WHERE id!=? AND owner_username=? COLLATE NOCASE
+                  AND source_origin='concat_link'
+                  AND status NOT IN ('COMPLETED','CANCELLED','FAILED')
+                  AND (concat_job_id=? OR (source_fingerprint!='' AND source_fingerprint=?))
+                LIMIT 1
+            """, (int(project_id), owner, job_id, fingerprint)).fetchone() is not None
 
     def copyright_profiles(self, owner: str) -> list[dict[str, Any]]:
         with self.connect() as conn:
