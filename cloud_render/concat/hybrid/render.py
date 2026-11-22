@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -28,6 +29,7 @@ from .project import CONTRAST, EXPOSURE, FPS, HEIGHT, WIDTH, NativeColorEffect, 
 from .performance import StageProfiler
 from .transitions import render_transition
 
+LOG = logging.getLogger(__name__)
 RATE = FrameRate(FPS)
 
 
@@ -79,6 +81,7 @@ class Sources:
         # Repeated 24/25fps frames and transition holds avoid NVDEC and resize.
         self.video_frames = OrderedDict()
         self.rates = {}
+        self.checked_video_spans = set()
         self.sizes = {}
         self.backgrounds = OrderedDict()
         self.shapes = OrderedDict()
@@ -163,12 +166,35 @@ class Sources:
                 raise ValueError(f"{path.name}: a constant frame rate is required")
             self.rates[path] = rate
         decoder = self.decoder(path)
+        frame_count = len(decoder)
+        if frame_count < 1:
+            raise ValueError(f"{path.name}: video has no decodable frames")
+        rate = self.rates[path]
+        # Probe the planned clip extent once it is first used. Project media
+        # duration can be stale; decoder length is the actual source limit.
+        hold_key = (clip.id, path, clip.span.start, clip.span.end,
+                    clip.source_start, clip.speed)
+        if not tail and hold_key not in self.checked_video_spans:
+            self.checked_video_spans.add(hold_key)
+            source_end = (clip.source_start
+                          + (clip.span.end - clip.span.start) * clip.speed / FPS)
+            last_offset = (clip.span.end - clip.span.start - 1) * clip.speed / FPS
+            last_source = int(max(clip.source_start + last_offset, 0) * rate + 1e-7)
+            if last_source >= frame_count:
+                available = frame_count / float(rate)
+                LOG.warning(
+                    "Holding last video frame: clip=%s source=%s "
+                    "available_frames=%d source_fps=%s available_seconds=%.6f "
+                    "required_source_end=%.6f hold_timeline_seconds=%.6f",
+                    clip.id, path.name, frame_count, rate, available, source_end,
+                    min((clip.span.end - clip.span.start) / FPS,
+                        max(0.0, source_end - available) / clip.speed),
+                )
         offset = (index - clip.span.start) * clip.speed / FPS
-        source = int(max(clip.source_start + offset, 0) * self.rates[path] + 1e-7)
-        if tail or source == len(decoder):
-            source = min(source, len(decoder)-1)
-        if source >= len(decoder):
-            raise ValueError(f"{path.name}: timeline extends past available video frames")
+        source = int(max(clip.source_start + offset, 0) * rate + 1e-7)
+        # Preserve timeline length, audio and effects when the source runs out.
+        # Reuse the last real GPU frame, including normal clips and transitions.
+        source = min(source, frame_count - 1)
 
         key = (path, source)
         cached = self.video_frames.pop(key, None)
