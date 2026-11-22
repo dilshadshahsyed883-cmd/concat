@@ -11,10 +11,11 @@ from typing import Any
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.concurrency import run_in_threadpool
 
 from .studio_tenants import StudioTenants
 from .auth_store import UserStore
@@ -26,6 +27,7 @@ from .oauth_web import (complete_oauth, list_clients, list_owner_clients,
     owner_client_for_oauth, save_client_json, save_owner_client_json,
     save_shared_client_json, start_oauth)
 from .project_store import ProjectStore
+from .thumbnail_library import ThumbnailLibrary
 from .copyright_handoff import available_videos, available_folders, owner_root, owner_folder, safe_relative_folder
 from .concat_source import stage_concat_link
 from .concat_schedule import concat_upload_at
@@ -359,6 +361,7 @@ async def standalone_auth(request: Request, call_next):
                 route("/actions/sheets/save"),route("/actions/sheets/delete"),
                 route("/actions/sheets/sync"),route("/actions/sheets/sync-all"),
                 route("/actions/concat/metadata-sheet"),route("/api/concat/metadata"),
+                route("/api/concat/thumbnails/add"),route("/api/concat/thumbnails/delete"),
                 route("/actions/copyright/queue/pause"),route("/actions/copyright/queue/start"),
                 route("/actions/copyright/credentials/upload"),
                 route("/actions/copyright/queue/bulk"),route("/actions/copyright/queue/remove"),
@@ -887,8 +890,76 @@ def concat_metadata_sync(request: Request, csrf_token: str = Form(...), concat_v
         raise HTTPException(400, str(exc)) from exc
     if store.concat_metadata_sheet(owner) != sheet_id:
         raise HTTPException(409, "Metadata sheet changed during sync; try again")
-    return JSONResponse({"ok": True, "video_link": concat_video_link, **metadata},
+    thumbnail_fields = {}
+    if request.headers.get("X-Concat-Thumbnails") == "1":
+        thumbnail, message = ThumbnailLibrary(store).match(owner, video["name"])
+        if thumbnail:
+            thumbnail["url"] = route(f"/api/concat/thumbnails/{thumbnail['id']}/file")
+        thumbnail_fields = {"thumbnail": thumbnail, "thumbnail_message": message}
+    return JSONResponse({"ok": True, "video_link": concat_video_link, **metadata, **thumbnail_fields},
                         headers={"Cache-Control": "no-store, private"})
+
+
+def concat_thumbnail_owner(request: Request):
+    user = current_user(request)
+    if os.getenv("LUM_ENGINE_INSTANCE") != "concat":
+        raise HTTPException(404, "Not found")
+    return str(user["username"])
+
+
+@app.get(route("/api/concat/thumbnails"))
+def concat_thumbnail_list(request: Request):
+    owner = concat_thumbnail_owner(request)
+    items = ThumbnailLibrary(store).items(owner)
+    for item in items:
+        item["url"] = route(f"/api/concat/thumbnails/{item['id']}/file")
+    return JSONResponse({"ok": True, "items": items}, headers={"Cache-Control": "no-store, private"})
+
+
+@app.get(route("/api/concat/thumbnails/{identity}/file"))
+def concat_thumbnail_file(request: Request, identity: str):
+    owner = concat_thumbnail_owner(request)
+    library = ThumbnailLibrary(store)
+    try:
+        with store.connect() as conn:
+            row = library.row(conn, owner, identity)
+            payload = library.read(row, owner)
+        return Response(payload, media_type="image/png" if row["suffix"] == ".png" else "image/jpeg",
+                        headers={"Cache-Control": "no-store, private", "X-Content-Type-Options": "nosniff"})
+    except (ValueError, OSError) as exc:
+        raise HTTPException(404, "Thumbnail unavailable") from exc
+
+
+@app.post(route("/api/concat/thumbnails/add"))
+def concat_thumbnail_add(request: Request, csrf_token: str = Form(...), thumbnail: UploadFile = File(...), replace_existing: str = Form("")):
+    owner = concat_thumbnail_owner(request)
+    require_csrf(request, csrf_token)
+    try:
+        payload = thumbnail.file.read(MAX_THUMBNAIL_BYTES + 1)
+        identity = ThumbnailLibrary(store).add(owner, thumbnail.filename, payload,
+                    replace=replace_existing == "1")
+        return JSONResponse({"ok": True, "id": identity}, headers={"Cache-Control": "no-store, private"})
+    except (ValueError, OSError) as exc:
+        message = str(exc) if isinstance(exc, ValueError) else "Unable to save thumbnail; retry"
+        raise HTTPException(400, message) from exc
+    finally:
+        thumbnail.file.close()
+
+
+@app.post(route("/api/concat/thumbnails/delete"))
+def concat_thumbnail_delete(request: Request, csrf_token: str = Form(...), ids: list[str] = Form(...)):
+    owner = concat_thumbnail_owner(request)
+    require_csrf(request, csrf_token)
+    if len(ids) > 1000:
+        raise HTTPException(400, "Select at most 1000 thumbnails")
+    deleted, errors = [], []
+    for identity in dict.fromkeys(ids):
+        try:
+            ThumbnailLibrary(store).delete(owner, identity)
+            deleted.append(identity)
+        except (ValueError, OSError) as exc:
+            errors.append({"id": identity, "message": str(exc) if isinstance(exc, ValueError) else "Unable to delete thumbnail"})
+    return JSONResponse({"ok": True, "deleted": deleted, "errors": errors}, headers={"Cache-Control": "no-store, private"})
 
 
 @app.get(route("/api/concat/available-media"))
@@ -985,6 +1056,7 @@ async def add_video(
     source_mode: str = Form("drive_link"), video_file: UploadFile | None = File(default=None),
     folder_file: str = Form(""), vps_folder: str = Form(""), profile_id: int = Form(0),
     concat_video_link: str = Form(""), timezone_name: str = Form("Asia/Karachi"),
+    library_thumbnail_id: str = Form(""),
 ):
     user = current_user(request); require_csrf(request, csrf_token)
     thumb_path = ""
@@ -993,6 +1065,8 @@ async def add_video(
     fingerprint = ""
     source_size = 0
     concat_job_id = ""
+    library_thumbnail_sha = ""
+    project_id = None
     try:
         upload_instance = os.getenv("LUM_ENGINE_INSTANCE", "engine1").strip().lower()
         studio_tenants.require("channel",int(channel_db_id),user)
@@ -1024,7 +1098,7 @@ async def add_video(
                 reserved_ids, reserved_sha = store.concat_reserved_sources(str(user["username"]))
                 if concat_job_id in reserved_ids:
                     raise ValueError("This Concat video is already queued or uploaded")
-                owned_staging, source_original, source_size, fingerprint = stage_concat_link(
+                owned_staging, source_original, source_size, fingerprint = await run_in_threadpool(stage_concat_link,
                     concat_video_link, str(user["username"]), STAGING_ROOT,
                     cloud_root=Path(cloud_root), origin=origin,
                 )
@@ -1051,6 +1125,13 @@ async def add_video(
                     str(user["username"]), folder_file, vps_folder)
             else:
                 raise ValueError("Unknown source mode")
+        if library_thumbnail_id:
+            if upload_instance != "concat":
+                raise ValueError("Thumbnail Library is only available in Concat")
+            if thumbnail and thumbnail.filename:
+                raise ValueError("Choose either a library thumbnail or a manual file")
+            thumb_path, library_thumbnail_sha = await run_in_threadpool(
+                ThumbnailLibrary(store).stage, str(user["username"]), library_thumbnail_id)
         has_thumbnail = bool(thumbnail and thumbnail.filename)
         if upload_instance == "engine2" and not has_thumbnail:
             raise ValueError("Engine 2 requires a JPG/PNG thumbnail before queue admission.")
@@ -1088,6 +1169,7 @@ async def add_video(
             "owner_username": str(user["username"]), "ui_mode": user_mode(user),
             "source_mode": "local_file" if owned_staging else "drive_link",
             "drive_url": drive_url, "thumbnail_path": thumb_path,
+            "library_thumbnail_id": library_thumbnail_id, "library_thumbnail_sha": library_thumbnail_sha,
             "staging_path": owned_staging, "source_file_name": source_original,
             "source_file_size": source_size, "source_fingerprint": fingerprint,
             "source_origin": source_mode, "concat_job_id": concat_job_id,
@@ -1099,7 +1181,7 @@ async def add_video(
             "playlist_id": playlist_id, "channel_db_id": channel_db_id, "group_name": group_name,
         })
         owned_staging = ""
-        if thumb_path:
+        if thumb_path and not library_thumbnail_id:
             final = THUMBNAIL_ROOT / f"{project_id}{Path(thumb_path).suffix.lower()}"
             Path(thumb_path).replace(final)
             store.update(project_id, thumbnail_path=str(final))
@@ -1111,12 +1193,16 @@ async def add_video(
         queue_message = (f"Project #{project_id} scheduled for automatic YouTube upload start"
                          if upload_instance == "concat" and app_upload_at_utc else
                          f"Project #{project_id} added to VPS queue")
+        if upload_instance == "concat" and "application/json" in request.headers.get("accept", ""):
+            return JSONResponse({"ok": True, "project_id": project_id, "queue_url": route("/app?tab=queue"), "message": queue_message})
         return redirect(f"/app?tab={next_tab}", message=queue_message)
     except Exception as exc:
         if owned_staging:
             Path(owned_staging).unlink(missing_ok=True)
-        if thumb_path:
+        if thumb_path and not project_id:
             Path(thumb_path).unlink(missing_ok=True)
+        if os.getenv("LUM_ENGINE_INSTANCE") == "concat" and "application/json" in request.headers.get("accept", ""):
+            return JSONResponse({"ok": False, "detail": str(exc), "project_id": project_id}, status_code=400)
         next_tab = "add_video"
         return redirect(f"/app?tab={next_tab}", error=str(exc))
 

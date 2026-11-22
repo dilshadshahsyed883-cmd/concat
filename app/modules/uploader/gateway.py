@@ -28,9 +28,9 @@ REUSED_ROOT = Path(__file__).resolve().parents[3] / "reused" / "uploader" / "par
 
 # Make old unsafe/admin-only LUM endpoints unreachable even for Concat Web
 # admins. Admin is a separate administration surface; uploads remain owner-only.
-GET_EXACT = {"app", "api/concat/available-media"}
+GET_EXACT = {"app", "api/concat/available-media", "api/concat/thumbnails"}
 POST_EXACT = {
-    "actions/add-video",
+    "actions/add-video", "api/concat/thumbnails/add", "api/concat/thumbnails/delete",
     "actions/concat/metadata-sheet", "api/concat/metadata",
     "actions/oauth-client", "actions/oauth-start", "actions/oauth-complete",
     "actions/studio-tenant/channel-create", "actions/studio-tenant/group-create",
@@ -67,7 +67,8 @@ def _allowed(path: str, method: str) -> bool:
     if any(part in {"", ".", ".."} for part in path.split("/")):
         return False
     if method in {"GET", "HEAD"}:
-        return (path in GET_EXACT or
+        import re
+        return (path in GET_EXACT or bool(re.fullmatch(r"api/concat/thumbnails/[a-f0-9]{32}/file", path)) or
                 (path.startswith("static/") and len(path) > len("static/")))
     if method != "POST":
         return False
