@@ -27,6 +27,11 @@ from playwright.sync_api import sync_playwright
 with sync_playwright() as p:
  browser=p.chromium.launch(headless=True,args=['--no-sandbox'])
  page=browser.new_page()
+ page.add_init_script("""(() => {
+  window.testXHRs=[];
+  const send=XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.send=function(body){window.testXHRs.push(this);return send.call(this,body);};
+ })();""")
  calls={'sync':0,'save':0,'uploads':0,'queue':0}
  pending_upload=[]
  pending_queue=[]
@@ -134,6 +139,15 @@ with sync_playwright() as p:
    {'name':'u1.png','mimeType':'image/png','buffer':png},
    {'name':'bad.png','mimeType':'image/png','buffer':b'bad'},
    {'name':'u2.png','mimeType':'image/png','buffer':png}])
+  page.wait_for_function("document.querySelector('[data-thumbnail-upload-progress]').textContent.includes('Connecting')")
+  # Routing intercepts the request before Chrome emits upload transfer events.
+  # Fire real DOM progress events on that captured XHR to verify the actual UI handlers.
+  page.evaluate("""() => {
+   const xhr=window.testXHRs.at(-1);
+   xhr.upload.dispatchEvent(new ProgressEvent('progress',{lengthComputable:true,loaded:50,total:100}));
+  }""")
+  assert page.locator('[data-thumbnail-upload-progress] progress').first.evaluate('e => e.value')==50
+  page.evaluate("window.testXHRs.at(-1).upload.dispatchEvent(new Event('load'))")
   page.wait_for_function("document.querySelector('[data-thumbnail-upload-progress]').textContent.includes('Validating and saving')")
   assert len(pending_upload)==1
   assert page.locator('[data-thumbnail-upload-progress] progress').count()==3
@@ -167,6 +181,7 @@ with sync_playwright() as p:
   page.click('[data-concat-add-queue]')
   page.wait_for_function("document.querySelector('[data-concat-add-queue]').disabled")
   assert page.locator('[data-concat-add-queue]').evaluate("e => e.classList.contains('concat-processing')")
+  page.evaluate("window.testXHRs.at(-1).upload.dispatchEvent(new Event('load'))")
   page.wait_for_function("document.querySelector('[data-concat-queue-status]').textContent.includes('Verifying')")
   page.evaluate("document.querySelector('[data-concat-add-queue]').form.requestSubmit()")
   assert calls['queue']==before_queue+1

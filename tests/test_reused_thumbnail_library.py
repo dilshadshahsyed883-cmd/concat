@@ -237,6 +237,39 @@ else:
             self.due(first); self.worker._retry_concat_cleanup()
             self.assertEqual(self.store.get(first)['concat_cleanup_pending'], 0)
 
+        def test_large_video_handoff_does_not_block_other_requests(self):
+            import asyncio
+            import httpx
+            from test_reused_concat_metadata import ORIGIN
+            channel = web.studio_tenants.create_channel('alice', 'UC' + uuid.uuid4().hex[:22], 'Responsive channel')
+            group = 'Responsive ' + self.root.name
+            web.studio_tenants.create_group('alice', group, [channel])
+            data = dict(csrf_token=self.csrf, concat_video_link=LINK, title='Responsive', source_mode='concat_link',
+                        channel_db_id=channel, group_name=group)
+            entered, release = threading.Event(), threading.Event()
+            original = web.stage_concat_link
+            def slow_handoff(*args, **kwargs):
+                entered.set()
+                release.wait(5)
+                return original(*args, **kwargs)
+            async def check():
+                async with httpx.AsyncClient(transport=httpx.ASGITransport(app=self.app), base_url=ORIGIN,
+                                             cookies=self.client.cookies) as client:
+                    task = asyncio.create_task(client.post('/concat-uploader/actions/add-video', data=data,
+                                                           headers={'Accept': 'application/json'}))
+                    try:
+                        self.assertTrue(await asyncio.to_thread(entered.wait, 2))
+                        self.assertFalse(task.done(), 'handoff must run off the request event loop')
+                        response = await asyncio.wait_for(client.get(URL), timeout=1)
+                        self.assertEqual(response.status_code, 200)
+                        self.assertFalse(task.done(), 'library stays responsive while video handoff is pending')
+                    finally:
+                        release.set()
+                    response = await task
+                    self.assertEqual(response.status_code, 200, response.text)
+            with patch.object(web, 'stage_concat_link', side_effect=slow_handoff):
+                asyncio.run(check())
+
         def test_json_queue_admission_links_private_copy_and_duplicate_submission_rejected(self):
             identity = self.add_thumb()
             channel = web.studio_tenants.create_channel('alice', 'UC' + uuid.uuid4().hex[:22], 'Library channel')

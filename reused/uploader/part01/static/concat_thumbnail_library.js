@@ -113,6 +113,7 @@
       xhr.onload = () => xhr.status >= 200 && xhr.status < 300 && xhr.response?.ok ? resolve(xhr.response) : reject(new Error(typeof xhr.response?.detail === 'string' ? xhr.response.detail : 'Upload failed'));
       xhr.onerror = () => reject(new Error('Connection interrupted; refresh library before retrying'));
       xhr.onabort = () => reject(new Error('Cancelled; refresh library to check if saved'));
+      job.state = 'Connecting…'; progress();
       xhr.send(body);
     });
   }
@@ -173,6 +174,7 @@
     xhr.upload.onload = () => { status.textContent = 'Verifying and preparing the video. Please wait; this may take a while for large MP4s…'; };
     function finish(message) { if (!form.isConnected) return; status.textContent = message; button.disabled = false; button.classList.remove('concat-processing'); button.textContent = '+ Add Video to Queue'; delete form.dataset.queueBusy; }
     xhr.onload = () => {
+      if (!form.isConnected) return;
       const data = xhr.response;
       if (xhr.status >= 200 && xhr.status < 300 && data?.ok && data.project_id && typeof data.queue_url === 'string' && data.queue_url.startsWith('/') && !data.queue_url.startsWith('//')) {
         status.textContent = 'Added to Queue #' + data.project_id; window.location.assign(data.queue_url);
