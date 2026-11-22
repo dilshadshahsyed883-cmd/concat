@@ -47,9 +47,6 @@
     $("cr-auto").checked=!!config.auto_upload;
     $("cr-image").value=config.image||"Not published — cloud_render/concat/gpu/Dockerfile";
     $("cr-endpoint").value=config.endpoint||"";
-    $("cr-health-path").value=config.health_path||"/health/ready";
-    $("cr-timeout").value=config.timeout||300;
-    $("cr-priority").value=config.priority||"high";
     $("cr-concurrency").value=String(config.concurrency||1);
     $("cr-concurrency-status").textContent = "Saved limit: " + (config.concurrency||1) + " · synchronized on connection/dispatch";
     $("cr-salad-key-state").textContent=config.salad_key_saved?"Saved":"Not saved";
@@ -223,8 +220,9 @@
     await send("/config",{auto_upload:$("cr-auto").checked});await loadConfig();
   });
   $("cr-save-gpu").onclick=()=>operations("GPU config saved",async()=>{
-    const obj={endpoint:$("cr-endpoint").value.trim(),health_path:$("cr-health-path").value.trim(),
-      timeout:Number($("cr-timeout").value),priority:$("cr-priority").value,
+    // Priority, HTTP timeout and health path remain persisted server-side.
+    // They are no longer user-facing GPU Config controls.
+    const obj={endpoint:$("cr-endpoint").value.trim(),
       concurrency:Number($("cr-concurrency").value)};
     if($("cr-salad-key").value) obj.salad_key=$("cr-salad-key").value;
     if($("cr-worker-key").value) obj.worker_key=$("cr-worker-key").value;
