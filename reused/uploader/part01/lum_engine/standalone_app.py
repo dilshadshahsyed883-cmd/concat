@@ -29,7 +29,7 @@ from .project_store import ProjectStore
 from .copyright_handoff import available_videos, available_folders, owner_root, owner_folder, safe_relative_folder
 from .concat_source import stage_concat_link
 from .concat_schedule import concat_upload_at
-from .concat_sheet import preview_sheet_videos
+from .concat_sheet import preview_sheet_videos, metadata_sheet_id, metadata_for_video
 from .concat_source import (parse_concat_link, ConcatSourceError,
                             list_available_concat_media)
 from .copyright_ui import schedule_pkt
@@ -358,6 +358,7 @@ async def standalone_auth(request: Request, call_next):
                 route("/actions/auth-connections/activate"),
                 route("/actions/sheets/save"),route("/actions/sheets/delete"),
                 route("/actions/sheets/sync"),route("/actions/sheets/sync-all"),
+                route("/actions/concat/metadata-sheet"),route("/api/concat/metadata"),
                 route("/actions/copyright/queue/pause"),route("/actions/copyright/queue/start"),
                 route("/actions/copyright/credentials/upload"),
                 route("/actions/copyright/queue/bulk"),route("/actions/copyright/queue/remove"),
@@ -707,6 +708,7 @@ def app_page(request: Request, tab: str = "", message: str = "", error: str = ""
         "projects": projects,
         "logs": logs,
         "sheet_sources": sheet_sources,
+        "concat_metadata_sheet_id": store.concat_metadata_sheet(str(user["username"])) if engine_instance == "concat" else "",
         "concat_sheet_videos": concat_sheet_videos,
         "concat_sheet_error": concat_sheet_error,
         "concat_source_prefill": concat_source_prefill,
@@ -833,6 +835,60 @@ def action_report_health(request: Request, csrf_token: str = Form(...)):
         return redirect("/app", message=f"Health report created: {path.name}")
     except Exception as exc:
         return redirect("/app", error=f"Health report failed: {exc}")
+
+
+@app.post(route("/actions/concat/metadata-sheet"))
+def concat_metadata_sheet_save(request: Request, csrf_token: str = Form(...), sheet_url: str = Form(...)):
+    user = current_user(request)
+    require_csrf(request, csrf_token)
+    if os.getenv("LUM_ENGINE_INSTANCE") != "concat":
+        raise HTTPException(404, "Not found")
+    try:
+        sheet_id = metadata_sheet_id(sheet_url)
+        store.save_concat_metadata_sheet(str(user["username"]), sheet_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return JSONResponse({"ok": True}, headers={"Cache-Control": "no-store, private"})
+
+
+@app.post(route("/api/concat/metadata"))
+def concat_metadata_sync(request: Request, csrf_token: str = Form(...), concat_video_link: str = Form(...)):
+    user = current_user(request)
+    require_csrf(request, csrf_token)
+    if os.getenv("LUM_ENGINE_INSTANCE") != "concat":
+        raise HTTPException(404, "Not found")
+    owner = str(user["username"])
+    sheet_id = store.concat_metadata_sheet(owner)
+    if not sheet_id:
+        raise HTTPException(409, "Add a metadata sheet in Sheets Sync first")
+    try:
+        origin = os.getenv("CONCAT_PUBLIC_ORIGIN", "https://concat.scenebuilder.online")
+        job_id = parse_concat_link(concat_video_link, origin=origin)
+        cloud_root = os.getenv("CONCAT_CLOUD_RENDER_ROOT", "")
+        if not cloud_root:
+            raise ConcatSourceError("Concat Media is not configured")
+        ids, fingerprints = store.concat_reserved_sources(owner)
+        items = list_available_concat_media(owner, cloud_root=Path(cloud_root), origin=origin,
+                                           reserved_ids=ids, reserved_sha=fingerprints)
+        video = next((item for item in items if item["id"] == job_id), None)
+        if not video:
+            raise ValueError("Selected video is no longer available in your Concat Media; refresh the list")
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except (OSError, sqlite3.Error) as exc:
+        raise HTTPException(503, "Concat Media is temporarily unavailable") from exc
+    try:
+        rows = tenant_fetch_sheet_csv(sheet_id, None)
+    except Exception as exc:
+        raise HTTPException(502, "Unable to read metadata sheet; check sharing and retry Sync Sheet") from exc
+    try:
+        metadata = metadata_for_video(rows, video["name"])
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if store.concat_metadata_sheet(owner) != sheet_id:
+        raise HTTPException(409, "Metadata sheet changed during sync; try again")
+    return JSONResponse({"ok": True, "video_link": concat_video_link, **metadata},
+                        headers={"Cache-Control": "no-store, private"})
 
 
 @app.get(route("/api/concat/available-media"))

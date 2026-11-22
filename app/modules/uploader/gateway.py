@@ -31,6 +31,7 @@ REUSED_ROOT = Path(__file__).resolve().parents[3] / "reused" / "uploader" / "par
 GET_EXACT = {"app", "api/concat/available-media"}
 POST_EXACT = {
     "actions/add-video",
+    "actions/concat/metadata-sheet", "api/concat/metadata",
     "actions/oauth-client", "actions/oauth-start", "actions/oauth-complete",
     "actions/studio-tenant/channel-create", "actions/studio-tenant/group-create",
     "actions/sheets/save", "actions/sheets/delete",

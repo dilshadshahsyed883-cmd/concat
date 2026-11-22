@@ -143,7 +143,13 @@
       {% endif %}
     </section>
     <section class="lum-card">
-      <h2>Video Metadata</h2>
+      {% if engine_instance == 'concat' %}
+      <div class="concat-metadata-heading">
+        <h2>Video Metadata</h2>
+        <button class="lum-button secondary" type="button" data-concat-metadata-sync data-sync-url="{{ base_path }}/api/concat/metadata">Sync Sheet</button>
+      </div>
+      <p class="concat-metadata-status" data-concat-metadata-status role="status" aria-live="polite">Select a Concat Media video, then Sync Sheet to fill only title and description.</p>
+      {% else %}<h2>Video Metadata</h2>{% endif %}
       <label class="lum-field"><span>Title</span><input name="title" maxlength="100" required placeholder="Video title" {% if engine_instance == 'concat' %}value="{{ concat_title_prefill|e }}"{% endif %}></label>
       <label class="lum-field"><span>Description</span><textarea name="description" maxlength="5000" rows="5"></textarea></label>
       <label class="lum-field"><span>Tags</span><input name="tags" placeholder="tag1, tag2"></label>
@@ -743,6 +749,8 @@
         </div>
         <span class="lum-badge {{ 'good' if stats.settings.sheets_sync_enabled=='1' else 'warn' }}">{{ 'Sync Enabled' if stats.settings.sheets_sync_enabled=='1' else 'Sync Mode OFF' }}</span>
       </div>
+
+      {% if engine_instance == 'concat' %}{% include 'concat_metadata_sheet.html' %}{% endif %}
 
       {% if engine_instance in ['song','copyright','concat'] %}<details class="lum-note lum-sheet-format-help"><summary>Sheet format</summary>{% else %}<div class="lum-note">{% endif %}
         Expected first-tab headers: Sr, ip, Browser Profile, Channel Name's, Channel Link's, Gmail's, Password's, Backup code's, Back Up Key's, Group, Status, Notes.

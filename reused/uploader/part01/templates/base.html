@@ -46,7 +46,7 @@ label { display: block !important; margin-bottom: var(--sb-spacing-sm) !importan
 {% if engine_instance in ['song', 'shortstudio', 'copyright', 'concat'] %}
 <link rel="stylesheet" href="{{ base_path }}/static/song_uploader_kokoro_ui.css?v=20261030-minimal-auto-v2{% if engine_instance == 'shortstudio' %}&amp;short=20261030-actions-times-v2{% endif %}">
 {% endif %}
-{% if engine_instance in ['copyright','concat'] %}<link rel="stylesheet" href="{{ base_path }}/static/copyright_workspace.css?v=20261122-media-picker-v2">{% endif %}
+{% if engine_instance in ['copyright','concat'] %}<link rel="stylesheet" href="{{ base_path }}/static/copyright_workspace.css?v=20261122-metadata-v1">{% endif %}
 {% if engine_instance == 'concat' %}<link rel="stylesheet" href="{{ base_path }}/static/concat_channel_manager.css?v=20261119-compact-1">{% endif %}
 {% if embedded_view and engine_instance != "concat" %}
 <link rel="stylesheet" href="/static/vps1_native_site_shell.css?v=20261020-upload-studio-v1&song=20261029">
@@ -84,6 +84,7 @@ label { display: block !important; margin-bottom: var(--sb-spacing-sm) !importan
 {% if engine_instance == 'concat' %}
 <script src="{{ base_path }}/static/concat_upload_preview.js?v=20261121-thumbnail-50mb" defer></script>
 <script src="{{ base_path }}/static/concat_media_picker.js?v=20261122-media-picker-v2" defer></script>
+<script src="{{ base_path }}/static/concat_metadata.js?v=20261122-v1" defer></script>
 {% endif %}
 </body>
 </html>
