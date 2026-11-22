@@ -1,4 +1,4 @@
 Issue #109 matched GPU image and Windows EXE build request
 User authorized implementation and matching builds on 22 November 2026.
-Build request 1: shared adjustments, Canvas lifecycle, fixed viewport and animation Favorites.
+Build request 2: shared adjustments, Canvas lifecycle, fixed viewport and animation Favorites; include Slint Model trait for Favorites callback.
 Source provenance comes from GITHUB_SHA, embedded in both artifacts.
