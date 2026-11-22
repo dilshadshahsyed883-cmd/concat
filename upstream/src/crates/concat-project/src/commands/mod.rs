@@ -561,6 +561,10 @@ pub enum Command {
     CloseTrackGaps { track_id: String, locked_tracks: Vec<String>, at: Option<f64> },
     /// Applies a declarative canvas composition to selected source clips in one undo step.
     ApplyCanvasPreset { config: crate::canvas_preset::Config, targets: Vec<String>, locked_tracks: Vec<String> },
+    /// Apply to exactly the targets whose authored conflicts the user confirmed.
+    ApplyCanvasPresetConfirmed { config: crate::canvas_preset::Config, targets: Vec<String>, locked_tracks: Vec<String> },
+    /// Protect locked Canvas companion tracks, including implicit lifecycle changes.
+    ProtectCanvasTracks { timeline_id: String, locked_tracks: Vec<String>, command: Box<Command> },
     /// Import exact returned words once, replacing only the matching generated captions.
     ImportGpuCaptions { artifact: serde_json::Value },
     /// Selects or clears a GPU caption task in the existing project package.
@@ -1049,6 +1053,7 @@ impl Command {
         }
         match self {
             Command::Batch { commands } => commands.iter().any(Command::has_non_finite),
+            Command::ProtectCanvasTracks {command,..} => command.has_non_finite(),
             Command::InsertMedia { time, .. } => bad([*time]),
             Command::CloseTrackGaps { at, .. } => bad(*at),
             Command::AddMedia { item }
@@ -1219,6 +1224,18 @@ pub fn apply(
     mint: &mut IdMint,
     command: Command,
 ) -> Result<Outcome, CommandError> {
+    // Whole-project snapshots share Arcs, so normal edits on Canvas groups
+    // can reconcile dependent timing/deletion transactionally at this boundary.
+    if project.timelines.iter().any(|t|t.clips.iter().any(|c|c.extra.contains_key("canvasOwner"))) {
+        let mut staged = project.clone();
+        let outcome = apply_inner(&mut staged,mint,command)?;
+        if outcome.applied { crate::canvas_preset::reconcile_companions(project,&mut staged); }
+        *project = staged;
+        Ok(outcome)
+    } else { apply_inner(project,mint,command) }
+}
+
+fn apply_inner(project: &mut Project, mint: &mut IdMint, command: Command) -> Result<Outcome, CommandError> {
     if command.has_non_finite() {
         return Err(CommandError::NotANumber);
     }
@@ -1244,6 +1261,17 @@ pub fn apply(
             })
         }
 
+        Command::ProtectCanvasTracks {timeline_id,locked_tracks,command} => {
+            let mut staged = project.clone();
+            let outcome = apply(&mut staged,mint,*command)?;
+            if crate::canvas_preset::protected_tracks_changed(project,&staged,&timeline_id,&locked_tracks) {
+                return Err(CommandError::UnsafeEdit {reason:"A linked Canvas layer is on a locked track; unlock it before editing the group".into()});
+            }
+            *project = staged;
+            Ok(outcome)
+        }
+        Command::ApplyCanvasPresetConfirmed {config,targets,locked_tracks} =>
+            crate::canvas_preset::apply_with_confirmation(project,mint,config,targets,locked_tracks,true),
         Command::DragClips {request} => crate::drag_edit::apply(project,mint,request),
         Command::ApplyCanvasPreset { config, targets, locked_tracks } => crate::canvas_preset::apply(project, mint, config, targets, locked_tracks),
         command @ (Command::InsertMedia { .. } | Command::ReplaceMediaInSlot { .. }

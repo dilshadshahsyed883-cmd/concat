@@ -82,7 +82,7 @@ class SharedLayoutContractTests(unittest.TestCase):
         self.assertIn("No starred Canvas presets", self.canvas)
         self.assertIn("No starred particle presets", self.particle)
         self.assertIn("No starred caption presets", self.caption)
-        self.assertIn("no selectable template gallery yet", self.media)
+        self.assertNotIn('label: I18n.t("mediaPane.templates");', self.media)
 
     def test_canvas_presets_retain_legacy_ids_and_distinct_single_media_families(self):
         for name in ("Sports Frame", "Orange Frame", "Adaptive Blur (Blurred Fill)",
@@ -101,17 +101,18 @@ class SharedLayoutContractTests(unittest.TestCase):
         for excluded in ("Split Screen", "Picture-in-Picture",
                          "Three-Panel Story", "Collage Grid"):
             self.assertNotIn(excluded, self.canvas)
-        self.assertIn('["Animations", "Transform", "Canvas", "Canvas Presets"]', self.media)
-        self.assertIn('if root.animation-page == 3: VerticalLayout', self.media)
+        self.assertIn('["Transform", "Mirror / Flip", "Canvas", "Canvas Presets", "Content Zoom / Crop"]', self.media)
+        self.assertIn('root.adjustment-page == 3: CanvasPresetLibrary', self.media)
         self.assertIn('if LibraryFocus.page == 8: CanvasPresetApplyBar', self.inspector)
 
     def test_stable_canvas_and_particle_target_scopes(self):
         self.assertIn("CanvasPresets.apply(CanvasPresets.profile, false, root.images, root.videos);", self.canvas)
         self.assertIn("CanvasPresets.apply(CanvasPresets.profile, true, root.images, root.videos);", self.canvas)
         for mode, selected in ((0, "true"), (0, "false"),
-                               (1, "true"), (1, "false"), (2, "false")):
+                               (1, "true"), (1, "false")):
             call = "ParticleBulk.apply(root.preset, {}, {}, root.images, root.videos);".format(mode, selected)
             self.assertIn(call, self.particle)
+        self.assertIn("ParticleBulk.apply(root.preset, 2, Keyframes.animation-scope == 1", self.particle)
 
 
 if __name__ == "__main__":

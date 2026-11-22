@@ -325,6 +325,7 @@ pub(crate) fn build_timeline(
         engine_clip.animation = animation_of(&clip.animation);
         engine_clip.blend = concat_core::timeline::Blend::parse(&clip.blend);
         engine_clip.mask = clip.mask.map(|mask| mask.engine());
+        engine_clip.canvas_frame=clip.canvas_frame.map(|frame|frame.engine(f64::from(request.width)/f64::from(request.height)));
         engine_clip.transform = Transform {
             scale: clip.scale,
             offset_x: clip.offset_x,

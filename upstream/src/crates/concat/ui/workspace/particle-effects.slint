@@ -1,3 +1,5 @@
+import { Keyframes } from "../timeline/model.slint";
+import { MediaTargetControls } from "media-layout.slint";
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { Theme } from "../theme/theme.slint";
 import { Button } from "../primitives/modal.slint";
@@ -26,23 +28,16 @@ export global ParticleBulk {
     callback toggle-favourite(index: int);
     in property <[bool]> favourites;
     in-out property <int> preset: 0;
-    in-out property <bool> images: true;
-    in-out property <bool> videos: true;
 }
 export component ParticleEffectsPanel inherits VerticalLayout {
     property <int> preset <=> ParticleBulk.preset;
-    property <bool> images <=> ParticleBulk.images;
-    property <bool> videos <=> ParticleBulk.videos;
+    property <bool> images <=> Keyframes.animation-images;
+    property <bool> videos <=> Keyframes.animation-videos;
     spacing: 8px;
     Text { text: "Particle Overlay Settings"; color: Theme.fg; font-size: Theme.fs; }
     Text { text: LibraryFocus.selected-name; color: Theme.fg-muted; wrap: word-wrap; }
 
-    HorizontalLayout {
-        Check { checked: root.images; toggled(on) => { root.images = on; } }
-        Text { text: "Images"; color: Theme.fg; }
-        Check { checked: root.videos; toggled(on) => { root.videos = on; } }
-        Text { text: "Videos"; color: Theme.fg; }
-    }
+    MediaTargetControls { }
     Text { text: "Applied overlay parameters remain editable in Effects.";
         color: Theme.fg-muted; wrap: word-wrap; font-size: Theme.fs-sm; }
 }
@@ -51,8 +46,8 @@ export component ParticleEffectsPanel inherits VerticalLayout {
 // No new bulk modes are introduced; the Rust dispatch parameters are unchanged.
 export component ParticleApplyBar inherits VerticalLayout {
     property <int> preset <=> ParticleBulk.preset;
-    property <bool> images <=> ParticleBulk.images;
-    property <bool> videos <=> ParticleBulk.videos;
+    property <bool> images <=> Keyframes.animation-images;
+    property <bool> videos <=> Keyframes.animation-videos;
     spacing: 5px;
     padding: 8px;
     HorizontalLayout {
@@ -65,7 +60,7 @@ export component ParticleApplyBar inherits VerticalLayout {
         Button { label: "Random All"; enabled: root.images || root.videos; clicked => { ParticleBulk.apply(root.preset, 1, false, root.images, root.videos); } }
         Button { label: "Random Selected"; enabled: root.images || root.videos; clicked => { ParticleBulk.apply(root.preset, 1, true, root.images, root.videos); } }
     }
-    Button { label: "Favorites Randomly"; enabled: root.images || root.videos; clicked => { ParticleBulk.apply(root.preset, 2, false, root.images, root.videos); } }
+    Button { label: "Favorites Randomly"; enabled: root.images || root.videos; clicked => { ParticleBulk.apply(root.preset, 2, Keyframes.animation-scope == 1, root.images, root.videos); } }
 }
 
 // Left library: stable preset order matches Studio::apply_particle_bulk IDS.

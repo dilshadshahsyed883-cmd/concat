@@ -139,7 +139,7 @@ function Concat-Bundle([string]$dir,[string]$zip,[string]$snapshot="") {
     try {
         $archive=[IO.Compression.ZipArchive]::new($stream,[IO.Compression.ZipArchiveMode]::Create,$true)
         try {
-            $controlData=[ordered]@{version=1;project_file=[IO.Path]::GetFileName($manifest);references=@($refs.ToArray());render_contract=[ordered]@{id="concat-cuda-hybrid-v1";version=1}}
+            $controlData=[ordered]@{version=1;project_file=[IO.Path]::GetFileName($manifest);references=@($refs.ToArray());render_contract=[ordered]@{id="concat-cuda-hybrid-v1";version=2}}
             $names=Project-Names $project ([IO.Path]::GetFileName($dir.TrimEnd([char[]]'\/')))
             foreach ($key in @($names.Keys | Sort-Object)) {$controlData[$key]=$names[$key]}
             $control=$controlData | ConvertTo-Json -Depth 8 -Compress
@@ -389,7 +389,7 @@ function Test-Worker([string]$domain,$headers) {
         $capabilities.render_contract.id -cne "concat-cuda-hybrid-v1" -or
         ($capabilities.render_contract.version -isnot [int] -and
          $capabilities.render_contract.version -isnot [long]) -or
-        $capabilities.render_contract.version -ne 1) {
+        $capabilities.render_contract.version -ne 2) {
         throw "Concat EXE / Salad image render contract mismatch. Use a matching GPU image."
     }
     return $capabilities

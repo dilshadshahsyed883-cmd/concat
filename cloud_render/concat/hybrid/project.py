@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .animations import Transform
 from .canvas import CanvasBackground, parse_background
+from .viewport import Viewport, parse_viewport
 from .canvas_shapes import Rectangle, RectangleMask, parse_shape, parse_mask
 from .particles import PARTICLE_IDS, ParticleEffect, parse_effect
 from .captions import CaptionStyle, Cue, WordTiming
@@ -100,6 +101,9 @@ def _validated_timeline(document):
             background = parse_background(clip["background"])
             if background is not None and kind not in ("image", "video"):
                 raise ValueError(f"Unsupported GPU Canvas background on clip {ident}")
+        if "canvasViewportV1" in clip:
+            if kind not in ("image","video"): raise ValueError(f"Unsupported Canvas viewport on clip {ident}")
+            parse_viewport(clip["canvasViewportV1"])
         if clip.get("mask") is not None:
             if kind not in ("image", "video"): raise ValueError(f"Unsupported GPU mask on clip {ident}")
             parse_mask(clip["mask"])
@@ -236,6 +240,7 @@ class Picture:
     mask: RectangleMask | None = None
     canvas_backdrop: bool = False
     canvas_companion: bool = False
+    viewport: Viewport | None = None
 
     def transform(self, index):
         fraction = min(max((index - self.span.start) / (self.span.end - self.span.start), 0), 1)
@@ -250,7 +255,8 @@ class Picture:
             values[name] = left[1] + (after[1] - left[1]) * weight
         values["opacity"] = min(max(values["opacity"], 0), 1)
         values["scale"] = min(max(values["scale"], .0001), 1e4)
-        return Transform(**values)
+        content = Transform(**values)
+        return self.viewport.compose(content) if self.viewport is not None else content
 
 
 @dataclass(frozen=True)
@@ -619,7 +625,8 @@ def _plan_project(document, timeline, resolve_media):
                           shape=parse_shape(clip.get("shape")) if kind == "shape" else None,
                           mask=parse_mask(clip.get("mask")),
                           canvas_backdrop=clip.get("canvasRole") == "backdrop",
-                          canvas_companion="canvasOwner" in clip)
+                          canvas_companion="canvasOwner" in clip,
+                          viewport=parse_viewport(clip["canvasViewportV1"]) if "canvasViewportV1" in clip else None)
         lanes[clip["trackId"]].append(picture)
         media_durations[ident] = item.get("duration")
         if clip.get("transitionIn"):

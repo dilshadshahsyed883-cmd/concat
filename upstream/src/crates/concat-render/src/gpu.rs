@@ -64,6 +64,10 @@ struct Vertex {
     shape_a: [f32; 4],
     shape_b: [f32; 4],
     shape_c: [f32; 4],
+    aperture_a:[f32;4],
+    aperture_b:[f32;4],
+    aperture_c:[f32;4],
+    frame_uv:[f32;2],
 }
 
 /// Vertex data as raw bytes. `Vertex` is `repr(C)` and all `f32`, so its byte
@@ -180,6 +184,10 @@ struct VsIn {
     @location(7) shape_a: vec4<f32>,
     @location(8) shape_b: vec4<f32>,
     @location(9) shape_c: vec4<f32>,
+    @location(10) aperture_a:vec4<f32>,
+    @location(11) aperture_b:vec4<f32>,
+    @location(12) aperture_c:vec4<f32>,
+    @location(13) frame_uv:vec2<f32>,
 }
 
 struct VsOut {
@@ -193,6 +201,10 @@ struct VsOut {
     @location(6) @interpolate(flat) shape_a: vec4<f32>,
     @location(7) @interpolate(flat) shape_b: vec4<f32>,
     @location(8) @interpolate(flat) shape_c: vec4<f32>,
+    @location(9) @interpolate(flat) aperture_a:vec4<f32>,
+    @location(10) @interpolate(flat) aperture_b:vec4<f32>,
+    @location(11) @interpolate(flat) aperture_c:vec4<f32>,
+    @location(12) frame_uv:vec2<f32>,
 }
 
 @vertex
@@ -208,6 +220,8 @@ fn vs_main(in: VsIn) -> VsOut {
     out.shape_a = in.shape_a;
     out.shape_b = in.shape_b;
     out.shape_c = in.shape_c;
+    out.aperture_a=in.aperture_a;out.aperture_b=in.aperture_b;out.aperture_c=in.aperture_c;
+    out.frame_uv=in.frame_uv;
     return out;
 }
 
@@ -229,7 +243,8 @@ fn shade(in: VsOut) -> vec4<f32> {
     let kept = select(0.0, 1.0, in.pic.x < in.edges.x && in.pic.x >= in.edges.y);
     // The shape mask, multiplied in with the matte, the wipes and the rest.
     let shaped = mask_coverage(in.shape_a, in.shape_b, in.shape_c, in.pic);
-    let alpha = colour.a * in.opacity * mask.a * kept * shaped;
+    let aperture=mask_coverage(in.aperture_a,in.aperture_b,in.aperture_c,in.frame_uv);
+    let alpha = colour.a * in.opacity * mask.a * kept * shaped * aperture;
     // The fades: the colour scaled and offset.
     let shaded = colour.rgb * in.scale + in.offset;
     return vec4<f32>(shaded, alpha);
@@ -1089,7 +1104,8 @@ impl WgpuCompositor {
             attributes: &wgpu::vertex_attr_array![
                 0 => Float32x2, 1 => Float32x2, 2 => Float32, 3 => Float32,
                 4 => Float32x3, 5 => Float32x2, 6 => Float32x2,
-                7 => Float32x4, 8 => Float32x4, 9 => Float32x4
+                7 => Float32x4, 8 => Float32x4, 9 => Float32x4,
+                10 => Float32x4, 11 => Float32x4, 12 => Float32x4, 13 => Float32x2
             ],
         };
 
@@ -1615,6 +1631,7 @@ impl WgpuCompositor {
             opacity,
             layer.shading(),
             layer.shape_uniform(&geometry),
+            layer.aperture_uniform(plan.width,plan.height),
             plan.width,
             plan.height,
         ));
@@ -1666,6 +1683,8 @@ impl WgpuCompositor {
                 shape_a: MaskUniform::NONE.a,
                 shape_b: MaskUniform::NONE.b,
                 shape_c: MaskUniform::NONE.c,
+                aperture_a:MaskUniform::NONE.a,aperture_b:MaskUniform::NONE.b,aperture_c:MaskUniform::NONE.c,
+                frame_uv:[u,v],
             }
         };
         let vertices = [
@@ -1709,6 +1728,8 @@ impl WgpuCompositor {
             shape_a: MaskUniform::NONE.a,
             shape_b: MaskUniform::NONE.b,
             shape_c: MaskUniform::NONE.c,
+            aperture_a:MaskUniform::NONE.a,aperture_b:MaskUniform::NONE.b,aperture_c:MaskUniform::NONE.c,
+            frame_uv:[u,v],
         };
         vertices.extend_from_slice(&[
             corner(-1.0, 1.0, 0.0, 0.0),
@@ -3386,6 +3407,7 @@ impl WgpuCompositor {
         opacity: f32,
         shading: Shading,
         shape: MaskUniform,
+        aperture:MaskUniform,
         out_width: u32,
         out_height: u32,
     ) -> [Vertex; 6] {
@@ -3416,6 +3438,8 @@ impl WgpuCompositor {
                 shape_a: shape.a,
                 shape_b: shape.b,
                 shape_c: shape.c,
+                aperture_a:aperture.a,aperture_b:aperture.b,aperture_c:aperture.c,
+                frame_uv:[px/out_width as f32,py/out_height as f32],
             }
         };
 

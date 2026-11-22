@@ -49,9 +49,10 @@ class TransitionInspectorUiTests(unittest.TestCase):
         labels = re.findall(r'label: (?:I18n.t\("([^"]+)"\)|"([^"]+)");', strip)
         self.assertEqual([left or right for left, right in labels][:7], [
             "common.media", "common.text", "mediaPane.transitions", "Animations",
-            "mediaPane.filters", "common.effects", "mediaPane.templates"])
-        for label, index in (("common.effects",4),("mediaPane.templates",6)):
+            "mediaPane.filters", "common.effects", "Adjustment"])
+        for label, index in (("common.effects",4),):
             self.assertRegex(strip, rf'label: I18n.t\("{re.escape(label)}"\);\s*current: root.tab == {index};\s*clicked => \{{ root.tab = {index}; \}}')
+        self.assertRegex(strip,r'label: "Adjustment";\s*current: root.tab == 6;\s*clicked => \{ root.tab = 6; \}')
         self.assertNotIn("C Builder", strip)
         self.assertNotIn("CBuilderPane", text)
         self.assertIn("CBuilderPane", (DESKTOP / "ui/workspace/c-builder-home.slint").read_text())

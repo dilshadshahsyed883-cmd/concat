@@ -2129,6 +2129,9 @@ pub enum Confirm {
     QuitWithoutSaving { error: String },
     /// Moving an explicitly confirmed, validated project into Windows Recycle Bin.
     DeleteRecent { path: String, name: String, resolved_path: String },
+    /// Explicit scope and revision for destructive Canvas conflict replacement.
+    ReplaceCanvas { commands: Vec<Command>, timeline_id: String, revision: u64,
+        masks: Vec<String>, layers: Vec<String>, targets: usize },
 }
 
 /// One clip on the clipboard: the clip as it was when copied, and the row
@@ -2521,6 +2524,11 @@ impl Studio {
     /// The confirmation sheet's answer: go ahead with what it asked about.
     pub fn confirm_accepted(&mut self) {
         match self.confirm.take() {
+            Some(Confirm::ReplaceCanvas {commands,timeline_id,revision,..}) => {
+                if self.revision != revision || self.timeline().id != timeline_id {
+                    self.notify("The project changed. Apply Canvas again to review the current targets.",true);
+                } else { self.apply(Command::Batch {commands}); }
+            }
             Some(Confirm::RemoveTrack { track_id }) => {
                 self.apply(Command::RemoveTrack { track_id });
             }
@@ -2566,6 +2574,14 @@ impl Studio {
             return crate::ui::ConfirmData::default();
         };
         match confirm {
+            Confirm::ReplaceCanvas {masks,layers,targets,..} => crate::ui::ConfirmData {
+                open: true, title: "Replace Canvas conflicts?".into(),
+                message: format!("Apply Canvas to {targets} eligible media clips.\nAuthored masks to replace: {}.\nCustomized Canvas layers to replace: {}.\nReplacement discards these edits; unrelated clips remain unchanged. Cancel keeps the project unchanged.",
+                    if masks.is_empty() {"None".into()} else {few(masks)},
+                    if layers.is_empty() {"None".into()} else {few(layers)}).into(),
+                action: (if layers.is_empty() {"Replace Existing Mask"} else if masks.is_empty() {"Replace Customized Layers"} else {"Replace Conflicting Edits"}).into(),
+                required_name: "".into(),
+            },
             Confirm::RemoveTrack { track_id } => {
                 let clips = self
                     .timeline()
@@ -2779,6 +2795,16 @@ impl Studio {
         }
     }
 
+    fn protect_canvas_tracks(&self, command: Command) -> Command {
+        if command.is_view_state() || !self.timeline().clips.iter().any(|c|c.extra.contains_key("canvasOwner")) {
+            return command;
+        }
+        let locked_tracks: Vec<_> = self.timeline().tracks.iter().filter(|t|self.locked(&t.id)).map(|t|t.id.clone()).collect();
+        if locked_tracks.is_empty() { command } else {
+            Command::ProtectCanvasTracks {timeline_id:self.timeline().id.clone(),locked_tracks,command:Box::new(command)}
+        }
+    }
+
     pub fn apply(&mut self, command: Command) -> Option<String> {
         // An edit ends whatever burst the view was in.
         self.end_burst();
@@ -2788,8 +2814,9 @@ impl Studio {
         // Anything but an inspector commit ends the coalescing window; the
         // commit path sets `last_commit` again right after calling here.
         self.last_commit = None;
-        let session = self.session.as_mut()?;
         let chosen = matches!(command, Command::SetTimelineVideo { .. });
+        let command = self.protect_canvas_tracks(command);
+        let session = self.session.as_mut()?;
         let before = session.video().color_space;
         match session.apply(command) {
             Ok(view) => {
@@ -2815,6 +2842,7 @@ impl Studio {
         // dial turned is many of these.
         log::debug!("edit: {} ({gesture})", command_name(&command));
         self.echo = None;
+        let command = self.protect_canvas_tracks(command);
         let session = self.session.as_mut()?;
         let before = session.video().color_space;
         match session.apply_within(Some(gesture), command) {
@@ -4042,8 +4070,39 @@ impl Studio {
             && !self.locked(&c.track_id)
             && self.timeline().track(&c.track_id).is_some_and(|t| t.visible)
             && (all || self.selection.contains(&c.id))).map(|c|c.id.clone()).collect();
-        let locked_tracks = self.timeline().tracks.iter().filter(|t|self.locked(&t.id)).map(|t|t.id.clone()).collect();
-        self.apply(Command::ApplyCanvasPreset { config, targets, locked_tracks });
+        self.stage_canvas_plans(vec![(config,targets)]);
+    }
+
+    pub fn apply_canvas_favourites_randomly(&mut self, images:bool,videos:bool,selected_only:bool) {
+        if !images && !videos {self.notify("Choose Images or Video Clips first.",true);return;}
+        let pool:Vec<_>=(1..=8).filter(|preset|self.prefs.canvas_preset_favourites.contains(&format!("canvas:{preset}")))
+            .filter_map(concat_project::canvas_preset::Config::preset).collect();
+        if pool.is_empty() {self.notify("Star at least one Canvas preset first.",true);return;}
+        let mut draw=bulk_presets::fresh_draw();
+        let plans:Vec<_>=self.timeline().clips.iter().filter(|c|
+            ((c.kind==model::ClipKind::Image && images)||(c.kind==model::ClipKind::Video && videos))
+            && !c.extra.contains_key("canvasOwner") && !self.locked(&c.track_id)
+            && self.timeline().track(&c.track_id).is_some_and(|t|t.visible)
+            && (!selected_only || self.selection.contains(&c.id)))
+            .map(|c|(pool[draw(pool.len())].clone(),vec![c.id.clone()])).collect();
+        if plans.is_empty() {self.notify("No eligible media in the chosen scope.",true);return;}
+        self.stage_canvas_plans(plans);
+    }
+
+    fn stage_canvas_plans(&mut self, plans:Vec<(concat_project::canvas_preset::Config,Vec<String>)>) {
+        self.flush_commit();
+        let locked_tracks:Vec<_>=self.timeline().tracks.iter().filter(|t|self.locked(&t.id)).map(|t|t.id.clone()).collect();
+        let targets:Vec<_>=plans.iter().flat_map(|(_,ids)|ids.iter().cloned()).collect();
+        if targets.is_empty() {self.notify("Select eligible image/video media first.",true);return;}
+        let conflicts=concat_project::canvas_preset::conflicts(self.project(),&targets);
+        let confirmed=!conflicts.is_empty();
+        let commands=plans.into_iter().map(|(config,targets)|if confirmed {
+            Command::ApplyCanvasPresetConfirmed {config,targets,locked_tracks:locked_tracks.clone()}
+        } else {Command::ApplyCanvasPreset {config,targets,locked_tracks:locked_tracks.clone()}}).collect();
+        if confirmed {
+            self.confirm=Some(Confirm::ReplaceCanvas {commands,timeline_id:self.timeline().id.clone(),revision:self.revision,
+                masks:conflicts.masks,layers:conflicts.customized_layers,targets:targets.len()});
+        } else {self.apply(Command::Batch {commands});}
     }
 
     /// Applying a look is a GPU configuration edit, valid with zero caption
@@ -4363,6 +4422,14 @@ impl Studio {
     }
 
     /// A catalogue filter or effect, applied to the selected clip's chain.
+    pub fn apply_catalogue_targeted(&mut self,id:&str,video:bool,images:bool,videos:bool) {
+        if video && self.sole_selection().and_then(|id|self.clip(&id)).is_some_and(|clip|
+            (clip.kind==model::ClipKind::Image && !images)||(clip.kind==model::ClipKind::Video && !videos)) {
+            self.notify("This media type is disabled in the shared targeting controls.",true);return;
+        }
+        self.apply_catalogue(id,video);
+    }
+
     pub fn apply_catalogue(&mut self, id: &str, video: bool) {
         let Some(clip_id) = self.sole_selection() else {
             self.notify(&t("studio.selectClipTimelineFirst"), true);
@@ -4371,6 +4438,9 @@ impl Studio {
         let Some(clip) = self.clip(&clip_id).cloned() else {
             return;
         };
+        if self.locked(&clip.track_id) || self.timeline().track(&clip.track_id).is_none_or(|track|!track.visible) {
+            self.notify("The target track is locked or hidden.",true);return;
+        }
         if cfg!(windows)
             && (!video
                 || !gpu_catalogue_has("video_effects", id)
@@ -4396,14 +4466,14 @@ impl Studio {
         let entry = AppliedFilter::new(id);
         let patch = if video {
             let mut effects = clip.video_effects.clone();
-            effects.push(entry);
+            model::upsert_effect(&mut effects,entry);
             ClipPatch {
                 video_effects: Some(effects),
                 ..ClipPatch::default()
             }
         } else {
             let mut filters = clip.filters.clone();
-            filters.push(entry);
+            model::upsert_effect(&mut filters,entry);
             ClipPatch {
                 filters: Some(filters),
                 ..ClipPatch::default()
@@ -9445,10 +9515,11 @@ impl Studio {
         app.global::<crate::ui::TimelineDrag>().set_feedback(self.drag_feedback.clone());
         app.global::<crate::ui::TimelineDrag>().set_ripple(self.drag_ripple);
         app.global::<crate::ui::TimelineDrag>().set_duplicate(self.drag_duplicate);
+        self.publish_animation_timing(app);
         editor.set_selected_clip(self.selected());
         let layout = self.selected();
         app.global::<crate::ui::Keyframes>().set_layout_clip(crate::ui::LayoutSelectionData {
-            present:layout.present, editable:self.can_edit_layout(), count:self.selection.len() as i32, kind:layout.kind, scale:layout.scale, offset_x:layout.offset_x, offset_y:layout.offset_y, rotation:layout.rotation,
+            present:layout.present, editable:self.can_edit_layout(), count:self.selection.len() as i32, kind:layout.kind, scale:layout.scale, offset_x:layout.offset_x, offset_y:layout.offset_y, rotation:layout.rotation,opacity:layout.opacity,flip_h:layout.flip_h,flip_v:layout.flip_v,
         });
         editor.set_selected_transition(self.selected_transition_data());
         // The background and Fit and Fill, on their own global: the Details

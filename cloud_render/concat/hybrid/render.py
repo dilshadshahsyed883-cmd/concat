@@ -14,6 +14,7 @@ from itertools import groupby
 from pathlib import Path
 
 from .animations import apply_transform
+from .viewport import clip_viewport
 from .canvas import make_background
 from .canvas_shapes import render_shape, apply_mask
 from .particles import ParticleEffect, apply as apply_particles
@@ -239,6 +240,8 @@ def picture(sources, clip, index, tail=False, *, force_opacity=False, placement_
         else:
             pixels = filter_picture(pixels, settings)
     foreground = apply_transform(pixels, transform) if native_chain else pixels
+    if getattr(clip,"viewport",None) is not None:
+        foreground = clip_viewport(foreground,clip.viewport)
     return (foreground, backing) if return_background else foreground
 
 

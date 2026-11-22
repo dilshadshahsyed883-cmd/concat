@@ -19,7 +19,7 @@ PHYSICS = (
 TABS = (
     '"common.media"', '"common.text"',
     '"mediaPane.transitions"', '"Animations"', '"mediaPane.filters"',
-    '"common.effects"', '"mediaPane.templates"',
+    '"common.effects"', '"Adjustment"',
 )
 
 
@@ -50,67 +50,55 @@ class DesktopUiContractTests(unittest.TestCase):
         self.assertIn("Keyframes.toggle-physics-favourite(index);", MEDIA)
 
     def test_type_scope_and_shared_inspector_controls(self):
-        config = (ROOT / "ui/workspace/config-pane.slint").read_text(encoding="utf-8")
+        config = (ROOT / "ui/workspace/config-pane.slint").read_text()
+        layout = (ROOT / "ui/workspace/media-layout.slint").read_text()
+        self.assertIn("MediaTargetControls { }", config)
         for typ in ("images", "videos"):
-            self.assertIn("checked: Keyframes.animation-" + typ + ";", config)
+            self.assertIn("checked: Keyframes.animation-" + typ + ";", layout)
             self.assertNotIn("checked: Keyframes.animation-" + typ + ";", MEDIA)
-        self.assertIn("Keyframes.animation-scope == 1", config)
-        self.assertIn("enabled: Keyframes.animation-images || Keyframes.animation-videos", config)
         for knob in ("strength", "duration", "speed", "intensity"):
             self.assertIn("value <=> Keyframes.physics-" + knob + ";", config)
-            self.assertIn("in-out property <float> physics-" + knob + ": 1;", KEYFRAMES)
-        self.assertIn("callback apply-physics-bulk(", KEYFRAMES)
         self.assertIn("keys.on_apply_physics_bulk(", LIB)
-        self.assertIn("pub fn apply_physics_bulk(", BULK)
         self.assertIn("requested_picture(clip, images, videos)", BULK)
         self.assertIn("if selected_only && selected.is_empty()", BULK)
-        self.assertIn("Command::Batch { commands }", BULK)
 
     def test_left_layout_subtabs_and_consolidated_motion_presets(self):
-        layout = (ROOT / "ui/workspace/media-layout.slint").read_text(encoding="utf-8")
-        self.assertIn('["Animations", "Transform", "Canvas", "Canvas Presets"]', MEDIA)
+        layout = (ROOT / "ui/workspace/media-layout.slint").read_text()
+        self.assertIn('["Transform", "Mirror / Flip", "Canvas", "Canvas Presets", "Content Zoom / Crop"]', MEDIA)
+        self.assertNotIn('root.animation-page', MEDIA)
         for name in ("Push In", "Pan Right", "Fade In"):
             self.assertIn('"' + name + '"', MEDIA)
-        self.assertIn('if root.animation-page == 1: MediaLayoutPanel { canvas: false; }', MEDIA)
-        self.assertIn('if root.animation-page == 2:', MEDIA)
-        for field in ("Scale", "Position X", "Position Y", "Rotation"):
+        for field in ("Scale", "Position X", "Position Y", "Rotation", "Opacity"):
             self.assertIn('label: "' + field + '"', layout)
         self.assertIn("Backdrop.apply-bulk(", layout)
-        self.assertIn("root.images, root.videos", layout)
-        self.assertIn("root.scope == 1", layout)
-        self.assertIn("keys.on_apply_bulk_transform(", LIB)
+        self.assertIn("keys.on_apply_adjustment(", LIB)
         self.assertIn("backdrop.on_apply_bulk(", LIB)
 
     def test_animation_and_caption_views_have_no_nested_scrollers(self):
-        # The outer pages viewport already owns vertical scrolling.
         pages = MEDIA.split("pages := PaneScroll {", 1)[1]
+        config = (ROOT / "ui/workspace/config-pane.slint").read_text()
         self.assertNotIn("if root.tab == 10 && GpuCompatibility.enabled: PaneScroll {", pages)
-        self.assertNotIn("if root.tab == 1 && GpuCompatibility.enabled && root.text-category == 1: PaneScroll {", pages)
         self.assertIn("if root.tab == 10 && GpuCompatibility.enabled: VerticalLayout {", pages)
         self.assertIn("if root.tab == 1 && GpuCompatibility.enabled && root.text-category == 1: CaptionPresetPreviewPanel {", pages)
-        for page in ("root.animation-page == 0", "root.animation-page == 1", "root.animation-page == 2", "root.animation-page == 3"):
-            self.assertIn(page, pages)
-        # #93 moves Canvas preset editing into ConfigPane. The left viewport
-        # renders only the gallery; both panes own one scroll container.
-        for panel in ("CanvasPresetLibrary", "ShelfGrid",
-                      "MediaLayoutPanel { canvas: false; }"):
-            self.assertIn(panel, pages)
-        self.assertIn("CanvasMotionPanel", (ROOT / "ui/workspace/config-pane.slint").read_text())
-        config = (ROOT / "ui/workspace/config-pane.slint").read_text(encoding="utf-8")
+        self.assertIn("CanvasPresetLibrary {", pages)
+        self.assertNotIn("MediaLayoutPanel {", pages)
+        self.assertIn("MediaLayoutPanel {", config)
+        self.assertIn("CanvasMotionPanel", config)
         self.assertIn("CanvasPresetPanel {", config)
-        self.assertNotIn("MediaLayoutPanel {", config)
-        self.assertIn("checked: CanvasTargets.images;", config)
-        self.assertIn("LibraryFocus.page == 8", config)
+        self.assertIn("AnimationApplyBar { }", config)
         self.assertIn("library-only: true;", pages)
         self.assertIn("inspector-only: true;", config)
 
     def test_explicit_transform_canvas_scopes_and_selection_fallback(self):
-        layout = (ROOT / "ui/workspace/media-layout.slint").read_text(encoding="utf-8")
-        for item in ("root.selected.count == 0", "root.selected.count > 1",
-                     "root.apply(3, true);", "root.apply(3, false);",
-                     "root.videos, true);", "root.videos, false);",
-                     'options: ["Framing…", "Fit", "Fill"];', 'root.apply(index == 2 ? 5 : 4'):
-            self.assertIn(item, layout)
+        layout = (ROOT / "ui/workspace/media-layout.slint").read_text()
+        actions = (ROOT / "ui/workspace/animation-actions.slint").read_text()
+        self.assertIn("root.apply(true);", layout)
+        self.assertIn("root.apply(false);", layout)
+        self.assertIn('options: ["Framing…", "Fit", "Fill"];', layout)
+        self.assertIn('root.apply(true,0)', actions)
+        self.assertIn('root.apply(false,0)', actions)
+        self.assertIn('Keyframes.animation-scope == 1', actions)
+        self.assertIn('Select eligible timeline media first.', BULK)
 
     def test_caption_gallery_preview_staged_separately_from_apply(self):
         gallery = (ROOT / "ui/workspace/caption-preset-preview.slint").read_text(encoding="utf-8")
@@ -123,14 +111,14 @@ class DesktopUiContractTests(unittest.TestCase):
         self.assertIn("CaptionPreviewBadge", preview)
 
     def test_canvas_preset_all_actions_are_not_selection_limited(self):
-        motion = (ROOT / "ui/workspace/canvas-motion.slint").read_text(encoding="utf-8")
-        presets = (ROOT / "ui/workspace/canvas-presets.slint").read_text(encoding="utf-8")
-        self.assertIn('label: "Apply Selected"', motion)
-        self.assertIn('label: "Apply All"', motion)
-        self.assertIn("root.images, root.videos, false, root.settings", motion)
-        self.assertIn('label: "Apply Selected"', presets)
-        self.assertIn('label: "Apply All"', presets)
+        actions = (ROOT / "ui/workspace/animation-actions.slint").read_text()
+        presets = (ROOT / "ui/workspace/canvas-presets.slint").read_text()
+        for label in ('label: "Apply Selected"', 'label: "Apply All"'):
+            self.assertIn(label, actions)
+            self.assertIn(label, presets)
+        self.assertIn("Keyframes.animation-videos,selected,Keyframes.canvas-motion", actions)
         self.assertIn("CanvasPresets.apply(CanvasPresets.profile, true", presets)
+        self.assertIn('label: "Apply Favorites Randomly"', presets)
 
     def test_generate_captions_reuses_existing_sheet(self):
         self.assertIn('label: "Generate Captions";', MEDIA)

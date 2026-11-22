@@ -24,7 +24,7 @@ pub enum PhysicsPreset {
 
 /// Parameters are baked into ordinary GPU-compatible keyframes. The project
 /// manifest does not need a desktop-only physics extension.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct PhysicsControls {
     pub strength: f64,
     /// Fraction of the clip over which the motion evolves (0.1..=1).
@@ -41,6 +41,12 @@ impl Default for PhysicsControls {
 }
 
 impl PhysicsControls {
+    /// Whether every control is in its supported authoring range.
+    pub fn valid(self)->bool {
+        [self.strength,self.duration,self.speed,self.intensity].iter().all(|v|v.is_finite())
+            && (0.1..=2.0).contains(&self.strength) && (0.1..=1.0).contains(&self.duration)
+            && (0.25..=3.0).contains(&self.speed) && (0.2..=2.0).contains(&self.intensity)
+    }
     fn safe(self) -> Self {
         fn limit(value: f64, min: f64, max: f64) -> f64 {
             if value.is_finite() { value.clamp(min, max) } else { 1.0 }

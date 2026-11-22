@@ -98,6 +98,7 @@ fn draw(output: &mut Frame, plan: &FramePlan, layer: &PlannedLayer) {
         shading: layer.shading(),
         mask: layer.mask.as_deref(),
         shape: layer.shape_uniform(&geometry),
+        aperture:layer.aperture_uniform(plan.width,plan.height),
         opacity,
         blend: layer.blend,
     };
@@ -137,6 +138,7 @@ struct Weighing<'a> {
     shading: Shading,
     mask: Option<&'a Frame>,
     shape: MaskUniform,
+    aperture:MaskUniform,
     opacity: f32,
     blend: Blend,
 }
@@ -145,7 +147,7 @@ impl Weighing<'_> {
     /// One pixel of the picture, `sample` its straight colour and alpha in
     /// `0..=255` at `u`, `v` across the picture, blended into `under`.
     #[inline]
-    fn blend_into(&self, under: &mut [u8], sample: [f32; 4], u: f32, v: f32) {
+    fn blend_into(&self, under: &mut [u8], sample: [f32; 4], u: f32, v: f32, frame_uv:[f32;2]) {
         if !self.shading.keeps(u) {
             return;
         }
@@ -158,6 +160,7 @@ impl Weighing<'_> {
             alpha *= sample_bilinear(mask, mx, my)[3] / 255.0;
         }
         alpha *= mask::coverage(&self.shape, u, v);
+        alpha *= mask::coverage(&self.aperture,frame_uv[0],frame_uv[1]);
         if alpha <= 0.0 {
             return;
         }
@@ -273,6 +276,7 @@ fn blend_transformed(
     }
 
     let dst_stride = output.width() as usize * BYTES_PER_PIXEL;
+    let output_size=(output.width() as f32,output.height() as f32);
     let dst_pixels = output.pixels_mut();
 
     for y in y_from..y_to {
@@ -290,7 +294,7 @@ fn blend_transformed(
             let (sx, sy) = geometry.source_of(u, v, flip_h, flip_v);
             let sample = sample_bilinear(picture, sx, sy);
             let at = y as usize * dst_stride + x as usize * BYTES_PER_PIXEL;
-            weigh.blend_into(&mut dst_pixels[at..at + BYTES_PER_PIXEL], sample, u, v);
+            weigh.blend_into(&mut dst_pixels[at..at + BYTES_PER_PIXEL], sample, u, v,[(x as f32+0.5)/output_size.0,(y as f32+0.5)/output_size.1]);
         }
     }
 }
@@ -328,6 +332,7 @@ fn blend_aligned(output: &mut Frame, picture: &Frame, geometry: &Geometry, weigh
     let (fitted_w, fitted_h) = (picture.width() as f32, picture.height() as f32);
 
     let src_pixels = picture.pixels();
+    let output_size=(output.width() as f32,output.height() as f32);
     let dst_pixels = output.pixels_mut();
 
     for row in 0..rows as usize {
@@ -350,7 +355,7 @@ fn blend_aligned(output: &mut Frame, picture: &Frame, geometry: &Geometry, weigh
                 f32::from(src_pixel[2]),
                 f32::from(src_pixel[3]),
             ];
-            weigh.blend_into(dst_pixel, sample, u, v);
+            weigh.blend_into(dst_pixel,sample,u,v,[(dst_x as f32+column as f32+0.5)/output_size.0,(dst_y as f32+row as f32+0.5)/output_size.1]);
         }
     }
 }
@@ -740,4 +745,17 @@ mod tests {
         assert_eq!(overlap(4, 4, 4), None);
         assert_eq!(overlap(-4, 4, 4), None);
     }
+    #[test]
+    fn fixed_aperture_clips_enlarged_and_rotated_content() {
+        use concat_core::timeline::CanvasFrame;
+        let mut picture=layer(solid(40,40,[255,0,0,255]));
+        let frame=CanvasFrame {scale:0.5,x:0.0,y:0.0,width:0.5,height:0.5,rotation:12.0,radius:0.05,aspect:1.0};
+        picture.transform=frame.compose(Transform {scale:3.0,offset_x:0.1,rotation:25.0,..Default::default()});
+        picture.aperture=Some(frame.aperture());
+        let result=render(40,40,vec![picture]);
+        let at=|x:usize,y:usize|result.pixels()[(y*40+x)*4];
+        assert!(at(20,20)>240);
+        for (x,y) in [(0,0),(4,20),(35,20),(20,4),(20,35)] {assert_eq!(at(x,y),0);}
+    }
+
 }

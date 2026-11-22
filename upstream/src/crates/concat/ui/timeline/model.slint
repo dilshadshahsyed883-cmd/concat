@@ -223,7 +223,7 @@ export struct CanvasMotionData {
     easing: int, seed: int, corner-radius: float,
 }
 
-export struct LayoutSelectionData { present: bool, editable: bool, count: int, kind: ClipKind, scale: float, offset-x: float, offset-y: float, rotation: float }
+export struct LayoutSelectionData { present: bool, editable: bool, count: int, kind: ClipKind, scale: float, offset-x: float, offset-y: float, rotation: float, opacity: float, flip-h: bool, flip-v: bool }
 
 export struct DragFeedbackData {
     active: bool, valid: bool, start: float, duration: float, row: int, label: string,
@@ -236,6 +236,7 @@ export global TimelineDrag {
     callback modes-changed(ripple: bool, duplicate: bool);
 }
 
+export struct AnimationInspectorData { strength: float, duration: float, speed: float, intensity: float, canvas: CanvasMotionData }
 export global Keyframes {
     in property <LayoutSelectionData> layout-clip;
     callback layout-set(field: ClipField, value: float);
@@ -263,6 +264,25 @@ export global Keyframes {
     // The animation library publishes its selection to the opposite inspector.
     // Only the browsing tab controls this state, and a card click never applies keys.
     in-out property <bool> animation-browser: false;
+    in-out property <bool> animation-favourites-browser: false;
+    in-out property <[bool]> favourite-pool: [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false];
+    in property <string> animation-timing;
+    out property <bool> has-favourite-pool: (favourite-pool[0] && physics-favourites[0]) || (favourite-pool[1] && physics-favourites[1]) || (favourite-pool[2] && physics-favourites[2]) || (favourite-pool[3] && physics-favourites[3]) || (favourite-pool[4] && physics-favourites[4]) || (favourite-pool[5] && physics-favourites[5]) || (favourite-pool[6] && physics-favourites[6]) || (favourite-pool[7] && physics-favourites[7]) || (favourite-pool[8] && physics-favourites[8]) || (favourite-pool[9] && physics-favourites[9]) || (favourite-pool[10] && physics-favourites[10]) || (favourite-pool[11] && physics-favourites[11]) || (favourite-pool[12] && physics-favourites[12]) || (favourite-pool[13] && physics-favourites[13]) || (favourite-pool[14] && physics-favourites[14]) || (favourite-pool[15] && physics-favourites[15]) || (favourite-pool[16] && physics-favourites[16]) || (favourite-pool[17] && physics-favourites[17]) || (favourite-pool[18] && physics-favourites[18]) || (favourite-pool[19] && physics-favourites[19]) || (favourite-pool[20] && physics-favourites[20]) || (favourite-pool[21] && physics-favourites[21]) || (favourite-pool[22] && physics-favourites[22]) || (favourite-pool[23] && physics-favourites[23]) || (favourite-pool[24] && physics-favourites[24]) || (favourite-pool[25] && physics-favourites[25]) || (favourite-pool[26] && physics-favourites[26]) || (favourite-pool[27] && physics-favourites[27]) || (favourite-pool[28] && physics-favourites[28]) || (favourite-pool[29] && physics-favourites[29]);
+    callback remember-animation(index:int,strength:float,duration:float,speed:float,intensity:float,canvas:CanvasMotionData);
+    callback load-animation(index:int)->AnimationInspectorData;
+    callback apply-animation-favourites(pool:[bool],images:bool,videos:bool,selected:bool);
+    public function remember-current() {Keyframes.remember-animation(animation-selected,physics-strength,physics-duration,physics-speed,physics-intensity,canvas-motion);}
+    public function restore-current() {
+        let settings=Keyframes.load-animation(animation-selected);
+        physics-strength=settings.strength;physics-duration=settings.duration;physics-speed=settings.speed;physics-intensity=settings.intensity;
+        canvas-motion=settings.canvas;
+    }
+    public function inspect(index:int) {
+        Keyframes.remember-current();
+        animation-selected=index;
+        Keyframes.restore-current();
+    }
+
     // 0..8 = physics/basic, 9..28 = Canvas Motion; existing IDs are unchanged.
     in-out property <int> animation-selected: 0;
     in-out property <bool> animation-images: true;
@@ -274,6 +294,11 @@ export global Keyframes {
     in-out property <float> physics-duration: 1;
     in-out property <float> physics-speed: 1;
     in-out property <float> physics-intensity: 1;
+    changed physics-strength => {Keyframes.remember-current();}
+    changed physics-duration => {Keyframes.remember-current();}
+    changed physics-speed => {Keyframes.remember-current();}
+    changed physics-intensity => {Keyframes.remember-current();}
+    changed canvas-motion => {Keyframes.remember-current();}
     // Physics presets resolve into ordinary GPU-compatible transform keyframes.
     in property <[bool]> physics-favourites;
     in-out property <CanvasMotionData> canvas-motion: {
@@ -299,6 +324,8 @@ export global Keyframes {
     callback apply-bulk-motion-preset(mode: int, preset: int, images: bool,
         video-clips: bool, selected-only: bool);
     // mode: 0 scale, 1 position X/Y, 2 rotation, 3 combined, 4 fit, 5 fill; native units.
+    callback apply-adjustment(page: int, images: bool, videos: bool, selected: bool,
+        scale: float, x: float, y: float, rotation: float, opacity: float, flip-h: bool, flip-v: bool);
     callback apply-bulk-transform(mode: int, images: bool, video-clips: bool,
         selected-only: bool, scale: float, position-x: float, position-y: float, rotation: float);
 

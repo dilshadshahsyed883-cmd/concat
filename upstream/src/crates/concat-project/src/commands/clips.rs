@@ -371,8 +371,17 @@ pub(super) fn apply(
 
         Command::SplitClips { clip_ids, time } => {
             let timeline = project.active_mut();
+            let requested: HashSet<_> = clip_ids.iter().cloned().collect();
+            let mut expanded = clip_ids;
+            for piece in &timeline.clips {
+                if piece.extra.get("canvasOwner").and_then(serde_json::Value::as_str)
+                    .is_some_and(|owner|requested.contains(owner)) && !expanded.contains(&piece.id) {
+                    expanded.push(piece.id.clone());
+                }
+            }
+            let mut remap = std::collections::HashMap::new();
             let mut created = None;
-            for clip_id in clip_ids {
+            for clip_id in expanded {
                 let Some(index) = timeline.clips.iter().position(|clip| clip.id == clip_id) else {
                     continue;
                 };
@@ -397,6 +406,8 @@ pub(super) fn apply(
                 let (head_source, tail_source) =
                     split_source(clip.source_start, clip.speed, offset);
                 let whole = clip.duration;
+                let untouched = crate::canvas_preset::untouched_companion(clip)
+                    && clip.extra.get("canvasOwner").and_then(serde_json::Value::as_str).is_some_and(|owner|requested.contains(owner));
                 let mut tail = clip.clone();
                 tail.id = mint.next("c");
                 tail.start = clip.start + offset;
@@ -410,14 +421,27 @@ pub(super) fn apply(
                 tail.fade_in = 0.0;
                 tail.rewindow_keys(whole, offset, whole);
                 tail.rewindow_caption(offset,whole);
-                created = Some(tail.id.clone());
+                if requested.contains(&clip_id) && !tail.extra.contains_key("canvasOwner") {
+                    created = Some(tail.id.clone());
+                }
+                remap.insert(clip_id.clone(),tail.id.clone());
+                if untouched { crate::canvas_preset::stamp_companion(&mut tail); }
                 let head = timeline.clip_at_mut(index);
                 head.duration = offset;
                 head.source_start = head_source;
                 head.fade_out = 0.0;
                 head.rewindow_keys(whole, 0.0, offset);
                 head.rewindow_caption(0.0,offset);
+                if untouched { crate::canvas_preset::stamp_companion(head); }
+                if created.is_none() && requested.contains(&clip_id) { created = Some(tail.id.clone()); }
                 timeline.clips.insert(index + 1, Arc::new(tail));
+            }
+            let tails: HashSet<_> = remap.values().cloned().collect();
+            for tail in timeline.clips_where(|c|tails.contains(&c.id)) {
+                if let Some(owner) = tail.extra.get("canvasOwner").and_then(serde_json::Value::as_str)
+                    .and_then(|id|remap.get(id)).cloned() {
+                    tail.extra.insert("canvasOwner".into(),serde_json::json!(owner));
+                }
             }
             // A split always mints the tail, so "minted anything" and
             // "changed anything" are the same fact here.

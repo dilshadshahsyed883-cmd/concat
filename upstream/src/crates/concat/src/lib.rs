@@ -118,6 +118,15 @@ fn canvas_picker_color(hex: &str) -> slint::Color {
     let rgb = digits.get(..6).and_then(|s| u32::from_str_radix(s, 16).ok()).unwrap_or(0);
     slint::Color::from_rgb_u8((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8)
 }
+fn media_target_flags()->(bool,bool,bool) {
+    let mut flags=(true,true,false);
+    Shell::with(|_,app| {
+        let targets=app.global::<Keyframes>();
+        flags=(targets.get_animation_images(),targets.get_animation_videos(),targets.get_animation_scope()==1);
+    });
+    flags
+}
+
 fn canvas_publish(app: &App, config: &concat_project::canvas_preset::Config) {
     let panel = app.global::<CanvasPresets>();
     panel.set_profile(serde_json::to_string_pretty(config).unwrap_or_default().into());
@@ -926,6 +935,9 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             }
         });
     });
+    app.global::<CanvasPresets>().on_random_favourites(on_window!(|state,images:bool,videos:bool,selected:bool| {
+        state.apply_canvas_favourites_randomly(images,videos,selected);
+    }));
     app.global::<CanvasPresets>().on_apply(on_window!(|state, json: SharedString, all: bool, images:bool, videos:bool| {
         state.apply_canvas_preset(&json, all, images, videos);
     }));
@@ -1368,7 +1380,8 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         state.audition_catalogue(id.as_str());
     }));
     editor.on_library_apply_effect(on_window!(|state, id: SharedString| {
-        state.apply_catalogue(id.as_str(), true);
+        let (images,videos,_)=media_target_flags();
+        state.apply_catalogue_targeted(id.as_str(),true,images,videos);
     }));
     editor.on_library_apply_audio(on_window!(|state, id: SharedString| {
         state.apply_catalogue(id.as_str(), false);
@@ -1380,7 +1393,8 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         state.apply_random_gpu_transitions(mode == 1, mode == 2);
     }));
     editor.on_library_apply_random_effects(on_window!(|state| {
-        state.apply_random_gpu_effects();
+        let (images,videos,selected)=media_target_flags();
+        state.apply_random_gpu_effects_scoped(images,videos,selected);
     }));
     editor.on_library_save_template(on_window!(|state| {
         state.save_template();
@@ -1630,6 +1644,33 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     // not have to be threaded a callback to reach here.
     {
         let keys = app.global::<Keyframes>();
+        keys.on_remember_animation(on_lanes!(|state,index:i32,strength:f32,duration:f32,speed:f32,intensity:f32,canvas:CanvasMotionData| {
+            state.remember_animation_settings(index,strength,duration,speed,intensity,canvas);
+        }));
+        keys.on_load_animation(move |index| {
+            let mut result=AnimationInspectorData::default();
+            Shell::with(|shell,_| {
+                let settings=shell.studio.borrow().animation_settings(index);
+                let c=settings.canvas;
+                let (start_x,start_y)=c.start_anchor.map_or((0.0,0.0),|v|(v[0],v[1]));
+                let (end_x,end_y)=c.end_anchor.map_or((0.0,0.0),|v|(v[0],v[1]));
+                result=AnimationInspectorData {strength:settings.physics.strength as f32,duration:settings.physics.duration as f32,
+                    speed:settings.physics.speed as f32,intensity:settings.physics.intensity as f32,
+                    canvas:CanvasMotionData {start_scale:c.start_scale as f32,end_scale:c.end_scale as f32,duration:c.duration_seconds as f32,
+                        delay:c.delay_seconds as f32,entry_seconds:c.entry_seconds as f32,hold_seconds:c.hold_seconds as f32,exit_seconds:c.exit_seconds as f32,
+                        focus_middle_x:c.focus_middle[0] as f32,focus_middle_y:c.focus_middle[1] as f32,focus_hold:c.focus_hold_seconds as f32,
+                        speed:c.speed as f32,strength:c.strength as f32,intensity:c.intensity as f32,blur:c.blur as f32,reverse:c.reverse,
+                        custom_anchors:c.start_anchor.is_some() || c.end_anchor.is_some(),start_x:start_x as f32,start_y:start_y as f32,end_x:end_x as f32,end_y:end_y as f32,
+                        easing:if c.easing==concat_project::canvas_motion::MotionEasing::Linear {0}else{1},seed:c.seed.min(i32::MAX as u64) as i32,corner_radius:settings.corners as f32},
+                };
+            });
+            result
+        });
+        keys.invoke_restore_current();
+        keys.on_apply_animation_favourites(on_lanes!(|state,pool:ModelRc<bool>,images:bool,videos:bool,selected:bool| {
+            let indexes=(0..pool.row_count()).filter(|i|pool.row_data(*i)==Some(true)).map(|i|i as i32).collect();
+            state.apply_animation_favourites(indexes,images,videos,selected);
+        }));
         keys.on_toggle(on_lanes!(|state, field: ClipField| {
             state.toggle_key(field);
         }));
@@ -1679,6 +1720,10 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             state.layout_set(field,value);
         }));
         keys.on_layout_frame(on_lanes!(|state,fill:bool| {state.layout_frame(fill);}));
+        keys.on_apply_adjustment(on_lanes!(|state, page:i32, images:bool, videos:bool, selected:bool,
+            scale:f32,x:f32,y:f32,rotation:f32,opacity:f32,flip_h:bool,flip_v:bool| {
+            state.apply_adjustment_bulk(page,images,videos,selected,scale,x,y,rotation,opacity,flip_h,flip_v);
+        }));
         keys.on_apply_bulk_transform(on_lanes!(|state, mode: i32, images: bool,
             video_clips: bool, selected_only: bool, scale: f32, x: f32, y: f32, rotation: f32| {
             state.apply_bulk_gpu_transform(
@@ -1801,7 +1846,8 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
 
     // ── the chains ──
     editor.on_chain_add(on_window!(|state, audio: bool, id: SharedString| {
-        state.chain_add(audio, id.as_str());
+        let (images,videos,_)=media_target_flags();
+        state.apply_catalogue_targeted(id.as_str(),!audio,images,videos);
     }));
     editor.on_chain_toggle(on_window!(|state, audio: bool, index: i32| {
         state.chain_toggle(audio, index);

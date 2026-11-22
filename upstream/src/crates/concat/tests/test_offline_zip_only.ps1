@@ -105,7 +105,7 @@ try {
             if ($control.render_contract.id -cne "concat-cuda-hybrid-v1" -or
                 ($control.render_contract.version -isnot [int] -and
                  $control.render_contract.version -isnot [long]) -or
-                $control.render_contract.version -ne 1) {
+                $control.render_contract.version -ne 2) {
                 throw "Offline and queue ZIPs must declare the exact worker render contract"
             }
         }

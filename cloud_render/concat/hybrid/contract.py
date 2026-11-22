@@ -14,7 +14,7 @@ HYBRID_EFFECTS_VERSION = 1
 # Desktop ZIP and Salad worker publish/require the same explicit render contract.
 # Increment on incompatible manifest/render semantics; preserve legacy v1 bundles.
 RENDER_CONTRACT_ID = "concat-cuda-hybrid-v1"
-RENDER_CONTRACT_VERSION = 1
+RENDER_CONTRACT_VERSION = 2
 
 
 @dataclass(frozen=True)

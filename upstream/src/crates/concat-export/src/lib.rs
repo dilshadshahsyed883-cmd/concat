@@ -216,6 +216,9 @@ pub struct ExportClip {
     /// it; its keyed numbers ride in `animation` as `maskX` and on.
     #[serde(default)]
     pub mask: Option<ClipMask>,
+    /// Fixed frame opening and parent transform for Canvas-framed content.
+    #[serde(default)]
+    pub canvas_frame:Option<concat_project::canvas_viewport::Viewport>,
     /// Draw the cutout tinted over the whole picture instead of cutting
     /// it: the view while the clip's brushes are in use. Preview only.
     #[serde(default)]
@@ -336,6 +339,7 @@ impl ExportClip {
             has_audio: None,
             cutout: None,
             mask: None,
+            canvas_frame:None,
             mask_dir: String::new(),
             stabilize: None,
             motion_dir: String::new(),

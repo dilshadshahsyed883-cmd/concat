@@ -3,8 +3,8 @@ name: Concat native development build
 on:
   workflow_dispatch:
   push:
-    branches: [main]
-    paths: ['.github/release-requests/concat-final-20261108.txt']
+    branches: [main, issue-109-editor-consistency]
+    paths: ['.github/release-requests/concat-final-20261108.txt', '.github/release-requests/issue-109-build.txt']
 
 permissions:
   contents: read
@@ -216,7 +216,7 @@ jobs:
           $revision = $env:GITHUB_SHA
           $binary = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes("$out\concat.exe"))
           if (-not $binary.Contains($revision)) { throw "EXE does not embed the exact source SHA" }
-          $metadata = [ordered]@{ source_sha=$revision; app_version="0.2.8"; executable_sha256=$hash; render_contract=[ordered]@{id="concat-cuda-hybrid-v1";version=1}; smoke="passed" }
+          $metadata = [ordered]@{ source_sha=$revision; app_version="0.2.8"; executable_sha256=$hash; render_contract=[ordered]@{id="concat-cuda-hybrid-v1";version=2}; smoke="passed" }
           $metadata | ConvertTo-Json -Depth 4 | Set-Content "$out\release-metadata.json" -Encoding UTF8
           Copy-Item concat_gpu/concat_gpu_client.ps1 "$out\concat_gpu_client.ps1"
           Get-ChildItem $out -File | Select-Object Name,Length | Format-Table

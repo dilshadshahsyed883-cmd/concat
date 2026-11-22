@@ -54,6 +54,43 @@ impl MediaRef {
     }
 }
 
+/// Fixed Canvas layout, with content transforms evaluated inside its opening.
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub struct CanvasFrame {
+    /// Parent scale over the source's timeline contain-fit.
+    pub scale:f64,
+    /// Parent centre, in timeline width fractions.
+    pub x:f64,
+    /// Parent centre, in timeline height fractions.
+    pub y:f64,
+    /// Fixed aperture width in timeline width fractions.
+    pub width:f64,
+    /// Fixed aperture height in timeline height fractions.
+    pub height:f64,
+    /// Parent clockwise rotation in degrees.
+    pub rotation:f64,
+    /// Aperture corner radius in timeline heights.
+    pub radius:f64,
+    /// Timeline width divided by height, for rotation of normalized offsets.
+    pub aspect:f64,
+}
+impl CanvasFrame {
+    /// Compose content motion with its parent, without moving the opening.
+    pub fn compose(self,content:Transform)->Transform {
+        let (sin,cos)=self.rotation.to_radians().sin_cos();
+        Transform {scale:self.scale*content.scale,
+            offset_x:self.x+self.scale*(cos*content.offset_x-sin*content.offset_y/self.aspect),
+            offset_y:self.y+self.scale*(sin*content.offset_x*self.aspect+cos*content.offset_y),
+            rotation:self.rotation+content.rotation,..content}
+    }
+    /// Output-space rounded aperture, independent of content zoom/pan/rotation.
+    pub fn aperture(self)->ShapeMask {
+        ShapeMask {shape:crate::mask::MaskShape::Rectangle,x:self.x,y:self.y,width:self.width*self.aspect/self.aspect.min(1.0),height:self.height/self.aspect.min(1.0),
+            rotation:self.rotation,roundness:(2.0*self.radius/(self.width*self.aspect).min(self.height)).clamp(0.0,1.0),
+            feather:0.0,invert:false}
+    }
+}
+
 /// A span of one piece of media, placed on a track.
 #[derive(Clone, Debug)]
 pub struct Clip {
@@ -104,6 +141,8 @@ pub struct Clip {
     /// The shape that keeps part of the picture, when one does; its
     /// numbers ride the animation's mask tracks.
     pub mask: Option<ShapeMask>,
+    /// Fixed frame geometry, when content is framed by a Canvas preset.
+    pub canvas_frame:Option<CanvasFrame>,
 }
 
 /// How a layer's colour meets what is beneath it.
@@ -227,6 +266,7 @@ impl Clip {
             blend: Blend::Normal,
             hold: false,
             mask: None,
+            canvas_frame:None,
         }
     }
 
@@ -242,10 +282,11 @@ impl Clip {
 
     /// The placement at `time`: the clip's own, moved by its animation.
     pub fn transform_at(&self, time: Rational) -> Transform {
-        match &self.animation {
+        let content=match &self.animation {
             Some(animation) => animation.transform_at(self.transform, self.fraction_at(time)),
             None => self.transform,
-        }
+        };
+        self.canvas_frame.map_or(content,|frame|frame.compose(content))
     }
 
     /// The mask at `time`: the clip's own, its keyed numbers at their
@@ -740,5 +781,29 @@ mod tests {
         );
         assert_eq!(orphan, None);
         assert_eq!(timeline.clip_count(), 0);
+    }
+}
+
+#[cfg(test)]
+mod canvas_frame_tests {
+    use super::*;
+    #[test]
+    fn parent_composition_rotates_content_offsets_without_moving_aperture() {
+        let frame=CanvasFrame {scale:0.5,x:0.1,y:-0.1,width:0.4,height:0.4,rotation:90.0,radius:0.02,aspect:2.0};
+        let before=frame.aperture();
+        let result=frame.compose(Transform {scale:2.0,offset_x:0.2,offset_y:0.4,rotation:15.0,..Transform::default()});
+        assert!((result.scale-1.0).abs()<1e-10);
+        assert!(result.offset_x.abs()<1e-10);
+        assert!((result.offset_y-0.1).abs()<1e-10);
+        assert_eq!(result.rotation,105.0);assert_eq!(frame.aperture(),before);
+    }
+    #[test]
+    fn portrait_canvas_aperture_uses_its_shorter_side() {
+        let frame=CanvasFrame {scale:0.7,x:0.0,y:0.0,width:0.8,height:0.7,rotation:0.0,radius:0.02,aspect:0.5};
+        let mask=frame.aperture();
+        assert_eq!((mask.width,mask.height),(0.8,1.4));
+        let packed=mask.uniform(100.0,200.0,0.01);
+        assert!(crate::mask::coverage(&packed,0.5,0.5)>0.99);
+        assert!(crate::mask::coverage(&packed,0.01,0.5)<0.01);
     }
 }

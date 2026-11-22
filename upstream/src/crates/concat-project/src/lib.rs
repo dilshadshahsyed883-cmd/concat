@@ -34,7 +34,9 @@ pub mod drag_edit;
 pub mod caption_preview;
 pub mod gpu_captions;
 pub mod canvas_motion;
+pub mod animation_settings;
 pub mod canvas_preset;
+pub mod canvas_viewport;
 pub mod speed;
 pub mod srt;
 
@@ -5166,4 +5168,15 @@ mod tests {
             crate::delete_to_playhead(timeline, &gone, 5.0, PlayheadSide::Left, false).is_none()
         );
     }
+    #[test]
+    fn reapplying_effect_updates_one_type_and_preserves_unrelated_effects() {
+        use crate::model::{AppliedFilter,upsert_effect};
+        let mut first=AppliedFilter::new("concat.exposure");first.params.insert("stops".into(),0.5);
+        let other=AppliedFilter::new("concat.contrast");
+        let mut chain=vec![first.clone(),other.clone(),first];
+        let mut updated=AppliedFilter::new("concat.exposure");updated.params.insert("stops".into(),1.5);
+        upsert_effect(&mut chain,updated.clone());
+        assert_eq!(chain,vec![updated,other]);
+    }
+
 }

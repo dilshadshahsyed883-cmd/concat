@@ -1378,7 +1378,7 @@ export component ShelfGrid inherits Rectangle {
         auditioned => { root.auditioned(entry.id); }
         applied => {
             if root.page-kind == 2 && ParticleBulk.index-of(entry.id) >= 0 {
-                ParticleBulk.apply(ParticleBulk.index-of(entry.id), 0, true, ParticleBulk.images, ParticleBulk.videos);
+                ParticleBulk.apply(ParticleBulk.index-of(entry.id), 0, true, Keyframes.animation-images, Keyframes.animation-videos);
             } else { root.applied(entry.id, entry.name); }
         }
     }
@@ -1772,12 +1772,13 @@ export struct AnimationCardData {
     index: int,
     name: string,
     family: string,
-    mark: string,
+    art: image,
 }
 
 component AnimationCard inherits Rectangle {
     in property <AnimationCardData> item;
     in property <bool> current;
+    in property <bool> pool-selectable: false;
     callback picked(index: int);
     callback starred(index: int);
 
@@ -1793,19 +1794,19 @@ component AnimationCard inherits Rectangle {
         height: 52px;
         border-radius: Theme.r-sm;
         background: Theme.accent-soft;
-        Text {
-            text: root.item.mark;
-            font-size: 24px;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-            color: Theme.fg;
-        }
+        Image { x: 8px; y: 16px; width: parent.width - 16px; height: 34px;
+            source: root.item.art; image-fit: contain; }
         Text {
             x: 5px; y: 3px;
             text: root.item.family;
             font-size: Theme.fs-xs;
             color: Theme.fg-muted;
         }
+    }
+    if root.pool-selectable: Check {
+        x: parent.width - 28px; y: 28px;
+        checked: Keyframes.favourite-pool[root.item.index];
+        toggled(on) => {Keyframes.favourite-pool[root.item.index]=on;}
     }
     // Selection is keyboard accessible and never applies a clip animation.
     Button {
@@ -1861,6 +1862,7 @@ component AnimationFavoriteCards inherits VerticalLayout {
         visible: Keyframes.physics-favourites[entry.index];
         height: Keyframes.physics-favourites[entry.index] ? 104px : 0px;
         item: entry;
+        pool-selectable: true;
         current: Keyframes.animation-selected == entry.index;
         picked(id) => { root.picked(id); }
         starred(id) => { root.starred(id); }
@@ -1870,6 +1872,7 @@ component AnimationFavoriteCards inherits VerticalLayout {
         visible: Keyframes.physics-favourites[entry.index];
         height: Keyframes.physics-favourites[entry.index] ? 104px : 0px;
         item: entry;
+        pool-selectable: true;
         current: Keyframes.animation-selected == entry.index;
         picked(id) => { root.picked(id); }
         starred(id) => { root.starred(id); }
@@ -2036,8 +2039,7 @@ export component MediaPane inherits Rectangle {
             : root.tab == 5 ? 4
             : root.tab == 7 && root.adjustments-category == 1 ? 5
             : root.tab == 1 && root.text-category >= 1 ? 6
-            : root.tab == 6 ? 7
-            : root.tab == 10 && root.animation-page == 3 ? 8
+            : root.tab == 6 ? (root.adjustment-page == 3 ? 8 : root.adjustment-page == 0 ? 10 : root.adjustment-page == 1 ? 11 : root.adjustment-page == 2 ? 12 : 13)
             : -1;
         LibraryFocus.selected-id = "";
         LibraryFocus.selected-name = "";
@@ -2047,21 +2049,12 @@ export component MediaPane inherits Rectangle {
     changed tab => {
         Sounds.shown(root.tab == 0 && root.media-audio-view);
         CaptionPresetPreview.scope(root.tab == 1 && root.text-category == 1 && GpuCompatibility.enabled);
-        Keyframes.animation-browser = root.tab == 10 && root.animation-page == 0 && GpuCompatibility.enabled;
+        Keyframes.animation-browser = root.tab == 10 && GpuCompatibility.enabled;
         root.show-library();
     }
     changed media-audio-view => { Sounds.shown(root.tab == 0 && root.media-audio-view); }
-    property <bool> physics-images: true;
-    property <bool> physics-videos: true;
-    // 0 = full timeline, 1 = selected timeline clips.
-    property <int> physics-scope: 0;
-    property <int> physics-preset: 0;
-    property <bool> canvas-motion-page: false;
-    property <int> animation-page: 0;
-    changed animation-page => {
-        Keyframes.animation-browser = root.tab == 10 && root.animation-page == 0 && GpuCompatibility.enabled;
-        if (root.tab == 10) { root.show-library(); }
-    }
+    property <int> adjustment-page: 0;
+    changed adjustment-page => { if root.tab == 6 { root.show-library(); } }
     /// The Audio page's shelf: 0 = Mine, 1 = Concat, 10 = Voices,
     /// 11 = Styles.
     property <int> audio-category;
@@ -2094,39 +2087,40 @@ export component MediaPane inherits Rectangle {
     property <int> effects-shelf: root.audio-shelf ? 2 : 1;
 
     property <int> animation-filter: 0;
+    changed animation-filter => { Keyframes.animation-favourites-browser = root.animation-filter == 2; }
     property <[AnimationCardData]> animation-basic-cards: [
-        {index: 0, name: "Spring Zoom", family: "Physics", mark: "↗"},
-        {index: 1, name: "Pendulum Swing", family: "Physics", mark: "↶"},
-        {index: 2, name: "Gravity Bounce", family: "Physics", mark: "↕"},
-        {index: 3, name: "Elastic Pop", family: "Physics", mark: "◉"},
-        {index: 4, name: "Inertia Glide", family: "Physics", mark: "→"},
-        {index: 5, name: "Damped Shake", family: "Physics", mark: "≈"},
-        {index: 6, name: "Push In", family: "Basic", mark: "＋"},
-        {index: 7, name: "Pan Right", family: "Basic", mark: "→"},
-        {index: 8, name: "Fade In", family: "Basic", mark: "◐"}
+        {index: 0, name: "Spring Zoom", family: "Physics", art: @image-url("../assets/animation-card-0.svg")},
+        {index: 1, name: "Pendulum Swing", family: "Physics", art: @image-url("../assets/animation-card-1.svg")},
+        {index: 2, name: "Gravity Bounce", family: "Physics", art: @image-url("../assets/animation-card-2.svg")},
+        {index: 3, name: "Elastic Pop", family: "Physics", art: @image-url("../assets/animation-card-3.svg")},
+        {index: 4, name: "Inertia Glide", family: "Physics", art: @image-url("../assets/animation-card-4.svg")},
+        {index: 5, name: "Damped Shake", family: "Physics", art: @image-url("../assets/animation-card-5.svg")},
+        {index: 6, name: "Push In", family: "Basic", art: @image-url("../assets/animation-card-6.svg")},
+        {index: 7, name: "Pan Right", family: "Basic", art: @image-url("../assets/animation-card-7.svg")},
+        {index: 8, name: "Fade In", family: "Basic", art: @image-url("../assets/animation-card-8.svg")}
     ];
     property <[AnimationCardData]> animation-canvas-cards: [
-        {index: 9, name: "Top-left to Center", family: "Canvas", mark: "↘"},
-        {index: 10, name: "Top-right to Center", family: "Canvas", mark: "↙"},
-        {index: 11, name: "Bottom-left to Center", family: "Canvas", mark: "↗"},
-        {index: 12, name: "Bottom-right to Center", family: "Canvas", mark: "↖"},
-        {index: 13, name: "Center Pop", family: "Canvas", mark: "◉"},
-        {index: 14, name: "Zoom at Left", family: "Canvas", mark: "＋"},
-        {index: 15, name: "Zoom at Center", family: "Canvas", mark: "⊕"},
-        {index: 16, name: "Zoom at Right", family: "Canvas", mark: "＋"},
-        {index: 17, name: "Reverse to Corner", family: "Canvas", mark: "↖"},
-        {index: 18, name: "Slide from Left", family: "Canvas", mark: "→"},
-        {index: 19, name: "Slide from Right", family: "Canvas", mark: "←"},
-        {index: 20, name: "Slide from Top", family: "Canvas", mark: "↓"},
-        {index: 21, name: "Slide from Bottom", family: "Canvas", mark: "↑"},
-        {index: 22, name: "Diagonal Fly-in", family: "Canvas", mark: "↗"},
-        {index: 23, name: "Spring Settle", family: "Canvas", mark: "≋"},
-        {index: 24, name: "Documentary Pan", family: "Canvas", mark: "↔"},
-        {index: 25, name: "Fade and Scale", family: "Canvas", mark: "◐"},
-        {index: 26, name: "Alternating Inset", family: "Canvas", mark: "◇"},
-        {index: 27, name: "Breathing Loop", family: "Canvas", mark: "∿"},
-        {index: 28, name: "In / Hold / Out", family: "Canvas", mark: "▰"},
-        {index: 29, name: "Focus Journey", family: "Canvas", mark: "⌁"}
+        {index: 9, name: "Top-left to Center", family: "Canvas", art: @image-url("../assets/animation-card-9.svg")},
+        {index: 10, name: "Top-right to Center", family: "Canvas", art: @image-url("../assets/animation-card-10.svg")},
+        {index: 11, name: "Bottom-left to Center", family: "Canvas", art: @image-url("../assets/animation-card-11.svg")},
+        {index: 12, name: "Bottom-right to Center", family: "Canvas", art: @image-url("../assets/animation-card-12.svg")},
+        {index: 13, name: "Center Pop", family: "Canvas", art: @image-url("../assets/animation-card-13.svg")},
+        {index: 14, name: "Zoom at Left", family: "Canvas", art: @image-url("../assets/animation-card-14.svg")},
+        {index: 15, name: "Zoom at Center", family: "Canvas", art: @image-url("../assets/animation-card-15.svg")},
+        {index: 16, name: "Zoom at Right", family: "Canvas", art: @image-url("../assets/animation-card-16.svg")},
+        {index: 17, name: "Reverse to Corner", family: "Canvas", art: @image-url("../assets/animation-card-17.svg")},
+        {index: 18, name: "Slide from Left", family: "Canvas", art: @image-url("../assets/animation-card-18.svg")},
+        {index: 19, name: "Slide from Right", family: "Canvas", art: @image-url("../assets/animation-card-19.svg")},
+        {index: 20, name: "Slide from Top", family: "Canvas", art: @image-url("../assets/animation-card-20.svg")},
+        {index: 21, name: "Slide from Bottom", family: "Canvas", art: @image-url("../assets/animation-card-21.svg")},
+        {index: 22, name: "Diagonal Fly-in", family: "Canvas", art: @image-url("../assets/animation-card-22.svg")},
+        {index: 23, name: "Spring Settle", family: "Canvas", art: @image-url("../assets/animation-card-23.svg")},
+        {index: 24, name: "Documentary Pan", family: "Canvas", art: @image-url("../assets/animation-card-24.svg")},
+        {index: 25, name: "Fade and Scale", family: "Canvas", art: @image-url("../assets/animation-card-25.svg")},
+        {index: 26, name: "Alternating Inset", family: "Canvas", art: @image-url("../assets/animation-card-26.svg")},
+        {index: 27, name: "Breathing Loop", family: "Canvas", art: @image-url("../assets/animation-card-27.svg")},
+        {index: 28, name: "In / Hold / Out", family: "Canvas", art: @image-url("../assets/animation-card-28.svg")},
+        {index: 29, name: "Focus Journey", family: "Canvas", art: @image-url("../assets/animation-card-29.svg")}
     ];
 
 
@@ -2263,7 +2257,7 @@ export component MediaPane inherits Rectangle {
                         }
                         LibraryTab {
                             glyph: Glyph.slot;
-                            label: I18n.t("mediaPane.templates");
+                            label: "Adjustment";
                             current: root.tab == 6;
                             clicked => { root.tab = 6; }
                         }
@@ -2627,16 +2621,6 @@ export component MediaPane inherits Rectangle {
                     // Filters are colour looks, the way every video editor's
                     // users understand the word. What a voice or a room does
                     // to the sound is on the Effects page.
-                    if root.tab == 10 && GpuCompatibility.enabled: VerticalLayout {
-                        spacing: 1px;
-                        for label[index] in ["Animations", "Transform", "Canvas", "Canvas Presets"]: CategoryRow {
-                            label: label; height: 30px;
-                            current: root.animation-page == index;
-                            clicked => { root.animation-page = index; }
-                        }
-                    }
-
-
                 if root.tab == 5: VerticalLayout {
                         spacing: 1px;
                         CategoryHeading {
@@ -2690,16 +2674,10 @@ export component MediaPane inherits Rectangle {
 
                     if root.tab == 6: VerticalLayout {
                         spacing: 1px;
-                        CategoryHeading {
-                            height: 26px;
-                            title: I18n.t("mediaPane.templates");
-                            open: root.templates-open;
-                            toggled => { root.templates-open = !root.templates-open; }
-                        }
-                        if root.templates-open: CategoryRow {
-                            height: 24px;
-                            label: I18n.t("mediaPane.myTemplates");
-                            current: true;
+                        for label[index] in ["Transform", "Mirror / Flip", "Canvas", "Canvas Presets", "Content Zoom / Crop"]: CategoryRow {
+                            label: label; height: 30px;
+                            current: root.adjustment-page == index;
+                            clicked => { root.adjustment-page = index; }
                         }
                     }
                 }
@@ -3086,7 +3064,7 @@ export component MediaPane inherits Rectangle {
                 // through Keyframes; no second motion format is introduced.
                 if root.tab == 10 && GpuCompatibility.enabled: VerticalLayout {
                     spacing: 8px;
-                if root.animation-page == 0: VerticalLayout {
+                VerticalLayout {
                     padding: 8px;
                     spacing: 8px;
                     Text { text: "Animations"; color: Theme.fg; font-size: Theme.fs; }
@@ -3095,7 +3073,7 @@ export component MediaPane inherits Rectangle {
                         color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
                     }
                     SegmentedControl {
-                        options: ["Basic", "Canvas", "Favorites"];
+                        options: ["Basic / Physics", "Canvas", "Favorites"];
                         current: root.animation-filter;
                         changed(index) => { root.animation-filter = index; }
                     }
@@ -3104,7 +3082,7 @@ export component MediaPane inherits Rectangle {
                         Text { text: "Basic / Physics"; color: Theme.fg-muted; font-size: Theme.fs-sm; }
                         AnimationCardGrid {
                             entries: root.animation-basic-cards;
-                            picked(index) => { Keyframes.animation-selected = index; }
+                            picked(index) => { Keyframes.inspect(index); }
                             starred(index) => { Keyframes.toggle-physics-favourite(index); }
                         }
                     }
@@ -3113,7 +3091,7 @@ export component MediaPane inherits Rectangle {
                         Text { text: "Canvas Motion"; color: Theme.fg-muted; font-size: Theme.fs-sm; }
                         AnimationCardGrid {
                             entries: root.animation-canvas-cards;
-                            picked(index) => { Keyframes.animation-selected = index; }
+                            picked(index) => { Keyframes.inspect(index); }
                             starred(index) => { Keyframes.toggle-physics-favourite(index); }
                         }
                     }
@@ -3123,20 +3101,13 @@ export component MediaPane inherits Rectangle {
                         AnimationFavoriteCards {
                             basic: root.animation-basic-cards;
                             canvas: root.animation-canvas-cards;
-                            picked(index) => { Keyframes.animation-selected = index; }
+                            picked(index) => { Keyframes.inspect(index); }
                             starred(index) => { Keyframes.toggle-physics-favourite(index); }
                         }
                     }
                 }
-                    if root.animation-page == 1: MediaLayoutPanel { canvas: false; }
-                    if root.animation-page == 2: MediaLayoutPanel { canvas: true; }
-                    if root.animation-page == 3: VerticalLayout {
-                        spacing: 8px;
-                        padding: 8px;
-                        Text { text: "Canvas Presets"; color: Theme.fg; font-size: Theme.fs; font-weight: Theme.weight-title; }
-                        CanvasPresetLibrary { }
-                    }
                 }
+
 
 
                 if root.tab == 5: VerticalLayout {
@@ -3229,20 +3200,13 @@ export component MediaPane inherits Rectangle {
                         : I18n.t("mediaPane.noLutsYet");
                 }
 
-                // Templates: the save affordance, then the gallery of saved
-                // templates, which shows its empty state until one is saved.
-                if root.tab == 6: VerticalLayout {
-                    padding: 8px;
-                    spacing: 8px;
-                    HorizontalLayout {
-                        ImportButton { label: I18n.t("mediaPane.saveProjectTemplate"); glyph: Glyph.slot; clicked => { root.save-template(); } }
-                    }
-                    Text {
-                        text: "Use Save Project Template to export the current project as a template. This editor has no selectable template gallery yet; no unavailable preset cards are shown.";
-                        color: Theme.fg-muted;
-                        font-size: Theme.fs-sm;
-                        wrap: word-wrap;
-                    }
+                if root.tab == 6 && root.adjustment-page == 3: CanvasPresetLibrary { }
+                if root.tab == 6 && root.adjustment-page != 3: VerticalLayout {
+                    padding: 8px; spacing: 8px;
+                    Text { text: root.adjustment-page == 0 ? "Transform" : root.adjustment-page == 1 ? "Mirror / Flip" : root.adjustment-page == 2 ? "Canvas" : "Content Zoom / Crop";
+                        color: Theme.fg; font-size: Theme.fs-lg; font-weight: Theme.weight-title; }
+                    Text { text: "Choose eligible media with the shared controls in Details, adjust its settings, then use Apply Selected or Apply All.";
+                        color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
                 }
 
             }

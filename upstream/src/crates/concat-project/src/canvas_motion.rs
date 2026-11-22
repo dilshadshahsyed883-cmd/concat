@@ -347,12 +347,12 @@ impl CanvasMotionPreset {
         Ok(Command::Batch { commands })
     }
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum MotionEasing {
     Linear,
     Smooth,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct CanvasMotionControls {
     pub start_scale: f64,
     pub end_scale: f64,

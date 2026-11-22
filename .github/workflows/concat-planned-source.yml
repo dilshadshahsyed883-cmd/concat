@@ -25,7 +25,7 @@ jobs:
       - name: Install FFmpeg for real-media ZIP and caption audio fixtures
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg libvulkan1 mesa-vulkan-drivers
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -33,6 +33,11 @@ jobs:
       - name: Rust project, compatibility and undo tests
         working-directory: upstream/src
         run: cargo test --locked -p concat-project --features schema --lib
+      - name: Fixed Canvas viewport native GPU/reference parity
+        working-directory: upstream/src
+        env:
+          CONCAT_REQUIRE_GPU: '1'
+        run: cargo test --locked -p concat-render --lib fixed_
       - name: Native glyph rendering and complete effect catalogue fixtures
         working-directory: upstream/src
         run: |

@@ -77,6 +77,19 @@ impl ClipKind {
     }
 }
 
+/// Replace the addressed effect type in place, preserving other effect types.
+/// Legacy duplicates of that type collapse to a single updated instance.
+pub fn upsert_effect(chain:&mut Vec<AppliedFilter>,mut entry:AppliedFilter) {
+    if let Some(index)=chain.iter().position(|old|old.id==entry.id) {
+        for (name,keys) in &chain[index].keys {
+            entry.keys.entry(name.clone()).or_insert_with(||keys.clone());
+        }
+        chain[index]=entry.clone();
+        let mut kept=false;
+        chain.retain(|old|if old.id!=entry.id {true}else if kept {false}else{kept=true;true});
+    } else {chain.push(entry);}
+}
+
 /// One audio stream of a media file, as the probe reported it. A screen
 /// recording keeps the desktop's sound and the microphone as two of these;
 /// a clip names the one it plays by `index`.
@@ -2180,6 +2193,13 @@ impl Clip {
         } else {
             self.rotation
         };
+        if let Some(viewport)=crate::canvas_viewport::Viewport::of(self) {
+            let aperture=(viewport.width*f64::from(frame.0),viewport.height*f64::from(frame.1));
+            let own_fit=(aperture.0/picture.0).min(aperture.1/picture.1);
+            let global_fit=(f64::from(frame.0)/picture.0).min(f64::from(frame.1)/picture.1);
+            return framing_scale(framing,picture,aperture,rotation)
+                .map(|scale|(scale*own_fit/(global_fit*viewport.scale)).clamp(ranges::MIN_SCALE,ranges::MAX_SCALE));
+        }
         framing_scale(
             framing,
             picture,
