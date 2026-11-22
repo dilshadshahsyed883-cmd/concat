@@ -1,4 +1,4 @@
-# Concat Web SaladCloud idle auto-stop (integration branch)
+# Concat Web SaladCloud idle auto-stop (canonical main)
 
 The owner-only GPU Config page includes an opt-in **Salad Auto Shutdown** toggle
 (default OFF), with a 1–60 minute up/down input (default 5, step 1).
@@ -28,5 +28,5 @@ other services or people submit jobs directly to the same worker: the existing
 worker protocol reports active renders but does not enumerate all queued
 out-of-band jobs. Auto-stop does not auto-start stopped Salad groups.
 
-Release is manual from exact integration SHA via
+Release is manual from an exact reviewed main SHA via
 `deploy/manual-integration-release.sh`; GitHub CI does not deploy.
