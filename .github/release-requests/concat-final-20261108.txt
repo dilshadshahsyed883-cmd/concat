@@ -40,3 +40,15 @@ targets and shared generated-key ownership guard, transition disclosure and
 right-side random actions, and staged caption inspector cleanup. Preserve
 existing render contracts and keep previous verified artifacts for rollback.
 No live worker/VPS deployment is requested.
+
+REBUILD REQUEST — 2026-11-22 ASR PyAV decoder regression
+Restore av==18.1.0 for faster-whisper==1.2.1 to prevent
+open() got an unexpected keyword argument 'metadata_errors' on GPU
+caption transcription. Keep the 'small' ASR model as the runtime default
+and preloaded image asset. Require actual WAV decode via
+faster_whisper.audio.decode_audio inside the built image before publishing
+the new SHA-tagged Salad CUDA candidate to GHCR. Publish matching
+Windows image/EXE release artifacts only when existing gates pass.
+Record exact source SHA, image digest and smoke evidence.
+This is a candidate build, NOT permission to change the live Salad
+deployment, VPS, queue, production routing or previous verified releases.

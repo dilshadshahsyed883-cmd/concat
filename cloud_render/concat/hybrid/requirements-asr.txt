@@ -1,4 +1,6 @@
 # Optional GPU ASR runtime. Installing this does not start/download a model.
 faster-whisper==1.2.1
+# faster-whisper 1.2.1 passes metadata_errors to av.open; PyAV 19 removed it.
+av==18.1.0
 nvidia-cublas-cu12==12.8.4.1
 nvidia-cudnn-cu12==9.8.0.87
