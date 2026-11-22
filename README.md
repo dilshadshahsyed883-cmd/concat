@@ -65,48 +65,61 @@ logout**, without contacting Salad, Google OAuth or real YouTube. A genuine
 GPU/Drive/OAuth acceptance check is required at controlled VPS staging before
 claiming full external-service readiness.
 
-## Deployment policy
+## Canonical source of truth (2026-11-22)
 
-Code changes happen in GitHub feature branches and PRs. **Current release target:** `integration/personal-release-20261119` (not `main`).
-After checks pass, pin that integration branch's exact verified SHA and deploy
-manually from VPS terminal using the existing Concat-only
-`deploy/guarded-release.sh` and independent `concat-web.service`.
-GitHub Actions is CI-only and **cannot deploy to VPS**.
+**`main` is the sole source of truth for Concat Web.** On 2026-11-22, the complete
+`integration/personal-release-20261119` history and implementation were
+merged into `main`, preserving the earlier main-only GPU Config cleanup and
+the current Salad idle auto-shutdown feature.
+
+- Start new work on short-lived feature/fix branches based on `main`.
+- Open pull requests **into `main`**, run essential and security regression
+  checks, and merge reviewed changes. Do not make further release commits
+  directly to the legacy integration branch.
+- Release **only an exact reviewed, CI-verified `main` SHA**. Never deploy a
+  feature-branch SHA, legacy integration SHA, or floating `main` label.
+- **GitHub Actions is verification only**: no GitHub SSH/Tailscale deployment,
+  service restarts, Nginx cutover or secret provisioning. All Concat Web VPS
+  staging remains a separate, authorized, manual terminal operation.
+- The existing `deploy/manual-integration-release.sh` filename is retained
+  for backwards compatibility, but its **branch verification and clone now
+  target `main`**. The checked-out source SHA must match the exact SHA passed
+  to the script.
 
 See [release gates](deploy/RELEASE_GATES.md) for private environment,
 preflight, backup/rollback, loopback staging, and separate HTTPS Nginx cutover.
-The 2026-11-18 SSO notes are historical and no longer apply to the current
-standalone-login design.
+See [Salad idle auto-shutdown](deploy/SALAD_IDLE_AUTOSTOP.md) for the opt-in
+1–60 minute timer (default 5) and required dedicated group identifiers.
 
-## Integration-only release state (2026-11-19)
+## Main-only guarded VPS staging
 
-The user requested **not to merge into `main`**. The integration branch contains the consolidated PR #13 implementation and preserved PR #12 audit evidence. Only a separately verified, explicitly approved terminal release may use a pinned SHA of this integration branch. This is a conscious temporary exception to the earlier protected-main-only release procedure. GitHub Actions remains CI-only. Keep `main` and existing VPS1 services unchanged.
-
-## Guarded integration-only VPS staging
-
-After this integration commit passes both GitHub CI checks, manually execute `deploy/manual-integration-release.sh` on the VPS with its **exact verified SHA** and `stage` mode. It validates the remote integration branch SHA, clones exactly that code, takes private backups of the existing Concat helper/environment and SQLite state, installs the new local-admin Concat-only helper, provisions admin credentials privately (once, interactively), runs preflight, packages that same SHA and stages on loopback with rollback-aware smoke tests. It does **not** modify Nginx or public HTTPS ingress; that is a separate guarded terminal cutover after host/DNS/TLS validation.
-
-Example (run in the VPS terminal, using the verified integration SHA):
+After GitHub checks pass on `main`, use an exact, verified 40-hex `main`
+SHA in the VPS terminal. This stages only Concat Web's isolated loopback
+service with a private database/config backup and rollback-aware smoke tests.
+It does **not** modify the public Nginx site, other VPS services or Salad
+GPU image; public HTTPS cutover requires separate checks and authorization.
 
 ```bash
-SHA=<exact-verified-40-hex-integration-SHA>
+SHA=<exact-reviewed-40-hex-main-SHA>
 TMP=$(mktemp)
-curl -fsSL "https://raw.githubusercontent.com/dilshadshahsyed883-cmd/concat-web/$SHA/deploy/manual-integration-release.sh" -o "$TMP" && sudo bash "$TMP" "$SHA" stage
+curl -fsSL "https://raw.githubusercontent.com/dilshadshahsyed883-cmd/concat-web/$SHA/deploy/manual-integration-release.sh" -o "$TMP"
+sudo bash "$TMP" "$SHA" preflight
+# Only after preflight is approved, run: sudo bash "$TMP" "$SHA" stage
 rm -f "$TMP"
 ```
 
-No password, hash, API key or secret may be entered in this chat or GitHub. The credential bootstrap prompts only in the VPS terminal. Do not execute this unless the local VPS hostname, storage, separate service, HTTPS configuration and host/operator identity are confirmed; the script fails closed otherwise.
+No passwords, hashes, API keys or secrets belong in GitHub or chat. Private
+credential bootstrap runs only in the VPS terminal.
 
+## Historical Nginx audit (2026-11-19; reverify before staging)
 
-## Existing Nginx site (audited 2026-11-19)
-
-The live VPS already has a root-owned Concat placeholder
+The 2026-11-19 audit observed a root-owned Concat placeholder
 `/etc/nginx/sites-available/concat-web.conf`, linked from
 `sites-enabled`. Its HTTPS `/healthz` returns a static HTTP 200 and is
 **not** proof that Concat is running. The exact file fingerprint is documented
 in `docs/NGINX_ROUTING_AUDIT_20261119.md`.
 
-After an exact-SHA integration release is staged and its independent loopback
+After an exact-SHA main release is staged and its independent loopback
 health/login/401 gates pass, use only `deploy/nginx-adopt-existing.py`
 with `audit`, then manually `activate <same-SHA>`. The utility backs up
 the existing Concat site and surgically substitutes only the HTTPS
