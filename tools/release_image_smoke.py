@@ -10,6 +10,7 @@ import sys
 import tempfile
 import threading
 import unittest
+import wave
 
 from cloud_render.concat.gpu.worker import Handler, RenderWorker, SaladDualStackHTTPServer
 from cloud_render.concat.gpu.caption_jobs import preset_template
@@ -27,7 +28,20 @@ for name in ('classic-subtitle', 'bold-highlight', 'cinematic-title', 'minimal-c
     assert preset_template('cuda-caption.' + name)
 models = sorted(str(p.relative_to('/worker/asr-models')) for p in Path('/worker/asr-models').rglob('model.bin'))
 assert models, 'default small ASR model weights missing'
-versions = {name: importlib.metadata.version(name) for name in ('faster-whisper', 'ctranslate2', 'cupy-cuda12x', 'PyNvVideoCodec', 'Pillow')}
+versions = {name: importlib.metadata.version(name) for name in ('faster-whisper', 'av', 'ctranslate2', 'cupy-cuda12x', 'PyNvVideoCodec', 'Pillow')}
+assert versions['av'] == '18.1.0', 'GPU image has incompatible PyAV version: ' + versions['av']
+# Exercise the exact decode path used by faster-whisper before publishing.
+# Import/model startup alone cannot detect av.open(metadata_errors=...) regressions.
+from faster_whisper.audio import decode_audio
+with tempfile.TemporaryDirectory() as audio_probe:
+    wav_path = Path(audio_probe) / 'asr-compat.wav'
+    with wave.open(str(wav_path), 'wb') as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(16000)
+        wav.writeframes(b'\x00\x00' * 16000)
+    samples = decode_audio(str(wav_path), sampling_rate=16000)
+    assert len(samples) >= 4000, 'faster-whisper failed to decode the test WAV'
 with tempfile.TemporaryDirectory() as work:
     token = secrets.token_hex(32)
     worker = RenderWorker(Path(work), token=token)
@@ -55,6 +69,8 @@ with tempfile.TemporaryDirectory() as work:
 sys.path.append('/src')
 suite = unittest.defaultTestLoader.loadTestsFromNames([
     'cloud_render.concat.tests.test_render_contract',
+    'cloud_render.concat.tests.test_asr_pyav_compat',
+    'cloud_render.concat.tests.test_asr_timestamp_types',
     'cloud_render.concat.tests.test_gpu_png_support',
     'cloud_render.concat.tests.test_gpu_caption_jobs',
     'cloud_render.concat.tests.test_gpu_compat_validation',
@@ -63,6 +79,6 @@ result = unittest.TextTestRunner(stream=sys.stderr, verbosity=2).run(suite)
 assert result.wasSuccessful(), 'image contract regressions failed'
 print(json.dumps({'source_sha': expected, 'render_contract': capabilities['render_contract'],
     'worker_startup': 'passed', 'authenticated_capabilities': 'passed', 'presets': 9,
-    'asr_model_assets': models, 'runtime_versions': versions,
+    'asr_model_assets': models, 'asr_decoder_smoke': 'passed', 'runtime_versions': versions,
     'tests_run': result.testsRun, 'hardware_skips': len(result.skipped),
     'physical_gpu_verified': False}, indent=2))
