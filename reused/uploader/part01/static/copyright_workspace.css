@@ -86,3 +86,17 @@ body.lum-copyright-workspace .concat-media-footer button { flex: 0 0 auto; }
 .concat-metadata-dialog input { box-sizing: border-box; width: 100%; min-width: 0; }
 .concat-metadata-dialog p { font-size: 13px; overflow-wrap: anywhere; }
 .concat-metadata-actions { justify-content: flex-end; }
+.concat-thumbnail-dialog { box-sizing:border-box; width:min(960px,calc(100vw - 24px)); max-height:calc(100dvh - 24px); overflow:auto; border:1px solid #dce2ef; border-radius:14px; padding:20px; }
+.concat-thumbnail-dialog::backdrop { background:rgba(16,24,40,.4); }
+.concat-thumbnail-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin:12px 0; }
+.concat-thumbnail-dialog p { font-size:13px; overflow-wrap:anywhere; }
+.concat-thumbnail-dialog input[type=file] { max-width:100%; }
+.concat-thumbnail-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(180px,100%),1fr)); gap:12px; }
+.concat-thumbnail-tile { border:1px solid #dce2ef; border-radius:10px; padding:10px; min-width:0; }
+.concat-thumbnail-tile img { width:100%; aspect-ratio:16/9; object-fit:contain; background:#f3f4f6; }
+.concat-thumbnail-tile p { overflow-wrap:anywhere; }
+.concat-thumbnail-tile button { margin:4px 4px 0 0; }
+.concat-thumbnail-progress { margin:8px 0; overflow-wrap:anywhere; font-size:12px; }
+.concat-thumbnail-progress progress { display:block; width:100%; }
+.concat-processing::before { content:""; display:inline-block; width:12px; height:12px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:concat-spin .8s linear infinite; margin-right:8px; vertical-align:middle; }
+@keyframes concat-spin { to { transform:rotate(360deg); } }

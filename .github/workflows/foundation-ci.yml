@@ -43,6 +43,7 @@ jobs:
           node --check reused/uploader/part01/static/concat_media_picker.js
           node tests/js/channel_picker.test.js
           node tests/js/concat_media_picker.test.js
+          node --check reused/uploader/part01/static/concat_thumbnail_library.js
           node --check reused/uploader/part01/static/concat_metadata.js
           node tests/js/concat_metadata.test.js
       - name: Concat Media desktop and mobile browser regressions

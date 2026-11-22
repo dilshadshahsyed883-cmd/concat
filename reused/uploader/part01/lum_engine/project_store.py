@@ -202,6 +202,17 @@ class ProjectStore:
                 sheet_id TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )""")
+            conn.execute("""CREATE TABLE IF NOT EXISTS concat_thumbnails (
+                id TEXT PRIMARY KEY, owner_username TEXT NOT NULL COLLATE NOCASE,
+                name TEXT NOT NULL COLLATE NOCASE, sha256 TEXT NOT NULL,
+                size INTEGER NOT NULL, suffix TEXT NOT NULL, created_at TEXT NOT NULL,
+                UNIQUE(owner_username,name)
+            )""")
+            conn.execute("""CREATE TABLE IF NOT EXISTS concat_thumbnail_uses (
+                project_id INTEGER PRIMARY KEY REFERENCES projects(id),
+                thumbnail_id TEXT NOT NULL, sha256 TEXT NOT NULL,
+                applied_at TEXT NOT NULL DEFAULT ''
+            )""")
             conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
             for key, value in DEFAULT_SETTINGS.items():
                 conn.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)", (key, value))
@@ -366,6 +377,14 @@ class ProjectStore:
                     raise ValueError("This Concat video is already queued or uploaded") from exc
                 raise ValueError("This video was already queued or uploaded to the selected channel") from exc
             project_id = int(cur.lastrowid)
+            library_id = str(data.get("library_thumbnail_id") or "")
+            if library_id:
+                row = conn.execute("SELECT sha256 FROM concat_thumbnails WHERE id=? AND owner_username=? COLLATE NOCASE",
+                                   (library_id, values[0])).fetchone()
+                if not row or row[0] != str(data.get("library_thumbnail_sha") or ""):
+                    raise ValueError("Library thumbnail changed or was deleted; select it again")
+                conn.execute("INSERT INTO concat_thumbnail_uses(project_id,thumbnail_id,sha256) VALUES(?,?,?)",
+                             (project_id, library_id, row[0]))
             # Keep the manual queue paused on Concat admission. A timed job
             # uses an independent scheduled pause gate and starts when due.
             if os.getenv("LUM_ENGINE_INSTANCE") == "concat":

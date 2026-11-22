@@ -8,6 +8,7 @@ from typing import Any
 from .config import THUMBNAIL_ROOT, STAGING_ROOT, ensure_dirs
 from .copyright_handoff import delete_verified_source, delete_verified_merger_output
 from .concat_source import delete_verified_concat_media
+from .thumbnail_library import ThumbnailLibrary
 from .drive_source import cleanup_project_staging, stage_drive_file
 from .project_store import ProjectStore, now_iso
 from .studio_tenants import StudioTenants
@@ -284,6 +285,38 @@ class VPSUploadWorker:
         project = self.store.get(project_id) or project
         self._finish_verified(project_id, project, staging)
 
+    def _ensure_library_thumbnail_applied(self, project_id, project):
+        library = ThumbnailLibrary(self.store)
+        use = library.use(project_id)
+        if not use or use["applied_at"]:
+            return use
+        core = self.db.get_video(int(project.get("core_video_id") or 0)) or {}
+        if str(core.get("youtube_video_id") or "") != str(project["youtube_video_id"]):
+            raise RuntimeError("Thumbnail recovery requires the verified core video ID")
+        if core.get("thumbnail_stage_state") != "SUCCEEDED":
+            # Retry only thumbnails.set, never videos.insert/process_queue.
+            # This also recovers a crash after the video receipt but before a
+            # thumbnail success receipt was persisted by the wrapper.
+            import hashlib
+            from googleapiclient.http import MediaFileUpload
+            thumb = Path(str(project.get("thumbnail_path") or ""))
+            if thumb.is_symlink() or THUMBNAIL_ROOT.resolve() not in thumb.resolve().parents:
+                raise RuntimeError("Unsafe staged library thumbnail")
+            with os.fdopen(os.open(thumb, os.O_RDONLY | os.O_NOFOLLOW), "rb") as stream:
+                if hashlib.file_digest(stream, "sha256").hexdigest() != use["sha256"]:
+                    raise RuntimeError("Staged library thumbnail checksum changed")
+            token = str(core.get("channel_token_file_path") or core.get("token_file_path") or "")
+            if not token:
+                raise RuntimeError("Thumbnail recovery requires the owner channel token")
+            proxy = {key: core.get(key) or "" for key in
+                     ("proxy_scheme", "proxy_host", "proxy_port", "proxy_username", "proxy_password")}
+            youtube = self.auth.build_youtube_service(token, proxy_config=proxy)
+            youtube.thumbnails().set(videoId=project["youtube_video_id"],
+                media_body=MediaFileUpload(str(thumb), mimetype="image/png" if thumb.suffix == ".png" else "image/jpeg")).execute()
+        library.mark_applied(project_id)
+        self.store.event(project_id, "YouTube library thumbnail apply confirmed; cleanup eligible")
+        return library.use(project_id)
+
     def _finish_verified(self, project_id: int, project: dict[str, Any], staging: Path | None) -> None:
         """Idempotent verified-only cleanup, never reupload on a cleanup retry."""
         if not project.get("remote_verified_at") or not project.get("youtube_video_id"):
@@ -293,6 +326,7 @@ class VPSUploadWorker:
             self.store.update(project_id, concat_cleanup_pending=1,
                 concat_cleanup_retry_at=(datetime.now(timezone.utc) + timedelta(seconds=60)).isoformat())
         self.store.update(project_id, status="CLEANING", progress=99)
+        thumbnail_use = self._ensure_library_thumbnail_applied(project_id, project)
         if self.store.setting("delete_staged_after_verified", "1") == "1":
             # Folder sources are separate handoff copies. Never delete the
             # protected Google Drive original or Video Merger master output.
@@ -365,6 +399,23 @@ class VPSUploadWorker:
                 self.store.event(project_id,
                     "Verified Concat Media original deleted after YouTube upload"
                     if removed else "Verified Concat Media original was already absent")
+        if thumbnail_use:
+            library = ThumbnailLibrary(self.store)
+            with self.store.connect() as conn:
+                busy = library.used(conn, str(project["owner_username"]), thumbnail_use["thumbnail_id"], exclude=project_id)
+            if busy:
+                self.store.update(project_id, status="COMPLETED", progress=100, cleanup_verified_at=None,
+                                  error_message="Library thumbnail cleanup deferred; another queue entry uses it")
+                self.store.event(project_id, "Library thumbnail deletion deferred until other queue entries finish")
+                return
+            library.delete(str(project["owner_username"]), thumbnail_use["thumbnail_id"],
+                           project_id=project_id, fingerprint=thumbnail_use["sha256"])
+            thumb = Path(str(project.get("thumbnail_path") or ""))
+            if thumb.exists() or thumb.is_symlink():
+                if thumb.is_symlink() or THUMBNAIL_ROOT.resolve() not in thumb.resolve().parents:
+                    raise RuntimeError("Unsafe staged thumbnail cleanup path")
+                thumb.unlink()
+            self.store.event(project_id, "Verified library thumbnail original and staged copy cleaned")
         self.store.update(project_id, status="COMPLETED", progress=100,
                           cleanup_verified_at=now_iso(), concat_cleanup_pending=0,
                           concat_cleanup_retry_at="", error_message="")

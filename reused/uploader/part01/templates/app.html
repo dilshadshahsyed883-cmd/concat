@@ -136,6 +136,9 @@
       </div>
       {% if engine_instance == 'concat' %}
       <label class="lum-field"><span>Thumbnail — optional (JPG/PNG, maximum {{ max_thumbnail_bytes // (1024 * 1024) }} MB)</span><input id="concat-thumbnail" data-max-thumbnail-bytes="{{ max_thumbnail_bytes }}" name="thumbnail" type="file" accept="image/png,image/jpeg"></label>
+      <input type="hidden" name="library_thumbnail_id" value="" data-library-thumbnail-id>
+      <button class="lum-button secondary" type="button" data-thumbnail-library-open>Thumbnail Library</button>
+      {% include 'concat_thumbnail_library.html' %}
       <div class="concat-thumbnail-preview" data-concat-thumbnail-preview hidden><img alt="Selected thumbnail preview"></div>
       <p class="concat-thumbnail-error" data-concat-thumbnail-error role="alert" hidden></p>
       {% else %}
@@ -158,7 +161,8 @@
     </section>
     <section class="lum-card lum-span-2 lum-submit-card">
       {% if engine_instance != 'concat' %}<div><strong>Verified upload cleanup</strong><p>VPS video copies are deleted after YouTube verification. Failed uploads keep files for retry; Drive originals are retained.</p></div>{% endif %}
-      <button class="lum-button primary" type="submit">+ Add Video to Queue</button>
+      {% if engine_instance == 'concat' %}<p data-concat-queue-status role="status" aria-live="polite"></p>{% endif %}
+      <button class="lum-button primary" type="submit" {% if engine_instance == 'concat' %}data-concat-add-queue{% endif %}>+ Add Video to Queue</button>
     </section>
   </form>
   {# Selector runs from copyright_video_picker.js. This form must not depend on inline scripts. #}

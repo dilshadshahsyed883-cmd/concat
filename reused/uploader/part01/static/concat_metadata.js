@@ -4,7 +4,7 @@
   async function post(url, body) {
     const response = await fetch(url, {
       method: "POST", credentials: "same-origin", cache: "no-store",
-      headers: {Accept: "application/json"}, body
+      headers: {Accept: "application/json", "X-Concat-Thumbnails": "1"}, body
     });
     let data;
     try { data = await response.json(); }
@@ -38,7 +38,7 @@
     // Edits that are later reverted must also invalidate a pending response.
     let changed = false;
     const markChanged = () => { changed = true; };
-    const watched = [select, link, title, description];
+    const watched = [select, link, title, description, form.querySelector("#concat-thumbnail"), form.querySelector("[data-library-thumbnail-id]")].filter(Boolean);
     watched.forEach(field => {
       field.addEventListener("input", markChanged);
       field.addEventListener("change", markChanged);
@@ -66,7 +66,8 @@
         field.dispatchEvent(new Event("input", {bubbles: true}));
         field.dispatchEvent(new Event("change", {bubbles: true}));
       }
-      status.textContent = "Title and description synced. Review before adding to queue.";
+      if (Object.hasOwn(data, "thumbnail")) globalThis.ConcatThumbnailLibrary?.apply(form, data.thumbnail);
+      status.textContent = "Title and description synced. " + (data.thumbnail_message || "Review before adding to queue.");
     } catch (error) {
       if (button.isConnected) status.textContent = error.message;
     } finally {
