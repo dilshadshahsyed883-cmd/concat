@@ -15,6 +15,14 @@ pub(super) fn apply(
     command: Command,
 ) -> Result<Outcome, CommandError> {
     match command {
+        Command::ApplyGeneratedMotion { clip_id, expected_keys, keys, preset, canvas_style } => {
+            let Some(clip) = project.active_mut().clip_mut(&clip_id) else {
+                return Ok(Outcome::default());
+            };
+            let applied = crate::motion_preset::replace_generated(clip, &expected_keys, keys, preset, canvas_style)?;
+            Ok(Outcome { created_id: None, applied })
+        }
+
         Command::UpdateClip { clip_id, patch } => {
             let timeline = project.active_mut();
             let Some(clip) = timeline.clip_mut(&clip_id) else {

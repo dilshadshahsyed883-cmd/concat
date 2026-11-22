@@ -1255,6 +1255,7 @@ impl From<KeyEase> for concat_core::animate::Ease {
 /// meaning the same thing after the clip's own scale or gain is changed
 /// underneath it; the conversion to relative happens on the way out, in
 /// `concat_export::flatten::export_keys`.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClipKey {
@@ -2370,6 +2371,7 @@ impl Clip {
         if !sane {
             return;
         }
+        let owned_motion = crate::motion_preset::generated_ownership(self);
         let (a, b) = (from / old, to / old);
         for property in KeyProperty::ALL {
             if !self.is_keyed(property) {
@@ -2414,6 +2416,7 @@ impl Clip {
             link.sort_keys();
         }
         self.sort_keys();
+        if let Some(saved) = owned_motion { crate::motion_preset::refresh_ownership(self, saved); }
     }
 
     /// Takes on the keys of `piece`, a clip that sat `offset` seconds

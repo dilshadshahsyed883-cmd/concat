@@ -10,7 +10,7 @@ use concat_project::canvas_motion::{CanvasMotionControls, CanvasMotionPreset};
 
 use super::{
     AppliedFilter, Catalogue, Clip, ClipPatch, Command, MotionPreset, PackageKind, Studio, Transition,
-    gpu_catalogue_has, key_commands, t, tf,
+    gpu_catalogue_has, t, tf,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -67,8 +67,16 @@ struct GeneratedMotion {
     keys: Vec<ClipKey>,
 }
 
-/// Keep the signatures of preset keys this editing session produced. The
-/// project stores ordinary editable keys and needs no new fields.
+fn generated_motion_command(clip: &Clip, generated: &GeneratedMotion,
+    canvas_style: Option<(f64, Option<concat_project::model::ClipMask>)>) -> Command {
+    Command::ApplyGeneratedMotion {
+        clip_id: clip.id.clone(), expected_keys: clip.keys.clone(), keys: generated.keys.clone(),
+        preset: motion_id(generated.preset).into(), canvas_style,
+    }
+}
+
+/// Legacy session signatures supplement persisted per-clip ownership.
+/// Authoritative ownership and undo history now live in the project snapshots.
 #[derive(Default)]
 pub(super) struct BulkMotion(HashMap<(String, String), Vec<GeneratedMotion>>);
 
@@ -759,9 +767,7 @@ impl Studio {
                 continue;
             }
             let generated = choices[chosen].clone();
-            let mut result = clip.as_ref().clone();
-            result.keys = generated.keys.to_vec();
-            commands.extend(key_commands(&clip.id, clip, &result));
+            commands.push(generated_motion_command(clip, &generated, None));
             updates.push((target, generated));
         }
         if commands.is_empty() {
@@ -834,20 +840,17 @@ impl Studio {
             random_assignment(&plans.iter().map(|p|(p.2.len(),p.3)).collect::<Vec<_>>(), fresh_draw())
         };
         let mut commands = Vec::new(); let mut updates = Vec::new();
-        for ((clip, target, choices, old), chosen) in plans.into_iter().zip(picks) {
-            if old == Some(chosen) { continue; }
-            let generated = choices[chosen].clone(); let mut result=clip.as_ref().clone();
-            result.keys=generated.keys.clone(); commands.extend(key_commands(&clip.id,clip,&result));
-            let mask = if clip.mask.is_none() && settings.corner_radius > 0.0 {
-                self.project().media_by_id(&clip.media_id).and_then(|m| Some((m.width?,m.height?)))
+        for ((clip, target, choices, _old), chosen) in plans.into_iter().zip(picks) {
+            let generated = choices[chosen].clone();
+            let mask = if settings.corner_radius > 0.0 {
+                self.project().media_by_id(&clip.media_id).and_then(|m| Some((m.width?, m.height?)))
                     .and_then(|(w,h)| concat_project::canvas_motion::rounded_mask(w,h,f64::from(settings.corner_radius)))
-                    .map(Some)
             } else { None };
-            commands.push(Command::UpdateClip { clip_id:clip.id.clone(),patch:ClipPatch {
-                background:Some(Some(concat_project::model::Background::Blur {amount:controls.blur})),mask,..Default::default() }});
+            // Style-only changes are real updates even when movement keys match.
+            commands.push(generated_motion_command(clip, &generated, Some((controls.blur, mask))));
             updates.push((target,generated));
         }
-        if commands.is_empty() {self.notify("No eligible media. Manual/reopened keyframes are protected; check targets, selection and locked/hidden tracks.",true);return;}
+        if commands.is_empty() {self.notify("No eligible media. Manual or unrecognized keyframes are protected; check targets, selection and locked/hidden tracks.",true);return;}
         let revision=self.revision;self.apply(Command::Batch {commands});
         if self.revision!=revision {for (target,motion) in updates {self.bulk_motion.remember(target,motion);}}
     }
@@ -973,9 +976,7 @@ impl Studio {
                 continue;
             }
             let generated = choices[chosen].clone();
-            let mut result = clip.as_ref().clone();
-            result.keys = generated.keys.clone();
-            commands.extend(key_commands(&clip.id, clip, &result));
+            commands.push(generated_motion_command(clip, &generated, None));
             updates.push((target, generated));
         }
         if commands.is_empty() {

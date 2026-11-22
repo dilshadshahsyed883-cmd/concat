@@ -6,17 +6,18 @@ use crate::Command;
 use crate::model::{Clip, ClipKey, ClipKind, KeyEase, KeyProperty, ranges};
 
 /// Return an unkeyed working copy only when every existing key is recognized.
-/// All preset families share this rule; manual or ambiguous reopened keys are
-/// protected. Historical signatures support undo/redo within the editing session.
+/// All preset families share this rule. Persisted ownership recognizes generated
+/// work after reopen; keys without ownership or an exact session signature stay protected.
 pub fn preset_base<'a, 's>(
     clip: &'a Clip,
     signatures: impl IntoIterator<Item = &'s [ClipKey]>,
 ) -> Option<std::borrow::Cow<'a, Clip>> {
     if clip.keys.is_empty() {
         Some(std::borrow::Cow::Borrowed(clip))
-    } else if signatures
-        .into_iter()
-        .any(|keys| keys == clip.keys.as_slice())
+    } else if generated_ownership(clip).is_some()
+        || signatures
+            .into_iter()
+            .any(|keys| keys == clip.keys.as_slice())
     {
         let mut clean = clip.clone();
         clean.keys.clear();
@@ -24,6 +25,150 @@ pub fn preset_base<'a, 's>(
     } else {
         None
     }
+}
+
+/// Ownership is saved with the clip and therefore travels through document IO,
+/// undo snapshots and split copies. A changed key vector is always manual work.
+pub const OWNERSHIP_KEY: &str = "generatedMotionV1";
+
+/// Versioned generated-motion metadata stored in the clip's extension map.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct GeneratedOwnership {
+    /// Metadata format version; unknown versions are never assumed owned.
+    pub version: u32,
+    /// Stable catalogue ID.
+    pub preset: String,
+    /// Canonical keys last produced by this feature.
+    pub keys: Vec<ClipKey>,
+    /// Style ownership, separate from key ownership.
+    pub style: Option<GeneratedStyle>,
+}
+
+/// Original and generated values for independently owned styling channels.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct GeneratedStyle {
+    /// Whether this feature actually owns the background channel.
+    #[serde(default)]
+    pub owns_background: bool,
+    /// An existing authored mask is never claimed by the motion feature.
+    #[serde(default)]
+    pub owns_mask: bool,
+    /// Background before Canvas Motion first changed it.
+    pub before_background: Option<crate::model::Background>,
+    /// Last background produced by Canvas Motion.
+    pub applied_background: Option<crate::model::Background>,
+    /// Mask before Canvas Motion first changed it.
+    pub before_mask: Option<crate::model::ClipMask>,
+    /// Last mask produced by Canvas Motion.
+    pub applied_mask: Option<crate::model::ClipMask>,
+}
+
+fn saved_ownership(clip: &Clip) -> Option<GeneratedOwnership> {
+    let saved: GeneratedOwnership =
+        serde_json::from_value(clip.extra.get(OWNERSHIP_KEY)?.clone()).ok()?;
+    (saved.version == 1).then_some(saved)
+}
+
+/// Recognize only the exact generated keys, never a later manual edit.
+pub fn generated_ownership(clip: &Clip) -> Option<GeneratedOwnership> {
+    saved_ownership(clip).filter(|saved| saved.keys == clip.keys)
+}
+
+/// Rewindowing owned keys is an editorial operation, not manual key authoring.
+pub(crate) fn refresh_ownership(clip: &mut Clip, mut saved: GeneratedOwnership) {
+    saved.keys = clip.keys.clone();
+    if let Ok(value) = serde_json::to_value(saved) {
+        clip.extra.insert(OWNERSHIP_KEY.into(), value);
+    }
+}
+
+/// Atomically replace generated keys and only the styling this feature owns.
+/// `expected_keys` is the caller's already-reviewed signature; stale plans fail.
+pub fn replace_generated(
+    clip: &mut Clip,
+    expected_keys: &[ClipKey],
+    keys: Vec<ClipKey>,
+    preset: String,
+    canvas_style: Option<(f64, Option<crate::model::ClipMask>)>,
+) -> Result<bool, crate::CommandError> {
+    use crate::model::Background;
+    if clip.keys != expected_keys
+        || !clip.kind.is_visual()
+        || keys.is_empty()
+        || (!clip.keys.is_empty() && generated_ownership(clip).is_none())
+        || !keys.iter().all(|k| {
+            k.at.is_finite()
+                && (0.0..=1.0).contains(&k.at)
+                && k.value.is_finite()
+                && k.ease.0.iter().all(|v| v.is_finite())
+        })
+        || canvas_style
+            .as_ref()
+            .is_some_and(|(blur, _)| !blur.is_finite() || !(0.0..=1.0).contains(blur))
+    {
+        return Err(crate::CommandError::UnsafeEdit {
+            reason: "Animation target changed or settings are invalid".into(),
+        });
+    }
+    let old = saved_ownership(clip).and_then(|saved| saved.style);
+    let style = if let Some((blur, requested_mask)) = canvas_style {
+        let mut next = old.clone().unwrap_or_else(|| GeneratedStyle {
+            owns_background: true,
+            owns_mask: clip.mask.is_none(),
+            before_background: clip.background.clone(),
+            applied_background: clip.background.clone(),
+            before_mask: clip.mask.clone(),
+            applied_mask: clip.mask.clone(),
+        });
+        // Do not claim ownership of a later independent background/mask edit.
+        if next.owns_background
+            && old
+                .as_ref()
+                .is_none_or(|old| clip.background == old.applied_background)
+        {
+            clip.background = Some(Background::Blur { amount: blur });
+            next.applied_background = clip.background.clone();
+        } else {
+            next.owns_background = false;
+        }
+        if next.owns_mask && old.as_ref().is_none_or(|old| clip.mask == old.applied_mask) {
+            clip.mask = requested_mask.map(crate::model::ClipMask::tidy);
+            next.applied_mask = clip.mask.clone();
+        } else {
+            next.owns_mask = false;
+        }
+        Some(next)
+    } else {
+        if let Some(old) = old {
+            if old.owns_background && clip.background == old.applied_background {
+                clip.background = old.before_background;
+            }
+            if old.owns_mask && clip.mask == old.applied_mask {
+                clip.mask = old.before_mask;
+            }
+        }
+        None
+    };
+    let before_keys = clip.keys.clone();
+    let before_record = clip.extra.get(OWNERSHIP_KEY).cloned();
+    // Generated samples may be closer together than the manual key editor's
+    // hit tolerance. Install the full vector, then use the model's canonical
+    // clamps/sort without set_key merging distinct visible frames.
+    let mut canonical = clip.clone();
+    canonical.keys = keys;
+    clip.keys = canonical.tidy().keys;
+    let saved = GeneratedOwnership {
+        version: 1,
+        preset,
+        keys: clip.keys.clone(),
+        style,
+    };
+    let value = serde_json::to_value(saved).map_err(|e| crate::CommandError::UnsafeEdit {
+        reason: e.to_string(),
+    })?;
+    let changed = before_keys != clip.keys || before_record.as_ref() != Some(&value);
+    clip.extra.insert(OWNERSHIP_KEY.into(), value);
+    Ok(changed)
 }
 
 /// The starter animations available from the native picture inspector.
@@ -331,5 +476,364 @@ mod tests {
                 .unwrap()
                 .is_keyed(KeyProperty::Scale)
         );
+    }
+    fn owned_fixture() -> Editor {
+        use crate::model::{MediaItem, MediaKind};
+        let mut editor = Editor::new();
+        editor.project_mut().media.push(MediaItem {
+            id: "m1".into(),
+            path: "/fixture.mp4".into(),
+            name: "fixture".into(),
+            kind: MediaKind::Video,
+            width: Some(1920),
+            height: Some(1080),
+            duration: Some(10.0),
+            ..Default::default()
+        });
+        let mut clip = Clip::blank("c1", "T1", ClipKind::Video, "picture", 0.0, 10.0);
+        clip.media_id = "m1".into();
+        editor
+            .project_mut()
+            .active_mut()
+            .clips
+            .push(std::sync::Arc::new(clip));
+        editor
+    }
+
+    fn generated_command(
+        editor: &Editor,
+        id: &str,
+        canvas: bool,
+        blur: f64,
+        radius: f64,
+    ) -> Command {
+        let clip = editor.project().active().clip(id).unwrap();
+        let base = preset_base(clip, std::iter::empty()).unwrap();
+        let (preset, keys, canvas_style) = if canvas {
+            use crate::canvas_motion::{CanvasMotionControls, CanvasMotionPreset, rounded_mask};
+            let preset = CanvasMotionPreset::ALL[0];
+            (
+                preset.id(),
+                preset
+                    .keys(&base, FRAME, CanvasMotionControls::default())
+                    .unwrap(),
+                Some((
+                    blur,
+                    (radius > 0.0).then(|| rounded_mask(1920, 1080, radius).unwrap()),
+                )),
+            )
+        } else {
+            (
+                "motion.push-in",
+                MotionPreset::PushIn.keys(&base, FRAME).unwrap().0.to_vec(),
+                None,
+            )
+        };
+        Command::ApplyGeneratedMotion {
+            clip_id: id.into(),
+            expected_keys: clip.keys.clone(),
+            keys,
+            preset: preset.into(),
+            canvas_style,
+        }
+    }
+
+    fn reopen(editor: &Editor) -> Editor {
+        let settings = DocumentSettings {
+            name: "ownership".into(),
+            width: 1920,
+            height: 1080,
+            rate_num: 30,
+            rate_den: 1,
+        };
+        // Include JSON text IO, rather than only cloning in-memory Values.
+        let text = serde_json::to_string(&to_document(&settings, editor.project())).unwrap();
+        Editor::from_document(&serde_json::from_str(&text).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn generated_ownership_survives_reopen_cross_family_replacement_and_undo() {
+        let mut editor = owned_fixture();
+        for canvas in [false, true, true, false] {
+            editor
+                .apply(generated_command(&editor, "c1", canvas, 0.5, 0.1))
+                .unwrap();
+            editor = reopen(&editor);
+            let clip = editor.project().active().clip("c1").unwrap();
+            assert!(generated_ownership(clip).is_some());
+            assert!(preset_base(clip, std::iter::empty()).is_some());
+        }
+        editor
+            .apply(generated_command(&editor, "c1", true, 0.2, 0.05))
+            .unwrap();
+        let x = editor.project().active().clip("c1").unwrap().clone();
+        editor
+            .apply(generated_command(&editor, "c1", true, 0.8, 0.1))
+            .unwrap();
+        assert!(editor.undo());
+        assert_eq!(editor.project().active().clip("c1").unwrap(), &x);
+        assert!(editor.redo());
+        assert!(editor.undo());
+        editor
+            .apply(generated_command(&editor, "c1", false, 0.0, 0.0))
+            .unwrap();
+        assert!(generated_ownership(editor.project().active().clip("c1").unwrap()).is_some());
+    }
+
+    #[test]
+    fn style_only_updates_change_blur_and_corners_without_stacking_keys() {
+        use crate::model::Background;
+        let mut editor = owned_fixture();
+        let mut previous_keys = None;
+        for (blur, radius) in [(0.2, 0.05), (0.8, 0.12), (0.8, 0.0)] {
+            assert!(
+                editor
+                    .apply(generated_command(&editor, "c1", true, blur, radius))
+                    .unwrap()
+                    .applied
+            );
+            let clip = editor.project().active().clip("c1").unwrap();
+            assert_eq!(clip.background, Some(Background::Blur { amount: blur }));
+            assert_eq!(
+                clip.mask,
+                (radius > 0.0)
+                    .then(|| crate::canvas_motion::rounded_mask(1920, 1080, radius).unwrap())
+            );
+            if let Some(keys) = &previous_keys {
+                assert_eq!(&clip.keys, keys);
+            }
+            previous_keys = Some(clip.keys.clone());
+            editor = reopen(&editor);
+        }
+        // Rebuild once after JSON IO; float parsing may change a last bit.
+        editor
+            .apply(generated_command(&editor, "c1", true, 0.8, 0.0))
+            .unwrap();
+        assert!(
+            !editor
+                .apply(generated_command(&editor, "c1", true, 0.8, 0.0))
+                .unwrap()
+                .applied
+        );
+        editor
+            .apply(generated_command(&editor, "c1", false, 0.0, 0.0))
+            .unwrap();
+        let clip = editor.project().active().clip("c1").unwrap();
+        assert_eq!(clip.background, None);
+        assert_eq!(clip.mask, None);
+    }
+
+    #[test]
+    fn animation_style_replacement_preserves_authored_masks_and_background_edits() {
+        use crate::commands::ClipPatch;
+        use crate::model::{Background, ClipMask, MaskShape};
+        let mut editor = owned_fixture();
+        let authored = Some(ClipMask::of(MaskShape::Circle));
+        editor
+            .apply(Command::UpdateClip {
+                clip_id: "c1".into(),
+                patch: ClipPatch {
+                    mask: Some(authored.clone()),
+                    ..Default::default()
+                },
+            })
+            .unwrap();
+        editor
+            .apply(generated_command(&editor, "c1", true, 0.4, 0.1))
+            .unwrap();
+        assert_eq!(editor.project().active().clip("c1").unwrap().mask, authored);
+        let background = Some(Background::Color {
+            color: "#abcdef".into(),
+        });
+        editor
+            .apply(Command::UpdateClip {
+                clip_id: "c1".into(),
+                patch: ClipPatch {
+                    background: Some(background.clone()),
+                    ..Default::default()
+                },
+            })
+            .unwrap();
+        editor
+            .apply(generated_command(&editor, "c1", true, 0.8, 0.15))
+            .unwrap();
+        editor
+            .apply(generated_command(&editor, "c1", false, 0.0, 0.0))
+            .unwrap();
+        let clip = editor.project().active().clip("c1").unwrap();
+        assert_eq!(clip.mask, authored);
+        assert_eq!(clip.background, background);
+    }
+
+    #[test]
+    fn trim_and_split_keep_owned_motion_replaceable_but_not_manual_keys() {
+        use crate::commands::TrimEdge;
+        let mut editor = owned_fixture();
+        editor
+            .apply(generated_command(&editor, "c1", true, 0.4, 0.1))
+            .unwrap();
+        editor
+            .apply(Command::TrimClip {
+                clip_id: "c1".into(),
+                edge: TrimEdge::Start,
+                delta: 1.0,
+                ripple: false,
+            })
+            .unwrap();
+        let tail = editor
+            .apply(Command::SplitClips {
+                clip_ids: vec!["c1".into()],
+                time: 4.0,
+            })
+            .unwrap()
+            .created_id
+            .unwrap();
+        editor = reopen(&editor);
+        for id in ["c1", tail.as_str()] {
+            assert!(generated_ownership(editor.project().active().clip(id).unwrap()).is_some());
+            editor
+                .apply(generated_command(&editor, id, false, 0.0, 0.0))
+                .unwrap();
+        }
+        editor
+            .apply(Command::SetClipKey {
+                clip_id: tail.clone(),
+                property: KeyProperty::Rotation,
+                at: 0.5,
+                value: 9.0,
+                ease: KeyEase::LINEAR,
+            })
+            .unwrap();
+        editor
+            .apply(Command::TrimClip {
+                clip_id: tail.clone(),
+                edge: TrimEdge::End,
+                delta: -0.5,
+                ripple: false,
+            })
+            .unwrap();
+        let clip = editor.project().active().clip(&tail).unwrap();
+        assert!(preset_base(clip, std::iter::empty()).is_none());
+        assert!(generated_ownership(clip).is_none());
+    }
+
+    #[test]
+    fn stale_generated_plan_rolls_back_the_whole_batch() {
+        use crate::commands::ClipPatch;
+        let mut editor = owned_fixture();
+        let stale = generated_command(&editor, "c1", false, 0.0, 0.0);
+        editor
+            .apply(Command::SetClipKey {
+                clip_id: "c1".into(),
+                property: KeyProperty::Rotation,
+                at: 0.5,
+                value: 3.0,
+                ease: KeyEase::LINEAR,
+            })
+            .unwrap();
+        let before = editor.project().clone();
+        assert!(
+            editor
+                .apply(Command::Batch {
+                    commands: vec![
+                        Command::UpdateClip {
+                            clip_id: "c1".into(),
+                            patch: ClipPatch {
+                                name: Some("should roll back".into()),
+                                ..Default::default()
+                            }
+                        },
+                        stale
+                    ]
+                })
+                .is_err()
+        );
+        assert_eq!(editor.project(), &before);
+    }
+    #[test]
+    fn dense_generated_keys_survive_application_and_document_io() {
+        let mut editor = owned_fixture();
+        editor
+            .project_mut()
+            .active_mut()
+            .clip_mut("c1")
+            .unwrap()
+            .duration = 600.0;
+        use crate::canvas_motion::{CanvasMotionControls, CanvasMotionPreset};
+        let clip = editor.project().active().clip("c1").unwrap();
+        let keys = CanvasMotionPreset::ALL[0]
+            .keys(
+                clip,
+                FRAME,
+                CanvasMotionControls {
+                    duration_seconds: 1.0,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let count = keys.len();
+        assert!(
+            keys.iter()
+                .any(|k| k.at > 0.0 && k.at < crate::model::KEY_EPSILON)
+        );
+        editor
+            .apply(Command::ApplyGeneratedMotion {
+                clip_id: "c1".into(),
+                expected_keys: vec![],
+                keys,
+                preset: CanvasMotionPreset::ALL[0].id().into(),
+                canvas_style: None,
+            })
+            .unwrap();
+        assert_eq!(
+            editor.project().active().clip("c1").unwrap().keys.len(),
+            count
+        );
+        editor = reopen(&editor);
+        let clip = editor.project().active().clip("c1").unwrap();
+        assert_eq!(clip.keys.len(), count);
+        assert!(generated_ownership(clip).is_some());
+        if let Ok(directory) = std::env::var("CONCAT_CANVAS_FIXTURE_DIR") {
+            let settings = DocumentSettings { name:"Motion worker contract".into(),width:1920,height:1080,rate_num:30,rate_den:1 };
+            let samples: Vec<_> = (0..=30).map(|frame| {
+                let at = f64::from(frame) * FRAME / clip.duration;
+                serde_json::json!({"frame":frame,"scale":clip.value_at(KeyProperty::Scale,at),
+                    "pan_x":clip.value_at(KeyProperty::OffsetX,at),"pan_y":clip.value_at(KeyProperty::OffsetY,at),
+                    "opacity":clip.value_at(KeyProperty::Opacity,at)})
+            }).collect();
+            let contract = serde_json::json!({"document":to_document(&settings,editor.project()),"samples":samples});
+            std::fs::create_dir_all(&directory).unwrap();
+            std::fs::write(std::path::Path::new(&directory).join("generated-motion-contract.json"),
+                serde_json::to_vec_pretty(&contract).unwrap()).unwrap();
+        }
+    }
+
+    #[test]
+    fn explicitly_matching_manual_signature_still_cannot_claim_authored_keys() {
+        let mut editor = owned_fixture();
+        editor
+            .apply(Command::SetClipKey {
+                clip_id: "c1".into(),
+                property: KeyProperty::Rotation,
+                at: 0.3,
+                value: 8.0,
+                ease: KeyEase::LINEAR,
+            })
+            .unwrap();
+        let clip = editor.project().active().clip("c1").unwrap();
+        let keys = clip.keys.clone();
+        let before = editor.project().clone();
+        assert!(
+            editor
+                .apply(Command::ApplyGeneratedMotion {
+                    clip_id: "c1".into(),
+                    expected_keys: keys.clone(),
+                    keys,
+                    preset: "motion.push-in".into(),
+                    canvas_style: None
+                })
+                .is_err()
+        );
+        assert_eq!(editor.project(), &before);
     }
 }

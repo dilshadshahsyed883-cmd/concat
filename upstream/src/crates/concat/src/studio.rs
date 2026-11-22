@@ -10620,8 +10620,21 @@ impl Studio {
             self.notify(&t("studio.motionPresetLocked"), true);
             return;
         }
-        match preset.command(clip, self.frame_seconds()) {
-            Ok((command, preview)) => {
+        let Some(base) = concat_project::motion_preset::preset_base(clip, std::iter::empty()) else {
+            self.notify(&t("studio.motionPresetAlreadyKeyed"), true);
+            return;
+        };
+        match preset.keys(&base, self.frame_seconds()) {
+            Ok((keys, preview)) => {
+                let preset_id = match preset {
+                    MotionPreset::PushIn => "motion.push-in",
+                    MotionPreset::PanRight => "motion.pan-right",
+                    MotionPreset::FadeIn => "motion.fade-in",
+                };
+                let command = Command::ApplyGeneratedMotion {
+                    clip_id: clip.id.clone(), expected_keys: clip.keys.clone(), keys: keys.to_vec(),
+                    preset: preset_id.into(), canvas_style: None,
+                };
                 self.apply(command);
                 self.seek(preview as f32);
             }
@@ -10650,13 +10663,21 @@ impl Studio {
             self.notify(&t("studio.motionPresetLocked"), true);
             return;
         }
-        match preset.command_with(clip, self.frame_seconds(), PhysicsControls {
+        let Some(base) = concat_project::motion_preset::preset_base(clip, std::iter::empty()) else {
+            self.notify(&t("studio.motionPresetAlreadyKeyed"), true);
+            return;
+        };
+        match preset.keys_with(&base, self.frame_seconds(), PhysicsControls {
             strength: strength as f64,
             duration: duration as f64,
             speed: speed as f64,
             intensity: intensity as f64,
         }) {
-            Ok((command, preview)) => {
+            Ok((keys, preview)) => {
+                let command = Command::ApplyGeneratedMotion {
+                    clip_id: clip.id.clone(), expected_keys: clip.keys.clone(), keys,
+                    preset: preset.id().into(), canvas_style: None,
+                };
                 self.apply(command);
                 self.seek(preview as f32);
             }

@@ -424,6 +424,19 @@ pub enum Command {
         /// The curve, or None for a constant rate at the current mean.
         curve: Option<Vec<SpeedPoint>>,
     },
+    /// Replace a reviewed generated animation, recording ownership in the same undo step.
+    ApplyGeneratedMotion {
+        /// Target original image/video clip.
+        clip_id: String,
+        /// Exact preflight signature; a changed target fails atomically.
+        expected_keys: Vec<crate::model::ClipKey>,
+        /// Replacement editable keys.
+        keys: Vec<crate::model::ClipKey>,
+        /// Stable preset ID.
+        preset: String,
+        /// Canvas blur and generated mask; None restores unchanged preset-owned styling.
+        canvas_style: Option<(f64, Option<ClipMask>)>,
+    },
     /// Puts a key on one property at one point of a clip, replacing
     /// whichever key on that property was already within a hair of it.
     ///
@@ -1109,6 +1122,13 @@ impl Command {
             Command::ReplaceClipMedia {
                 item, source_start, ..
             } => bad(item.duration) || bad(item.frame_rate) || bad(*source_start),
+            Command::ApplyGeneratedMotion { expected_keys, keys, canvas_style, .. } => {
+                expected_keys.iter().chain(keys).any(|key| bad([key.at, key.value]) || bad(key.ease.0))
+                    || canvas_style.as_ref().is_some_and(|(blur, mask)| {
+                        bad([*blur]) || mask.as_ref().is_some_and(|m|
+                            bad([m.x, m.y, m.width, m.height, m.rotation, m.roundness, m.feather]))
+                    })
+            }
             Command::UpdateClip { patch, .. } => {
                 bad(patch.volume)
                     || bad(patch.fade_in)
@@ -1251,7 +1271,7 @@ pub fn apply(
         | Command::MergeClips { .. }
         | Command::ConsolidateClips { .. }
         | Command::RemoveClips { .. }) => clips::apply(project, mint, command),
-        command @ (Command::UpdateClip { .. }
+        command @ (Command::ApplyGeneratedMotion { .. } | Command::UpdateClip { .. }
         | Command::SetClipSpeed { .. }
         | Command::SetClipCutout { .. }
         | Command::AddCutoutStroke { .. }

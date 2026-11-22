@@ -189,9 +189,21 @@ impl CanvasMotionPreset {
         } else {
             64
         };
-        let mut frames: Vec<f64> = (0..=samples)
-            .map(|i| (i as f64 * last / samples as f64).round())
-            .collect();
+        let mut frames: Vec<f64> = if self == Self::BreathingLoop {
+            (0..=samples).map(|i| (i as f64 * last / samples as f64).round()).collect()
+        } else {
+            // Sample each moving interval independently, including the exit.
+            // A long hold or clip tail must not consume the motion's samples.
+            let mut frames = Vec::new();
+            for (a, b) in [(delay, end), (exit_start, exit_end)] {
+                let steps = ((b - a) as usize).min(samples);
+                if steps > 0 {
+                    frames.extend((0..=steps).map(|i|
+                        (a + i as f64 * (b - a) / steps as f64).round()));
+                }
+            }
+            frames
+        };
         frames.extend([0.0, delay, ((delay + end) / 2.0).round(), end, exit_start, exit_end, last]);
         frames.sort_by(f64::total_cmp);
         frames.dedup();
@@ -631,4 +643,27 @@ mod tests {
         );
         assert!(editor.redo());
     }
+    #[test]
+    fn long_clip_short_motion_has_frame_dense_active_interval() {
+        let clip = Clip::blank("c1", "T1", ClipKind::Video, "video", 0.0, 600.0);
+        let frame = 1.0 / 30.0;
+        let keys = CanvasMotionPreset::ALL[0].keys(&clip, frame,
+            CanvasMotionControls {duration_seconds:1.0, ..Default::default()}).unwrap();
+        let scale: Vec<_> = keys.iter().filter(|k|k.property == KeyProperty::Scale).collect();
+        for f in 0..=30 {
+            assert!(scale.iter().any(|k| (k.at * clip.duration / frame - f as f64).abs() < 1e-8));
+        }
+        assert!(scale.len() <= 68);
+    }
+
+    #[test]
+    fn anchor_validation_accepts_displayed_endpoints_and_rejects_outside() {
+        for value in [-0.45,0.45] {
+            assert!(CanvasMotionControls {start_anchor:Some([value,value]),end_anchor:Some([value,value]),..Default::default()}.valid());
+        }
+        for value in [-0.4501,0.4501,f64::NAN] {
+            assert!(!CanvasMotionControls {start_anchor:Some([value,0.0]),..Default::default()}.valid());
+        }
+    }
+
 }

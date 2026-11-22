@@ -558,6 +558,10 @@ pub fn apply(
         if locked.contains(&original.track_id) {
             return Err(error("Canvas target is on a locked track"));
         }
+        if staged.active().clips.iter().any(|piece|
+            piece.extra.get("canvasOwner") == Some(&json!(&id)) && locked.contains(&piece.track_id)) {
+            return Err(error("Canvas companion is on a locked track; unlock it before replacing the layout"));
+        }
         let media = staged
             .media_by_id(&original.media_id)
             .ok_or(CommandError::MediaGone)?;
@@ -635,6 +639,12 @@ pub fn apply(
         if config.background != "none" {
             let bg_lane = track(&mut staged, mint, &original.track_id, "backdrop", true);
             let mut bg = base.clone();
+            // Restoration metadata is immutable; playback state is current.
+            bg.start = original.start;
+            bg.duration = original.duration;
+            bg.source_start = original.source_start;
+            bg.speed = original.speed;
+            bg.speed_curve = original.speed_curve.clone();
             bg.id = mint.next("c");
             bg.track_id = bg_lane;
             bg.name = "Canvas source background".into();
@@ -1296,4 +1306,34 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn reapply_background_uses_current_playback_state() {
+        let (mut p, mut m) = fixture();
+        let config = Config::preset(3).unwrap();
+        apply(&mut p,&mut m,config.clone(),vec!["c1".into()],vec![]).unwrap();
+        let foreground = p.active_mut().clip_mut("c1").unwrap();
+        foreground.start = 7.0;
+        foreground.duration = 1.5;
+        foreground.source_start = 3.0;
+        foreground.speed = 2.0;
+        apply(&mut p,&mut m,config,vec!["c1".into()],vec![]).unwrap();
+        let bg = p.active().clips.iter().find(|c|c.extra.get("canvasRole") == Some(&json!("backdrop"))).unwrap();
+        assert_eq!((bg.start,bg.duration,bg.source_start,bg.speed),(7.0,1.5,3.0,2.0));
+        let foreground = p.active().clip("c1").unwrap();
+        let baseline: Clip = serde_json::from_value(foreground.extra["canvasOriginal"].clone()).unwrap();
+        assert_eq!((baseline.start,baseline.duration,baseline.source_start),(2.0,4.0,1.0));
+    }
+
+    #[test]
+    fn locked_companion_reapply_is_atomic() {
+        let (mut p, mut m) = fixture();
+        let config = Config::preset(3).unwrap();
+        apply(&mut p,&mut m,config.clone(),vec!["c1".into()],vec![]).unwrap();
+        let lane = p.active().clips.iter().find(|c|c.extra.contains_key("canvasOwner")).unwrap().track_id.clone();
+        let before = p.clone();
+        let result = apply(&mut p,&mut m,config,vec!["c1".into()],vec![lane]);
+        assert!(result.is_err());
+        assert_eq!(p,before);
+    }
+
 }

@@ -79,4 +79,28 @@ class CanvasPresetContracts(unittest.TestCase):
                     plan = load_project(root, lambda _: None)
                 self.assertGreaterEqual(len(plan.lanes), 2)
 
+    def test_owned_dense_motion_native_fixture_matches_worker_planner(self):
+        directory = os.environ.get('CONCAT_CANVAS_FIXTURE_DIR')
+        if not directory:
+            self.skipTest('Run native project tests with CONCAT_CANVAS_FIXTURE_DIR first')
+        contract = json.loads((Path(directory) / 'generated-motion-contract.json').read_text())
+        document = contract['document']
+        clip = document['timelines'][0]['clips'][0]
+        self.assertIn('generatedMotionV1', clip)
+        self.assertEqual(clip['keys'], clip['generatedMotionV1']['keys'])
+        validate_gpu_manifest(document)
+        # Placeholder bytes suffice: this checks planning, without decoding or GPU IO.
+        document['media'][0]['path'] = 'fixture.mp4'
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / 'concat.json').write_text(json.dumps(document))
+            (root / 'fixture.mp4').write_bytes(b'native motion contract placeholder')
+            plan = load_project(root, lambda _: None)
+        picture = next(picture for lane in plan.lanes for picture in lane if picture.id == clip['id'])
+        self.assertEqual(sum(map(len, picture.keys.values())), len(clip['keys']))
+        for expected in contract['samples']:
+            actual = picture.transform(expected['frame'])
+            for channel in ('scale', 'pan_x', 'pan_y', 'opacity'):
+                self.assertAlmostEqual(getattr(actual, channel), expected[channel], places=5)
+
 if __name__=='__main__':unittest.main()

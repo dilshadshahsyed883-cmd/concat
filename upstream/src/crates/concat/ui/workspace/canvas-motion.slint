@@ -36,10 +36,10 @@ export component CanvasMotionPanel inherits VerticalLayout {
     if root.preset == 20: Param { label: "Middle Y"; value <=> root.settings.focus-middle-y; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
     if root.preset == 20: Param { label: "Middle Hold (seconds)"; value <=> root.settings.focus-hold; minimum: 0; maximum: root.settings.duration * 0.8 / root.settings.speed; step: 0.1; fmt: ParamFormat.steps; }
     if root.preset == 17: Param { label: "Random Seed"; value: root.settings.seed; changed(v) => { root.settings.seed = Math.round(v); } minimum: 0; maximum: 65535; step: 1; fmt: ParamFormat.steps; }
-    if root.settings.custom-anchors && root.preset != 18: Param { label: "Start X"; value <=> root.settings.start-x; minimum: -0.5; maximum: 0.5; step: 0.01; fmt: ParamFormat.steps; }
-    if root.settings.custom-anchors && root.preset != 18: Param { label: "Start Y"; value <=> root.settings.start-y; minimum: -0.5; maximum: 0.5; step: 0.01; fmt: ParamFormat.steps; }
-    if root.settings.custom-anchors && root.preset != 18: Param { label: "End X"; value <=> root.settings.end-x; minimum: -0.5; maximum: 0.5; step: 0.01; fmt: ParamFormat.steps; }
-    if root.settings.custom-anchors && root.preset != 18: Param { label: "End Y"; value <=> root.settings.end-y; minimum: -0.5; maximum: 0.5; step: 0.01; fmt: ParamFormat.steps; }
+    if root.settings.custom-anchors && root.preset != 18: Param { label: "Start X"; value <=> root.settings.start-x; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
+    if root.settings.custom-anchors && root.preset != 18: Param { label: "Start Y"; value <=> root.settings.start-y; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
+    if root.settings.custom-anchors && root.preset != 18: Param { label: "End X"; value <=> root.settings.end-x; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
+    if root.settings.custom-anchors && root.preset != 18: Param { label: "End Y"; value <=> root.settings.end-y; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
     HorizontalLayout {
         if root.preset != 18: Check { checked: root.settings.reverse; toggled(on) => { root.settings.reverse = on; } }
         if root.preset != 18: Text { text: "Reverse"; color: Theme.fg; }
