@@ -11,12 +11,17 @@ from fastapi.responses import RedirectResponse
 from app.auth import Principal, current_principal
 from app.contracts.navigation import CONCAT, UPLOADER
 from app.ui import render_page
-from .gateway import backend_for, resource_response, shutdown_backend
+from .gateway import backend_for, backend_for_app, resource_response, shutdown_backend
 
 
 @asynccontextmanager
 async def _lifecycle(app):
+    # Readiness must include the REAL uploader, not just the outer Concat
+    # web shell. A broken backend now fails service startup and the guarded
+    # release health gate rolls back instead of publishing a live 503 page.
     try:
+        if os.environ.get("CONCAT_UPLOADER_ENABLED") == "1":
+            await backend_for_app(app)
         yield
     finally:
         await shutdown_backend(app)

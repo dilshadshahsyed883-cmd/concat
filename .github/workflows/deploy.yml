@@ -1,141 +1,40 @@
-name: Concat Web guarded Tailscale release
+name: Concat Web manual terminal release reminder (NO DEPLOY)
+
+# Production releases are made from the exact tested integration SHA in the VPS terminal.
+# No auto-SSH, Tailscale, remote service control, or GitHub Actions deployment.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
-    inputs:
-      sha:
-        description: Exact current concat-web/main commit SHA
-        required: true
-        type: string
-      action:
-        description: Read-only preflight or Concat-only loopback deployment
-        required: true
-        type: choice
-        default: preflight
-        options: [preflight, deploy]
+
 permissions:
   contents: read
-concurrency:
-  group: concat-web-production
-  cancel-in-progress: false
 
 jobs:
-  guarded-release:
-    # Source merges are inert until both repository gates are enabled.
-    if: >-
-      github.ref == 'refs/heads/main' &&
-      github.actor == 'dilshadshahsyed883-cmd' &&
-      ((github.event_name == 'workflow_dispatch' &&
-        (inputs.action == 'preflight' || vars.CONCAT_WEB_DEPLOY_ENABLED == 'true')) ||
-       (github.event_name == 'push' &&
-        vars.CONCAT_WEB_DEPLOY_ENABLED == 'true' &&
-        vars.CONCAT_WEB_AUTO_DEPLOY_ENABLED == 'true'))
-    environment: concat-web-production
+  offline-release-check:
+    if: github.ref == 'refs/heads/integration/personal-release-20261119'
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
-    permissions:
-      contents: read
-      id-token: write
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - name: Verify exact protected-main release identity
-        env:
-          REQUESTED_SHA: ${{ inputs.sha }}
-          EVENT_NAME: ${{ github.event_name }}
-          SOURCE_SHA: ${{ github.sha }}
-        run: |
-          set -Eeuo pipefail
-          test "$GITHUB_REF" = refs/heads/main
-          [[ "$SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
-          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
-          if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
-            test "$REQUESTED_SHA" = "$SOURCE_SHA"
-          fi
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Focused build, integration and negative security checks
+      - run: python -m pip install -e '.[test]'
+      - name: Test application, local admin and release security
         run: |
           set -Eeuo pipefail
-          python -m pip install -e '.[test]'
-          python -m compileall -q app run.py reused
+          python -m compileall -q app reused run.py
           python -m unittest discover -s tests -p 'test_foundation.py' -v
+          python -m unittest discover -s tests -p 'test_admin_security.py' -v
           python -m unittest discover -s tests -p 'test_reused_*.py' -v
           python -m unittest app.modules.concat.test_routes -v
           python -m unittest discover -s app/modules/uploader/tests -p 'test_*.py' -v
-          python -m unittest discover -s tests -p 'test_admin_security.py' -v
           python -m unittest discover -s tests -p 'test_release_security_contract.py' -v
           bash -n deploy/guarded-release.sh
-          python -m pip wheel --no-deps --wheel-dir /tmp/concat-wheel .
-      - name: Join existing VPS_1 production tailnet (OIDC)
-        uses: tailscale/github-action@v4
-        with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          audience: ${{ secrets.TS_AUDIENCE }}
-          tags: tag:ci
-      - name: Verify pinned VPS_1 SSH identity and host
-        env:
-          PRIVATE_IDENTITY: ${{ secrets.VPS1_SSH_PRIVATE_KEY }}
+          bash -n deploy/nginx-cutover.sh
+          python -m unittest discover -s tests -p 'test_nginx_routing.py' -v
+          python -m unittest discover -s tests -p 'test_nginx_existing_adoption.py' -v
+          bash -n deploy/manual-integration-release.sh
+          python -m pip wheel --no-deps --wheel-dir /tmp/concat-web-wheel .
+      - name: Explicit terminal-only release gate
         run: |
-          set -Eeuo pipefail
-          set +x
-          umask 077
-          test -n "$PRIVATE_IDENTITY"
-          mkdir -p "$RUNNER_TEMP/concat-ssh"
-          printf '%s\n' "$PRIVATE_IDENTITY" > "$RUNNER_TEMP/concat-ssh/identity"
-          unset PRIVATE_IDENTITY
-          ssh-keygen -y -P '' -f "$RUNNER_TEMP/concat-ssh/identity" > "$RUNNER_TEMP/concat-ssh/public"
-          actual="$(ssh-keygen -lf "$RUNNER_TEMP/concat-ssh/public" -E sha256 | awk '{print $2}')"
-          test "$actual" = 'SHA256:oeX4vWPvVspKOTrvbMgUa+uWPGyXLz3531TQEy5wp1E'
-          printf '%s\n' '100.87.55.92 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGpN+j9QsIP11NqypSCoYdFZ0Bvy65j608M4EyjC+OlJ' > "$RUNNER_TEMP/concat-ssh/known_hosts"
-          chmod 600 "$RUNNER_TEMP/concat-ssh/known_hosts"
-          ssh-keygen -F 100.87.55.92 -f "$RUNNER_TEMP/concat-ssh/known_hosts" >/dev/null
-      - name: Host and live SSO read-only preflight
-        run: |
-          set -Eeuo pipefail
-          ssh_options=(-T -p 22 -i "$RUNNER_TEMP/concat-ssh/identity"
-            -o UserKnownHostsFile="$RUNNER_TEMP/concat-ssh/known_hosts"
-            -o StrictHostKeyChecking=yes -o UpdateHostKeys=no
-            -o BatchMode=yes -o IdentitiesOnly=yes
-            -o ConnectTimeout=20 -o ServerAliveInterval=30 -o ServerAliveCountMax=3)
-          timeout 120s ssh "${ssh_options[@]}" vps1deploy@100.87.55.92 \
-            "sudo -n /usr/local/sbin/concat-web-deploy preflight '$GITHUB_SHA'"
-      - name: Upload tested immutable Concat archive
-        if: github.event_name == 'push' || inputs.action == 'deploy'
-        id: archive
-        run: |
-          set -Eeuo pipefail
-          tar --sort=name --mtime='UTC 2020-01-01' --owner=0 --group=0 --numeric-owner \
-            -czf "$RUNNER_TEMP/concat-web-release.tgz" \
-            --exclude='__pycache__' --exclude='*.pyc' --exclude='.pytest_cache' \
-            app reused run.py pyproject.toml
-          digest="$(sha256sum "$RUNNER_TEMP/concat-web-release.tgz" | awk '{print $1}')"
-          echo "digest=$digest" >> "$GITHUB_OUTPUT"
-          scp_options=(-P 22 -i "$RUNNER_TEMP/concat-ssh/identity"
-            -o UserKnownHostsFile="$RUNNER_TEMP/concat-ssh/known_hosts"
-            -o StrictHostKeyChecking=yes -o UpdateHostKeys=no
-            -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=20)
-          timeout 120s scp "${scp_options[@]}" "$RUNNER_TEMP/concat-web-release.tgz" \
-            "vps1deploy@100.87.55.92:/tmp/concat-web-$GITHUB_SHA.tgz"
-      - name: Activate only isolated Concat service with rollback
-        if: github.event_name == 'push' || inputs.action == 'deploy'
-        env:
-          ARCHIVE_DIGEST: ${{ steps.archive.outputs.digest }}
-        run: |
-          set -Eeuo pipefail
-          [[ "$ARCHIVE_DIGEST" =~ ^[0-9a-f]{64}$ ]]
-          ssh_options=(-T -p 22 -i "$RUNNER_TEMP/concat-ssh/identity"
-            -o UserKnownHostsFile="$RUNNER_TEMP/concat-ssh/known_hosts"
-            -o StrictHostKeyChecking=yes -o UpdateHostKeys=no
-            -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=20
-            -o ServerAliveInterval=30 -o ServerAliveCountMax=3)
-          timeout 2100s ssh "${ssh_options[@]}" vps1deploy@100.87.55.92 \
-            "sudo -n /usr/local/sbin/concat-web-deploy deploy '$GITHUB_SHA' '/tmp/concat-web-$GITHUB_SHA.tgz' '$ARCHIVE_DIGEST'"
-      - name: Erase temporary SSH and archive files
-        if: always()
-        run: |
-          rm -rf "$RUNNER_TEMP/concat-ssh"
-          rm -f "$RUNNER_TEMP/concat-web-release.tgz"
+          echo 'PASS: CI only. Manually deploy a verified protected-integration SHA via the VPS terminal.'

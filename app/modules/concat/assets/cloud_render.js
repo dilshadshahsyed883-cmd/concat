@@ -41,28 +41,37 @@
   };
   let configured=false;
   let config={};
+  const updateIdleControls=()=>{
+    const enabled=$("cr-auto-shutdown").checked;
+    const input=$("cr-idle-minutes");
+    input.disabled=!enabled;
+    const v=Number(input.value);
+    $("cr-idle-up").disabled=!enabled||v>=60;
+    $("cr-idle-down").disabled=!enabled||v<=1;
+  };
+  const changeIdleMinutes=step=>{
+    const input=$("cr-idle-minutes");
+    input.value=String(Math.min(60,Math.max(1,Number(input.value||5)+step)));
+    updateIdleControls();
+  };
   async function loadConfig(){
     config = await api("/config");
     configured=true;
     $("cr-auto").checked=!!config.auto_upload;
-    $("cr-image").value=config.image||"Not published — cloud_render/concat/gpu/Dockerfile";
     $("cr-endpoint").value=config.endpoint||"";
     $("cr-concurrency").value=String(config.concurrency||1);
+    $("cr-auto-shutdown").checked=!!config.auto_shutdown;
+    $("cr-idle-minutes").value=String(config.idle_timeout_minutes||5);
+    updateIdleControls();
+    const idleStatus = config.salad_idle_status || "disabled";
+    $("cr-idle-status").textContent = !config.auto_shutdown
+      ? "Disabled · default 5 minutes"
+      : !config.auto_shutdown_ready
+      ? "Setup required: configure dedicated Salad group identifiers and API key on VPS"
+      : "Enabled · " + idleStatus.replaceAll("_"," ");
     $("cr-concurrency-status").textContent = "Saved limit: " + (config.concurrency||1) + " · synchronized on connection/dispatch";
     $("cr-salad-key-state").textContent=config.salad_key_saved?"Saved":"Not saved";
     $("cr-worker-key-state").textContent=config.worker_key_saved?"Saved":"Not saved";
-    const details=[
-      ["Engine",config.engine],["GPU",config.gpu],["VRAM",(config.vram_gb||8)+" GB"],
-      ["CPU",config.cpu+" vCPU"],["RAM",config.ram_gb+" GB"],
-      ["Storage",config.storage_gb+" GB"],["Replicas",String(config.replicas)],
-      ["Architecture",config.architecture],["Port",String(config.port)],
-      ["Codec",config.codec],["Concurrency",String(config.concurrency)]
-    ];
-    const container=$("cr-requirements");container.replaceChildren();
-    details.forEach(([title,value])=>{
-      const div=document.createElement("div");const span=document.createElement("span");span.textContent=title;
-      const strong=document.createElement("strong");strong.textContent=value;div.append(span,strong);container.appendChild(div);
-    });
     const online=!!config.enabled;
     $("cr-health").textContent=online?"Worker enabled":"Worker not connected";
     $("cr-connection").textContent=online?"Enabled — verify worker":"Image not GPU-verified";
@@ -124,11 +133,14 @@
     if (request !== queueRequest) return;
     $("cr-queue-state").textContent =
       ({stopped:"Stopped", running:"Running", paused:"Paused"}[data.state] || data.state)
-      + " · " + data.active + "/" + data.concurrency + " active";
+      + " · GPU " + data.active + "/" + data.concurrency + " active"
+      + " · Drive " + (data.intake_active || 0) + " downloading/verifying"
+      + " · " + (data.ready_for_gpu || 0) + " ready";
     for (const [action, state] of [["start","stopped"],["pause","running"],["resume","paused"]]) {
       $("cr-"+action+"-queue").disabled = data.state !== state;
     }
-    const key = JSON.stringify(data.items);
+    const key = JSON.stringify(data.items) + (data.items.some(item => item.state === "Retrying Drive")
+      ? Math.floor(Date.now() / 1000) : "");
     if (key === previousQueue) return;
     previousQueue = key;
     const list = $("cr-production-list");
@@ -147,6 +159,10 @@
       name.textContent = item.name;
       const status = document.createElement("small");
       status.textContent = item.state + (item.cancel_requested && item.state !== "Cancelled" ? " · Cancel requested" : "");
+      if (item.state === "Retrying Drive") {
+        const seconds = Math.max(0, Math.ceil(item.intake_retry_at - Date.now() / 1000));
+        status.textContent = "Drive retry " + item.intake_retries + "/5 · next attempt in " + seconds + "s";
+      }
       head.append(name, status);
       card.append(head);
       if (item.error) {
@@ -219,11 +235,19 @@
   $("cr-save-auto").onclick=()=>operations("Preference saved",async()=>{
     await send("/config",{auto_upload:$("cr-auto").checked});await loadConfig();
   });
+  $("cr-auto-shutdown").addEventListener("change",updateIdleControls);
+  $("cr-idle-minutes").addEventListener("input",updateIdleControls);
+  $("cr-idle-up").onclick=()=>changeIdleMinutes(1);
+  $("cr-idle-down").onclick=()=>changeIdleMinutes(-1);
   $("cr-save-gpu").onclick=()=>operations("GPU config saved",async()=>{
-    // Priority, HTTP timeout and health path remain persisted server-side.
-    // They are no longer user-facing GPU Config controls.
+    // Leave operational priority, timeout, and health path untouched on the server.
+    const minutes=Number($("cr-idle-minutes").value);
+    if(!Number.isInteger(minutes)||minutes<1||minutes>60)
+      throw Error("Idle timeout must be 1–60 whole minutes");
     const obj={endpoint:$("cr-endpoint").value.trim(),
-      concurrency:Number($("cr-concurrency").value)};
+      concurrency:Number($("cr-concurrency").value),
+      auto_shutdown:$("cr-auto-shutdown").checked,
+      idle_timeout_minutes:minutes};
     if($("cr-salad-key").value) obj.salad_key=$("cr-salad-key").value;
     if($("cr-worker-key").value) obj.worker_key=$("cr-worker-key").value;
     const saved = await send("/config",obj);

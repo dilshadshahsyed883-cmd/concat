@@ -1,3 +1,9 @@
+# Historical design (superseded 2026-11-19)
+
+**Do not execute the Tailscale/GitHub Actions deployment instructions below.** The active user-approved deployment policy is integration-branch SHA pinned, manual VPS terminal, standalone local-admin login. See `deploy/RELEASE_GATES.md`. Historical material is retained for audit only.
+
+---
+
 # Concat Web — reuse VPS_1 Tailscale/SSH deployment (2026-11-18)
 
 ## Architecture

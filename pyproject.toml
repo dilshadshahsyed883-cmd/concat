@@ -19,6 +19,9 @@ dependencies = [
     "google-auth-oauthlib==1.2.1",
     "google-auth-httplib2==0.2.0",
     "httplib2==0.22.0",
+    # Required at import time by reused/uploader/part01/lum_engine/mode_gateway.py.
+    # Must be installed in the production venv, not only test extras.
+    "httpx==0.28.1",
 ]
 
 [project.optional-dependencies]

@@ -169,6 +169,8 @@
     currentShell.replaceWith(nextShell);
     if (doc.title) document.title = doc.title;
     if (pushState) history.pushState({lumSoft:true}, '', response.url || requestedUrl);
+    // Reinitialize listeners bound to elements removed with the old shell.
+    document.dispatchEvent(new Event('lum:shell-replaced'));
     requestAnimationFrame(() => {
       initChannelManager();
       notifyResize();

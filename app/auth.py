@@ -1,7 +1,7 @@
-"""Single verified Scene identity and owner-authorization contract.
+"""Standalone local-admin and owner-scoped authorization contract.
 
-Injected resolvers remain available for isolated integration tests, never from an
-HTTP header. In deployed mode, only revocable, Scene-verified SSO may log in.
+Injected resolvers are for controlled integration tests only; production identity
+comes from a revocable, local Concat session, never browser-supplied headers.
 """
 from dataclasses import dataclass
 import inspect
@@ -33,7 +33,7 @@ async def current_principal(request: Request) -> Principal:
             principal = await principal
     else:
         # Identity is never inferred from X-Auth-User, forwarded headers,
-        # browser JSON, a user-supplied owner field or the Scene session cookie.
+        # browser JSON, a user-supplied owner field or an unrelated application cookie.
         from app.modules.admin.security import SecurityService, SecurityUnavailable
         try:
             service = getattr(request.app.state, "concat_security", None)
@@ -42,7 +42,7 @@ async def current_principal(request: Request) -> Principal:
                 request.app.state.concat_security = service
             principal = service.authenticate(request)
         except SecurityUnavailable:
-            raise HTTPException(401, "Verified Scene authentication unavailable") from None
+            raise HTTPException(401, "Local administrator authentication unavailable") from None
     if not isinstance(principal, Principal) or not principal.valid() or not principal.is_active:
         raise HTTPException(status_code=401, detail="Active authenticated session required")
     if not principal.concat_granted:
