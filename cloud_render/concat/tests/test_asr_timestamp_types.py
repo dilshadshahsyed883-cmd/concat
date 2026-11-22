@@ -39,7 +39,19 @@ class AsrTimestampTypesTests(unittest.TestCase):
                       np.float64("-inf"), np.bool_(True), np.array([1.0])):
             for field in ("start", "end"):
                 with self.subTest(value=repr(value), field=field):
-                    with self.assertRaisesRegex(ValueError, "Invalid ASR word " + field):
+                    from cloud_render.concat.gpu.asr_alignment import (
+                        AsrWordAlignmentError, segments_to_cues
+                    )
+                    word = SimpleNamespace(word="hello",
+                        start=value if field == "start" else 0,
+                        end=value if field == "end" else 2)
+                    # The strict parser rejects malformed model scalars,
+                    # even though GPU ASR can recover from valid segment bounds.
+                    with self.assertRaisesRegex(AsrWordAlignmentError, "Invalid ASR word " + field):
+                        segments_to_cues([SimpleNamespace(words=[word])], model="small")
+                    # Without real segment bounds, no timing can be estimated.
+                    # The alternate ASR pass must also fail safely.
+                    with self.assertRaisesRegex(ValueError, "after 2 passes"):
                         self.transcribe(value if field == "start" else 0,
                                         value if field == "end" else 2)
 
