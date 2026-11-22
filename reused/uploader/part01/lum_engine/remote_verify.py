@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Any
 
 
-def verify_youtube_video(auth_manager: Any, db: Any, core_video_id: int) -> dict:
+def verify_youtube_video(auth_manager: Any, db: Any, core_video_id: int, *, strict: bool = False) -> dict:
     job = db.get_video(int(core_video_id))
     if not job:
         raise RuntimeError("Core upload row is missing")
@@ -32,6 +32,12 @@ def verify_youtube_video(auth_manager: Any, db: Any, core_video_id: int) -> dict
     returned_channel = str((item.get("snippet") or {}).get("channelId") or "").strip()
     if expected_channel and returned_channel and expected_channel != returned_channel:
         raise RuntimeError("YouTube video exists but belongs to a different channel")
+    if strict:
+        if not expected_channel or returned_channel != expected_channel:
+            raise RuntimeError("YouTube verification requires the expected owner channel")
+        upload_status = str((item.get("status") or {}).get("uploadStatus") or "")
+        if upload_status not in {"uploaded", "processed"}:
+            raise RuntimeError("YouTube upload is not independently confirmed successful")
     return {
         "verified": True,
         "video_id": youtube_id,

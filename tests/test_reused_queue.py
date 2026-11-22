@@ -41,6 +41,7 @@ def project(owner, channel):
         "ui_mode": "heavy",
         "source_mode": "local_file",
         "source_origin": "concat_link",
+        "concat_job_id": "video-one",
         "staging_path": str(stage),
         "source_file_name": "Concat.mp4",
         "source_file_size": stage.stat().st_size,
@@ -78,6 +79,8 @@ assert restarted.owner_queue_paused("owner2") is True
 assert restarted.get(a)["status"] == "QUEUED"
 
 scheduled = project("owner1", 33)
+scheduled["concat_job_id"] = "video-two"
+scheduled["source_fingerprint"] = "b" * 64
 scheduled["privacy_status"] = "public"
 scheduled["publish_at"] = "2099-01-01T20:00:00Z"
 scheduled_id = restarted.create_project(scheduled)

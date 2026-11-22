@@ -71,7 +71,7 @@
     {% if engine_instance == 'concat' %}
     <section class="lum-card lum-span-2 copyright-source-card">
       <select name="source_mode" id="copyright-source-mode" hidden aria-label="Video source"><option value="concat_link" selected>Concat Video Link</option></select>
-      <div class="concat-source-fields" data-concat-media-picker>
+      <div class="concat-source-fields" data-concat-media-picker data-available-media-url="{{ base_path }}/api/concat/available-media">
         <label class="lum-field"><span>Concat Video Link</span><input id="concat-media-link" name="concat_video_link" type="url" maxlength="2048" value="{{ concat_source_prefill|e }}" required placeholder="https://concat.scenebuilder.online/api/cloud-render/media/VIDEO_ID/file" autocomplete="off"></label>
         <div class="concat-media-select">
           <label class="lum-field" for="concat-media-video"><span>Concat Media</span></label>

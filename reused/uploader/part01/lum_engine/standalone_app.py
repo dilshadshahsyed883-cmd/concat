@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 import secrets
 import shutil
 import hashlib
@@ -851,8 +852,8 @@ def concat_available_media(request: Request):
             origin=os.getenv("CONCAT_PUBLIC_ORIGIN", "https://concat.scenebuilder.online"),
             reserved_ids=reserved_ids, reserved_sha=reserved_sha,
         )
-    except ConcatSourceError as exc:
-        raise HTTPException(503, str(exc)) from exc
+    except (ConcatSourceError, OSError, sqlite3.Error) as exc:
+        raise HTTPException(503, "Concat Media is temporarily unavailable") from exc
     return JSONResponse({"ok": True, "items": items, "count": len(items)},
                         headers={"Cache-Control": "no-store, private"})
 
@@ -1235,6 +1236,10 @@ def copyright_edit_metadata(
 def _copyright_retry_owned_project(project_id: int, project: dict[str, Any]) -> None:
     if str(project.get("status") or "") not in {"FAILED", "PAUSED"}:
         raise ValueError("Only failed or paused projects can be retried")
+    if project.get("remote_verified_at") and project.get("youtube_video_id"):
+        if not store.retry(project_id):
+            raise ValueError("Project is not retryable")
+        return  # Verified cleanup must never mutate or queue the core upload.
     core_id = int(project.get("core_video_id") or 0)
     if core_id:
         core = db.get_video(core_id) or {}

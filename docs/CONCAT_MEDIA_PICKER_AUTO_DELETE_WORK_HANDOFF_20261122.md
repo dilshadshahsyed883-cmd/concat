@@ -4,7 +4,7 @@
 **Repository:** `dilshadshahsyed883-cmd/concat-web`  
 **Feature branch:** `feature/concat-media-picker-upload-cleanup-20261122`  
 **Base:** `main` (do not modify or merge main without separate user approval)  
-**Status:** Implementation **in progress** on the feature branch; **not tested or production deployed**.
+**Status:** Existing implementation reviewed and finalized on the feature branch with passing maintained offline tests. Draft PR review required; browser visual validation and live YouTube/VPS validation remain outstanding. No merge or deployment performed.
 
 ## 1. User-approved scope
 
@@ -69,7 +69,7 @@ Concat Media: completed + owned + verified + physically present
 
 ## 4. Code already written on the separate branch (review and finish)
 
-**These changes have been committed but are not yet tested or signed off:**
+**Initial branch changes reviewed during completion; final corrections and validation are recorded in section 8. Human release sign-off remains outstanding:**
 
 1. `project_store.py`: new `concat_job_id` column, owner/source reservation helpers and atomic SQLite trigger for cross-channel duplicate admission.
 2. `concat_source.py`: owner-safe media listing and checksum-verified deletion helper for canonical Concat Media.
@@ -115,3 +115,49 @@ Concat Media: completed + owned + verified + physically present
 ## 7. Work mode continuation instructions
 
 Use the GitHub repository and exact feature branch above. Compare with main, inspect/repair already committed code, add tests, execute verification, and provide branch/commit/PR links. Keep all work in this feature branch; do not create another branch unless necessary and explained. If a live secret or privileged production operation would be needed, skip it and report the blocker. If a test cannot be run, report exactly which test and why. Never report 'completed' until the acceptance criteria are met.
+
+
+## 8. Completion review and validation — 2026-11-22
+
+### Final behavior and fixes
+
+- Reviewed all nine initial code changes against `main`; continued the existing implementation.
+- Picker uses the template's actual base path, preserving both standalone and nested mounts. Refresh, navigation, restored pages, visibility changes and a visible-page 30-second poll refresh availability without overwriting manual URLs, titles, metadata, groups, channels or schedules. Names are inserted as text. Empty/error states leave manual entry available. Updated JS/CSS asset versions avoid stale cached controls.
+- Listing trusts owner-specific Cloud Render `ready` records with valid verified SHA metadata, canonical MP4 presence, matching size and MP4 header. Full SHA verification remains mandatory when staging and before deletion; polling does not hash every multi-GB file. Concurrently disappearing/malformed entries are skipped. API errors reveal no storage paths and responses disable caching.
+- Admission is protected by an atomic SQLite insert trigger across all channels of the owner, matching canonical job ID or case-insensitive verified fingerprint. Archived records and old records lacking IDs still reserve known fingerprints. An update trigger also rejects retrying a released old row after another request has claimed that source.
+- Rebuilt the existing fingerprint/channel index to exclude Concat sources; its prior predicate is retained for every other uploader source. Safe pre-upload failed/cancelled Concat submissions can now be admitted again to the same channel.
+- Added durable `concat_upload_started` before core insertion. Core-linked, remotely identified, verified, or upload-attempted failures remain reserved even if wrapper linkage/remote synchronization was interrupted. Pre-upgrade Concat rows conservatively receive this marker: an old failure cannot prove there was no remote attempt. Retry/review uses the existing wrapper/core recovery instead of a new queue item.
+- Added `concat_cleanup_pending` and `concat_cleanup_retry_at`. Verification persists cleanup intent together with the receipt. Cleanup failures and active-source deferrals retain pending work with a persisted 60-second minimum backoff. The serial worker retries cleanup independently of manual upload pause; a long running upload can delay the next attempt. No core upload methods run on this retry path.
+- Deferred uploads can show `COMPLETED` with an explanatory pending-cleanup message, while `cleanup_verified_at` remains NULL. They retain their receipt and retry obligation even if archived. Other independently verified entries no longer block each other's cleanup.
+- Transactional, repeatable migration preserves existing projects, history, events and receipts, including pre-existing duplicate rows. On first upgrade, known-ID verified draft-era completions are reconsidered because draft code could incorrectly mark deferred cleanup complete. Startup also adopts known-ID verified records interrupted before cleanup. Unknown legacy IDs are never guessed from titles/filenames: their original is retained and a warning is logged.
+- Concat's independent YouTube lookup requires the returned video ID, expected owner channel and successful `uploaded`/`processed` API status. Failed/rejected/deleted/unknown responses retain the original and no verified receipt is written. The stricter option is Concat-only; other uploaders keep their prior verifier behavior. A remote ID with uncertain core state pauses for recovery instead of uploading again.
+- Canonical cleanup is independent of `delete_staged_after_verified`; the setting still governs private staged files. Verified cleanup retries do not requeue or mutate a core upload. Cleanup validates owner-keyed storage, rejects symlink ancestors/leaves, traversal, mismatched checksum/size and in-flight Drive states; it checks inode/device/size/mtime after hashing. It deletes only the local canonical MP4 and its Media row, never any Drive object. Missing files after an unlink/DB-commit crash reconcile idempotently; missing metadata with an existing file is retained for review.
+- Rendering, GPU/Salad code, production services, production data and Drive objects were not changed or exercised.
+
+### Executed validation
+
+| Check | Result |
+| --- | --- |
+| `python -m unittest discover -s tests -v` | PASS: 125 maintained top-level tests, including the isolated media regression runner |
+| Isolated media regression suite inside that runner | PASS: 20 cases covering owner/API isolation, real gateway+CSRF, manual admission, queue states/history, 8 concurrent cross-channel submissions, safe retry, migrations, worker upload/API verification, failed verification, exact deletion, staging failures, deferred cleanup, restart/backoff, legacy retention and remote ambiguity |
+| `python -m unittest app.modules.concat.test_routes -v` | PASS: 11 tests |
+| `python -m unittest discover -s app/modules/uploader/tests -v` | PASS: 8 tests |
+| `python -m compileall -q app reused run.py` | PASS |
+| `node --check app/static/app.js` and picker syntax check | PASS |
+| `node tests/js/{channel_picker,thumbnail_limits,concat_media_picker}.test.js` (each separately) | PASS: all three scripts; picker exercises lifecycle, URL autofill, manual preservation, API failures, stale response races, text escaping and periodic refresh |
+| Shell syntax for guarded release, Nginx cutover and manual integration release scripts | PASS; syntax only, no script executed |
+| `git diff --check` | PASS |
+| Clean production-only venv install plus `python -I tests/smoke_uploader_production.py` | PASS: `PRODUCTION_ONLY_UPLOADER_IMPORT=PASS` |
+| `pip wheel --no-deps` | PASS |
+| Real Chromium desktop/mobile layout attempt | BLOCKED: bundled Playwright browser unavailable; system Chromium cannot launch because `socket()` is denied in this executor. Responsive two-column / <=760px single-column CSS and template structure reviewed; visual fit is not claimed tested. |
+| Original `reused/reference_tests/uploader` and `/security` corpus, exploratory invocation | Not runnable directly: original upstream `apps/copyright-uploader/part01`, `lum_engine`, `desktop_core` and `cloud_render` paths are absent. `docs/REUSE_MANIFEST.md` explicitly labels these reference-only tests for adaptation. Maintained adapted suites above pass; no reference-corpus success is claimed. |
+
+No authenticated live YouTube upload, VPS production deletion, real Drive transfer, GPU operation or deployment was attempted. YouTube responses and failures in regression tests are mocks; queue, owner storage, SQLite migrations, staging, canonical deletion, HTTP gateway and CSRF checks run against real disposable local components.
+
+### Review and operations
+
+- CI runs the maintained Python suites and now explicitly runs the new media picker JavaScript regression plus channel picker regression. PR CI status must be checked before approval.
+- Operational events distinguish `Concat Media cleanup deferred`, `Verified Concat cleanup retry failed`, original-deleted/already-absent results, missing legacy identity and duplicate/remote-recovery blocks. Inspect `concat_cleanup_pending`, `concat_cleanup_retry_at`, `remote_verified_at`, `cleanup_verified_at`, `youtube_video_id` and the project's events when diagnosing cleanup.
+- Release only after human PR approval, merge approval and the existing exact-main-SHA terminal gates in `deploy/RELEASE_GATES.md`. This work does not authorize those actions. Back up uploader SQLite (including a consistent WAL snapshot) and owner Cloud Render storage before any later approved rollout. Confirm the service account can write the configured owner databases/media directories.
+- Rollback requires pausing the uploader worker, reverting to an approved prior main release and preserving all receipts/history. Do not run older worker code against pending cleanup blindly. Additive columns are safe to retain, but preserve the new Concat reservation triggers/index rules while reconciling work; never clear receipts or recreate upload jobs to resolve cleanup errors. Deleted MP4s require backup recovery; reverting code cannot restore them.
+- Remaining review: real desktop/mobile visual validation; disposable authorized live YouTube/VPS smoke after separate release authorization; unknown-ID legacy originals intentionally retained; ambiguous historical failures conservatively held for existing recovery/review.

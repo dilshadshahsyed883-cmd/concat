@@ -84,6 +84,7 @@ class ProjectStore:
                     archived_at TEXT
                 )
             """)
+            conn.execute("BEGIN IMMEDIATE")
             columns = {row[1] for row in conn.execute("PRAGMA table_info(projects)")}
             if "source_fingerprint" not in columns:
                 conn.execute("ALTER TABLE projects ADD COLUMN source_fingerprint TEXT NOT NULL DEFAULT ''")
@@ -93,6 +94,26 @@ class ProjectStore:
                 conn.execute("ALTER TABLE projects ADD COLUMN source_origin TEXT NOT NULL DEFAULT ''")
             if "concat_job_id" not in columns:
                 conn.execute("ALTER TABLE projects ADD COLUMN concat_job_id TEXT NOT NULL DEFAULT ''")
+            cleanup_migration = "concat_cleanup_pending" not in columns
+            for column, definition in (
+                ("concat_upload_started", "INTEGER NOT NULL DEFAULT 0"),
+                ("concat_cleanup_pending", "INTEGER NOT NULL DEFAULT 0"),
+                ("concat_cleanup_retry_at", "TEXT NOT NULL DEFAULT ''"),
+            ):
+                if column not in columns:
+                    conn.execute(f"ALTER TABLE projects ADD COLUMN {column} {definition}")
+            if "concat_upload_started" not in columns:
+                # Old failed records cannot prove that no core INSERT occurred
+                # before linkage was persisted. Hold them for existing recovery.
+                conn.execute("UPDATE projects SET concat_upload_started=1 WHERE source_origin='concat_link'")
+            # Adopt verified in-flight work after a crash. On the first upgrade,
+            # also revisit draft-era completed jobs whose cleanup was deferred.
+            conn.execute("""UPDATE projects SET concat_cleanup_pending=1,
+                    cleanup_verified_at=NULL
+                WHERE source_origin='concat_link' AND concat_job_id!=''
+                  AND COALESCE(remote_verified_at,'')!=''
+                  AND COALESCE(youtube_video_id,'')!=''
+                  AND (? OR COALESCE(cleanup_verified_at,'')='')""", (cleanup_migration,))
             if "vps_folder" not in columns:
                 conn.execute("ALTER TABLE projects ADD COLUMN vps_folder TEXT NOT NULL DEFAULT ''")
             if "archived_at" not in columns:
@@ -103,28 +124,46 @@ class ProjectStore:
                 ON projects(owner_username,vps_folder,source_file_name)
                 WHERE source_origin='folder' AND status!='CANCELLED'
             """)
-            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_copyright_source_channel ON projects(owner_username,channel_db_id,source_fingerprint) WHERE source_fingerprint != '' AND status != 'CANCELLED'")
-            # A database trigger makes admission atomic even with concurrent browsers or
-            # requests to different YouTube channels. Historical rows without a job ID
-            # are still matched by the verified MP4 fingerprint.
-            conn.execute("""
-                CREATE TRIGGER IF NOT EXISTS tr_concat_unique_upload_source
+            # Concat has its own owner-wide admission rule. Keep the existing
+            # per-channel constraint unchanged for every other source type.
+            conn.execute("DROP INDEX IF EXISTS uq_copyright_source_channel")
+            conn.execute("""CREATE UNIQUE INDEX uq_copyright_source_channel
+                ON projects(owner_username,channel_db_id,source_fingerprint)
+                WHERE source_fingerprint != '' AND status != 'CANCELLED'
+                  AND source_origin != 'concat_link'""")
+            # Core linkage conservatively reserves ambiguous outcomes, even when
+            # wrapper failure happened before it copied the remote ID/receipt.
+            conflict = """EXISTS (
+                SELECT 1 FROM projects p
+                WHERE p.id != NEW.id
+                  AND p.owner_username=NEW.owner_username COLLATE NOCASE
+                  AND p.source_origin='concat_link'
+                  AND ((NEW.concat_job_id!='' AND p.concat_job_id=NEW.concat_job_id) OR
+                       (NEW.source_fingerprint!='' AND
+                        p.source_fingerprint=NEW.source_fingerprint COLLATE NOCASE))
+                  AND (p.status NOT IN ('CANCELLED','FAILED')
+                       OR COALESCE(p.remote_verified_at,'')!=''
+                       OR COALESCE(p.youtube_video_id,'')!=''
+                       OR COALESCE(p.core_video_id,0)>0
+                       OR p.concat_upload_started=1)
+            )"""
+            for name in ("tr_concat_unique_upload_source", "tr_concat_retry_source"):
+                conn.execute(f"DROP TRIGGER IF EXISTS {name}")
+            conn.execute(f"""CREATE TRIGGER tr_concat_unique_upload_source
                 BEFORE INSERT ON projects
                 WHEN NEW.source_origin='concat_link' AND
-                    (NEW.concat_job_id='' OR EXISTS (
-                        SELECT 1 FROM projects p
-                        WHERE p.owner_username=NEW.owner_username COLLATE NOCASE
-                          AND p.source_origin='concat_link'
-                          AND (p.concat_job_id=NEW.concat_job_id OR
-                              (NEW.source_fingerprint!='' AND p.source_fingerprint=NEW.source_fingerprint))
-                          AND (p.status NOT IN ('CANCELLED','FAILED')
-                               OR COALESCE(p.remote_verified_at,'')!=''
-                               OR COALESCE(p.youtube_video_id,'')!='')
-                    ))
-                BEGIN
-                    SELECT RAISE(ABORT, 'Concat video already queued or uploaded');
-                END
-            """)
+                     (NEW.concat_job_id='' OR NEW.source_fingerprint='' OR {conflict})
+                BEGIN SELECT RAISE(ABORT, 'Concat video already queued or uploaded'); END""")
+            # Re-admission can also happen through Retry on an older failed row.
+            # Do not apply this to ordinary transitions of historical active jobs.
+            conn.execute(f"""CREATE TRIGGER tr_concat_retry_source
+                BEFORE UPDATE OF status ON projects
+                WHEN NEW.source_origin='concat_link'
+                  AND OLD.status IN ('FAILED','CANCELLED','PAUSED')
+                  AND NEW.status IN ('QUEUED','WAITING_SLOT','SCHEDULED','SOURCE_READY')
+                  AND COALESCE(NEW.remote_verified_at,'')=''
+                  AND {conflict}
+                BEGIN SELECT RAISE(ABORT, 'Concat video already queued or uploaded'); END""")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS copyright_profiles (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -350,7 +389,7 @@ class ProjectStore:
     def update(self, project_id: int, **fields: Any) -> None:
         allowed = {
             "status","progress","error_message","staging_path","thumbnail_path","core_video_id","youtube_video_id","youtube_url",
-            "remote_verified_at","cleanup_verified_at","source_file_name","source_file_size","retry_count","app_upload_at"
+            "remote_verified_at","cleanup_verified_at","concat_cleanup_pending","concat_cleanup_retry_at","concat_upload_started","source_file_name","source_file_size","retry_count","app_upload_at"
         }
         safe = {k:v for k,v in fields.items() if k in allowed}
         if not safe:
@@ -472,7 +511,10 @@ class ProjectStore:
             row = conn.execute("SELECT status,retry_count FROM projects WHERE id=?", (int(project_id),)).fetchone()
             if not row or str(row["status"]) not in {"FAILED","PAUSED"}:
                 return False
-            conn.execute("UPDATE projects SET status='QUEUED',error_message='',retry_count=?,updated_at=? WHERE id=?", (int(row["retry_count"] or 0)+1, now_iso(), int(project_id)))
+            try:
+                conn.execute("UPDATE projects SET status='QUEUED',error_message='',retry_count=?,updated_at=? WHERE id=?", (int(row["retry_count"] or 0)+1, now_iso(), int(project_id)))
+            except sqlite3.IntegrityError as exc:
+                raise ValueError("This Concat video is already queued or uploaded") from exc
         self.event(project_id, "Project returned to queue for retry", "WARNING")
         return True
 
@@ -535,7 +577,9 @@ class ProjectStore:
                 WHERE owner_username=? COLLATE NOCASE AND source_origin='concat_link'
                   AND (status NOT IN ('CANCELLED','FAILED')
                        OR COALESCE(remote_verified_at,'')!=''
-                       OR COALESCE(youtube_video_id,'')!='')
+                       OR COALESCE(youtube_video_id,'')!=''
+                       OR COALESCE(core_video_id,0)>0
+                       OR concat_upload_started=1)
             """, (owner,)).fetchall()
         return (
             {str(r["concat_job_id"]) for r in rows if r["concat_job_id"]},
@@ -550,9 +594,21 @@ class ProjectStore:
                 WHERE id!=? AND owner_username=? COLLATE NOCASE
                   AND source_origin='concat_link'
                   AND status NOT IN ('COMPLETED','CANCELLED','FAILED')
-                  AND (concat_job_id=? OR (source_fingerprint!='' AND source_fingerprint=?))
+                  AND (COALESCE(remote_verified_at,'')='' OR COALESCE(youtube_video_id,'')='')
+                  AND ((concat_job_id!='' AND concat_job_id=?) OR (source_fingerprint!='' AND source_fingerprint=? COLLATE NOCASE))
                 LIMIT 1
             """, (int(project_id), owner, job_id, fingerprint)).fetchone() is not None
+
+    def pending_concat_cleanup(self) -> list[dict[str, Any]]:
+        """Durable cleanup work is independent of upload queue pause/schedule."""
+        with self.connect() as conn:
+            return [dict(r) for r in conn.execute("""
+                SELECT * FROM projects WHERE source_origin='concat_link'
+                  AND concat_cleanup_pending=1
+                  AND COALESCE(remote_verified_at,'')!=''
+                  AND COALESCE(youtube_video_id,'')!=''
+                  AND concat_cleanup_retry_at<=? ORDER BY id LIMIT 25
+            """, (now_iso(),))]
 
     def copyright_profiles(self, owner: str) -> list[dict[str, Any]]:
         with self.connect() as conn:

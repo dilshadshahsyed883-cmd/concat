@@ -60,6 +60,8 @@ class VPSUploadWorker:
     def _run(self) -> None:
         while not self.shutdown_event.is_set():
             try:
+                if os.getenv("LUM_ENGINE_INSTANCE") == "concat":
+                    self._retry_concat_cleanup()
                 manual_engine_enabled = self.store.setting("engine_enabled", "1") == "1"
                 concat = os.getenv("LUM_ENGINE_INSTANCE") == "concat"
                 if not manual_engine_enabled and not concat:
@@ -96,6 +98,20 @@ class VPSUploadWorker:
                 self.active_project_id = None
                 self.store.release_waiting()
                 time.sleep(2)
+
+    def _retry_concat_cleanup(self) -> None:
+        # No upload/core methods are invoked here. Backoff is persisted before
+        # each attempt so failures and restarts cannot turn into a tight loop.
+        for project in self.store.pending_concat_cleanup():
+            if self.shutdown_event.is_set():
+                break
+            project_id = int(project["id"])
+            try:
+                raw = str(project.get("staging_path") or "")
+                self._finish_verified(project_id, project, Path(raw) if raw else None)
+            except Exception as exc:
+                self.store.update(project_id, status="FAILED", error_message=str(exc))
+                self.store.event(project_id, f"Verified Concat cleanup retry failed: {exc}", "WARNING")
 
     def _sync_core_state(self, project_id: int, core: dict[str, Any]) -> None:
         status = str(core.get("status") or "")
@@ -171,6 +187,10 @@ class VPSUploadWorker:
                 if value.tzinfo is None or value.astimezone(timezone.utc) <= datetime.now(timezone.utc) + timedelta(minutes=10):
                     raise RuntimeError("Scheduled release is too close or passed; create a new upload with a future time")
 
+            if concat and project.get("source_origin") == "concat_link":
+                # Persist intent before core INSERT: a crash between INSERT and
+                # wrapper linkage must not release the source for a second job.
+                self.store.update(project_id, concat_upload_started=1)
             self.store.update(project_id, status="UPLOAD_QUEUED", progress=0)
             core_video_id = int(self.db.add_video({
                 "local_video_path": str(staging),
@@ -210,6 +230,12 @@ class VPSUploadWorker:
                 error_message="Remote upload outcome unknown; review YouTube Studio before authorizing retry")
             self.store.event(project_id, "Recovery review required; automatic retry blocked", "WARNING")
             return
+        if concat and (core.get("youtube_video_id") or project.get("youtube_video_id")) and str(core.get("status") or "") not in {
+                UploadStatus.UPLOADED.value, UploadStatus.PUBLISHED.value}:
+            self.store.update(project_id, status="PAUSED",
+                error_message="Remote video ID exists with an uncertain upload state; review before retry")
+            self.store.event(project_id, "Existing remote video ID blocked duplicate upload", "WARNING")
+            return
         if str(core.get("status") or "") == UploadStatus.FAILED.value:
             self.db.queue_failed_for_retry(exclude_auto_engine=True, video_ids=[core_video_id])
         elif str(core.get("status") or "") == UploadStatus.PAUSED.value and str(core.get("recovery_state") or "") != "REVIEW_REQUIRED":
@@ -243,10 +269,11 @@ class VPSUploadWorker:
 
         # 4) Independent remote lookup must pass before staged media is eligible for deletion.
         self.store.update(project_id, status="VERIFYING_REMOTE", progress=96)
-        verified = verify_youtube_video(self.auth, self.db, core_video_id)
+        verified = verify_youtube_video(self.auth, self.db, core_video_id, **({"strict": True} if concat else {}))
         verified_at = now_iso()
         self.store.update(
             project_id,
+            concat_cleanup_pending=int(project.get("source_origin") == "concat_link" and bool(project.get("concat_job_id"))),
             remote_verified_at=verified_at,
             youtube_video_id=verified["video_id"],
             youtube_url=verified["youtube_url"],
@@ -261,6 +288,10 @@ class VPSUploadWorker:
         """Idempotent verified-only cleanup, never reupload on a cleanup retry."""
         if not project.get("remote_verified_at") or not project.get("youtube_video_id"):
             raise RuntimeError("Cannot delete VPS video before independent YouTube verification")
+        concat_cleanup = project.get("source_origin") == "concat_link" and bool(project.get("concat_job_id"))
+        if concat_cleanup:
+            self.store.update(project_id, concat_cleanup_pending=1,
+                concat_cleanup_retry_at=(datetime.now(timezone.utc) + timedelta(seconds=60)).isoformat())
         self.store.update(project_id, status="CLEANING", progress=99)
         if self.store.setting("delete_staged_after_verified", "1") == "1":
             # Folder sources are separate handoff copies. Never delete the
@@ -314,6 +345,9 @@ class VPSUploadWorker:
                     project_id, str(project["owner_username"]), job_id,
                     str(project.get("source_fingerprint") or "")):
                 self.store.event(project_id, "Concat Media cleanup deferred: another active queue item uses the original")
+                self.store.update(project_id, status="COMPLETED", progress=100,
+                                  cleanup_verified_at=None, error_message="Original cleanup deferred; automatic retry pending")
+                return
             else:
                 cloud_root = os.getenv("CONCAT_CLOUD_RENDER_ROOT", "")
                 if not cloud_root:
@@ -332,5 +366,6 @@ class VPSUploadWorker:
                     "Verified Concat Media original deleted after YouTube upload"
                     if removed else "Verified Concat Media original was already absent")
         self.store.update(project_id, status="COMPLETED", progress=100,
-                          cleanup_verified_at=now_iso(), error_message="")
+                          cleanup_verified_at=now_iso(), concat_cleanup_pending=0,
+                          concat_cleanup_retry_at="", error_message="")
         self.store.event(project_id, "Project completed: remote verification + VPS cleanup verified")

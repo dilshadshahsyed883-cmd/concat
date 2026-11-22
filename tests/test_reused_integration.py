@@ -111,7 +111,7 @@ import json, os
 from lum_engine.project_store import ProjectStore
 store = ProjectStore()
 data = dict(owner_username="alice", source_mode="local_file",
-            staging_path=os.environ["TEST_STAGE"], source_origin="concat_link",
+            staging_path=os.environ["TEST_STAGE"], source_origin="concat_link", concat_job_id="legacy-fixture",
             source_fingerprint=os.environ["TEST_SHA"], channel_db_id=1,
             title="Verified render", description="Test publish description",
             privacy_status="private", source_file_name="render.mp4",

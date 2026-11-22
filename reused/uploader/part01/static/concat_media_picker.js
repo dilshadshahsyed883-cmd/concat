@@ -22,7 +22,7 @@
       if (refresh) refresh.disabled = true;
       if (status) status.textContent = "Checking available Concat Media videos…";
       try {
-        const response = await fetch("/concat-uploader/api/concat/available-media", {
+        const response = await fetch(root.dataset.availableMediaUrl, {
           credentials: "same-origin", cache: "no-store",
           headers: {Accept: "application/json"}
         });
@@ -69,7 +69,11 @@
     if (refresh) refresh.addEventListener("click", load);
     load();
   }
-  document.addEventListener("lum:shell-replaced", () => install());
+  document.addEventListener("lum:shell-replaced", () => install(true));
+  // Queue changes in another browser/tab become visible without losing form values.
+  window.setInterval(() => {
+    if (!document.hidden) install(true);
+  }, 30000);
   window.addEventListener("pageshow", () => install(true));
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) install(true);
