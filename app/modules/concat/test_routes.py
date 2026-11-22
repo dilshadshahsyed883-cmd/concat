@@ -5,6 +5,10 @@ import tempfile
 import unittest
 
 from fastapi.testclient import TestClient
+from unittest.mock import Mock, patch
+from pathlib import Path
+
+from app.modules.concat.engine.cloud_render import CloudRender
 
 from app.auth import Principal
 from app.main import create_app
@@ -94,6 +98,112 @@ class StudioTests(unittest.TestCase):
         self.assertFalse(self.client.get("/api/cloud-render/config").json()["auto_shutdown"])
         self.owner = "alice"
         self.assertEqual(self.client.get("/api/cloud-render/config").json()["idle_timeout_minutes"], 7)
+
+    def test_salad_idle_stop_requires_real_idle_and_running_group(self):
+        with tempfile.TemporaryDirectory() as folder:
+            manager = CloudRender(Path(folder) / "owner", tenant_key="a" * 64)
+            worker = Mock()
+            worker.timeout = 60
+            worker.request.return_value = {"active_renders": 0}
+            group = Mock(status_code=200)
+            group.json.return_value = {"current_state": {"status": "running"},
+                                       "autostart_policy": False}
+            stopped = Mock(status_code=202)
+            env = {"CONCAT_SALAD_ORGANIZATION": "org-one",
+                   "CONCAT_SALAD_PROJECT": "proj-one",
+                   "CONCAT_SALAD_CONTAINER_GROUP": "render-one"}
+            try:
+                with manager.connection() as con:
+                    for k, v in {"auto_shutdown":"1", "idle_timeout_minutes":"5",
+                                 "enabled":"1", "endpoint":"https://render.salad.cloud",
+                                 "worker_key":"example-worker-token",
+                                 "salad_key":"example-management-key"}.items():
+                        manager.put(con, k, v)
+                with patch.dict("os.environ", env), patch.object(
+                    manager, "production_worker", return_value=worker
+                ), patch("app.modules.concat.engine.salad_idle.requests.get",
+                         return_value=group) as get, patch(
+                    "app.modules.concat.engine.salad_idle.requests.post",
+                    return_value=stopped
+                ) as post, patch("app.modules.concat.engine.salad_idle.time.time",
+                                  return_value=1000) as clock:
+                    manager.salad_idle.check()
+                    clock.return_value = 1299
+                    manager.salad_idle.check()
+                    post.assert_not_called()
+                    clock.return_value = 1300
+                    manager.salad_idle.check()
+                    self.assertEqual(post.call_count, 1)
+                    self.assertTrue(post.call_args.args[0].endswith(
+                        "/organizations/org-one/projects/proj-one/containers/render-one/stop"))
+                    self.assertFalse(post.call_args.kwargs["allow_redirects"])
+                    self.assertEqual(post.call_args.kwargs["headers"]["Salad-Api-Key"],
+                                     "example-management-key")
+                    self.assertEqual(manager.config()["salad_idle_status"], "stop_requested")
+                    self.assertEqual(manager.config()["salad_idle_since"], 0)
+                    self.assertTrue(get.called)
+                    manager.salad_idle.check()
+                    self.assertEqual(post.call_count, 1)
+            finally:
+                manager.production.close()
+                manager.pool.shutdown(wait=False, cancel_futures=True)
+
+    def test_salad_idle_never_stops_with_queued_job_or_unknown_worker(self):
+        with tempfile.TemporaryDirectory() as folder:
+            manager = CloudRender(Path(folder) / "owner", tenant_key="b" * 64)
+            env = {"CONCAT_SALAD_ORGANIZATION": "org-one",
+                   "CONCAT_SALAD_PROJECT": "proj-one",
+                   "CONCAT_SALAD_CONTAINER_GROUP": "render-one"}
+            worker = Mock()
+            worker.timeout = 30
+            worker.request.return_value = {"active_renders": 1}
+            try:
+                with manager.connection() as con:
+                    for k, v in {"auto_shutdown":"1", "idle_timeout_minutes":"1",
+                                 "enabled":"1", "endpoint":"https://render.salad.cloud",
+                                 "worker_key":"worker-token", "salad_key":"api-key"}.items():
+                        manager.put(con, k, v)
+                    con.execute("""INSERT INTO production_jobs
+                        (remote_id,drive_id,name,resource_keys,drive_size,drive_md5,
+                         folder_id,drive_path,state) VALUES(?,?,?,?,?,?,?,?,?)""",
+                        ("remote-1", "drive-1", "pending.zip", "", 1, "", "", "", "Queued"))
+                with patch.dict("os.environ", env), patch.object(
+                    manager, "production_worker", return_value=worker
+                ), patch("app.modules.concat.engine.salad_idle.requests.post") as post, patch(
+                    "app.modules.concat.engine.salad_idle.requests.get") as get, patch(
+                    "app.modules.concat.engine.salad_idle.time.time", return_value=1000
+                ) as clock:
+                    manager.salad_idle.check()
+                    self.assertEqual(manager.config()["salad_idle_status"], "busy")
+                    post.assert_not_called()
+                    with manager.connection() as con:
+                        con.execute("UPDATE production_jobs SET state='Completed'")
+                    manager.salad_idle.check()  # new full countdown
+                    clock.return_value = 1061
+                    manager.salad_idle.check()
+                    self.assertEqual(manager.config()["salad_idle_status"], "worker_busy")
+                    get.assert_not_called()
+                    post.assert_not_called()
+            finally:
+                manager.production.close()
+                manager.pool.shutdown(wait=False, cancel_futures=True)
+
+    def test_salad_idle_fail_closed_without_group_or_credentials(self):
+        with tempfile.TemporaryDirectory() as folder:
+            manager = CloudRender(Path(folder) / "owner", tenant_key="c" * 64)
+            try:
+                manager.save({"auto_shutdown": True, "idle_timeout_minutes": 5})
+                with patch.dict("os.environ", {
+                    "CONCAT_SALAD_ORGANIZATION": "", "CONCAT_SALAD_PROJECT": "",
+                    "CONCAT_SALAD_CONTAINER_GROUP": ""
+                }), patch("app.modules.concat.engine.salad_idle.requests.post") as post:
+                    manager.salad_idle.check()
+                    post.assert_not_called()
+                    self.assertFalse(manager.config()["auto_shutdown_ready"])
+                    self.assertEqual(manager.config()["salad_idle_status"], "not_configured")
+            finally:
+                manager.production.close()
+                manager.pool.shutdown(wait=False, cancel_futures=True)
 
     def test_owner_specific_gpu_and_media(self):
         token = self.auth_csrf()
