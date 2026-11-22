@@ -2,7 +2,7 @@ name: Concat Web essential checks
 on:
   pull_request:
   push:
-    branches: [feature/foundation]
+    branches: [main]
 permissions:
   contents: read
 concurrency:
@@ -27,10 +27,32 @@ jobs:
           python -m unittest discover -s tests -p 'test_foundation.py' -v
           python -m unittest discover -s tests -p 'test_reused_*.py' -v
           python -m unittest app.modules.concat.test_routes -v
+          python -m unittest discover -s tests -p 'test_concat_drive_intake.py' -v
+          python -m unittest discover -s tests -p 'test_concat_outputs_upload.py' -v
           python -m unittest discover -s app/modules/uploader/tests -p 'test_*.py' -v
+      - name: Browser shell JavaScript syntax
+        run: node --check app/static/app.js
+      - name: Thumbnail browser limit regressions
+        run: node tests/js/thumbnail_limits.test.js
+      - name: VPS1-style Concat shell UX and authentication regressions
+        run: python -m unittest discover -s tests -p 'test_scene_shell_ui.py' -v
       - name: Release script syntax (no SSH or deployment)
-        run: bash -n deploy/guarded-release.sh
-      - name: Tailnet release security contract (offline only)
+        run: |
+          bash -n deploy/guarded-release.sh
+          bash -n deploy/manual-integration-release.sh
+      - name: Local-admin manual release security contract (offline only)
         run: python -m unittest discover -s tests -p 'test_release_security_contract.py' -v
+      - name: Concat-only Nginx HTTPS routing contract (offline only)
+        run: |
+          bash -n deploy/nginx-cutover.sh
+          python -m unittest discover -s tests -p 'test_nginx_routing.py' -v
+          python -m unittest discover -s tests -p 'test_nginx_existing_adoption.py' -v
+      - name: Production-only installed wheel uploader import smoke
+        run: |
+          set -Eeuo pipefail
+          python -m venv /tmp/concat-runtime-only
+          /tmp/concat-runtime-only/bin/python -m pip install --disable-pip-version-check --no-input .
+          # -I prevents the checkout and test extras masking missing prod deps.
+          /tmp/concat-runtime-only/bin/python -I tests/smoke_uploader_production.py
       - name: Wheel build smoke
         run: python -m pip wheel --no-deps --wheel-dir /tmp/concat-web-wheel .

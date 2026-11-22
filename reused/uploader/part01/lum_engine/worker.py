@@ -59,10 +59,15 @@ class VPSUploadWorker:
     def _run(self) -> None:
         while not self.shutdown_event.is_set():
             try:
-                if self.store.setting("engine_enabled", "1") != "1":
+                manual_engine_enabled = self.store.setting("engine_enabled", "1") == "1"
+                concat = os.getenv("LUM_ENGINE_INSTANCE") == "concat"
+                if not manual_engine_enabled and not concat:
                     time.sleep(2)
                     continue
-                project = self.store.claim_next_eligible()
+                # Scheduled Concat jobs start when due even without Start My Queue;
+                # unscheduled jobs remain gated by the manual engine and owner.
+                project = self.store.claim_next_eligible(
+                    schedule_only=(concat and not manual_engine_enabled))
                 if not project:
                     self.store.release_waiting()
                     time.sleep(2)

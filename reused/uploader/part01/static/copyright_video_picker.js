@@ -3,7 +3,9 @@
   "use strict";
   function install() {
     const mode = document.getElementById("copyright-source-mode");
-    if (!mode) return;
+    if (!mode || mode.dataset.channelPickerReady === "1") return;
+    // Rebind on each freshly inserted uploader form, never duplicate listeners.
+    mode.dataset.channelPickerReady = "1";
     const folder = document.getElementById("copyright-vps-folder");
     const video = document.getElementById("copyright-folder-file");
     const status = document.getElementById("copyright-folder-summary");
@@ -27,7 +29,7 @@
       if (!group || !channel) return;
       const selectedGroup = group.value.trim().toLocaleLowerCase();
       const previous = channel.value;
-      channel.replaceChildren(new Option(selectedGroup ? "Select channel from this group" : "Select a group first", ""));
+      channel.replaceChildren(new Option(selectedGroup ? "No channels in this group" : "Select a group first", ""));
       if (selectedGroup) {
         for (const option of allChannels) {
           const matches = String(option.dataset.groups || "")
@@ -35,6 +37,7 @@
           if (matches.includes(selectedGroup)) channel.add(option.cloneNode(true));
         }
       }
+      if (channel.options.length > 1) channel.options[0].textContent = "Select channel from this group";
       channel.disabled = !selectedGroup || channel.options.length === 1;
       if (Array.from(channel.options).some(option => option.value === previous)) channel.value = previous;
     }
@@ -91,10 +94,19 @@
     mode.addEventListener("change", () => { show(); if (mode.value === "folder") updateFolders(); });
     if (folder) folder.addEventListener("change", () => { video.value = ""; updateFolders(); });
     if (refresh) refresh.addEventListener("click", updateFolders);
-    window.addEventListener("pageshow", () => { show(); if (mode.value === "folder") updateFolders(); });
     show();
     if (mode.value === "folder") updateFolders();
   }
+  // Soft navigation swaps .lum-shell without re-running page scripts.
+  document.addEventListener("lum:shell-replaced", install);
+  // A restored group value may not emit change after browser history restore.
+  window.addEventListener("pageshow", () => {
+    install();
+    const group = document.getElementById("copyright-channel-group");
+    if (group) group.dispatchEvent(new Event("change"));
+    const mode = document.getElementById("copyright-source-mode");
+    if (mode) mode.dispatchEvent(new Event("change"));
+  });
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", install, {once:true});
   else install();
 })();

@@ -169,6 +169,120 @@ print(json.dumps(dict(job=job, duplicate_blocked=duplicate_blocked,
                 "/api/cloud-render/media/" + VIDEO_ID + "/file").status_code, 404)
         self.owner, self.admin = "alice", False
 
+    def test_local_admin_login_to_verified_mp4_and_uploader_queue(self):
+        """Use actual standalone login rather than a test identity injection.
+
+        Salad delivery is simulated by a checksum-verified receiver chunk. The
+        uploader uses the real copied staging and persistent queue repository.
+        """
+        from app.modules.admin.security import LOGIN_CSRF_COOKIE, password_hash
+
+        self.app.state.identity_resolver = None
+        with patch.dict(os.environ, {
+            "CONCAT_AUTH_MODE": "local-admin",
+            "CONCAT_ADMIN_USERNAME": "alice",
+            "CONCAT_ADMIN_PASSWORD_HASH": password_hash(
+                "Long-Standalone-Admin-Test-Password"),
+            "CONCAT_ADMIN_SESSION_SECRET": "independent-test-session-key-over-thirty-two",
+            "CONCAT_WEB_SECURITY_DB": str(Path(self.tmp.name) / "admin.sqlite3"),
+            "CONCAT_WEB_DATA_ROOT": str(self.cloud),
+        }):
+            self.assertEqual(self.client.get("/dashboard").status_code, 401)
+            page = self.client.get("/auth/login")
+            self.assertEqual(page.status_code, 200)
+            import re
+            match = re.search(r'name="csrf" value="([^"]+)"', page.text)
+            self.assertIsNotNone(match)
+            self.assertTrue(self.client.cookies.get(LOGIN_CSRF_COOKIE))
+            response = self.client.post(
+                "/auth/login",
+                data={"username": "alice", "password": "Long-Standalone-Admin-Test-Password",
+                      "csrf": match.group(1)},
+                headers={"Origin": ORIGIN},
+                follow_redirects=False,
+            )
+            self.assertEqual(response.status_code, 303, response.text)
+            for path in ("/dashboard", "/concat/production", "/concat/media",
+                         "/concat/gpu-config", "/admin"):
+                with self.subTest(path=path):
+                    self.assertEqual(self.client.get(path).status_code, 200)
+            digest = self.ingest()
+            job_id = self.queue_verified_video(digest)
+            result = self.client.get("/api/v1/dashboard/overview")
+            self.assertEqual(result.status_code, 200, result.text)
+            self.assertEqual(result.json()["renders"]["completed"], 1)
+            self.assertEqual(result.json()["videos"]["total"], 1)
+            self.assertEqual(result.json()["uploads"]["queued"], 1)
+            self.assertEqual(result.json()["uploads"]["jobs"][0]["id"], str(job_id))
+            csrf = self.client.get("/api/v1/auth/csrf").json()["csrf_token"]
+            out = self.client.post("/auth/logout", headers={
+                "X-CSRF-Token": csrf, "Origin": ORIGIN
+            }, follow_redirects=False)
+            self.assertEqual(out.status_code, 303)
+            self.assertEqual(self.client.get("/api/v1/dashboard/overview").status_code, 401)
+
+    def test_standalone_admin_uploader_ui_in_clean_process(self):
+        """Fresh server process proves copied uploader UI uses isolated state.
+
+        Other tests import the reused core with independent fixtures at module
+        discovery time. A real deployed Concat process starts with no such
+        imports, so exercise the guarded lazy load in its own Python process.
+        """
+        from app.modules.admin.security import password_hash
+        script = r'''
+import os, re
+from pathlib import Path
+from fastapi.testclient import TestClient
+from app.main import create_app
+from app.modules.uploader.gateway import backend_for
+
+app = create_app()
+with TestClient(app, base_url="https://concat.scenebuilder.online") as client:
+    page = client.get("/auth/login")
+    assert page.status_code == 200
+    token = re.search(r'name="csrf" value="([^"]+)"', page.text).group(1)
+    response = client.post("/auth/login",
+        data={"username": "alice", "password": "Long-Standalone-Admin-Test-Password",
+              "csrf": token},
+        headers={"Origin": "https://concat.scenebuilder.online"},
+        follow_redirects=False)
+    assert response.status_code == 303, response.text
+    response = client.get("/concat-uploader/queue")
+    assert response.status_code == 200, response.text[:500]
+    from desktop_core.modules.path_utils import USER_DATA_ROOT
+    from lum_engine.config import DATA_ROOT
+    assert USER_DATA_ROOT == Path(os.environ["LUM_DATA_DIR"]) / "core"
+    assert DATA_ROOT == Path(os.environ["LUM_DATA_DIR"])
+    assert Path(os.environ["LUM_DATA_DIR"]).joinpath("projects.sqlite3").is_file()
+    assert client.get("/api/v1/session").json()["username"] == "alice"
+print("STANDALONE_UPLOADER_UI=PASS_PRIVATE_ROOT")
+'''
+        env = dict(os.environ)
+        env.update({
+            "CONCAT_AUTH_MODE": "local-admin",
+            "CONCAT_ADMIN_USERNAME": "alice",
+            "CONCAT_ADMIN_PASSWORD_HASH": password_hash(
+                "Long-Standalone-Admin-Test-Password"),
+            "CONCAT_ADMIN_SESSION_SECRET": "local-admin-private-test-session-secret",
+            "CONCAT_WEB_SECURITY_DB": str(Path(self.tmp.name) / "single-admin.sqlite3"),
+            "CONCAT_WEB_DATA_ROOT": str(self.cloud),
+            "CONCAT_WEB_PUBLIC_ORIGIN": ORIGIN,
+            "LUM_DATA_DIR": str(self.uploads),
+            "LUM_ENGINE_INSTANCE": "concat",
+            "LUM_BASE_PATH": "/concat-uploader",
+            "LUM_SUITE_AUTH": "1",
+            "LUM_COOKIE_SECURE": "1",
+            "CONCAT_WEB_IN_PROCESS": "1",
+            "CONCAT_UPLOADER_ENABLED": "1",
+            "YOUTUBE_UPLOAD_MANAGER_DATA_DIR": str(self.uploads / "core"),
+            "LUM_GOOGLE_OAUTH_ROOT": str(self.uploads / "secure"),
+            "LUM_AUTO_ENGINE_V6_ROOT": str(self.uploads / "auto_engine_v6"),
+        })
+        done = subprocess.run([sys.executable, "-c", script], cwd=ROOT,
+                              env=env, capture_output=True, text=True, timeout=90)
+        self.assertEqual(done.returncode, 0, done.stdout + "\\n" + done.stderr[-3200:])
+        self.assertIn("STANDALONE_UPLOADER_UI=PASS_PRIVATE_ROOT", done.stdout)
+
     def test_legacy_quarantine_revocation_csrf_and_cross_owner_rows(self):
         self.ingest()
         source = source_module()

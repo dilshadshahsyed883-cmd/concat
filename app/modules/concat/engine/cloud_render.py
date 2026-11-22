@@ -2,8 +2,8 @@
 
 Safe contract: authenticated admin manages media; a separate rotating receiver token
 permits chunked Salad output ingress. Local MP4 removal only follows successful
-rclone transfer AND matching remote length+MD5. The canonical Drive Bridge is
-provided by deployment; no OAuth credentials are created or copied here.
+peer-authenticated canonical Bridge transfer AND matching remote length+MD5.
+No OAuth credentials are created or copied into the Concat Web service.
 """
 from __future__ import annotations
 import hashlib
@@ -26,6 +26,7 @@ from fastapi import HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
 from .cloud_render_production import ProductionQueue, Worker, WorkerWait
+from .salad_idle import SaladIdleStop
 
 CHUNK_MAX = 8 * 1024 * 1024
 MEDIA_MAX = 20 * 1024 * 1024 * 1024
@@ -39,19 +40,36 @@ SCENE_WORKER_HOME = Path("/var/lib/fresh-website/scene-builder/worker-home")
 
 
 def scene_rclone_env():
-    """Match the working Scene production worker's rclone lookup context.
+    """Resolve a canonical rclone identity that this *service user* can read.
 
-    A legacy RCLONE_CONFIG pointing to ubuntu's untraversable home must not
-    override the worker-owned XDG config. An accessible root-managed override
-    is kept; no credential file contents are read.
+    VPS_1 runs as a different Linux identity (vps1scene / ubuntu). Its private
+    worker HOME is not automatically accessible to the isolated concatweb user.
+    Prefer an explicitly configured, approved RCLONE_CONFIG when readable.
+    Never copy credentials, chmod Scene paths, switch Linux users or silently
+    discard an inaccessible explicit config (which could change Drive identity).
     """
     environment = os.environ.copy()
+    configured = environment.get("RCLONE_CONFIG", "").strip()
+    if configured:
+        if not Path(configured).is_file() or not os.access(configured, os.R_OK):
+            raise RcloneFailure(
+                "config", 1,
+                "canonical Drive Bridge configuration inaccessible to Concat service")
+        return environment
+
+    # Compatibility with VPS_1: reuse its worker HOME *only* if the isolated
+    # service has actually been granted access to that existing config.
+    existing = SCENE_WORKER_HOME / ".config" / "rclone" / "rclone.conf"
+    if not existing.is_file() or not os.access(existing, os.R_OK):
+        raise RcloneFailure(
+            "config", 1,
+            "Scene worker Drive Bridge configuration inaccessible to Concat service; "
+            "configure an approved, readable RCLONE_CONFIG for this service")
     environment["HOME"] = str(SCENE_WORKER_HOME)
     environment["XDG_CONFIG_HOME"] = str(SCENE_WORKER_HOME / ".config")
-    configured = environment.get("RCLONE_CONFIG", "").strip()
-    if configured and (not Path(configured).is_file() or not os.access(configured, os.R_OK)):
-        environment.pop("RCLONE_CONFIG", None)
     return environment
+
+
 # The native Linux Concat source lock in main is authoritative.
 # Dockerfile exists, but registry availability and runtime acceptance are unverified.
 IMAGE = os.getenv("CLOUD_RENDER_GPU_IMAGE_REF", "")
@@ -101,16 +119,28 @@ class RcloneFailure(RuntimeError):
 
 def classify_rclone_error(operation, returncode, stderr):
     msg = str(stderr or "").lower()[-8000:]
-    if any(x in msg for x in ("didn't find section in config file", "config file not found",
+    # In the original VPS_1 module, every "permission denied" is labelled a
+    # Google Drive *destination* error. Folder scans are reads, and local
+    # rclone.conf permissions are a separate fault (issue #16).
+    if ("permission denied" in msg or "access denied" in msg) and any(
+            marker in msg for marker in (
+                "rclone.conf", "config file", "configuration file",
+                "failed to load config", "failed to read config")):
+        cause = "local Drive Bridge configuration access denied to Concat service"
+    elif any(x in msg for x in (
+            "didn't find section in config file", "config file not found",
             "configuration file not found", "not found in config file", "unknown remote")):
-        cause = "remote configuration unavailable to Cloud Render service"
+        cause = "remote configuration unavailable to Concat service"
     elif any(x in msg for x in ("invalid_grant", "token has been expired",
             "token has been revoked", "failed to refresh token",
             "invalid credentials", "401 unauthorized")):
         cause = "Drive authentication expired or unauthorized"
     elif any(x in msg for x in ("insufficientpermissions", "insufficient permission",
             "permission denied", "access denied", "403 forbidden")):
-        cause = "Google Drive destination permission denied"
+        if operation in ("lsjson", "backend", "lsl", "lsf", "lsd"):
+            cause = "Google Drive source item permission denied; check configured account access"
+        else:
+            cause = "Google Drive destination permission denied"
     elif any(x in msg for x in ("quota exceeded", "rate limit exceeded", "storage quota")):
         cause = "Google Drive quota or rate limit reached"
     elif any(x in msg for x in ("immutable", "file already exists", "destination already exists")):
@@ -119,7 +149,8 @@ def classify_rclone_error(operation, returncode, stderr):
             "network is unreachable", "connection refused", "tls handshake timeout")):
         cause = "network or DNS connectivity failure"
     elif operation in ("lsjson", "backend") and (returncode in (3, 4) or any(x in msg for x in
-            ("directory not found", "object not found", "file not found", "doesn't exist", "404 not found", "error 404"))):
+            ("directory not found", "object not found", "file not found",
+             "doesn't exist", "404 not found", "error 404"))):
         cause = "remote_file_absent"
     elif returncode == 5:
         cause = "temporary remote failure"
@@ -128,7 +159,6 @@ def classify_rclone_error(operation, returncode, stderr):
     else:
         cause = "unclassified remote failure; check service-side rclone logs"
     return RcloneFailure(operation, returncode, cause)
-
 
 class CloudRender:
     def __init__(self, root, tenant_key):
@@ -160,12 +190,20 @@ class CloudRender:
             con.execute("INSERT OR IGNORE INTO config(key,val) VALUES('render_concurrency','1')")
             con.execute("INSERT OR IGNORE INTO config(key,val) VALUES('health_path','/health/ready')")
             con.execute("INSERT OR IGNORE INTO config(key,val) VALUES('timeout','300')")
+            con.execute("INSERT OR IGNORE INTO config(key,val) VALUES('auto_shutdown','0')")
+            con.execute("INSERT OR IGNORE INTO config(key,val) VALUES('idle_timeout_minutes','5')")
+            con.execute("INSERT OR IGNORE INTO config(key,val) VALUES('salad_idle_since','0')")
+            con.execute("INSERT OR IGNORE INTO config(key,val) VALUES('salad_idle_status','disabled')")
+            con.execute("INSERT OR IGNORE INTO config(key,val) VALUES('salad_idle_attempt','0')")
+            # A restarted web service must observe a fresh full idle timeout.
+            self.put(con, "salad_idle_since", 0)
             con.execute("INSERT OR IGNORE INTO config(key,val) VALUES('receiver_token',?)",
                         (secrets.token_urlsafe(48),))
             con.execute("UPDATE files SET state='failed',error='Interrupted Drive transfer; retry' WHERE state='uploading'")
             pending = [r["id"] for r in con.execute("SELECT id FROM files WHERE state='queued'")]
         self.path.chmod(0o600)
         self.production = ProductionQueue(self, self.production_worker)
+        self.salad_idle = SaladIdleStop(self)
         for job in pending:
             self.pool.submit(self._upload, job)
 
@@ -204,7 +242,8 @@ class CloudRender:
 
     def config(self):
         with self.connection() as con:
-            cfg = {k: self.get(con, k) for k in ("auto_upload","endpoint","priority","health_path","timeout","salad_key","worker_key","enabled","render_concurrency")}
+            cfg = {k: self.get(con, k) for k in ("auto_upload","endpoint","priority","health_path","timeout","salad_key","worker_key","enabled","render_concurrency","auto_shutdown",
+                "idle_timeout_minutes","salad_idle_status","salad_idle_since")}
         return {**GPU, "concurrency": int(cfg["render_concurrency"] or "1"),
                 "auto_upload": cfg["auto_upload"] == "1",
                 "endpoint": cfg["endpoint"], "priority": cfg["priority"] or "high",
@@ -213,13 +252,31 @@ class CloudRender:
                 "enabled": cfg["enabled"] == "1",
                 "salad_key_saved": bool(cfg["salad_key"]),
                 "worker_key_saved": bool(cfg["worker_key"]),
-                "drive_bridge_available": shutil.which("rclone") is not None}
+                "auto_shutdown": cfg["auto_shutdown"] == "1",
+                "idle_timeout_minutes": int(cfg["idle_timeout_minutes"] or 5),
+                "auto_shutdown_ready": bool(self.salad_idle.ready_config(cfg)),
+                "salad_idle_status": cfg["salad_idle_status"] or "disabled",
+                "salad_idle_since": int(cfg["salad_idle_since"] or 0),
+                "drive_bridge_available": self.production.drive.available()}
 
     def save(self, obj):
-        accepted = {"auto_upload","endpoint","priority","health_path","timeout","salad_key","worker_key","concurrency"}
+        accepted = {"auto_upload","endpoint","priority","health_path","timeout","salad_key","worker_key","concurrency","auto_shutdown","idle_timeout_minutes"}
         if not isinstance(obj, dict) or set(obj) - accepted:
             raise HTTPException(400, "Unknown GPU configuration field")
+        if "auto_shutdown" in obj and type(obj["auto_shutdown"]) is not bool:
+            raise HTTPException(400, "Auto shutdown must be enabled or disabled")
+        if "idle_timeout_minutes" in obj and (type(obj["idle_timeout_minutes"]) is not int
+                or not 1 <= obj["idle_timeout_minutes"] <= 60):
+            raise HTTPException(400, "Idle timeout must be a whole number from 1 to 60 minutes")
         with self.lock, self.connection() as con:
+            if "auto_shutdown" in obj:
+                self.put(con, "auto_shutdown", int(obj["auto_shutdown"]))
+            if "idle_timeout_minutes" in obj:
+                self.put(con, "idle_timeout_minutes", obj["idle_timeout_minutes"])
+            if "auto_shutdown" in obj or "idle_timeout_minutes" in obj:
+                self.put(con, "salad_idle_since", 0)
+                self.put(con, "salad_idle_attempt", 0)
+                self.put(con, "salad_idle_status", "countdown" if self.get(con, "auto_shutdown") == "1" else "disabled")
             if "concurrency" in obj:
                 if type(obj["concurrency"]) is not int or obj["concurrency"] not in (1, 2):
                     raise HTTPException(400, "Render concurrency must be exactly 1 or 2")
@@ -253,6 +310,8 @@ class CloudRender:
                     if len(value) > 1024 or "\n" in value or "\r" in value:
                         raise HTTPException(400, "Invalid key")
                     self.put(con, k, value)
+        if "auto_shutdown" in obj or "idle_timeout_minutes" in obj:
+            self.production.wake.set()
         if "concurrency" in obj:
             # Apply immediately when the Salad worker is connected. If it is
             # offline, the persisted setting is synchronized at next dispatch.
@@ -519,30 +578,14 @@ class CloudRender:
                 return
             con.execute("UPDATE files SET state='uploading' WHERE id=?", (job,))
         try:
-            remote_name = os.getenv("CLOUD_RENDER_DRIVE_REMOTE", "gdrive")
-            folder = os.getenv("CLOUD_RENDER_DRIVE_FOLDER", "Cloud Render")
-            if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}",remote_name) or not re.fullmatch(r"[A-Za-z0-9_ /-]{1,120}",folder):
-                raise RuntimeError("Invalid Drive Bridge destination")
-            if not shutil.which("rclone"):
-                raise RuntimeError("Canonical Drive Bridge rclone executable is not available")
-            # Only use the configured canonical remote, under this process identity.
-            remotes = {line.strip().rstrip(":") for line in
-                       self.execute(["rclone","listremotes"],30).splitlines()}
-            if remote_name not in remotes:
-                raise RuntimeError(f'Canonical Drive Bridge remote "{remote_name}" is not configured for Cloud Render service')
-            if local.is_symlink() or not local.is_file() or local.stat().st_size != row["size"]:
-                raise RuntimeError("Source file absent or changed")
-            remote = f"{remote_name}:{folder}/concat-web/{self.tenant_key}/{job}_{filename(row['name'])}"
-            info = self.remote_stat(remote)
-            if info is None:
-                self.execute(["rclone","copyto",str(local),remote,"--immutable"],3600)
-                info = self.remote_stat(remote)
-            if not isinstance(info,dict) or info.get("Size") != row["size"]:
-                raise RuntimeError("Remote size verification failed; VPS original retained")
-            hashes = info.get("Hashes") or {}
-            remote_md5 = hashes.get("MD5") or hashes.get("md5") or ""
-            if not remote_md5 or not hmac.compare_digest(remote_md5.lower(),row["md5"].lower()):
-                raise RuntimeError("Remote MD5 verification failed; VPS original retained")
+            # Output delivery uses the existing canonical Scene identity over
+            # the peer-authenticated Unix Bridge; never read or copy Scene
+            # rclone credentials into this isolated Concat process.
+            from .drive_socket import DriveSocket
+            remote = DriveSocket(self.tenant_key).upload_mp4(
+                local, job=job, name=filename(row["name"]),
+                size=row["size"], sha=row["sha256"], md5=row["md5"],
+            )
             # Record the verified remote before attempting deletion, for crash recovery.
             with self.lock, self.connection() as con:
                 con.execute("UPDATE files SET state='verified',drive_path=?,error='' WHERE id=?", (remote,job))

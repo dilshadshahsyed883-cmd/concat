@@ -11,10 +11,11 @@ The existing Concat Web `app/main.py` includes this router. The browser uses
 `/api/cloud-render/**` endpoints, receiver contract and Copy Video Link route
 are preserved. GET aliases are also available under `/api/v1/concat/**`.
 
-`current_principal` must be supplied by Agent 5's **verified and active**
-Scene session resolver. No identity headers or query/body owner values are trusted.
-UI mutations require a strict same-site CSRF cookie and matching custom header.
-The worker callback instead validates the owner's rotating receiver capability.
+`current_principal` must be supplied by Concat Web's **verified standalone
+local-admin session**, not Scene SSO. No identity headers or query/body owner
+values are trusted. UI mutations require a strict same-site CSRF cookie and
+matching custom header. The worker callback instead validates the owner's
+rotating receiver capability.
 
 Configure `CONCAT_WEB_DATA_ROOT=/var/lib/concat-web` with a dedicated service
 user and permissions. Each verified username hashes to a private owner directory
@@ -34,5 +35,8 @@ explicitly owner-verified before any optional migration. Do not point
 `CONCAT_WEB_DATA_ROOT` directly at VPS_1's historical cloud-render directory.
 
 Run offline focused tests: `python -m unittest app.modules.concat.test_routes -v`.
-Do not deploy until Agent 5's production verified SSO and negative cross-owner
-integration tests are green. No direct VPS_1 production changes are necessary.
+All reviewed changes merge into canonical `main`. Release only a verified exact
+`main` SHA using the manual VPS terminal release gates in
+`deploy/RELEASE_GATES.md`. Preserve negative local-admin and cross-owner
+integration tests. Salad auto-stop is opt-in, requires a dedicated container
+group, and is documented in `deploy/SALAD_IDLE_AUTOSTOP.md`.

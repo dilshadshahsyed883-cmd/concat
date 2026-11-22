@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import os
 import secrets
 import shutil
@@ -26,7 +27,7 @@ from .oauth_web import (complete_oauth, list_clients, list_owner_clients,
 from .project_store import ProjectStore
 from .copyright_handoff import available_videos, available_folders, owner_root, owner_folder, safe_relative_folder
 from .concat_source import stage_concat_link
-from .concat_schedule import concat_publish_at
+from .concat_schedule import concat_upload_at
 from .concat_sheet import preview_sheet_videos
 from .concat_source import parse_concat_link, ConcatSourceError
 from .copyright_ui import schedule_pkt
@@ -35,6 +36,7 @@ from .four_modes import registry as four_mode_registry, validate_mode as validat
 from .mode_gateway import forward as forward_engine_request, MODE_PORTS as ENGINE_PORTS
 from .reports import generate_health_report, list_reports, report_path
 from .worker import VPSUploadWorker
+from desktop_core.modules.thumbnail_limits import MAX_THUMBNAIL_BYTES
 from desktop_core.modules.auth_manager import AuthManager
 from desktop_core.modules.database import Database
 from desktop_core.modules.token_utils import classify_google_json, token_status_label
@@ -221,7 +223,9 @@ def all_channels(user: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     with db.connect() as conn:
         rows = [dict(r) for r in conn.execute("SELECT * FROM channels ORDER BY id DESC").fetchall()]
     if user is not None:
-        allowed=studio_tenants.allowed_ids("channel",user)
+        allowed=(studio_tenants.current_channel_ids(user)
+                 if os.getenv("LUM_ENGINE_INSTANCE") == "concat"
+                 else studio_tenants.allowed_ids("channel",user))
         if allowed is not None:
             rows=[row for row in rows if int(row["id"]) in allowed]
     for row in rows:
@@ -272,6 +276,7 @@ def stats_payload(user: dict[str, Any] | None = None) -> dict[str, Any]:
     return {
         "counts": counts,
         "owner_queue_paused": store.owner_queue_paused(str(user["username"])) if user is not None and OWNER_SCOPED else False,
+        "owner_scheduled_paused": store.owner_scheduled_paused(str(user["username"])) if user is not None and OWNER_SCOPED else False,
         "channels": len(channels),
         "authenticated_channels": sum(1 for c in channels if str(c.get("token_status") or "").lower().startswith("valid")),
         "active_project_id": (worker.active_project_id if user is None or
@@ -527,7 +532,9 @@ def app_page(request: Request, tab: str = "", message: str = "", error: str = ""
         sheet_sources=[item for item in sheet_sources if int(item["id"]) in permitted_sheets]
         if selected_sheet_source and int(selected_sheet_source["id"]) not in permitted_sheets:
             selected_sheet_source=None
-    permitted_channels=studio_tenants.allowed_ids("channel",user)
+    permitted_channels=(studio_tenants.current_channel_ids(user)
+                        if os.getenv("LUM_ENGINE_INSTANCE") == "concat"
+                        else studio_tenants.allowed_ids("channel",user))
     web_clients = (list_owner_clients(str(user["username"])) if OWNER_SCOPED
                    else (list_clients() if permitted_channels is None else []))
     channel_context = channels_page_context(
@@ -552,6 +559,8 @@ def app_page(request: Request, tab: str = "", message: str = "", error: str = ""
             web_clients=[]  # Other instances expose the shared client only to global admins
         channel_context["oauth_inventory"]=(owner_vault_inventory(db,studio_tenants,str(user["username"]))
             if OWNER_SCOPED else {})
+    if os.getenv("LUM_ENGINE_INSTANCE") == "concat":
+        channel_context["groups"] = studio_tenants.current_groups(user)
     # PC Sync is a global administrator operation; its history may contain
     # private channel identifiers and source paths from other accounts.
     pc_sync_history = (list_sync_history() if selected == "channels" and
@@ -683,6 +692,7 @@ def app_page(request: Request, tab: str = "", message: str = "", error: str = ""
             pass
     return templates.TemplateResponse("app.html", {
         "request": request,
+        "max_thumbnail_bytes": MAX_THUMBNAIL_BYTES if engine_instance == "concat" else 2 * 1024 * 1024,
         "user": user,
         "mode": mode,
         "tab": selected,
@@ -904,6 +914,8 @@ async def add_video(
     try:
         upload_instance = os.getenv("LUM_ENGINE_INSTANCE", "engine1").strip().lower()
         studio_tenants.require("channel",int(channel_db_id),user)
+        if upload_instance == "concat":
+            studio_tenants.require_current_channel(int(channel_db_id), user)
         if upload_instance in {"copyright", "concat"}:
             # Group selection is authoritative server-side, never a client-only filter.
             membership = db.channel_group_names_map()
@@ -962,26 +974,28 @@ async def add_video(
             suffix = Path(thumbnail.filename).suffix.lower()
             if suffix not in {".jpg", ".jpeg", ".png"}:
                 raise ValueError("Thumbnail must be JPG or PNG")
-            payload = await thumbnail.read()
+            thumbnail_limit = MAX_THUMBNAIL_BYTES if upload_instance == "concat" else 2 * 1024 * 1024
+            payload = await thumbnail.read(thumbnail_limit + 1)
             if not payload:
                 raise ValueError("Thumbnail must not be empty")
-            if len(payload) > 2 * 1024 * 1024:
-                raise ValueError("Thumbnail must be 2 MB or smaller")
+            if len(payload) > thumbnail_limit:
+                raise ValueError(f"Thumbnail must be {thumbnail_limit // (1024 * 1024)} MB or smaller")
             temp = THUMBNAIL_ROOT / f"pending_{os.urandom(8).hex()}{suffix}"
             temp.write_bytes(payload); thumb_path = str(temp)
         app_upload_at_utc = app_upload_at
-        if str(app_upload_at or "").strip():
+        if upload_instance == "concat":
+            # Concat schedules the START of the VPS upload, not YouTube publishAt.
+            app_upload_at_utc = concat_upload_at(app_upload_at, timezone_name)
+        elif str(app_upload_at or "").strip():
             from datetime import datetime as _pkt_datetime, timezone as _pkt_utc
             from zoneinfo import ZoneInfo as _PktZoneInfo
             _pkt_value = _pkt_datetime.fromisoformat(str(app_upload_at).strip().replace("Z", "+00:00"))
             if _pkt_value.tzinfo is None:
                 _pkt_value = _pkt_value.replace(tzinfo=_PktZoneInfo("Asia/Karachi"))
             app_upload_at_utc = _pkt_value.astimezone(_pkt_utc.utc).replace(microsecond=0).isoformat()
+        # Keep publish_at empty for new projects: scheduled starts use app_upload_at.
+        # Legacy projects already holding publish_at retain their original behavior.
         publish_at_utc = ""
-        if upload_instance == "concat":
-            publish_at_utc = concat_publish_at(app_upload_at, timezone_name, privacy_status)
-            # Concat schedules YouTube PUBLICATION, not the start of VPS upload.
-            app_upload_at_utc = ""
         project_id = store.create_project({
             "owner_username": str(user["username"]), "ui_mode": user_mode(user),
             "source_mode": "local_file" if owned_staging else "drive_link",
@@ -1005,7 +1019,10 @@ async def add_video(
         if upload_instance == "copyright" and store.setting("pause_after_current", "0") != "1":
             store.set_setting("engine_enabled", "1")
         next_tab = "queue"
-        return redirect(f"/app?tab={next_tab}", message=f"Project #{project_id} added to VPS queue")
+        queue_message = (f"Project #{project_id} scheduled for automatic YouTube upload start"
+                         if upload_instance == "concat" and app_upload_at_utc else
+                         f"Project #{project_id} added to VPS queue")
+        return redirect(f"/app?tab={next_tab}", message=queue_message)
     except Exception as exc:
         if owned_staging:
             Path(owned_staging).unlink(missing_ok=True)
@@ -1129,20 +1146,28 @@ def _owned_or_admin(user: dict[str, Any], project_id: int) -> dict[str, Any]:
 
 
 @app.post(route("/actions/copyright/queue/pause"))
-def copyright_pause_my_queue(request: Request, csrf_token: str = Form(...)):
+def copyright_pause_my_queue(request: Request, csrf_token: str = Form(...),
+                             scheduled_only: str = Form("")):
     user = current_user(request); require_csrf(request, csrf_token)
     if not OWNER_SCOPED:
         raise HTTPException(404, "Not found")
+    if os.getenv("LUM_ENGINE_INSTANCE") == "concat" and scheduled_only == "1":
+        store.set_owner_scheduled_paused(str(user["username"]), True)
+        return redirect("/app?tab=queue", message="Scheduled uploads paused for your account; active upload may finish.")
     store.set_owner_queue_paused(str(user["username"]), True)
     return redirect("/app?tab=queue",
-                    message="Your queue paused. Any upload already in progress may finish.")
+                    message="Your manual queue paused. Any upload already in progress may finish.")
 
 
 @app.post(route("/actions/copyright/queue/start"))
-def copyright_start_my_queue(request: Request, csrf_token: str = Form(...)):
+def copyright_start_my_queue(request: Request, csrf_token: str = Form(...),
+                             scheduled_only: str = Form("")):
     user = current_user(request); require_csrf(request, csrf_token)
     if not OWNER_SCOPED:
         raise HTTPException(404, "Not found")
+    if os.getenv("LUM_ENGINE_INSTANCE") == "concat" and scheduled_only == "1":
+        store.set_owner_scheduled_paused(str(user["username"]), False)
+        return redirect("/app?tab=queue", message="Automatic scheduled uploads resumed for your account.")
     if os.getenv("LUM_ENGINE_INSTANCE") == "concat":
         store.set_setting("engine_enabled", "1")  # Only this dedicated Concat instance.
     if store.setting("engine_enabled", "1") != "1":

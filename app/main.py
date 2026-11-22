@@ -1,11 +1,12 @@
 """Independent ASGI entrypoint. No source imports from the VPS_1 repository."""
 from contextlib import asynccontextmanager
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from app.auth import Principal, current_principal
 from app.config import load_settings
+from app.modules.admin.security import COOKIE, SESSION_COOKIE_MAX_AGE
 from app.modules.dashboard.routes import router as dashboard_router
 from app.modules.dashboard.providers import ConcatDashboardProvider, UploaderDashboardProvider
 from app.modules.concat.routes import router as concat_router
@@ -24,6 +25,20 @@ def create_app():
     app.include_router(concat_router)
     app.include_router(uploader_router)
     app.include_router(admin_router)
+
+    @app.middleware("http")
+    async def renew_admin_cookie(request: Request, call_next):
+        response = await call_next(request)
+        token = getattr(request.state, "concat_authenticated_token", None)
+        # Never overwrite login rotation or logout's cookie deletion.
+        has_session_cookie = any(
+            value.startswith(COOKIE + "=")
+            for value in response.headers.getlist("set-cookie")
+        )
+        if token and response.status_code < 400 and not has_session_cookie:
+            response.set_cookie(COOKIE, token, max_age=SESSION_COOKIE_MAX_AGE,
+                                secure=True, httponly=True, samesite="lax", path="/")
+        return response
 
     @app.get("/healthz")
     async def health():

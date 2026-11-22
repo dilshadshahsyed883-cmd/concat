@@ -131,6 +131,43 @@ class StudioTenants:
                 (cid,owner))
             return cid
 
+    def current_channel_ids(self, user):
+        """Current Concat inventory, separate from ownership of historical rows."""
+        allowed = self.allowed_ids("channel", user)
+        with self.db.connect() as con:
+            current = {int(row[0]) for row in con.execute("""
+                SELECT c.id FROM channels c
+                WHERE COALESCE(c.sheet_present,1)=1
+                  AND (c.sheet_source_id IS NULL OR EXISTS (
+                    SELECT 1 FROM sheet_sources s WHERE s.id=c.sheet_source_id))
+            """)}
+        return current if allowed is None else current & allowed
+
+    def require_current_channel(self, channel_id, user):
+        self.require("channel", channel_id, user)
+        if int(channel_id) not in self.current_channel_ids(user):
+            raise PermissionError("Channel is no longer in current Sheet inventory")
+
+    def current_groups(self, user):
+        """Keep shared/manual groups, counting only the owner's visible channels."""
+        allowed = self.allowed_ids("group", user)
+        channels = self.current_channel_ids(user)
+        with self.db.connect() as con:
+            members = {}
+            for gid, cid in con.execute("SELECT group_id,channel_db_id FROM channel_group_members"):
+                members.setdefault(int(gid), set()).add(int(cid))
+        groups = []
+        for group in self.db.list_channel_groups():
+            gid = int(group["id"])
+            if allowed is not None and gid not in allowed:
+                continue
+            count = len(members.get(gid, set()) & channels)
+            sheet_group = "sheet sync" in str(group.get("notes") or "").casefold()
+            if not count and (sheet_group or members.get(gid)):
+                continue
+            groups.append(dict(group, channel_count=count))
+        return groups
+
     def create_group(self, username, group_name, channel_ids):
         """New group with ONLY owner's channels, in one SQLite transaction."""
         owner=self.username(username)
@@ -154,6 +191,12 @@ class StudioTenants:
                 (owner,*ids)).fetchall()
             if len(owned)!=len(ids):
                 raise PermissionError("Group contains a channel not owned by this user")
+            if os.getenv("LUM_ENGINE_INSTANCE") == "concat":
+                current = {int(row[0]) for row in con.execute(
+                    "SELECT id FROM channels WHERE COALESCE(sheet_present,1)=1 "
+                    "AND (sheet_source_id IS NULL OR sheet_source_id IN (SELECT id FROM sheet_sources))")}
+                if not set(ids) <= current:
+                    raise PermissionError("Group contains a channel removed from Sheet inventory")
             cur=con.execute("INSERT INTO channel_groups(group_name,notes) VALUES (?,?)",
                             (name,"Created by authorized Studio account"))
             gid=int(cur.lastrowid)
@@ -356,7 +399,7 @@ class StudioTenants:
                     "memberships_updated":memberships_updated,"source_id":source_id}
 
     def delete_owned_sheet(self, username, sheet_id):
-        """Detach only owned channels; do not delete media, groups or tokens."""
+        """Hide only owned Sheet inventory; retain media, groups and tokens."""
         owner=self.username(username)
         source_id=int(sheet_id)
         with self.db.connect() as con:

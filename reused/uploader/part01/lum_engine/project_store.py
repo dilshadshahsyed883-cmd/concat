@@ -128,8 +128,12 @@ class ProjectStore:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_lum_events_project ON project_events(project_id,id)")
             conn.execute("""CREATE TABLE IF NOT EXISTS copyright_owner_queues (
                 owner_username TEXT PRIMARY KEY COLLATE NOCASE,
-                paused INTEGER NOT NULL DEFAULT 0 CHECK(paused IN (0,1))
+                paused INTEGER NOT NULL DEFAULT 0 CHECK(paused IN (0,1)),
+                scheduled_paused INTEGER NOT NULL DEFAULT 0 CHECK(scheduled_paused IN (0,1))
             )""")
+            owner_columns = {row[1] for row in conn.execute("PRAGMA table_info(copyright_owner_queues)")}
+            if "scheduled_paused" not in owner_columns:
+                conn.execute("ALTER TABLE copyright_owner_queues ADD COLUMN scheduled_paused INTEGER NOT NULL DEFAULT 0")
             conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
             for key, value in DEFAULT_SETTINGS.items():
                 conn.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)", (key, value))
@@ -177,6 +181,25 @@ class ProjectStore:
             conn.execute("""INSERT INTO copyright_owner_queues(owner_username,paused)
                 VALUES(?,?) ON CONFLICT(owner_username)
                 DO UPDATE SET paused=excluded.paused""",
+                (owner.strip(), int(bool(paused))))
+
+    def owner_scheduled_paused(self, owner: str) -> bool:
+        if not str(owner or "").strip():
+            raise ValueError("Owner is required")
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT scheduled_paused FROM copyright_owner_queues WHERE owner_username=?",
+                (owner.strip(),),
+            ).fetchone()
+        return bool(row and int(row["scheduled_paused"]))
+
+    def set_owner_scheduled_paused(self, owner: str, paused: bool) -> None:
+        if not str(owner or "").strip():
+            raise ValueError("Owner is required")
+        with self.connect() as conn:
+            conn.execute("""INSERT INTO copyright_owner_queues(owner_username,paused,scheduled_paused)
+                VALUES(?,1,?) ON CONFLICT(owner_username)
+                DO UPDATE SET scheduled_paused=excluded.scheduled_paused""",
                 (owner.strip(), int(bool(paused))))
 
     def edit_waiting_metadata(self, project_id: int, owner: str, *,
@@ -272,8 +295,8 @@ class ProjectStore:
             except sqlite3.IntegrityError as exc:
                 raise ValueError("This video was already queued or uploaded to the selected channel") from exc
             project_id = int(cur.lastrowid)
-            # Concat is manual-start even if this owner started a previous batch.
-            # Set the pause gate in the SAME transaction as queue admission.
+            # Keep the manual queue paused on Concat admission. A timed job
+            # uses an independent scheduled pause gate and starts when due.
             if os.getenv("LUM_ENGINE_INSTANCE") == "concat":
                 conn.execute("""INSERT INTO copyright_owner_queues(owner_username,paused)
                     VALUES(?,1) ON CONFLICT(owner_username)
@@ -335,13 +358,22 @@ class ProjectStore:
                 conn.execute("UPDATE projects SET status='QUEUED', error_message='Recovered after service restart; state will be reconciled safely.', updated_at=? WHERE id=?", (now_iso(), int(row["id"])))
             return len(rows)
 
+    def _owner_eligibility_clause(self) -> str:
+        if os.getenv("LUM_ENGINE_INSTANCE") == "concat":
+            return """AND NOT EXISTS (SELECT 1 FROM copyright_owner_queues q
+                WHERE q.owner_username=p.owner_username AND (
+                    (COALESCE(p.app_upload_at,'')='' AND q.paused=1) OR
+                    (COALESCE(p.app_upload_at,'')!='' AND q.scheduled_paused=1)))"""
+        return """AND NOT EXISTS (SELECT 1 FROM copyright_owner_queues q
+            WHERE q.owner_username=p.owner_username AND q.paused=1)"""
+
     def next_eligible(self) -> dict[str, Any] | None:
         now = datetime.now(timezone.utc)
         with self.connect() as conn:
-            rows = conn.execute("""SELECT * FROM projects p WHERE status IN ('QUEUED','WAITING_SLOT','SCHEDULED','PAUSED')
-                    AND NOT EXISTS (SELECT 1 FROM copyright_owner_queues q
-                        WHERE q.owner_username=p.owner_username AND q.paused=1)
-                    ORDER BY id ASC""").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM projects p WHERE status IN ('QUEUED','WAITING_SLOT','SCHEDULED','PAUSED') "
+                + self._owner_eligibility_clause() + " ORDER BY id ASC"
+            ).fetchall()
         for raw in rows:
             row = dict(raw)
             if row["status"] == "PAUSED":
@@ -354,20 +386,20 @@ class ProjectStore:
             return row
         return None
 
-    def claim_next_eligible(self) -> dict[str, Any] | None:
-        """Claim one due job atomically so a concurrent Cancel cannot race the worker.
-
-        SOURCE_READY is a recoverable active state; startup recovery returns it to
-        QUEUED after an interrupted process without dropping original media.
+    def claim_next_eligible(self, *, schedule_only: bool = False) -> dict[str, Any] | None:
+        """Atomically claim due work; a paused manual Concat queue still allows
+        due timed jobs unless that owner paused scheduled uploads separately.
         """
         now = datetime.now(timezone.utc)
+        concat = os.getenv("LUM_ENGINE_INSTANCE") == "concat"
+        schedule_gate = " AND COALESCE(p.app_upload_at,'')!=''" if concat and schedule_only else ""
+        order = ("ORDER BY CASE WHEN COALESCE(p.app_upload_at,'')!='' THEN 0 ELSE 1 END, id ASC"
+                 if concat else "ORDER BY id ASC")
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             rows = conn.execute(
-                """SELECT * FROM projects p WHERE status IN ('QUEUED','WAITING_SLOT','SCHEDULED')
-                    AND NOT EXISTS (SELECT 1 FROM copyright_owner_queues q
-                        WHERE q.owner_username=p.owner_username AND q.paused=1)
-                    ORDER BY id ASC"""
+                "SELECT * FROM projects p WHERE status IN ('QUEUED','WAITING_SLOT','SCHEDULED') "
+                + self._owner_eligibility_clause() + schedule_gate + " " + order
             ).fetchall()
             for raw in rows:
                 row = dict(raw)
