@@ -26,6 +26,7 @@ from fastapi import HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
 from .cloud_render_production import ProductionQueue, Worker, WorkerWait
+from .salad_idle import SaladIdleStop
 
 CHUNK_MAX = 8 * 1024 * 1024
 MEDIA_MAX = 20 * 1024 * 1024 * 1024
@@ -189,12 +190,20 @@ class CloudRender:
             con.execute("INSERT OR IGNORE INTO config(key,val) VALUES('render_concurrency','1')")
             con.execute("INSERT OR IGNORE INTO config(key,val) VALUES('health_path','/health/ready')")
             con.execute("INSERT OR IGNORE INTO config(key,val) VALUES('timeout','300')")
+            con.execute("INSERT OR IGNORE INTO config(key,val) VALUES('auto_shutdown','0')")
+            con.execute("INSERT OR IGNORE INTO config(key,val) VALUES('idle_timeout_minutes','5')")
+            con.execute("INSERT OR IGNORE INTO config(key,val) VALUES('salad_idle_since','0')")
+            con.execute("INSERT OR IGNORE INTO config(key,val) VALUES('salad_idle_status','disabled')")
+            con.execute("INSERT OR IGNORE INTO config(key,val) VALUES('salad_idle_attempt','0')")
+            # A restarted web service must observe a fresh full idle timeout.
+            self.put(con, "salad_idle_since", 0)
             con.execute("INSERT OR IGNORE INTO config(key,val) VALUES('receiver_token',?)",
                         (secrets.token_urlsafe(48),))
             con.execute("UPDATE files SET state='failed',error='Interrupted Drive transfer; retry' WHERE state='uploading'")
             pending = [r["id"] for r in con.execute("SELECT id FROM files WHERE state='queued'")]
         self.path.chmod(0o600)
         self.production = ProductionQueue(self, self.production_worker)
+        self.salad_idle = SaladIdleStop(self)
         for job in pending:
             self.pool.submit(self._upload, job)
 
@@ -233,7 +242,8 @@ class CloudRender:
 
     def config(self):
         with self.connection() as con:
-            cfg = {k: self.get(con, k) for k in ("auto_upload","endpoint","priority","health_path","timeout","salad_key","worker_key","enabled","render_concurrency")}
+            cfg = {k: self.get(con, k) for k in ("auto_upload","endpoint","priority","health_path","timeout","salad_key","worker_key","enabled","render_concurrency","auto_shutdown",
+                "idle_timeout_minutes","salad_idle_status","salad_idle_since")}
         return {**GPU, "concurrency": int(cfg["render_concurrency"] or "1"),
                 "auto_upload": cfg["auto_upload"] == "1",
                 "endpoint": cfg["endpoint"], "priority": cfg["priority"] or "high",
@@ -242,13 +252,31 @@ class CloudRender:
                 "enabled": cfg["enabled"] == "1",
                 "salad_key_saved": bool(cfg["salad_key"]),
                 "worker_key_saved": bool(cfg["worker_key"]),
+                "auto_shutdown": cfg["auto_shutdown"] == "1",
+                "idle_timeout_minutes": int(cfg["idle_timeout_minutes"] or 5),
+                "auto_shutdown_ready": bool(self.salad_idle.ready_config(cfg)),
+                "salad_idle_status": cfg["salad_idle_status"] or "disabled",
+                "salad_idle_since": int(cfg["salad_idle_since"] or 0),
                 "drive_bridge_available": self.production.drive.available()}
 
     def save(self, obj):
-        accepted = {"auto_upload","endpoint","priority","health_path","timeout","salad_key","worker_key","concurrency"}
+        accepted = {"auto_upload","endpoint","priority","health_path","timeout","salad_key","worker_key","concurrency","auto_shutdown","idle_timeout_minutes"}
         if not isinstance(obj, dict) or set(obj) - accepted:
             raise HTTPException(400, "Unknown GPU configuration field")
+        if "auto_shutdown" in obj and type(obj["auto_shutdown"]) is not bool:
+            raise HTTPException(400, "Auto shutdown must be enabled or disabled")
+        if "idle_timeout_minutes" in obj and (type(obj["idle_timeout_minutes"]) is not int
+                or not 1 <= obj["idle_timeout_minutes"] <= 60):
+            raise HTTPException(400, "Idle timeout must be a whole number from 1 to 60 minutes")
         with self.lock, self.connection() as con:
+            if "auto_shutdown" in obj:
+                self.put(con, "auto_shutdown", int(obj["auto_shutdown"]))
+            if "idle_timeout_minutes" in obj:
+                self.put(con, "idle_timeout_minutes", obj["idle_timeout_minutes"])
+            if "auto_shutdown" in obj or "idle_timeout_minutes" in obj:
+                self.put(con, "salad_idle_since", 0)
+                self.put(con, "salad_idle_attempt", 0)
+                self.put(con, "salad_idle_status", "countdown" if self.get(con, "auto_shutdown") == "1" else "disabled")
             if "concurrency" in obj:
                 if type(obj["concurrency"]) is not int or obj["concurrency"] not in (1, 2):
                     raise HTTPException(400, "Render concurrency must be exactly 1 or 2")
@@ -282,6 +310,8 @@ class CloudRender:
                     if len(value) > 1024 or "\n" in value or "\r" in value:
                         raise HTTPException(400, "Invalid key")
                     self.put(con, k, value)
+        if "auto_shutdown" in obj or "idle_timeout_minutes" in obj:
+            self.production.wake.set()
         if "concurrency" in obj:
             # Apply immediately when the Salad worker is connected. If it is
             # offline, the persisted setting is synchronized at next dispatch.

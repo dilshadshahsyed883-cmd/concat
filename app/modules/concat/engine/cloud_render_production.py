@@ -540,6 +540,7 @@ class ProductionQueue:
                                            (int(path.stem),)).fetchone()
                     if done:
                         self.clean_input(int(path.stem))
+            self.media.salad_idle.check()
             return 3
         try:
             self.process(row)

@@ -2,7 +2,7 @@
 {% block title %}Concat{% endblock %}
 {% block subtitle %}Concat Production queue, rendered media and SaladCloud GPU connection{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="/concat/assets/cloud_render.css?v=20261119-compact-2">
+<link rel="stylesheet" href="/concat/assets/cloud_render.css?v=20261122-idle-stop-v1">
 <section id="cloud-render" data-csrf="{{ csrf_token }}" data-initial-tab="{{ initial_tab }}" aria-labelledby="cloud-heading">
   <h2 id="cloud-heading" class="visually-hidden">Concat Studio workspace</h2>
   <div class="cr-navigation">
@@ -69,6 +69,20 @@
         <small>Same GPU, maximum 2 simultaneous renders. Changes do not interrupt running jobs.</small>
         <small id="cr-concurrency-status" role="status">Setting is applied when the worker is reachable.</small>
       </div>
+      <div class="cr-field" id="cr-salad-idle-config">
+        <label class="cr-check" for="cr-auto-shutdown"><input id="cr-auto-shutdown" type="checkbox">Salad Auto Shutdown</label>
+        <small>Stop the dedicated SaladCloud GPU group after all jobs and deliveries finish and it stays idle.</small>
+        <label for="cr-idle-minutes">Idle shutdown timeout (minutes)</label>
+        <div class="cr-idle-spinner">
+          <input id="cr-idle-minutes" type="number" min="1" max="60" step="1" value="5" inputmode="numeric">
+          <div class="cr-idle-arrows">
+            <button class="cr-idle-arrow" id="cr-idle-up" type="button" aria-label="Increase idle minutes by one">▲</button>
+            <button class="cr-idle-arrow" id="cr-idle-down" type="button" aria-label="Decrease idle minutes by one">▼</button>
+          </div>
+          <span>minutes</span>
+        </div>
+        <small id="cr-idle-status" role="status">Disabled · default 5 minutes</small>
+      </div>
       <div class="cr-row cr-row-wrap">
         <button class="cr-btn primary" id="cr-save-gpu" type="button">Save GPU Config</button>
         <button class="cr-btn secondary" id="cr-test" type="button">Test Connection</button>
@@ -86,5 +100,5 @@
     </div>
   </section>
 </section>
-<script defer src="/concat/assets/cloud_render.js?v=20261122-gpu-config-cleanup-1"></script>
+<script defer src="/concat/assets/cloud_render.js?v=20261122-idle-stop-v1"></script>
 {% endblock %}
