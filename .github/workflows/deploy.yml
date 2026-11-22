@@ -1,6 +1,6 @@
 name: Concat Web manual terminal release reminder (NO DEPLOY)
 
-# Production releases are made from the exact tested integration SHA in the VPS terminal.
+# Production releases are made from the exact reviewed main SHA in the VPS terminal.
 # No auto-SSH, Tailscale, remote service control, or GitHub Actions deployment.
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   offline-release-check:
-    if: github.ref == 'refs/heads/integration/personal-release-20261119'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -37,4 +37,4 @@ jobs:
           python -m pip wheel --no-deps --wheel-dir /tmp/concat-web-wheel .
       - name: Explicit terminal-only release gate
         run: |
-          echo 'PASS: CI only. Manually deploy a verified protected-integration SHA via the VPS terminal.'
+          echo 'PASS: CI only. Manually deploy a reviewed exact main SHA via the VPS terminal.'
