@@ -11,6 +11,7 @@ import hashlib
 import importlib.metadata
 import json
 import math
+from numbers import Real
 import os
 from pathlib import Path
 import re
@@ -102,6 +103,14 @@ def _finite(value, label):
     if type(value) not in (int, float) or not math.isfinite(value):
         raise ValueError(f"Invalid {label}")
     return float(value)
+
+
+def _asr_milliseconds(value, label):
+    # faster-whisper alignment can return NumPy real scalars. Normalize only
+    # backend timestamps; keep project/request JSON validation strict.
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise ValueError(f"Invalid {label}")
+    return round(_finite(float(value), label) * 1000)
 
 
 def validate_request(value):
@@ -316,7 +325,8 @@ class FasterWhisperCuda:
                     continue
                 if len(text.split()) != 1:
                     raise ValueError("ASR returned multi-word token without individual word timestamps")
-                start, end = round(_finite(word.start, "ASR word start")*1000), round(_finite(word.end, "ASR word end")*1000)
+                start = _asr_milliseconds(word.start, "ASR word start")
+                end = _asr_milliseconds(word.end, "ASR word end")
                 words.append({"text": text, "startMs": start, "endMs": end})
             if not words:
                 continue
