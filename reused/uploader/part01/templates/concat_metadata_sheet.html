@@ -1,0 +1,18 @@
+<div class="concat-metadata-config" data-concat-metadata-config>
+  <button type="button" class="lum-button secondary" data-concat-metadata-open>{{ 'Edit Metadata Sheet' if concat_metadata_sheet_id else 'Add Metadata Sheet' }}</button>
+  <small data-concat-metadata-config-status role="status" aria-live="polite">{{ 'One metadata sheet connected' if concat_metadata_sheet_id else 'Optional: connect one sheet for video titles and descriptions' }}</small>
+  <dialog class="concat-metadata-dialog" data-concat-metadata-dialog aria-labelledby="concat-metadata-dialog-title">
+    <form method="post" action="{{ base_path }}/actions/concat/metadata-sheet" data-concat-metadata-sheet-form>
+      <h3 id="concat-metadata-dialog-title">Video Metadata Sheet</h3>
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
+      <label class="lum-field"><span>Google Sheet URL</span><input name="sheet_url" required maxlength="2048" type="url" value="{{ ('https://docs.google.com/spreadsheets/d/' ~ concat_metadata_sheet_id ~ '/edit') if concat_metadata_sheet_id else '' }}" placeholder="https://docs.google.com/spreadsheets/d/…/edit"></label>
+      <p>First tab columns: <strong>video name, title, description</strong>. Example: <strong>u1</strong> matches <strong>u1.mp4</strong>. Share the sheet so CSV export can be read.</p>
+      <p>One sheet is saved for your workspace. Saving replaces the previous metadata sheet.</p>
+      <p data-concat-metadata-save-status role="status" aria-live="polite"></p>
+      <div class="concat-metadata-actions">
+        <button class="lum-button secondary" type="button" data-concat-metadata-close>Cancel</button>
+        <button class="lum-button primary" type="submit">Save Metadata Sheet</button>
+      </div>
+    </form>
+  </dialog>
+</div>

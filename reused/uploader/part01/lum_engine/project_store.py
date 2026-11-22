@@ -197,6 +197,11 @@ class ProjectStore:
             owner_columns = {row[1] for row in conn.execute("PRAGMA table_info(copyright_owner_queues)")}
             if "scheduled_paused" not in owner_columns:
                 conn.execute("ALTER TABLE copyright_owner_queues ADD COLUMN scheduled_paused INTEGER NOT NULL DEFAULT 0")
+            conn.execute("""CREATE TABLE IF NOT EXISTS concat_metadata_sheets (
+                owner_username TEXT PRIMARY KEY COLLATE NOCASE,
+                sheet_id TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )""")
             conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
             for key, value in DEFAULT_SETTINGS.items():
                 conn.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)", (key, value))
@@ -598,6 +603,22 @@ class ProjectStore:
                   AND ((concat_job_id!='' AND concat_job_id=?) OR (source_fingerprint!='' AND source_fingerprint=? COLLATE NOCASE))
                 LIMIT 1
             """, (int(project_id), owner, job_id, fingerprint)).fetchone() is not None
+
+    def concat_metadata_sheet(self, owner: str) -> str:
+        with self.connect() as conn:
+            row = conn.execute("SELECT sheet_id FROM concat_metadata_sheets WHERE owner_username=? COLLATE NOCASE",
+                               (owner,)).fetchone()
+        return str(row[0]) if row else ""
+
+    def save_concat_metadata_sheet(self, owner: str, sheet_id: str) -> None:
+        from .concat_sheet import metadata_sheet_id
+        if not str(owner or "").strip():
+            raise ValueError("Owner is required")
+        sheet_id = metadata_sheet_id(sheet_id)
+        with self.connect() as conn:
+            conn.execute("""INSERT INTO concat_metadata_sheets(owner_username,sheet_id,updated_at)
+                VALUES(?,?,?) ON CONFLICT(owner_username) DO UPDATE SET
+                sheet_id=excluded.sheet_id,updated_at=excluded.updated_at""", (owner, sheet_id, now_iso()))
 
     def pending_concat_cleanup(self) -> list[dict[str, Any]]:
         """Durable cleanup work is independent of upload queue pause/schedule."""
