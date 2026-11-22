@@ -7,7 +7,7 @@ on:
       - 'tests/test_admin_security.py'
       - '.github/workflows/admin-security-ci.yml'
   push:
-    branches: [integration/personal-release-20261119]
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
