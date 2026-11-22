@@ -69,6 +69,7 @@ with tempfile.TemporaryDirectory() as work:
 sys.path.append('/src')
 suite = unittest.defaultTestLoader.loadTestsFromNames([
     'cloud_render.concat.tests.test_render_contract',
+    'cloud_render.concat.tests.test_hybrid_last_frame_hold',
     'cloud_render.concat.tests.test_asr_pyav_compat',
     'cloud_render.concat.tests.test_asr_timestamp_types',
     'cloud_render.concat.tests.test_gpu_asr_alignment',
