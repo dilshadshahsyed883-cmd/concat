@@ -5,7 +5,7 @@ permissions:
   contents: read
 jobs:
   release-gate:
-    if: github.ref == 'refs/heads/integration/personal-release-20261119'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
