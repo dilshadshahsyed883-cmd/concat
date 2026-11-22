@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Manual only: stage a verified integration SHA on Concat's loopback service.
+# Manual only: stage an exact, reviewed main SHA on Concat's loopback service.
+# The filename is a legacy compatibility alias, but only canonical main is allowed.
 # Never changes Scene, VPS1 deploy helpers, Nginx, Drive Bridge, OAuth or Salad.
 set -Eeuo pipefail
 set +x
@@ -9,11 +10,11 @@ fail() { printf 'BLOCKED: %s\n' "$*" >&2; exit 1; }
 [[ "$#" -eq 2 ]] || fail 'Usage: sudo bash manual-integration-release.sh <40-hex-SHA> stage|preflight'
 SHA="$1"
 MODE="$2"
-[[ "$SHA" =~ ^[a-f0-9]{40}$ ]] || fail 'Invalid exact integration SHA'
+[[ "$SHA" =~ ^[a-f0-9]{40}$ ]] || fail 'Invalid exact main SHA'
 [[ "$MODE" == stage || "$MODE" == preflight ]] || fail 'Invalid mode'
 [[ "$EUID" == 0 ]] || fail 'Run only as root in VPS terminal'
 REPO='https://github.com/dilshadshahsyed883-cmd/concat-web.git'
-BRANCH='integration/personal-release-20261119'
+BRANCH='main'
 for tool in git python3 tar sha256sum systemctl curl nginx flock install runuser; do
   command -v "$tool" >/dev/null || fail "Missing prerequisite $tool"
 done
@@ -30,13 +31,13 @@ systemctl cat concat-web.service >/dev/null 2>&1 || fail 'Separate Concat unit m
   fail 'Unexpected installed helper owner'
 nginx -t >/dev/null 2>&1 || fail 'Existing Nginx configuration invalid'
 
-exec 8>/run/lock/concat-integration-terminal-release.lock
-flock -n 8 || fail 'Another Concat integration release running'
+exec 8>/run/lock/concat-main-terminal-release.lock
+flock -n 8 || fail 'Another Concat main release running'
 export GIT_TERMINAL_PROMPT=0
 REMOTE="$(git ls-remote --exit-code "$REPO" "refs/heads/$BRANCH" | awk '{print $1}')"
-[[ "$REMOTE" == "$SHA" ]] || fail 'Integration branch SHA does not match approved SHA'
+[[ "$REMOTE" == "$SHA" ]] || fail 'Main branch SHA does not match approved SHA'
 
-WORK="$(mktemp -d /root/concat-integration-release.XXXXXXXX)"
+WORK="$(mktemp -d /root/concat-main-release.XXXXXXXX)"
 BACKUP_BASE='/var/backups/concat-web'
 [[ ! -L "$BACKUP_BASE" ]] || fail 'Unsafe backup folder'
 install -d -o root -g root -m 0700 "$BACKUP_BASE"
@@ -72,7 +73,7 @@ trap cleanup EXIT
 
 git clone --quiet --depth 1 --branch "$BRANCH" "$REPO" "$WORK/source"
 [[ "$(git -C "$WORK/source" rev-parse HEAD)" == "$SHA" ]] ||
-  fail 'Cloned Git source differs from approved integration SHA'
+  fail 'Cloned Git source differs from approved main SHA'
 [[ -f "$WORK/source/deploy/guarded-release.sh" ]] || fail 'Missing guarded helper'
 [[ -f "$WORK/source/deploy/init-local-admin.py" ]] || fail 'Missing private admin setup'
 bash -n "$WORK/source/deploy/guarded-release.sh" || fail 'Helper shell syntax invalid'
@@ -119,7 +120,7 @@ if [[ ! -e /etc/concat-web/concat-web.env ]]; then
   python3 "$WORK/source/deploy/init-local-admin.py" < /dev/tty
 fi
 /usr/local/sbin/concat-web-deploy preflight "$SHA"
-printf 'CONCAT_INTEGRATION_PREFLIGHT=PASS\n'
+printf 'CONCAT_MAIN_PREFLIGHT=PASS\n'
 if [[ "$MODE" == preflight ]]; then
   SUCCESS=1
   printf 'DEPLOYMENT=NOT_PERFORMED\nBACKUP_PATH=%s\n' "$BACKUP"
