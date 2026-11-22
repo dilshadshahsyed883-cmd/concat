@@ -2,7 +2,7 @@ name: Concat Web essential checks
 on:
   pull_request:
   push:
-    branches: [feature/foundation, integration/personal-release-20261119]
+    branches: [main]
 permissions:
   contents: read
 concurrency:
