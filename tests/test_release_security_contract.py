@@ -61,7 +61,7 @@ class LocalAdminManualReleaseTests(unittest.TestCase):
         self.assertNotIn("print(password)", source)
 
 
-    def test_manual_integration_stage_is_sha_pinned_and_concat_only(self):
+    def test_manual_main_stage_is_sha_pinned_and_concat_only(self):
         script = (ROOT / "deploy/manual-integration-release.sh").read_text()
         result = subprocess.run(
             ["bash", "-n", str(ROOT / "deploy/manual-integration-release.sh")],
@@ -69,7 +69,8 @@ class LocalAdminManualReleaseTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         for marker in (
-            "integration/personal-release-20261119",
+            "BRANCH='main'", 
+            "CONCAT_MAIN_PREFLIGHT=PASS",
             'git ls-remote --exit-code "$REPO"',
             '[[ "$REMOTE" == "$SHA" ]]',
             'git -C "$WORK/source" rev-parse HEAD',
