@@ -7,6 +7,7 @@ from typing import Any
 
 from .config import THUMBNAIL_ROOT, STAGING_ROOT, ensure_dirs
 from .copyright_handoff import delete_verified_source, delete_verified_merger_output
+from .concat_source import delete_verified_concat_media
 from .drive_source import cleanup_project_staging, stage_drive_file
 from .project_store import ProjectStore, now_iso
 from .studio_tenants import StudioTenants
@@ -300,6 +301,36 @@ class VPSUploadWorker:
                 ) from exc
             if staging and (staging.exists() or staging.is_symlink()):
                 raise RuntimeError("YouTube verified, but staged video still exists")
+        # Concat's canonical MP4 is separate from this worker's private staging
+        # copy. Only remove it after independent YouTube verification and when no
+        # other active project still references the same media.
+        if project.get("source_origin") == "concat_link":
+            job_id = str(project.get("concat_job_id") or "")
+            if not job_id:
+                # Pre-migration jobs lack a safe media identity. Never guess from
+                # filenames; finish the upload while preserving their original.
+                self.store.event(project_id, "Legacy Concat media ID missing; original retained", "WARNING")
+            elif self.store.concat_has_other_active(
+                    project_id, str(project["owner_username"]), job_id,
+                    str(project.get("source_fingerprint") or "")):
+                self.store.event(project_id, "Concat Media cleanup deferred: another active queue item uses the original")
+            else:
+                cloud_root = os.getenv("CONCAT_CLOUD_RENDER_ROOT", "")
+                if not cloud_root:
+                    raise RuntimeError("YouTube verified; Concat Media cleanup storage unavailable")
+                try:
+                    removed = delete_verified_concat_media(
+                        job_id, str(project["owner_username"]),
+                        str(project.get("source_fingerprint") or ""),
+                        cloud_root=Path(cloud_root),
+                    )
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"YouTube verified; Concat Media cleanup needs retry: {exc}"
+                    ) from exc
+                self.store.event(project_id,
+                    "Verified Concat Media original deleted after YouTube upload"
+                    if removed else "Verified Concat Media original was already absent")
         self.store.update(project_id, status="COMPLETED", progress=100,
                           cleanup_verified_at=now_iso(), error_message="")
         self.store.event(project_id, "Project completed: remote verification + VPS cleanup verified")
