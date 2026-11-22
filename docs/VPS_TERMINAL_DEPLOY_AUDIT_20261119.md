@@ -1,6 +1,6 @@
 # ARCHIVED VPS terminal audit (kept for PR #12 traceability)
 
-**Current consolidated implementation is PR #13's standalone `CONCAT_AUTH_MODE=local-admin`, not PR #12's earlier proposed `local` mode.** The valid release target is `integration/personal-release-20261119`; no main merge or VPS deployment has occurred. The old commands/SSO blockers below are historical, not current release instructions. Follow `deploy/RELEASE_GATES.md` instead.
+**Historical audit (2026-11-19):** The consolidated authentication implementation used PR #13's standalone `CONCAT_AUTH_MODE=local-admin`, not PR #12's proposed `local` mode. **As of 2026-11-22, `main` is the canonical Concat Web release source; the former `integration/personal-release-20261119` code has been merged into `main`.** Statements below about integration-only policy, SSO blockers, and the VPS state describe the historical audit, not current release instructions. Follow `deploy/RELEASE_GATES.md` and verify the live host state independently.
 
 ---
 
