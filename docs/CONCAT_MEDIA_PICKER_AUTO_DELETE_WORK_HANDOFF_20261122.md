@@ -4,7 +4,7 @@
 **Repository:** `dilshadshahsyed883-cmd/concat-web`  
 **Feature branch:** `feature/concat-media-picker-upload-cleanup-20261122`  
 **Base:** `main` (do not modify or merge main without separate user approval)  
-**Status:** Existing implementation reviewed and finalized on the feature branch with passing maintained offline tests. Draft PR review required; browser visual validation and live YouTube/VPS validation remain outstanding. No merge or deployment performed.
+**Status:** Existing implementation reviewed and finalized on the feature branch with passing maintained offline tests. Draft PR review required. Automated Chromium desktop/mobile validation and GitHub CI pass; live YouTube/VPS validation remains a separately authorized release check. No merge or deployment performed.
 
 ## 1. User-approved scope
 
@@ -149,15 +149,16 @@ Use the GitHub repository and exact feature branch above. Compare with main, ins
 | `git diff --check` | PASS |
 | Clean production-only venv install plus `python -I tests/smoke_uploader_production.py` | PASS: `PRODUCTION_ONLY_UPLOADER_IMPORT=PASS` |
 | `pip wheel --no-deps` | PASS |
-| Real Chromium desktop/mobile layout attempt | BLOCKED: bundled Playwright browser unavailable; system Chromium cannot launch because `socket()` is denied in this executor. Responsive two-column / <=760px single-column CSS and template structure reviewed; visual fit is not claimed tested. |
+| Real Chromium desktop/mobile layout | PASS in GitHub Actions: actual Upload Engine HTML/scripts/styles at 1440, 1024, 760, 390 and 320px; control bounds, desktop columns/mobile stacking, autofill and manual-entry preservation after refresh. The local executor denied Chromium socket creation, so the same offline test runs in CI with installed Chromium. All browser requests are fulfilled locally. |
+| GitHub essential checks | PASS on code commit `538bc0a42d0f5ef502fa2570958ced370df243af`: [run 205](https://github.com/dilshadshahsyed883-cmd/concat-web/actions/runs/45031706692). Includes the Chromium layout test, Python/JS regressions, release-security/routing checks and production-wheel smoke. |
 | Original `reused/reference_tests/uploader` and `/security` corpus, exploratory invocation | Not runnable directly: original upstream `apps/copyright-uploader/part01`, `lum_engine`, `desktop_core` and `cloud_render` paths are absent. `docs/REUSE_MANIFEST.md` explicitly labels these reference-only tests for adaptation. Maintained adapted suites above pass; no reference-corpus success is claimed. |
 
 No authenticated live YouTube upload, VPS production deletion, real Drive transfer, GPU operation or deployment was attempted. YouTube responses and failures in regression tests are mocks; queue, owner storage, SQLite migrations, staging, canonical deletion, HTTP gateway and CSRF checks run against real disposable local components.
 
 ### Review and operations
 
-- CI runs the maintained Python suites and now explicitly runs the new media picker JavaScript regression plus channel picker regression. PR CI status must be checked before approval.
+- CI runs the maintained Python suites, media/channel picker JavaScript regressions and the offline Chromium test in `tests/browser/concat_media_picker_layout.py` (Playwright 1.62.0 is CI-only). [Draft PR #43](https://github.com/dilshadshahsyed883-cmd/concat-web/pull/43) targets `main`; review the final head checks before approval.
 - Operational events distinguish `Concat Media cleanup deferred`, `Verified Concat cleanup retry failed`, original-deleted/already-absent results, missing legacy identity and duplicate/remote-recovery blocks. Inspect `concat_cleanup_pending`, `concat_cleanup_retry_at`, `remote_verified_at`, `cleanup_verified_at`, `youtube_video_id` and the project's events when diagnosing cleanup.
 - Release only after human PR approval, merge approval and the existing exact-main-SHA terminal gates in `deploy/RELEASE_GATES.md`. This work does not authorize those actions. Back up uploader SQLite (including a consistent WAL snapshot) and owner Cloud Render storage before any later approved rollout. Confirm the service account can write the configured owner databases/media directories.
 - Rollback requires pausing the uploader worker, reverting to an approved prior main release and preserving all receipts/history. Do not run older worker code against pending cleanup blindly. Additive columns are safe to retain, but preserve the new Concat reservation triggers/index rules while reconciling work; never clear receipts or recreate upload jobs to resolve cleanup errors. Deleted MP4s require backup recovery; reverting code cannot restore them.
-- Remaining review: real desktop/mobile visual validation; disposable authorized live YouTube/VPS smoke after separate release authorization; unknown-ID legacy originals intentionally retained; ambiguous historical failures conservatively held for existing recovery/review.
+- Remaining release validation: disposable authorized live YouTube/VPS smoke after separate release authorization; unknown-ID legacy originals intentionally retained; ambiguous historical failures conservatively held for existing recovery/review.
