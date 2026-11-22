@@ -48,3 +48,21 @@ body.lum-copyright-workspace .lum-short-sheet-header-actions form{margin:0}
  body.lum-copyright-workspace .lum-short-sheet-header-actions form{flex:1 1 auto}
  body.lum-copyright-workspace .lum-short-sheet-header-actions button{width:100%}
 }
+
+
+/* Concat Upload Engine: keep manual link and owner media picker side by side. */
+body.lum-copyright-workspace .concat-source-fields {
+  display: grid; grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 16px; align-items: start;
+}
+body.lum-copyright-workspace .concat-source-fields > * { min-width: 0; }
+body.lum-copyright-workspace .concat-media-select select { width: 100%; }
+body.lum-copyright-workspace .concat-media-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+}
+body.lum-copyright-workspace .concat-media-footer small { color: #667085; }
+body.lum-copyright-workspace .concat-media-footer button { flex: 0 0 auto; }
+@media (max-width: 760px) {
+  body.lum-copyright-workspace .concat-source-fields { grid-template-columns: minmax(0,1fr); }
+}
