@@ -74,6 +74,27 @@ class StudioTests(unittest.TestCase):
         self.assertEqual(self.client.post("/api/cloud-render/config",
             headers=token, json={"auto_upload": True}).status_code, 200)
 
+    def test_salad_idle_controls_and_persistence(self):
+        page = self.client.get("/concat/gpu-config")
+        self.assertEqual(page.status_code, 200)
+        for ident in ("cr-auto-shutdown", "cr-idle-minutes", "cr-idle-up", "cr-idle-down"):
+            self.assertIn('id="' + ident + '"', page.text)
+        token = self.auth_csrf()
+        for bad in (0, 61, True, 1.5, "5"):
+            self.assertEqual(self.client.post("/api/cloud-render/config", headers=token,
+                json={"idle_timeout_minutes": bad}).status_code, 400)
+        self.assertEqual(self.client.post("/api/cloud-render/config", headers=token,
+            json={"auto_shutdown": "true"}).status_code, 400)
+        saved = self.client.post("/api/cloud-render/config", headers=token,
+            json={"auto_shutdown": True, "idle_timeout_minutes": 7})
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertTrue(saved.json()["auto_shutdown"])
+        self.assertEqual(saved.json()["idle_timeout_minutes"], 7)
+        self.owner = "bob"
+        self.assertFalse(self.client.get("/api/cloud-render/config").json()["auto_shutdown"])
+        self.owner = "alice"
+        self.assertEqual(self.client.get("/api/cloud-render/config").json()["idle_timeout_minutes"], 7)
+
     def test_owner_specific_gpu_and_media(self):
         token = self.auth_csrf()
         self.assertEqual(self.client.post("/api/cloud-render/config", headers=token,

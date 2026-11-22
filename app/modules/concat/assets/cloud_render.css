@@ -62,3 +62,11 @@
 #cloud-render .cr-fields{grid-template-columns:1fr}
 #cloud-render h2{font-size:25px}
 }
+
+#cloud-render #cr-salad-idle-config{border-top:1px solid #e3e7ef;padding-top:12px;margin-top:12px}
+#cloud-render #cr-salad-idle-config>.cr-check{display:flex!important;font-weight:750!important;gap:9px;margin:0 0 6px!important}
+#cloud-render .cr-idle-spinner{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+#cloud-render .cr-idle-spinner>input{width:88px!important;min-width:76px;text-align:center}
+#cloud-render .cr-idle-arrows{display:flex;flex-direction:column;gap:2px}
+#cloud-render .cr-idle-arrow{font-size:10px;line-height:1;border:1px solid #d1d9e5;border-radius:5px;background:#fff;padding:4px 9px;cursor:pointer}
+#cloud-render .cr-idle-arrow:disabled{opacity:.45;cursor:not-allowed}

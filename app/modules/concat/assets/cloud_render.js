@@ -41,12 +41,34 @@
   };
   let configured=false;
   let config={};
+  const updateIdleControls=()=>{
+    const enabled=$("cr-auto-shutdown").checked;
+    const input=$("cr-idle-minutes");
+    input.disabled=!enabled;
+    const v=Number(input.value);
+    $("cr-idle-up").disabled=!enabled||v>=60;
+    $("cr-idle-down").disabled=!enabled||v<=1;
+  };
+  const changeIdleMinutes=step=>{
+    const input=$("cr-idle-minutes");
+    input.value=String(Math.min(60,Math.max(1,Number(input.value||5)+step)));
+    updateIdleControls();
+  };
   async function loadConfig(){
     config = await api("/config");
     configured=true;
     $("cr-auto").checked=!!config.auto_upload;
     $("cr-endpoint").value=config.endpoint||"";
     $("cr-concurrency").value=String(config.concurrency||1);
+    $("cr-auto-shutdown").checked=!!config.auto_shutdown;
+    $("cr-idle-minutes").value=String(config.idle_timeout_minutes||5);
+    updateIdleControls();
+    const idleStatus = config.salad_idle_status || "disabled";
+    $("cr-idle-status").textContent = !config.auto_shutdown
+      ? "Disabled · default 5 minutes"
+      : !config.auto_shutdown_ready
+      ? "Setup required: configure dedicated Salad group identifiers and API key on VPS"
+      : "Enabled · " + idleStatus.replaceAll("_"," ");
     $("cr-concurrency-status").textContent = "Saved limit: " + (config.concurrency||1) + " · synchronized on connection/dispatch";
     $("cr-salad-key-state").textContent=config.salad_key_saved?"Saved":"Not saved";
     $("cr-worker-key-state").textContent=config.worker_key_saved?"Saved":"Not saved";
@@ -213,10 +235,19 @@
   $("cr-save-auto").onclick=()=>operations("Preference saved",async()=>{
     await send("/config",{auto_upload:$("cr-auto").checked});await loadConfig();
   });
+  $("cr-auto-shutdown").addEventListener("change",updateIdleControls);
+  $("cr-idle-minutes").addEventListener("input",updateIdleControls);
+  $("cr-idle-up").onclick=()=>changeIdleMinutes(1);
+  $("cr-idle-down").onclick=()=>changeIdleMinutes(-1);
   $("cr-save-gpu").onclick=()=>operations("GPU config saved",async()=>{
     // Leave operational priority, timeout, and health path untouched on the server.
+    const minutes=Number($("cr-idle-minutes").value);
+    if(!Number.isInteger(minutes)||minutes<1||minutes>60)
+      throw Error("Idle timeout must be 1–60 whole minutes");
     const obj={endpoint:$("cr-endpoint").value.trim(),
-      concurrency:Number($("cr-concurrency").value)};
+      concurrency:Number($("cr-concurrency").value),
+      auto_shutdown:$("cr-auto-shutdown").checked,
+      idle_timeout_minutes:minutes};
     if($("cr-salad-key").value) obj.salad_key=$("cr-salad-key").value;
     if($("cr-worker-key").value) obj.worker_key=$("cr-worker-key").value;
     const saved = await send("/config",obj);
