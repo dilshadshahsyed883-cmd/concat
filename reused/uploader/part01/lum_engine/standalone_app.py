@@ -29,7 +29,8 @@ from .copyright_handoff import available_videos, available_folders, owner_root, 
 from .concat_source import stage_concat_link
 from .concat_schedule import concat_upload_at
 from .concat_sheet import preview_sheet_videos
-from .concat_source import parse_concat_link, ConcatSourceError
+from .concat_source import (parse_concat_link, ConcatSourceError,
+                            list_available_concat_media)
 from .copyright_ui import schedule_pkt
 from .copyright_vault import owner_vault_inventory, import_client as import_owner_client, import_token as import_owner_token
 from .four_modes import registry as four_mode_registry, validate_mode as validate_auto_mode
@@ -833,6 +834,29 @@ def action_report_health(request: Request, csrf_token: str = Form(...)):
         return redirect("/app", error=f"Health report failed: {exc}")
 
 
+@app.get(route("/api/concat/available-media"))
+def concat_available_media(request: Request):
+    """Fresh, owner-scoped list; do not trust browser-supplied project IDs."""
+    user = current_user(request)
+    if os.getenv("LUM_ENGINE_INSTANCE") != "concat":
+        raise HTTPException(404, "Not found")
+    cloud_root = os.getenv("CONCAT_CLOUD_RENDER_ROOT", "")
+    if not cloud_root:
+        raise HTTPException(503, "Concat Media is not configured")
+    owner = str(user["username"])
+    reserved_ids, reserved_sha = store.concat_reserved_sources(owner)
+    try:
+        items = list_available_concat_media(
+            owner, cloud_root=Path(cloud_root),
+            origin=os.getenv("CONCAT_PUBLIC_ORIGIN", "https://concat.scenebuilder.online"),
+            reserved_ids=reserved_ids, reserved_sha=reserved_sha,
+        )
+    except ConcatSourceError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    return JSONResponse({"ok": True, "items": items, "count": len(items)},
+                        headers={"Cache-Control": "no-store, private"})
+
+
 @app.get(route("/api/copyright/folder-videos"))
 def copyright_folder_videos(request: Request):
     user = current_user(request)
@@ -911,6 +935,7 @@ async def add_video(
     source_original = ""
     fingerprint = ""
     source_size = 0
+    concat_job_id = ""
     try:
         upload_instance = os.getenv("LUM_ENGINE_INSTANCE", "engine1").strip().lower()
         studio_tenants.require("channel",int(channel_db_id),user)
@@ -937,11 +962,17 @@ async def add_video(
                 cloud_root = os.getenv("CONCAT_CLOUD_RENDER_ROOT", "")
                 if not cloud_root:
                     raise ValueError("Owner-verified Cloud Render handoff is not configured")
+                origin = os.getenv("CONCAT_PUBLIC_ORIGIN", "https://concat.scenebuilder.online")
+                concat_job_id = parse_concat_link(concat_video_link, origin=origin)
+                reserved_ids, reserved_sha = store.concat_reserved_sources(str(user["username"]))
+                if concat_job_id in reserved_ids:
+                    raise ValueError("This Concat video is already queued or uploaded")
                 owned_staging, source_original, source_size, fingerprint = stage_concat_link(
                     concat_video_link, str(user["username"]), STAGING_ROOT,
-                    cloud_root=Path(cloud_root),
-                    origin=os.getenv("CONCAT_PUBLIC_ORIGIN", "https://concat.scenebuilder.online"),
+                    cloud_root=Path(cloud_root), origin=origin,
                 )
+                if fingerprint.lower() in reserved_sha:
+                    raise ValueError("This Concat video is already queued or uploaded")
             elif source_mode == "drive_link":
                 if not drive_url.strip():
                     raise ValueError("Google Drive URL required")
@@ -1002,7 +1033,8 @@ async def add_video(
             "drive_url": drive_url, "thumbnail_path": thumb_path,
             "staging_path": owned_staging, "source_file_name": source_original,
             "source_file_size": source_size, "source_fingerprint": fingerprint,
-            "source_origin": source_mode, "vps_folder": vps_folder if source_mode == "folder" else "",
+            "source_origin": source_mode, "concat_job_id": concat_job_id,
+            "vps_folder": vps_folder if source_mode == "folder" else "",
             "title": title, "description": description, "tags": tags, "category_id": category_id,
             "privacy_status": privacy_status, "app_upload_at": app_upload_at_utc,
             "publish_at": publish_at_utc,
