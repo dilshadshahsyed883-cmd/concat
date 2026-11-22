@@ -88,20 +88,20 @@ class IndependentDriveIntakeTests(unittest.TestCase):
         destination.write_bytes(b"partial")
         raise RetryableDriveError("connection interrupted")
 
-    def test_retry_waits_ten_seconds_then_recovers_and_cleans_partial(self):
+    def test_retry_waits_twenty_seconds_then_recovers_and_cleans_partial(self):
         good_download = self.queue.drive.download
         self.queue.drive.download = self.temporary_failure
         with patch("app.modules.concat.engine.cloud_render_production.time.time", return_value=100):
             self.queue.tick_intake()
         self.assertEqual(self.state()["state"], "Retrying Drive")
         self.assertEqual(self.state()["intake_retries"], 1)
-        self.assertEqual(self.state()["intake_retry_at"], 110)
+        self.assertEqual(self.state()["intake_retry_at"], 120)
         self.assertEqual(self.queue.snapshot()["active"], 0)
         self.queue.drive.download = good_download
-        with patch("app.modules.concat.engine.cloud_render_production.time.time", return_value=109):
+        with patch("app.modules.concat.engine.cloud_render_production.time.time", return_value=119):
             self.assertEqual(self.queue.tick_intake(), 1)
         self.assertEqual(self.download_calls, 1)
-        with patch("app.modules.concat.engine.cloud_render_production.time.time", return_value=110):
+        with patch("app.modules.concat.engine.cloud_render_production.time.time", return_value=120):
             self.queue.tick_intake()
         self.assertEqual(self.download_calls, 2)
         self.assertEqual(self.state()["state"], "Ready for GPU")
@@ -111,7 +111,7 @@ class IndependentDriveIntakeTests(unittest.TestCase):
     def test_exactly_five_retries_then_manual_retry_resets_budget(self):
         self.queue.drive.download = self.temporary_failure
         for attempt in range(6):
-            with patch("app.modules.concat.engine.cloud_render_production.time.time", return_value=100 + 10 * attempt):
+            with patch("app.modules.concat.engine.cloud_render_production.time.time", return_value=100 + 20 * attempt):
                 self.queue.tick_intake()
             self.assertEqual(self.state()["state"], "Failed" if attempt == 5 else "Retrying Drive")
         self.assertEqual(self.download_calls, 6)
@@ -142,11 +142,11 @@ class IndependentDriveIntakeTests(unittest.TestCase):
             self.queue.tick_intake()
         restored = ProductionQueue(self.media, self.queue.worker_factory)
         restored.drive.download = self.temporary_failure
-        with patch("app.modules.concat.engine.cloud_render_production.time.time", return_value=109):
+        with patch("app.modules.concat.engine.cloud_render_production.time.time", return_value=119):
             restored.tick_intake()
         self.assertEqual(self.download_calls, 1)
         self.assertEqual(self.state()["intake_retries"], 1)
-        with patch("app.modules.concat.engine.cloud_render_production.time.time", return_value=110):
+        with patch("app.modules.concat.engine.cloud_render_production.time.time", return_value=120):
             restored.tick_intake()
         self.assertEqual(self.download_calls, 2)
         self.assertEqual(self.state()["intake_retries"], 2)

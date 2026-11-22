@@ -29,7 +29,7 @@ DRIVE_ID = re.compile(r"[A-Za-z0-9_-]{1,200}")
 SHA256 = re.compile(r"[0-9a-f]{64}")
 TERMINAL = ("Completed", "Failed", "Cancelled")
 INTAKE_RETRIES = 5
-INTAKE_RETRY_DELAY = 10
+INTAKE_RETRY_DELAY = 20
 
 
 class JobError(RuntimeError):
