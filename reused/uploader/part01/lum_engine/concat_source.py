@@ -137,3 +137,106 @@ def stage_concat_link(link: str, owner: str, staging_root: Path, *,
     except BaseException:
         destination.unlink(missing_ok=True)
         raise
+
+
+def _verified_owner_storage(owner: str, cloud_root: Path) -> tuple[Path, Path]:
+    """Resolve only an authenticated owner's Cloud Render storage; never legacy global data."""
+    if (not isinstance(owner, str) or not owner or owner != owner.strip()
+            or len(owner) > 128 or any(c.isspace() or c in "/\\:" or ord(c) < 32 for c in owner)):
+        raise ConcatSourceError("Verified owner identity is required")
+    root = Path(cloud_root)
+    if not root.is_absolute() or root.is_symlink():
+        raise ConcatSourceError("Verified Cloud Render configuration is unavailable")
+    owners = root / "owners"
+    owner_root = owners / hashlib.sha256(owner.encode("utf-8")).hexdigest()
+    database = owner_root / "cloud_render.sqlite3"
+    media = owner_root / "media"
+    if (owners.is_symlink() or owner_root.is_symlink() or
+            not owner_root.is_dir() or not database.is_file() or database.is_symlink()
+            or not media.is_dir() or media.is_symlink()):
+        raise ConcatSourceError("Cloud Render verified owner storage is unavailable")
+    return database, media
+
+
+def list_available_concat_media(owner: str, *, cloud_root: Path, origin: str,
+                                reserved_ids: set[str], reserved_sha: set[str]) -> list[dict]:
+    """Ready, physically present, owner-verified MP4s not claimed by an upload."""
+    database, media = _verified_owner_storage(owner, cloud_root)
+    trusted = urlsplit(origin)
+    if trusted.scheme != "https" or not trusted.netloc or trusted.path not in {"", "/"}:
+        raise ConcatSourceError("Invalid Concat website origin")
+    with sqlite3.connect(f"file:{database}?mode=ro", uri=True) as con:
+        con.row_factory = sqlite3.Row
+        rows = con.execute(
+            "SELECT id,name,size,sha256 FROM files WHERE state='ready' ORDER BY rowid DESC"
+        ).fetchall()
+    result = []
+    for row in rows:
+        job, digest = str(row["id"]), str(row["sha256"]).lower()
+        if (not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", job) or
+                job in reserved_ids or digest in reserved_sha or
+                not SHA_RE.fullmatch(digest)):
+            continue
+        size = int(row["size"])
+        source = media / f"{job}.mp4"
+        if not 0 < size <= MAX_MP4 or source.is_symlink() or not source.is_file():
+            continue
+        if source.resolve().parent != media.resolve() or source.stat().st_size != size:
+            continue
+        result.append({
+            "id": job, "name": str(row["name"]), "size": size,
+            "link": origin.rstrip("/") + f"/api/cloud-render/media/{job}/file",
+        })
+        if len(result) >= 500:
+            break
+    return result
+
+
+def delete_verified_concat_media(job: str, owner: str, fingerprint: str, *,
+                                 cloud_root: Path) -> bool:
+    """Delete only the exact owned MP4 following independently verified YouTube success.
+
+    SQLite's write lock prevents a concurrent Cloud Render Drive transition.
+    A missing file/row is an idempotent success after a prior interrupted cleanup.
+    A changed file is *never* deleted.
+    """
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", str(job or "")):
+        raise ConcatSourceError("Invalid Concat media ID for cleanup")
+    if not SHA_RE.fullmatch(str(fingerprint or "")):
+        raise ConcatSourceError("Verified Concat fingerprint is required for cleanup")
+    database, media = _verified_owner_storage(owner, cloud_root)
+    source = media / f"{job}.mp4"
+    with sqlite3.connect(database, timeout=30) as con:
+        con.row_factory = sqlite3.Row
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute("SELECT state,size,sha256 FROM files WHERE id=?", (job,)).fetchone()
+        if row is None:
+            return False
+        if str(row["sha256"]).lower() != fingerprint.lower():
+            raise ConcatSourceError("Concat media changed; refusing cleanup")
+        if row["state"] not in {"ready", "failed", "delivered"}:
+            raise ConcatSourceError("Concat media is busy; cleanup must retry")
+        if source.is_symlink():
+            raise ConcatSourceError("Unsafe symlink at Concat media cleanup path")
+        if source.exists():
+            if not source.is_file() or source.resolve().parent != media.resolve():
+                raise ConcatSourceError("Unsafe Concat media cleanup path")
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            digest = hashlib.sha256()
+            with os.fdopen(os.open(source, flags), "rb") as video:
+                before = os.fstat(video.fileno())
+                if not stat.S_ISREG(before.st_mode) or before.st_size != int(row["size"]):
+                    raise ConcatSourceError("Concat media size changed; refusing cleanup")
+                for chunk in iter(lambda: video.read(4 * 1024 * 1024), b""):
+                    digest.update(chunk)
+                current = source.stat(follow_symlinks=False)
+                if current.st_ino != before.st_ino or current.st_dev != before.st_dev:
+                    raise ConcatSourceError("Concat media changed during cleanup")
+            if digest.hexdigest() != fingerprint.lower():
+                raise ConcatSourceError("Concat media checksum changed; refusing cleanup")
+            source.unlink()
+            deleted = True
+        else:
+            deleted = False
+        con.execute("DELETE FROM files WHERE id=?", (job,))
+    return deleted
