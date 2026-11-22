@@ -1,8 +1,8 @@
 """GPU speech recognition on the existing worker, with editable timed artifacts.
 
 Only audio extraction runs through FFmpeg on CPU. ASR explicitly requires CUDA;
-there is no CPU ASR or video-rendering fallback. Timings are model-derived, never
-apportioned by character length. The source project is only changed in its
+there is no CPU ASR or video-rendering fallback. Valid line/segment timing remains model-derived; imperfect word alignment can
+use estimated karaoke timing only inside a real speech segment. The project is changed only in its
 restored, worker-owned copy.
 """
 from __future__ import annotations
@@ -37,7 +37,7 @@ STYLE_FIELDS = {
     "backgroundPaddingY", "karaoke", "karaokeColor", "karaokeBackground",
     "maxWidth", "maxHeight",
 }
-ENGINE_VERSION = 1
+ENGINE_VERSION = 2
 
 
 def preset_template(preset):
@@ -313,35 +313,34 @@ class FasterWhisperCuda:
             gc.collect()
             self.models[key] = WhisperModel(key, device="cuda", compute_type="float16",
                 download_root=os.environ.get("CONCAT_ASR_MODEL_CACHE", "/worker/asr-models"))
-        segments, _ = self.models[key].transcribe(str(audio), language=request["language"],
-            word_timestamps=True, vad_filter=True, beam_size=5)
-        cues = []
-        for segment in segments:
+        from cloud_render.concat.gpu.asr_alignment import (
+            AsrWordAlignmentError, segments_to_cues
+        )
+        # Keep valid word alignment. A bad word may use estimated highlighting
+        # inside its real segment; unusable segment timing still gets one
+        # independent VAD/context retry. ASR remains CUDA-only.
+        settings = (
+            {"word_timestamps": True, "vad_filter": True, "beam_size": 5},
+            {"word_timestamps": True, "vad_filter": False, "beam_size": 5,
+             "condition_on_previous_text": False},
+        )
+        for attempt, options in enumerate(settings, 1):
             ensure_not_cancelled(cancel)
-            words = []
-            for word in segment.words or ():
-                text = word.word.strip()
-                if not text:
-                    continue
-                if len(text.split()) != 1:
-                    raise ValueError("ASR returned multi-word token without individual word timestamps")
-                start = _asr_milliseconds(word.start, "ASR word start")
-                end = _asr_milliseconds(word.end, "ASR word end")
-                words.append({"text": text, "startMs": start, "endMs": end})
-            if not words:
-                continue
-            # Boundaries derive from speech words, retaining actual silence gaps.
-            phrase = []
-            for word in words:
-                if phrase and (len(phrase) >= 7 or sum(len(w["text"])+1 for w in phrase)+len(word["text"]) > 42):
-                    cues.append({"startMs": phrase[0]["startMs"], "endMs": phrase[-1]["endMs"],
-                                 "text": " ".join(w["text"] for w in phrase), "words": phrase})
-                    phrase = []
-                phrase.append(word)
-            if phrase:
-                cues.append({"startMs": phrase[0]["startMs"], "endMs": phrase[-1]["endMs"],
-                             "text": " ".join(w["text"] for w in phrase), "words": phrase})
-        return {"version": 1, "cues": cues}
+            segments, _ = self.models[key].transcribe(
+                str(audio), language=request["language"], **options
+            )
+            try:
+                return segments_to_cues(
+                    segments, model=key, allow_estimated=True,
+                    check_cancel=lambda: ensure_not_cancelled(cancel)
+                )
+            except AsrWordAlignmentError as exc:
+                if attempt == len(settings):
+                    raise ValueError(
+                        "GPU ASR word alignment unavailable after 2 passes; "
+                        f"{exc}. Source audio is retained for retry."
+                    ) from exc
+        raise AssertionError("ASR alignment attempt loop unexpectedly exited")
 
 
 class CaptionEngine:
@@ -367,28 +366,34 @@ class CaptionEngine:
         with audio.open("rb") as audio_stream:
             audio_hash = hashlib.file_digest(audio_stream, "sha256").hexdigest()
         key = hashlib.sha256(json.dumps({"audio": audio_hash, "model": request["model"],
-            "language": request["language"], "backend": self.backend.identity, "wordTimestamps": request["wordTimestamps"]}, sort_keys=True).encode()).hexdigest()
+            "language": request["language"], "backend": self.backend.identity,
+            "engineVersion": ENGINE_VERSION, "wordTimestamps": request["wordTimestamps"]}, sort_keys=True).encode()).hexdigest()
         cached = self.cache/(key+".json")
         started = time.perf_counter()
         cache_hit = False
+        alignment = {"estimatedSegments": 0, "estimatedWords": 0}
         with self.lock:
             ensure_not_cancelled(cancel)
             if request.get("transcript") is not None:
                 cues = validate_transcript(request["transcript"], round(duration*1000), request["wordTimestamps"])
                 timing = "provided-word-timestamps"
             elif cached.is_file() and not cached.is_symlink():
-                cues = validate_transcript(json.loads(cached.read_text()), round(duration*1000), request["wordTimestamps"])
+                transcript = json.loads(cached.read_text())
+                cues = validate_transcript(transcript, round(duration*1000), request["wordTimestamps"])
                 cache_hit = True
-                timing = "model-word-timestamps"
+                timing = transcript.get("timing", "model-word-timestamps")
+                alignment = transcript.get("alignment", alignment)
             else:
                 status(caption_state="transcribing")
                 transcript = self.backend.transcribe(audio, request, cancel)
                 status(caption_state="validating_word_alignment")
                 cues = validate_transcript(transcript, round(duration*1000), request["wordTimestamps"])
-                atomic_json(cached, transcript_data(cues))
-                timing = "model-word-timestamps"
+                timing = transcript.get("timing", "model-word-timestamps")
+                alignment = transcript.get("alignment", alignment)
+                atomic_json(cached, {**transcript_data(cues), "timing": timing,
+                                     "alignment": alignment})
         ensure_not_cancelled(cancel)
-        result = {**transcript_data(cues), "timing": timing, "cacheKey": key,
+        result = {**transcript_data(cues), "timing": timing, "alignment": alignment, "cacheKey": key,
                   "sourceClipId": request["sourceClipId"], "timelineStartMs": round(timeline_start*1000),
                   "model": request["model"], "backend": self.backend.identity, "cacheHit": cache_hit,
                   "asrSeconds": round(time.perf_counter()-started, 4), "audioSeconds": duration,
@@ -400,7 +405,9 @@ class CaptionEngine:
         atomic_json(manifest, document)
         audio.unlink(missing_ok=True)
         status(caption_state="captions_ready", caption_cache_hit=cache_hit, caption_timing=timing,
-               caption_asr_seconds=result["asrSeconds"], caption_audio_seconds=duration)
+               caption_asr_seconds=result["asrSeconds"], caption_audio_seconds=duration,
+               caption_estimated_segments=alignment["estimatedSegments"],
+               caption_estimated_words=alignment["estimatedWords"])
         return {"render_after": request["renderAfter"], "result": result}
 
 

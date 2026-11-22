@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main, issue-109-editor-consistency]
-    paths: ['.github/release-requests/concat-final-20261108.txt', '.github/release-requests/issue-109-build.txt']
+    paths: ['.github/release-requests/concat-final-20261108.txt', '.github/release-requests/issue-109-build.txt', 'cloud_render/concat/gpu/asr_alignment.py']
 
 permissions:
   contents: read
