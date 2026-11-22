@@ -61,6 +61,8 @@ pub struct Preferences {
     /// like library favourites; older settings.json files default to none.
     #[serde(default)]
     pub physics_motion_favourites: Vec<String>,
+    /// Configured parameters keyed by stable animation preset ID.
+    pub animation_preset_settings: BTreeMap<String,serde_json::Value>,
     /// Explicitly saved editor Canvas defaults. Unlike project data these only
     /// seed the Canvas editor; they never rewrite an existing project.
     pub canvas_default: Option<String>,

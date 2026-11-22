@@ -10,7 +10,7 @@ use concat_project::canvas_motion::{CanvasMotionControls, CanvasMotionPreset};
 
 use super::{
     AppliedFilter, Catalogue, Clip, ClipPatch, Command, MotionPreset, PackageKind, Studio, Transition,
-    gpu_catalogue_has, key_commands, t, tf,
+    gpu_catalogue_has, t, tf,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,6 +49,23 @@ fn motion_id(preset: MotionKind) -> &'static str {
     }
 }
 
+pub(super) fn canvas_controls(settings: &crate::ui::CanvasMotionData)->CanvasMotionControls {
+    CanvasMotionControls {
+            start_scale: f64::from(settings.start_scale), end_scale: f64::from(settings.end_scale),
+            duration_seconds: f64::from(settings.duration), delay_seconds: f64::from(settings.delay),
+            entry_seconds: f64::from(settings.entry_seconds), hold_seconds: f64::from(settings.hold_seconds),
+            exit_seconds: f64::from(settings.exit_seconds),
+            focus_middle: [f64::from(settings.focus_middle_x), f64::from(settings.focus_middle_y)],
+            focus_hold_seconds: f64::from(settings.focus_hold),
+            speed: f64::from(settings.speed), strength: f64::from(settings.strength),
+            intensity: f64::from(settings.intensity), blur: f64::from(settings.blur), reverse: settings.reverse,
+            start_anchor: settings.custom_anchors.then_some([f64::from(settings.start_x),f64::from(settings.start_y)]),
+            end_anchor: settings.custom_anchors.then_some([f64::from(settings.end_x),f64::from(settings.end_y)]),
+            easing: if settings.easing == 0 { concat_project::canvas_motion::MotionEasing::Linear } else { concat_project::canvas_motion::MotionEasing::Smooth },
+            seed: settings.seed.max(0) as u64,
+        }
+}
+
 const MOTION_PRESETS: [MotionKind; 9] = [
     MotionKind::Basic(MotionPreset::PushIn),
     MotionKind::Basic(MotionPreset::PanRight),
@@ -67,8 +84,16 @@ struct GeneratedMotion {
     keys: Vec<ClipKey>,
 }
 
-/// Keep the signatures of preset keys this editing session produced. The
-/// project stores ordinary editable keys and needs no new fields.
+fn generated_motion_command(clip: &Clip, generated: &GeneratedMotion,
+    canvas_style: Option<(f64, Option<concat_project::model::ClipMask>)>) -> Command {
+    Command::ApplyGeneratedMotion {
+        clip_id: clip.id.clone(), expected_keys: clip.keys.clone(), keys: generated.keys.clone(),
+        preset: motion_id(generated.preset).into(), canvas_style,
+    }
+}
+
+/// Legacy session signatures supplement persisted per-clip ownership.
+/// Authoritative ownership and undo history now live in the project snapshots.
 #[derive(Default)]
 pub(super) struct BulkMotion(HashMap<(String, String), Vec<GeneratedMotion>>);
 
@@ -138,7 +163,7 @@ fn random_assignment(
     chosen
 }
 
-fn fresh_draw() -> impl FnMut(usize) -> usize {
+pub(super) fn fresh_draw() -> impl FnMut(usize) -> usize {
     let seed = RandomState::new();
     let mut index = 0_u64;
     move |count| {
@@ -359,8 +384,8 @@ fn gpu_effect_preset(id: &str) -> Option<AppliedFilter> {
     Some(entry)
 }
 
-/// Treat every other chain entry as manually authored, including a previously
-/// generated entry whose index, parameters or enabled status were edited.
+/// Recognize the previous random choice without treating its presence as an
+/// application conflict. Updates address one effect type and retain the others.
 fn effect_choices(
     clip: &Clip,
     saved: Option<&GeneratedEffect>,
@@ -368,15 +393,9 @@ fn effect_choices(
 ) -> Option<(Vec<AppliedFilter>, Option<usize>, Option<usize>)> {
     let managed = saved.filter(|held| clip.video_effects.get(held.index) == Some(&held.entry));
     let managed_index = managed.map(|held| held.index);
-    let choices: Vec<_> = presets
-        .iter()
-        .filter(|preset| {
-            !clip.video_effects.iter().enumerate().any(|(index, applied)| {
-                Some(index) != managed_index && applied.id == preset.id
-            })
-        })
-        .cloned()
-        .collect();
+    // Explicit application updates the addressed type; its earlier presence
+    // is not a conflict. Other effect types stay in the stack.
+    let choices:Vec<_>=presets.to_vec();
     let old = managed.and_then(|held| {
         choices.iter().position(|choice| choice.id == held.entry.id)
     });
@@ -395,7 +414,7 @@ impl Studio {
                             .extension()
                             .and_then(|ext| ext.to_str())
                             .is_some_and(|ext| {
-                                ext.eq_ignore_ascii_case("jpg") || ext.eq_ignore_ascii_case("jpeg")
+                                ext.eq_ignore_ascii_case("jpg") || ext.eq_ignore_ascii_case("jpeg") || ext.eq_ignore_ascii_case("png")
                             }))
             })
             .map(|item| item.id.as_str())
@@ -570,6 +589,12 @@ impl Studio {
     /// click replaces only the exact entry created by an earlier bulk click;
     /// manually added/edited effects stay where they are. One batch = one Undo.
     pub fn apply_random_gpu_effects(&mut self) {
+        self.apply_random_gpu_effects_scoped(true,true,false);
+    }
+    pub fn apply_random_gpu_effects_scoped(&mut self,images:bool,videos:bool,selected_only:bool) {
+        if !images && !videos {self.notify("Choose Images or Video Clips first.",true);return;}
+        let selected:HashSet<_>=self.selection.iter().cloned().collect();
+        if selected_only && selected.is_empty() {self.notify("Select eligible timeline media first.",true);return;}
         if !self.gpu_bulk_ready() {
             return;
         }
@@ -594,7 +619,8 @@ impl Studio {
             .clips
             .iter()
             .filter(|clip| {
-                picture(clip)
+                chosen_media_type(clip,images,videos)
+                    && (!selected_only || selected.contains(&clip.id))
                     && tracks.contains(clip.track_id.as_str())
                     && media.contains(clip.media_id.as_str())
             })
@@ -621,22 +647,13 @@ impl Studio {
             .collect();
         let mut commands = Vec::new();
         let mut generated = Vec::new();
-        for ((clip, target, choices, old, managed_index), chosen) in plans
-            .into_iter()
-            .zip(random_assignment(&options, fresh_draw()))
-        {
-            if old == Some(chosen) {
-                continue;
-            }
-            let entry = choices[chosen].clone();
-            let mut effects = clip.video_effects.clone();
-            let index = if let Some(index) = managed_index {
-                effects[index] = entry.clone();
-                index
-            } else {
-                effects.push(entry.clone());
-                effects.len() - 1
-            };
+        for ((clip, target, choices, _old, _managed_index), chosen) in plans
+            .into_iter().zip(random_assignment(&options,fresh_draw())) {
+            let entry=choices[chosen].clone();
+            let mut effects=clip.video_effects.clone();
+            concat_project::model::upsert_effect(&mut effects,entry.clone());
+            if effects==clip.video_effects {continue;}
+            let index=effects.iter().position(|applied|applied.id==entry.id).unwrap_or(0);
             commands.push(Command::UpdateClip {
                 clip_id: clip.id.clone(),
                 patch: ClipPatch {
@@ -662,6 +679,101 @@ impl Studio {
                 false,
             );
         }
+    }
+
+    pub fn animation_settings(&self,index:i32)->concat_project::animation_settings::Settings {
+        let value=animation_favourite_id(index).and_then(|id|self.prefs.animation_preset_settings.get(id));
+        concat_project::animation_settings::Settings::from_value(value)
+    }
+    pub fn remember_animation_settings(&mut self,index:i32,strength:f32,duration:f32,speed:f32,intensity:f32,canvas:crate::ui::CanvasMotionData) {
+        let Some(id)=animation_favourite_id(index) else {return;};
+        let mut saved=self.animation_settings(index);
+        if index>=9 {saved.canvas=canvas_controls(&canvas);saved.corners=f64::from(canvas.corner_radius).clamp(0.0,0.2);}
+        else {saved.physics=PhysicsControls {strength:f64::from(strength),duration:f64::from(duration),speed:f64::from(speed),intensity:f64::from(intensity)};}
+        if !saved.valid() {return;}
+        if let Ok(value)=serde_json::to_value(saved) {
+            if self.prefs.animation_preset_settings.get(id)!=Some(&value) {
+                self.prefs.animation_preset_settings.insert(id.into(),value);
+                self.prefs.save(&self.host.dirs);
+            }
+        }
+    }
+    /// Each chosen starred preset uses its own configured parameters. Timeline
+    /// selection and preset pool selection are independent, with no empty fallback.
+    pub fn apply_animation_favourites(&mut self,pool:Vec<i32>,images:bool,videos:bool,selected_only:bool) {
+        if !images && !videos {self.notify("Choose Images or Video Clips first.",true);return;}
+        if !self.gpu_bulk_ready() {return;}
+        let permitted:Vec<_>=pool.into_iter().filter_map(|index|{
+            let id=animation_favourite_id(index)?;
+            if !self.prefs.physics_motion_favourites.iter().any(|f|f==id) {return None;}
+            let preset=if index>=9 {MotionKind::Canvas(CanvasMotionPreset::from_index(index-9)?)} else {animation_from_index(index)?};
+            Some((preset,self.animation_settings(index)))
+        }).collect();
+        if permitted.is_empty() {self.notify("Select at least one starred animation for the Favorites pool.",true);return;}
+        self.flush_commit();
+        let selected:HashSet<_>=self.selection.iter().cloned().collect();
+        if selected_only && selected.is_empty() {self.notify("Select eligible timeline media first.",true);return;}
+        let media=self.gpu_picture_media();let frame=self.frame_seconds();
+        let mut plans=Vec::new();
+        for clip in &self.timeline().clips {
+            if !chosen_media_type(clip,images,videos) || (selected_only && !selected.contains(&clip.id))
+                || self.locked(&clip.track_id) || self.timeline().track(&clip.track_id).is_none_or(|t|!t.visible)
+                || !media.contains(clip.media_id.as_str()) {continue;}
+            let Some(base)=concat_project::motion_preset::preset_base(clip,std::iter::empty()) else {continue;};
+            let choices:Vec<_>=permitted.iter().filter_map(|(preset,settings)|{
+                let (keys,style)=match preset {
+                    MotionKind::Basic(p)=>{let c=settings.physics;(p.keys_with(&base,frame,c.strength,c.duration,c.speed).ok()?.0.to_vec(),None)}
+                    MotionKind::Physics(p)=>(p.keys_with(&base,frame,settings.physics).ok()?.0,None),
+                    MotionKind::Canvas(p)=>{
+                        let mut controls=settings.canvas;
+                        controls.seed=clip.id.bytes().fold(controls.seed,|h,b|h.wrapping_mul(31).wrapping_add(u64::from(b)));
+                        let mask=if settings.corners>0.0 {self.project().media_by_id(&clip.media_id).and_then(|m|Some((m.width?,m.height?)))
+                            .and_then(|(w,h)|concat_project::canvas_motion::rounded_mask(w,h,settings.corners))}else{None};
+                        (p.keys(&base,frame,controls).ok()?,Some((controls.blur,mask)))
+                    }
+                };
+                Some((GeneratedMotion {preset:*preset,keys},style))
+            }).collect();
+            if !choices.is_empty() {plans.push((clip,choices));}
+        }
+        let mut draw=fresh_draw();let mut commands=Vec::new();
+        for (clip,choices) in plans {
+            let (generated,style)=&choices[draw(choices.len())];
+            commands.push(generated_motion_command(clip,generated,*style));
+        }
+        if commands.is_empty(){self.notify("No eligible targets; manual keys and locked/hidden tracks are protected.",true);return;}
+        self.apply(Command::Batch {commands});
+    }
+
+    pub(super) fn publish_animation_timing(&self,app:&crate::ui::App) {
+        use slint::ComponentHandle;
+        let ui=app.global::<crate::ui::Keyframes>();
+        let index=ui.get_animation_selected();
+        let physics=PhysicsControls {strength:f64::from(ui.get_physics_strength()),duration:f64::from(ui.get_physics_duration()),speed:f64::from(ui.get_physics_speed()),intensity:f64::from(ui.get_physics_intensity())};
+        let canvas=canvas_controls(&ui.get_canvas_motion());
+        let mut seconds=Vec::new();
+        for clip in &self.timeline().clips {
+            if !chosen_media_type(clip,ui.get_animation_images(),ui.get_animation_videos())
+                || (ui.get_animation_scope()==1 && !self.selection.contains(&clip.id)) || self.locked(&clip.track_id)
+                || self.timeline().track(&clip.track_id).is_none_or(|t|!t.visible) {continue;}
+            let Some(base)=concat_project::motion_preset::preset_base(clip,std::iter::empty()) else {continue;};
+            let keys=if index>=9 {CanvasMotionPreset::from_index(index-9).and_then(|p|p.keys(&base,self.frame_seconds(),canvas).ok())}
+                else {animation_from_index(index).and_then(|p|match p {
+                    MotionKind::Basic(p)=>p.keys_with(&base,self.frame_seconds(),physics.strength,physics.duration,physics.speed).ok().map(|k|k.0.to_vec()),
+                    MotionKind::Physics(p)=>p.keys_with(&base,self.frame_seconds(),physics).ok().map(|k|k.0),_=>None})};
+            if let Some(mut keys)=keys {
+                keys.sort_by(|a,b|(a.property as u8).cmp(&(b.property as u8)).then_with(||a.at.total_cmp(&b.at)));
+                let end=keys.windows(2).filter(|pair|pair[0].property==pair[1].property && (pair[0].value-pair[1].value).abs()>1e-10)
+                    .map(|pair|pair[1].at*clip.duration).fold(0.0,f64::max);
+                seconds.push(end);
+            }
+        }
+        let min=seconds.iter().copied().fold(f64::INFINITY,f64::min);
+        let max=seconds.iter().copied().fold(0.0,f64::max);
+        let label=if seconds.is_empty() {"Effective timing: no eligible media in this scope.".into()}
+            else if max-min>0.005 {format!("Effective motion ends at {min:.2}–{max:.2} s across {} eligible clips (visible-frame timing).",seconds.len())}
+            else {format!("Effective motion ends at {max:.2} s (visible-frame timing, including delay/hold where applicable).")};
+        ui.set_animation_timing(label.into());
     }
 
     pub fn apply_physics_bulk(
@@ -759,9 +871,7 @@ impl Studio {
                 continue;
             }
             let generated = choices[chosen].clone();
-            let mut result = clip.as_ref().clone();
-            result.keys = generated.keys.to_vec();
-            commands.extend(key_commands(&clip.id, clip, &result));
+            commands.push(generated_motion_command(clip, &generated, None));
             updates.push((target, generated));
         }
         if commands.is_empty() {
@@ -785,20 +895,7 @@ impl Studio {
     /// Native multi-channel inset motion, with independent backdrop and one undo step.
     pub fn apply_canvas_motion_bulk(&mut self, index: i32, mode: i32, images: bool,
         videos: bool, selected_only: bool, settings: crate::ui::CanvasMotionData) {
-        let controls = CanvasMotionControls {
-            start_scale: f64::from(settings.start_scale), end_scale: f64::from(settings.end_scale),
-            duration_seconds: f64::from(settings.duration), delay_seconds: f64::from(settings.delay),
-            entry_seconds: f64::from(settings.entry_seconds), hold_seconds: f64::from(settings.hold_seconds),
-            exit_seconds: f64::from(settings.exit_seconds),
-            focus_middle: [f64::from(settings.focus_middle_x), f64::from(settings.focus_middle_y)],
-            focus_hold_seconds: f64::from(settings.focus_hold),
-            speed: f64::from(settings.speed), strength: f64::from(settings.strength),
-            intensity: f64::from(settings.intensity), blur: f64::from(settings.blur), reverse: settings.reverse,
-            start_anchor: settings.custom_anchors.then_some([f64::from(settings.start_x),f64::from(settings.start_y)]),
-            end_anchor: settings.custom_anchors.then_some([f64::from(settings.end_x),f64::from(settings.end_y)]),
-            easing: if settings.easing == 0 { concat_project::canvas_motion::MotionEasing::Linear } else { concat_project::canvas_motion::MotionEasing::Smooth },
-            seed: settings.seed.max(0) as u64,
-        };
+        let controls = canvas_controls(&settings);
         if !settings.corner_radius.is_finite() || !(0.0..=0.2).contains(&settings.corner_radius) {self.notify("Invalid foreground corner radius.",true);return;}
         if !images && !videos { self.notify("Select Images or Video Clips first.", true); return; }
         if !controls.valid() || !matches!(mode, 0 | 2 | 3) { self.notify("Invalid Canvas Motion settings.", true); return; }
@@ -834,20 +931,17 @@ impl Studio {
             random_assignment(&plans.iter().map(|p|(p.2.len(),p.3)).collect::<Vec<_>>(), fresh_draw())
         };
         let mut commands = Vec::new(); let mut updates = Vec::new();
-        for ((clip, target, choices, old), chosen) in plans.into_iter().zip(picks) {
-            if old == Some(chosen) { continue; }
-            let generated = choices[chosen].clone(); let mut result=clip.as_ref().clone();
-            result.keys=generated.keys.clone(); commands.extend(key_commands(&clip.id,clip,&result));
-            let mask = if clip.mask.is_none() && settings.corner_radius > 0.0 {
-                self.project().media_by_id(&clip.media_id).and_then(|m| Some((m.width?,m.height?)))
-                    .and_then(|(w,h)| concat_project::canvas_motion::rounded_mask(w,h,f64::from(settings.corner_radius)))
-                    .map(Some)
+        for ((clip, target, choices, _old), chosen) in plans.into_iter().zip(picks) {
+            let generated = choices[chosen].clone();
+            let mask = if settings.corner_radius > 0.0 {
+                self.project().media_by_id(&clip.media_id).and_then(|m| Some((m.width?, m.height?)))
+                    .and_then(|(w,h)| concat_project::canvas_motion::rounded_mask(w,h,f64::from(settings.corner_radius).min(0.2)))
             } else { None };
-            commands.push(Command::UpdateClip { clip_id:clip.id.clone(),patch:ClipPatch {
-                background:Some(Some(concat_project::model::Background::Blur {amount:controls.blur})),mask,..Default::default() }});
+            // Style-only changes are real updates even when movement keys match.
+            commands.push(generated_motion_command(clip, &generated, Some((controls.blur, mask))));
             updates.push((target,generated));
         }
-        if commands.is_empty() {self.notify("No eligible media. Manual/reopened keyframes are protected; check targets, selection and locked/hidden tracks.",true);return;}
+        if commands.is_empty() {self.notify("No eligible media. Manual or unrecognized keyframes are protected; check targets, selection and locked/hidden tracks.",true);return;}
         let revision=self.revision;self.apply(Command::Batch {commands});
         if self.revision!=revision {for (target,motion) in updates {self.bulk_motion.remember(target,motion);}}
     }
@@ -973,9 +1067,7 @@ impl Studio {
                 continue;
             }
             let generated = choices[chosen].clone();
-            let mut result = clip.as_ref().clone();
-            result.keys = generated.keys.clone();
-            commands.extend(key_commands(&clip.id, clip, &result));
+            commands.push(generated_motion_command(clip, &generated, None));
             updates.push((target, generated));
         }
         if commands.is_empty() {
@@ -995,6 +1087,38 @@ impl Studio {
 
     /// Bulk transform uses exactly the same native command and GPU units as
     /// the single-clip inspector: scale=1 is 100%, X/Y=1 is 100% of canvas.
+    /// Explicit transform/orientation replacement with the shared target semantics.
+    pub fn apply_adjustment_bulk(&mut self, page:i32, images:bool, videos:bool, selected_only:bool,
+        scale:f32,x:f32,y:f32,rotation:f32,opacity:f32,flip_h:bool,flip_v:bool) {
+        if !images && !videos {self.notify("Choose Images or Video Clips first.",true);return;}
+        if !matches!(page,0|1|3) || ![scale,x,y,rotation,opacity].iter().all(|v|v.is_finite())
+            || !(0.05..=8.0).contains(&scale) || !(-1.0..=1.0).contains(&x)
+            || !(-1.0..=1.0).contains(&y) || !(-180.0..=180.0).contains(&rotation)
+            || !(0.0..=1.0).contains(&opacity) {self.notify("Invalid adjustment settings.",true);return;}
+        self.flush_commit();
+        let selected:HashSet<_>=self.selection.iter().cloned().collect();
+        if selected_only && selected.is_empty() {self.notify("Select eligible timeline media first.",true);return;}
+        let mut commands=Vec::new();
+        for clip in &self.timeline().clips {
+            if !chosen_media_type(clip,images,videos) || (selected_only && !selected.contains(&clip.id))
+                || self.locked(&clip.track_id) || self.timeline().track(&clip.track_id).is_none_or(|t|!t.visible)
+                || self.project().media_by_id(&clip.media_id).is_none_or(|m|m.placeholder) {continue;}
+            if page==3 {
+                if clip.kind!=ClipKind::Video || concat_project::canvas_viewport::Viewport::of(clip).is_none() {continue;}
+                if let Some(command)=bulk_transform_command(clip,3,f64::from(scale),f64::from(x),f64::from(y),clip.rotation) {commands.push(command);}
+            } else if page==0 {
+                if let Some(command)=bulk_transform_command(clip,3,f64::from(scale),f64::from(x),f64::from(y),f64::from(rotation)) {commands.push(command);}
+                if !clip.is_keyed(KeyProperty::Opacity) && clip.opacity!=f64::from(opacity) {
+                    commands.push(Command::UpdateClip {clip_id:clip.id.clone(),patch:ClipPatch {opacity:Some(f64::from(opacity)),..Default::default()}});
+                }
+            } else if clip.flip_h!=flip_h || clip.flip_v!=flip_v {
+                commands.push(Command::UpdateClip {clip_id:clip.id.clone(),patch:ClipPatch {flip_h:Some(flip_h),flip_v:Some(flip_v),..Default::default()}});
+            }
+        }
+        if commands.is_empty() {self.notify("No eligible changes; check targets and authored keyframes.",false);return;}
+        self.apply(Command::Batch {commands});
+    }
+
     pub fn apply_bulk_gpu_transform(
         &mut self, mode: i32, images: bool, videos: bool,
         selected_only: bool, scale: f32, x: f32, y: f32, rotation: f32,
@@ -1093,10 +1217,11 @@ mod tests {
         clip.video_effects.push(presets[1].clone());
         let (choices, old, index) =
             effect_choices(&clip, Some(&generated), &presets).unwrap();
-        assert_eq!((choices.len(), old, index), (1, Some(0), Some(0)));
+        assert_eq!((choices.len(), old, index), (2, Some(0), Some(0)));
         // If an author changes the generated parameters, it is theirs.
         clip.video_effects[0].params.insert("stops".into(), 1.0);
-        assert!(effect_choices(&clip, Some(&generated), &presets).is_none());
+        let (choices,old,index)=effect_choices(&clip,Some(&generated),&presets).unwrap();
+        assert_eq!((choices.len(),old,index),(2,None,None));
     }
 
     #[test]

@@ -9,7 +9,7 @@ The Windows Concat GPU client authenticates to the worker and checks
 `GET /api/capabilities` for supported worker API/bundle/render modes, plus:
 
 ```json
-"render_contract": {"id": "concat-cuda-hybrid-v1", "version": 1}
+"render_contract": {"id": "concat-cuda-hybrid-v1", "version": 2}
 ```
 
 `Prepare ZIP Only` / `Send to GPU` write the same render contract into
@@ -46,3 +46,7 @@ and communicates its real failed/rendered status.
 The EXE may call `POST /api/validate` directly for immediate user feedback
 before upload. Worker media support must be implemented separately; this
 contract does **not** claim existing PNG decoding or GPU ASR capability.
+
+## Fixed Canvas viewports (contract version 2)
+
+Version 2 composes ordinary content transforms/keys inside the fixed `canvasViewportV1` opening. Both desktop preview and CUDA render clip output at the same rounded/rotated aperture. Original native crop/stretch restrictions remain. The standalone and embedded Windows helpers require a version 2 worker before upload; a version 1 worker would not understand the new geometry. Version 1 project documents and stored version 1 ZIPs remain readable by the version 2 worker. Publish the EXE and image from the same full source SHA, and verify startup/contract evidence separately from physical GPU acceptance.

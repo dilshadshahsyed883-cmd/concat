@@ -24,7 +24,7 @@ pub enum PhysicsPreset {
 
 /// Parameters are baked into ordinary GPU-compatible keyframes. The project
 /// manifest does not need a desktop-only physics extension.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct PhysicsControls {
     pub strength: f64,
     /// Fraction of the clip over which the motion evolves (0.1..=1).
@@ -41,6 +41,12 @@ impl Default for PhysicsControls {
 }
 
 impl PhysicsControls {
+    /// Whether every control is in its supported authoring range.
+    pub fn valid(self)->bool {
+        [self.strength,self.duration,self.speed,self.intensity].iter().all(|v|v.is_finite())
+            && (0.1..=2.0).contains(&self.strength) && (0.1..=1.0).contains(&self.duration)
+            && (0.25..=3.0).contains(&self.speed) && (0.2..=2.0).contains(&self.intensity)
+    }
     fn safe(self) -> Self {
         fn limit(value: f64, min: f64, max: f64) -> f64 {
             if value.is_finite() { value.clamp(min, max) } else { 1.0 }
@@ -183,12 +189,18 @@ impl PhysicsPreset {
         if clip.is_keyed(property) {
             return Err(PresetError::AlreadyKeyed);
         }
-        // 64 samples maximum, quantized to distinct visible frames. Linear
-        // interpolation follows these samples in both desktop and CUDA.
-        let steps = (last as usize).min(64);
-        let mut keys = Vec::with_capacity(steps + 1);
-        for sample in 0..=steps {
-            let at_frame = ((sample as f64 * last) / steps as f64).round();
+        // Spend the key budget on the active motion, not the inactive tail.
+        // Faster oscillators get more points; short motion gets every frame.
+        let controls = controls.safe();
+        let active = (last * controls.duration).ceil().clamp(1.0, last);
+        let steps = (active as usize).min((64.0 * controls.speed.max(1.0)).ceil() as usize).min(240);
+        let mut frames: Vec<f64> = (0..=steps)
+            .map(|sample| (sample as f64 * active / steps as f64).round()).collect();
+        frames.push(last);
+        frames.sort_by(f64::total_cmp);
+        frames.dedup();
+        let mut keys = Vec::with_capacity(frames.len());
+        for at_frame in frames {
             let t = at_frame / last;
             let value = self.value_with(clip, t, controls);
             let value = match property {
@@ -277,7 +289,7 @@ mod tests {
                 strength: 1.8, duration: 0.5, speed: 1.5, intensity: 1.7,
             },
         ).unwrap().0;
-        assert_eq!(normal.len(), stronger.len());
+        assert!(stronger.len() <= 242);
         assert_ne!(normal, stronger);
         assert!(stronger.iter().all(|key| key.value.is_finite()));
         let defaults = PhysicsPreset::DampedShake.keys_with(
@@ -309,7 +321,8 @@ mod tests {
             },
         ).unwrap().0;
         assert_eq!(normal.len(), strong.len());
-        assert_eq!(normal.len(), quick.len());
+        assert!(quick.len() <= 242);
+        assert!(quick.windows(2).all(|pair| pair[0].at < pair[1].at));
         assert_ne!(normal, strong);
         assert_ne!(normal, quick);
     }
@@ -340,4 +353,20 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn short_fast_motion_samples_each_visible_active_frame() {
+        let clip = Clip::blank("c1", "t1", ClipKind::Video, "picture", 0.0, 10.0);
+        let controls = PhysicsControls { duration: 0.1, speed: 3.0, ..Default::default() };
+        let (keys, _) = PhysicsPreset::SpringZoom.keys_with(&clip, FRAME, controls).unwrap();
+        let last = 299.0;
+        // The old full-clip grid went straight from frame 0 to frame 5.
+        for f in 0..=30 {
+            let key = keys.iter().find(|k| (k.at * clip.duration / FRAME - f as f64).abs() < 1e-8).unwrap();
+            assert!((key.value - PhysicsPreset::SpringZoom.value_with(&clip,f as f64 / last,controls)).abs() < 1e-10);
+        }
+        let peak = keys.iter().map(|k| k.value).fold(f64::NEG_INFINITY,f64::max);
+        assert!(peak > 1.14);
+        assert!(keys.len() <= 242);
+    }
+
 }

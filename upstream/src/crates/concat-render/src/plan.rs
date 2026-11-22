@@ -288,6 +288,8 @@ pub struct PlannedLayer {
     /// with `mask`, the crop and everything else that weighs the picture.
     /// `None` keeps it whole.
     pub shape: Option<ShapeMask>,
+    /// Output-space Canvas opening, independent of the source's mask/motion.
+    pub aperture:Option<ShapeMask>,
     /// What the cuts at either end do to the picture at this frame.
     pub transitions: Vec<Transition>,
     /// How the layer's colour meets what is beneath it.
@@ -318,6 +320,7 @@ impl PlannedLayer {
             effects: Vec::new(),
             mask: None,
             shape: None,
+            aperture:None,
             transitions: Vec::new(),
             blend: Blend::Normal,
             opacity: 1.0,
@@ -348,6 +351,11 @@ impl PlannedLayer {
         // One output pixel, in the picture's shorter side as it is drawn.
         let shown = (width * scale_x).min(height * scale_y).max(1.0);
         shape.uniform(width, height, 1.0 / shown)
+    }
+
+    /// Pack a fixed opening in output canvas coordinates.
+    pub fn aperture_uniform(&self,width:u32,height:u32)->MaskUniform {
+        self.aperture.map_or(MaskUniform::NONE,|shape|shape.uniform(width as f32,height as f32,1.0/width.min(height).max(1) as f32))
     }
 
     /// The transitions folded; see [`Shading`].
@@ -406,6 +414,7 @@ impl PlannedLayer {
             || !self.effects.is_empty()
             || self.mask.is_some()
             || self.shape.is_some()
+            || self.aperture.is_some()
             || !self.transitions.is_empty()
             || self.blend != Blend::Normal
         {
@@ -454,6 +463,7 @@ impl PlannedLayer {
             // The picture's shape mask is the picture's: the background
             // fills the frame behind it, and shows where the mask cuts.
             shape: None,
+            aperture:None,
             blend: Blend::Normal,
             ..self.clone()
         };
@@ -823,6 +833,7 @@ pub fn plan_frame(timeline: &Timeline, time: Rational) -> FramePlan {
             effects: Vec::new(),
             mask: None,
             shape: clip.mask_at(time),
+            aperture:clip.canvas_frame.map(|frame|frame.aperture()),
             transitions: Vec::new(),
             blend: clip.blend,
             // The fade ramp multiplies in here, so the compositor only ever

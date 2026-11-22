@@ -26,7 +26,7 @@ fn main() -> Result<(), slint::PlatformError> {
         use std::io::Write;
         let _ = writeln!(
             std::io::stdout(),
-            "concat {} (source {}; contract concat-cuda-hybrid-v1/1)",
+            "concat {} (source {}; contract concat-cuda-hybrid-v1/2)",
             env!("CARGO_PKG_VERSION"),
             env!("BUILD_SOURCE_SHA")
         );

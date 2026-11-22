@@ -29,7 +29,7 @@ assert get('/api/capabilities')[0] == 401
 code, capabilities = get('/api/capabilities', True)
 assert code == 200
 assert capabilities['source_sha'] == os.environ['GITHUB_SHA']
-assert capabilities['render_contract'] == {'id': 'concat-cuda-hybrid-v1', 'version': 1}
+assert capabilities['render_contract'] == {'id': 'concat-cuda-hybrid-v1', 'version': 2}
 code, readiness = get('/health/ready')
 assert code in (200, 503) and readiness['cuda_stage1'] is True and readiness['native_vulkan'] is False
 assert get('/api/config/concurrency', True)[0] == 200

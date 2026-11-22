@@ -42,7 +42,7 @@ class CompatibilityTests(unittest.TestCase):
                         "render_modes": ["cuda-stage1", "cuda-hybrid-v1"],
                         "validation_version": 1,
                         "source_sha": os.environ.get("CONCAT_SOURCE_SHA", "unknown"),
-                        "render_contract": {"id": "concat-cuda-hybrid-v1", "version": 1},
+                        "render_contract": {"id": "concat-cuda-hybrid-v1", "version": 2},
                         "max_project_manifest_bytes": MAX_PROJECT_MANIFEST_BYTES,
                     })
                 finally:

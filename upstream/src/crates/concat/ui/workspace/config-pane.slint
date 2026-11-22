@@ -1,3 +1,4 @@
+import { AnimationApplyBar } from "animation-actions.slint";
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2026 Jareer and Concat contributors
 
@@ -10,8 +11,8 @@ import { Param, ParamFormat, Check } from "../inspector/controls.slint";
 import { CanvasMotionPanel } from "canvas-motion.slint";
 import { Editor } from "../editor.slint";
 import { LibraryFocus } from "library-focus.slint";
-import { CanvasPresetPanel, CanvasPresetApplyBar, CanvasTargets } from "canvas-presets.slint";
-import { MediaLayoutPanel } from "media-layout.slint";
+import { CanvasPresetPanel, CanvasPresetApplyBar } from "canvas-presets.slint";
+import { MediaLayoutPanel, MediaLayoutApplyBar, MediaTargetControls } from "media-layout.slint";
 import { ParticleEffectsPanel, ParticleApplyBar } from "particle-effects.slint";
 import { CaptionPresetPreview, CaptionPresetPreviewPanel, CaptionPresetApplyBar } from "caption-preset-preview.slint";
 import { PaneKind, PaneSwitcher } from "pane-switcher.slint";
@@ -446,24 +447,11 @@ export component ConfigPane inherits Rectangle {
         PaneBody {
             padding: 0px;
             PaneScroll {
+                vertical-stretch: 1;
                 VerticalLayout {
                     padding: 10px;
                     spacing: 8px;
-                    HorizontalLayout {
-                        spacing: 8px;
-                        Check { checked: Keyframes.animation-images; toggled(on) => { Keyframes.animation-images = on; } }
-                        Text { text: "Images"; vertical-alignment: center; color: Theme.fg; }
-                        Check { checked: Keyframes.animation-videos; toggled(on) => { Keyframes.animation-videos = on; } }
-                        Text { text: "Video Clips"; vertical-alignment: center; color: Theme.fg; }
-                    }
-                    HorizontalLayout {
-                        Text { text: "Bulk scope"; vertical-alignment: center; color: Theme.fg-muted; }
-                        Select {
-                            options: ["Whole timeline", "Selected media"];
-                            current: Keyframes.animation-scope;
-                            changed(index) => { Keyframes.animation-scope = index; }
-                        }
-                    }
+                    MediaTargetControls { }
                     Text {
                         text: Keyframes.animation-selected < 9
                             ? root.animation-basic-names[Keyframes.animation-selected]
@@ -493,48 +481,6 @@ export component ConfigPane inherits Rectangle {
                         }
                         Text { text: "Choose targets above. The selected preset remains active while browsing other tabs.";
                             color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
-                        Button {
-                            label: "Apply Selected";
-                            enabled: Keyframes.animation-images || Keyframes.animation-videos;
-                            clicked => {
-                                Keyframes.apply-physics-bulk(Keyframes.animation-selected, 0,
-                                    Keyframes.animation-images, Keyframes.animation-videos, true,
-                                    Keyframes.physics-strength, Keyframes.physics-duration,
-                                    Keyframes.physics-speed, Keyframes.physics-intensity);
-                            }
-                        }
-                        Button {
-                            label: "Apply All";
-                            enabled: Keyframes.animation-images || Keyframes.animation-videos;
-                            clicked => {
-                                Keyframes.apply-physics-bulk(Keyframes.animation-selected, 0,
-                                    Keyframes.animation-images, Keyframes.animation-videos, false,
-                                    Keyframes.physics-strength, Keyframes.physics-duration,
-                                    Keyframes.physics-speed, Keyframes.physics-intensity);
-                            }
-                        }
-                        Button {
-                            label: Keyframes.animation-scope == 1 ? "Random Selected (Basic / Physics)" : "Random All (Basic / Physics)";
-                            enabled: Keyframes.animation-images || Keyframes.animation-videos;
-                            clicked => {
-                                Keyframes.apply-physics-bulk(Keyframes.animation-selected, 2,
-                                    Keyframes.animation-images, Keyframes.animation-videos,
-                                    Keyframes.animation-scope == 1,
-                                    Keyframes.physics-strength, Keyframes.physics-duration,
-                                    Keyframes.physics-speed, Keyframes.physics-intensity);
-                            }
-                        }
-                        Button {
-                            label: Keyframes.animation-scope == 1 ? "Favorite Basic / Physics: Selected" : "Favorite Basic / Physics: All";
-                            enabled: Keyframes.animation-images || Keyframes.animation-videos;
-                            clicked => {
-                                Keyframes.apply-physics-bulk(Keyframes.animation-selected, 3,
-                                    Keyframes.animation-images, Keyframes.animation-videos,
-                                    Keyframes.animation-scope == 1,
-                                    Keyframes.physics-strength, Keyframes.physics-duration,
-                                    Keyframes.physics-speed, Keyframes.physics-intensity);
-                            }
-                        }
                     }
                     if Keyframes.animation-selected >= 9: CanvasMotionPanel {
                         inspector-mode: true;
@@ -543,12 +489,14 @@ export component ConfigPane inherits Rectangle {
                         videos: Keyframes.animation-videos;
                         selected-only: Keyframes.animation-scope == 1;
                     }
+                    Text { text: Keyframes.animation-timing; color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
                     Text {
                         text: "Generated keys remain editable. Existing manual keyframes are protected; bulk Apply is one Undo step.";
                         color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
                     }
                 }
             }
+            AnimationApplyBar { }
         }
     }
 
@@ -577,7 +525,10 @@ export component ConfigPane inherits Rectangle {
                         : LibraryFocus.page == 6 ? "Text / Captions"
                         : LibraryFocus.page == 7 ? "Templates"
                         : LibraryFocus.page == 8 ? "Canvas Presets"
-                        : "Particle Effects";
+                        : LibraryFocus.page == 9 ? "Particle Effects"
+                        : LibraryFocus.page == 10 ? "Transform"
+                        : LibraryFocus.page == 11 ? "Mirror / Flip"
+                        : LibraryFocus.page == 12 ? "Canvas" : "Content Zoom / Crop";
                     color: Theme.fg;
                     font-size: Theme.fs-sm;
                     font-weight: Theme.weight-title;
@@ -631,18 +582,19 @@ export component ConfigPane inherits Rectangle {
                     }
                     if LibraryFocus.page == 8: VerticalLayout {
                         spacing: 8px;
-                        HorizontalLayout {
-                            Check { checked: CanvasTargets.images; toggled(on) => { CanvasTargets.images = on; } }
-                            Text { text: "Images"; color: Theme.fg; }
-                            Check { checked: CanvasTargets.videos; toggled(on) => { CanvasTargets.videos = on; } }
-                            Text { text: "Video Clips"; color: Theme.fg; }
-                        }
+                        MediaTargetControls { }
                         CanvasPresetPanel {
-                            images: CanvasTargets.images;
-                            videos: CanvasTargets.videos;
+                            images: Keyframes.animation-images;
+                            videos: Keyframes.animation-videos;
                         }
                     }
+                    if LibraryFocus.page == 2 && GpuCompatibility.enabled: MediaTargetControls { }
                     if LibraryFocus.page == 9: ParticleEffectsPanel { }
+                    if LibraryFocus.page >= 10 && LibraryFocus.page <= 13: VerticalLayout {
+                        spacing: 8px;
+                        MediaTargetControls { }
+                        MediaLayoutPanel { page: LibraryFocus.page - 10; }
+                    }
                     if LibraryFocus.page == 1 && root.on-transition: TransitionPanel {
                         transition: root.transition;
                         remove => { root.transition-remove(); }
@@ -652,21 +604,12 @@ export component ConfigPane inherits Rectangle {
                         save-default(seconds, amount) => { root.transition-default-save(seconds, amount); }
                         reset-default => { root.transition-default-reset(); }
                     }
-                    if LibraryFocus.page == 1 && GpuCompatibility.enabled && GpuCompatibility.transitions: TransitionRandomActions { }
+
                     if LibraryFocus.page == 1 && !root.on-transition: Text {
                         text: "Choose a transition card to apply it to an eligible cut. Select the cut on the timeline to adjust duration or intensity in the inspector. The card's Info action only browses details.";
                         color: Theme.fg-muted;
                         font-size: Theme.fs-sm;
                         wrap: word-wrap;
-                    }
-                    if LibraryFocus.page == 2 && LibraryFocus.selected-id != "": Button {
-                        label: "Apply to Selected Clip";
-                        enabled: root.has-selection;
-                        clicked => { root.chain-add(false, LibraryFocus.selected-id); }
-                    }
-                    if LibraryFocus.page == 2 && GpuCompatibility.enabled && GpuCompatibility.video-effects: Button {
-                        label: "Apply to All Randomly";
-                        clicked => { Editor.library-apply-random-effects(); }
                     }
                     if LibraryFocus.page == 2 && root.has-selection: PresetStack {
                         noun: I18n.t("common.effect");
@@ -761,11 +704,22 @@ export component ConfigPane inherits Rectangle {
                 height: 1px;
                 background: Theme.line;
             }
+                    if LibraryFocus.page == 2 && LibraryFocus.selected-id != "": Button {
+                        label: "Apply to Selected Clip";
+                        enabled: root.has-selection;
+                        clicked => { root.chain-add(false, LibraryFocus.selected-id); }
+                    }
+                    if LibraryFocus.page == 2 && GpuCompatibility.enabled && GpuCompatibility.video-effects: Button {
+                        label: "Apply Randomly";
+                        clicked => { Editor.library-apply-random-effects(); }
+                    }
             if LibraryFocus.page == 8: CanvasPresetApplyBar {
-                images: CanvasTargets.images;
-                videos: CanvasTargets.videos;
+                images: Keyframes.animation-images;
+                videos: Keyframes.animation-videos;
             }
+            if LibraryFocus.page == 1 && GpuCompatibility.enabled && GpuCompatibility.transitions: TransitionRandomActions { }
             if LibraryFocus.page == 9: ParticleApplyBar { }
+            if LibraryFocus.page >= 10 && LibraryFocus.page <= 13: MediaLayoutApplyBar { page: LibraryFocus.page - 10; }
             if LibraryFocus.page == 6 && GpuCompatibility.enabled && CaptionPresetPreview.chosen != "": CaptionPresetApplyBar { }
         }
 

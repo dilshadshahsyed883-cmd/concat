@@ -20,7 +20,10 @@ class PhysicsControlContractTests(unittest.TestCase):
             self.assertIn("in-out property <float> physics-" + control, timeline_ui)
         self.assertIn("pub fn command_with(", physics)
         self.assertIn("state.apply_physics_motion(index, strength, duration, speed, intensity)", lib)
-        self.assertEqual(inspector_ui.count("Keyframes.apply-physics-bulk("), 4)
+        actions = (ROOT / "upstream/src/crates/concat/ui/workspace/animation-actions.slint").read_text()
+        self.assertIn("Keyframes.apply-physics-bulk(",actions)
+        for mode in ("root.apply(true,0)","root.apply(false,0)","root.apply(Keyframes.animation-scope == 1,2)","root.apply(Keyframes.animation-scope == 1,3)"):
+            self.assertIn(mode,actions)
         self.assertIn("Keyframes.physics-intensity", inspector_ui)
 
 

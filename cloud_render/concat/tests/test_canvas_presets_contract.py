@@ -79,4 +79,53 @@ class CanvasPresetContracts(unittest.TestCase):
                     plan = load_project(root, lambda _: None)
                 self.assertGreaterEqual(len(plan.lanes), 2)
 
+    def test_owned_dense_motion_native_fixture_matches_worker_planner(self):
+        directory = os.environ.get('CONCAT_CANVAS_FIXTURE_DIR')
+        if not directory:
+            self.skipTest('Run native project tests with CONCAT_CANVAS_FIXTURE_DIR first')
+        contract = json.loads((Path(directory) / 'generated-motion-contract.json').read_text())
+        document = contract['document']
+        clip = document['timelines'][0]['clips'][0]
+        self.assertIn('generatedMotionV1', clip)
+        self.assertEqual(clip['keys'], clip['generatedMotionV1']['keys'])
+        validate_gpu_manifest(document)
+        # Placeholder bytes suffice: this checks planning, without decoding or GPU IO.
+        document['media'][0]['path'] = 'fixture.mp4'
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / 'concat.json').write_text(json.dumps(document))
+            (root / 'fixture.mp4').write_bytes(b'native motion contract placeholder')
+            plan = load_project(root, lambda _: None)
+        picture = next(picture for lane in plan.lanes for picture in lane if picture.id == clip['id'])
+        self.assertEqual(sum(map(len, picture.keys.values())), len(clip['keys']))
+        for expected in contract['samples']:
+            actual = picture.transform(expected['frame'])
+            for channel in ('scale', 'pan_x', 'pan_y', 'opacity'):
+                self.assertAlmostEqual(getattr(actual, channel), expected[channel], places=5)
+
+    def test_native_fixed_viewport_transform_and_rounded_aperture_contract(self):
+        from cloud_render.concat.hybrid.viewport import parse_viewport
+        directory = os.environ.get('CONCAT_CANVAS_FIXTURE_DIR')
+        if not directory:
+            self.skipTest('Run native project tests with CONCAT_CANVAS_FIXTURE_DIR first')
+        contract = json.loads((Path(directory) / 'viewport-contract.json').read_text())
+        document = contract['document']
+        validate_gpu_manifest(document)
+        owner = next(c for c in document['timelines'][0]['clips'] if c['id'] == 'c1')
+        viewport = parse_viewport(owner['canvasViewportV1'])
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / 'concat.json').write_text(json.dumps(document))
+            (root / 'source.mp4').write_bytes(b'viewport planner fixture')
+            plan = load_project(root, lambda _: None)
+        picture = next(p for lane in plan.lanes for p in lane if p.id == 'c1')
+        for sample in contract['samples']:
+            actual = picture.transform(sample['frame'])
+            for field in ('scale','pan_x','pan_y','rotation_degrees'):
+                self.assertAlmostEqual(getattr(actual,field),sample[field],places=5)
+        for point in contract['coverage']:
+            self.assertAlmostEqual(viewport.coverage(point['u'],point['v']),point['coverage'],places=4)
+        for broken in (None,{},dict(owner['canvasViewportV1'],scale=-1),dict(owner['canvasViewportV1'],version=2)):
+            with self.assertRaises(ValueError): parse_viewport(broken)
+
 if __name__=='__main__':unittest.main()

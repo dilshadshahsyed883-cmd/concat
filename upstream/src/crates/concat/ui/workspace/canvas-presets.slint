@@ -6,11 +6,7 @@ import { Button } from "../primitives/modal.slint";
 import { IconButton } from "../primitives/panel.slint";
 import { Glyph } from "../icons.slint";
 import { LibraryFocus } from "library-focus.slint";
-export global CanvasTargets {
-    in-out property <bool> images: true;
-    in-out property <bool> videos: true;
-}
-
+import { Keyframes } from "../timeline/model.slint";
 export global CanvasPresets {
     in-out property <int> selected: 1;
     in property <[bool]> favourites;
@@ -40,6 +36,7 @@ export global CanvasPresets {
     in-out property <string> profile;
     callback choose(preset: int);
     callback apply(profile: string, all: bool, images: bool, videos: bool);
+    callback random-favourites(images: bool, videos: bool, selected: bool);
     callback save-default(profile: string);
     callback reset-default();
     in-out property <string> default-status;
@@ -135,6 +132,8 @@ export component CanvasPresetApplyBar inherits VerticalLayout {
     padding: 8px;
     Button { label: "Apply Selected"; enabled: root.images || root.videos; clicked => { CanvasPresets.apply(CanvasPresets.profile, false, root.images, root.videos); } }
     Button { label: "Apply All"; enabled: root.images || root.videos; clicked => { CanvasPresets.apply(CanvasPresets.profile, true, root.images, root.videos); } }
+    Button { label: "Apply Favorites Randomly"; enabled: root.images || root.videos;
+        clicked => { CanvasPresets.random-favourites(root.images,root.videos,Keyframes.animation-scope == 1); } }
 }
 
 export component CanvasPresetLibrary inherits VerticalLayout {

@@ -5,100 +5,107 @@ import { Select } from "../primitives/select.slint";
 import { Check, Param, ParamFormat, ColourField } from "../inspector/controls.slint";
 import { Keyframes, Backdrop, LayoutSelectionData, BackdropData, ClipKind, ClipField } from "../timeline/model.slint";
 
-// Authoring settings stay local until Apply: switching scope never changes media.
-export component MediaLayoutPanel inherits VerticalLayout {
-    in property <bool> canvas;
-    in-out property <bool> images: true;
-    in-out property <bool> videos: true;
-    property <int> scope: 1;
-    property <LayoutSelectionData> selected: Keyframes.layout-clip;
-    property <BackdropData> background: Backdrop.clip-has && Backdrop.clip.mode >= 0 ? Backdrop.clip : Backdrop.timeline;
-    changed background => { root.seed-background(); }
-    property <bool> live-selected: false;
-    property <bool> can-edit: root.scope == 1 && root.selected.present && root.selected.editable && root.selected.count == 1
-        && ((root.selected.kind == ClipKind.image && root.images) || (root.selected.kind == ClipKind.video && root.videos));
-    property <float> scale: 1;
-    property <float> position-x: 0;
-    property <float> position-y: 0;
-    property <float> rotation: 0;
-    property <int> background-mode: 1;
-    property <float> blur: 0.5;
-    property <color> colour: #ffffff;
-    init => { root.seed(); root.seed-background(); }
-    changed selected => { root.seed(); }
-    function seed() {
-        if root.selected.present && (root.selected.kind == ClipKind.video || root.selected.kind == ClipKind.image) {
-            root.scale = root.selected.scale; root.position-x = root.selected.offset-x;
-            root.position-y = root.selected.offset-y; root.rotation = root.selected.rotation;
-        }
-    }
-    function seed-background() {
-        root.background-mode = root.background.mode >= 0 && root.background.mode <= 2 ? root.background.mode : 0;
-        root.blur = root.background.amount; root.colour = root.background.colour;
-    }
-    function edit(field: ClipField, value: float) {
-        if root.live-selected && root.can-edit {Keyframes.layout-set(field,value);}
-    }
-    function apply(mode: int, selected: bool) {
-        Keyframes.apply-bulk-transform(mode, root.images, root.videos, selected, root.scale, root.position-x, root.position-y, root.rotation);
-    }
-    padding: 8px;
-    spacing: 10px;
-    Text { text: root.canvas ? "Canvas" : "Transform"; color: Theme.fg; font-size: Theme.fs-lg; font-weight: Theme.weight-title; }
+// One targeting state across all applicable media functions. Changing scope
+// never applies anything. Explicit Selected/All actions retain their labels.
+export component MediaTargetControls inherits VerticalLayout {
+    spacing: 8px;
     HorizontalLayout {
         spacing: 8px;
-        Check { checked: root.images; toggled(on) => { root.images = on; } }
+        Check { checked: Keyframes.animation-images; toggled(on) => { Keyframes.animation-images = on; } }
         Text { text: "Images"; color: Theme.fg; vertical-alignment: center; }
-        Check { checked: root.videos; toggled(on) => { root.videos = on; } }
+        Check { checked: Keyframes.animation-videos; toggled(on) => { Keyframes.animation-videos = on; } }
         Text { text: "Video Clips"; color: Theme.fg; vertical-alignment: center; }
     }
-    Select { options: ["Whole timeline", "Selected media"]; current <=> root.scope; }
-    if root.scope == 1 && root.selected.count == 0: Text {
-        text: "No visual media selected. Select an image or video, or choose Whole timeline for bulk changes.";
-        color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
+    HorizontalLayout {
+        Text { text: "Bulk scope"; color: Theme.fg-muted; vertical-alignment: center; }
+        Select { options: ["Whole timeline", "Selected media"]; current: Keyframes.animation-scope;
+            changed(index) => { Keyframes.animation-scope = index; } }
     }
-    if root.scope == 1 && root.selected.count > 1: Text {
-        text: "Multiple clips selected. Apply Selected works on this selection; live keyframe editing needs a single editable clip.";
-        color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
+}
+export global Adjustment {
+    in-out property <float> scale: 1;
+    in-out property <float> position-x: 0;
+    in-out property <float> position-y: 0;
+    in-out property <float> rotation: 0;
+    in-out property <float> opacity: 1;
+    in-out property <bool> flip-h: false;
+    in-out property <bool> flip-v: false;
+    in-out property <bool> live-selected: false;
+    in-out property <int> background-mode: 1;
+    in-out property <float> blur: 0.5;
+    in-out property <color> colour: #ffffff;
+    property <LayoutSelectionData> selected: Keyframes.layout-clip;
+    changed selected => {
+        if selected.present {
+            scale = selected.scale; position-x = selected.offset-x; position-y = selected.offset-y;
+            rotation = selected.rotation; opacity = selected.opacity;
+            flip-h = selected.flip-h; flip-v = selected.flip-v;
+        }
     }
-    if !root.canvas: VerticalLayout {
+    property <BackdropData> background: Backdrop.clip-has && Backdrop.clip.mode >= 0 ? Backdrop.clip : Backdrop.timeline;
+    changed background => {
+        background-mode = background.mode >= 0 && background.mode <= 2 ? background.mode : 0;
+        blur = background.amount; colour = background.colour;
+    }
+}
+export component MediaLayoutPanel inherits VerticalLayout {
+    // 0 Transform, 1 Mirror / Flip, 2 Canvas, 3 content viewport.
+    in property <int> page;
+    property <LayoutSelectionData> selected: Keyframes.layout-clip;
+    property <bool> can-edit: Keyframes.animation-scope == 1 && root.selected.present && root.selected.editable && root.selected.count == 1
+        && ((root.selected.kind == ClipKind.image && Keyframes.animation-images) || (root.selected.kind == ClipKind.video && Keyframes.animation-videos));
+    function edit(field: ClipField, value: float) {
+        if Adjustment.live-selected && root.can-edit { Keyframes.layout-set(field,value); }
+    }
+    spacing: 8px;
+    if root.page == 0: VerticalLayout {
         spacing: 8px;
         HorizontalLayout {
-            Check {checked:root.live-selected; enabled:root.can-edit; toggled(on)=>{root.live-selected=on;}}
-            Text {text:"Edit selected clip live / keyframes"; color:Theme.fg; wrap:word-wrap;}
+            Check { checked: Adjustment.live-selected; enabled: root.can-edit; toggled(on) => { Adjustment.live-selected = on; } }
+            Text { text: "Edit selected clip live / keyframes"; color: Theme.fg; wrap: word-wrap; }
         }
-        Param { label: "Scale"; keyable:root.live-selected && root.can-edit; field:ClipField.scale; changed(v)=>{root.edit(ClipField.scale,v);} value <=> root.scale; minimum: 0.05; maximum: 8; step: 0.01; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; }
-        Param { label: "Position X"; keyable:root.live-selected && root.can-edit; field:ClipField.offset-x; changed(v)=>{root.edit(ClipField.offset-x,v);} value <=> root.position-x; minimum: -1; maximum: 1; step: 0.005; unit: "%"; unit-scale: 100; fmt: ParamFormat.centred; }
-        Param { label: "Position Y"; keyable:root.live-selected && root.can-edit; field:ClipField.offset-y; changed(v)=>{root.edit(ClipField.offset-y,v);} value <=> root.position-y; minimum: -1; maximum: 1; step: 0.005; unit: "%"; unit-scale: 100; fmt: ParamFormat.centred; }
-        Param { label: "Rotation"; keyable:root.live-selected && root.can-edit; field:ClipField.rotation; changed(v)=>{root.edit(ClipField.rotation,v);} value <=> root.rotation; minimum: -180; maximum: 180; step: 1; unit: "°"; fmt: ParamFormat.degrees; }
-        Select {
-            options: ["Framing…", "Fit", "Fill"];
-            changed(index) => {
-                if index > 0 {
-                    if root.live-selected && root.can-edit { Keyframes.layout-frame(index == 2); }
-                    else { root.apply(index == 2 ? 5 : 4, root.scope == 1); }
-                }
+        Param { label: "Scale"; keyable: Adjustment.live-selected && root.can-edit; field: ClipField.scale; changed(v) => { root.edit(ClipField.scale,v); } value <=> Adjustment.scale; minimum: 0.05; maximum: 8; step: 0.01; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; }
+        Param { label: "Position X"; keyable: Adjustment.live-selected && root.can-edit; field: ClipField.offset-x; changed(v) => { root.edit(ClipField.offset-x,v); } value <=> Adjustment.position-x; minimum: -1; maximum: 1; step: 0.005; unit: "%"; unit-scale: 100; fmt: ParamFormat.centred; }
+        Param { label: "Position Y"; keyable: Adjustment.live-selected && root.can-edit; field: ClipField.offset-y; changed(v) => { root.edit(ClipField.offset-y,v); } value <=> Adjustment.position-y; minimum: -1; maximum: 1; step: 0.005; unit: "%"; unit-scale: 100; fmt: ParamFormat.centred; }
+        Param { label: "Rotation"; keyable: Adjustment.live-selected && root.can-edit; field: ClipField.rotation; changed(v) => { root.edit(ClipField.rotation,v); } value <=> Adjustment.rotation; minimum: -180; maximum: 180; step: 1; unit: "°"; fmt: ParamFormat.degrees; }
+        Param { label: "Opacity"; keyable: Adjustment.live-selected && root.can-edit; field: ClipField.opacity; changed(v) => { root.edit(ClipField.opacity,v); } value <=> Adjustment.opacity; minimum: 0; maximum: 1; step: 0.01; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; }
+        Select { options: ["Framing…", "Fit", "Fill"]; changed(index) => {
+            if index > 0 {
+                if Adjustment.live-selected && root.can-edit { Keyframes.layout-frame(index == 2); }
+                else { Keyframes.apply-bulk-transform(index == 2 ? 5 : 4,Keyframes.animation-images,Keyframes.animation-videos,Keyframes.animation-scope == 1,Adjustment.scale,Adjustment.position-x,Adjustment.position-y,Adjustment.rotation); }
             }
-        }
-        HorizontalLayout {
-            spacing: 8px;
-            Button { label: "Apply Selected"; primary: true; enabled: root.images || root.videos; clicked => { root.apply(3, true); } }
-            Button { label: "Apply All"; enabled: root.images || root.videos; clicked => { root.apply(3, false); } }
-        }
+        } }
     }
-    if root.canvas: VerticalLayout {
+    if root.page == 1: VerticalLayout {
         spacing: 8px;
-        Select { options: ["None", "Blur", "Solid color"]; current <=> root.background-mode; }
-        if root.background-mode == 1: Param { label: "Softness"; value <=> root.blur; minimum: 0; maximum: 1; step: 0.01; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; }
-        if root.background-mode == 2: ColourField { label: "Background color"; value: root.colour; alpha: false; changed(c) => { root.colour = c; } }
-        HorizontalLayout {
-            spacing: 8px;
-            Button { label: "Apply Selected"; primary: true; enabled: root.images || root.videos;
-                clicked => { Backdrop.apply-bulk(root.background-mode, root.blur, root.colour, root.images, root.videos, true); } }
-            Button { label: "Apply All"; enabled: root.images || root.videos;
-                clicked => { Backdrop.apply-bulk(root.background-mode, root.blur, root.colour, root.images, root.videos, false); } }
-        }
-        Text { text: "Backgrounds apply to the main picture lane. For framed layouts, use the canvas presets below."; color: Theme.fg-muted; wrap: word-wrap; font-size: Theme.fs-sm; }
+        HorizontalLayout { Check { checked: Adjustment.flip-h; toggled(on) => { Adjustment.flip-h = on; } } Text { text: "Horizontal Mirror"; color: Theme.fg; } }
+        HorizontalLayout { Check { checked: Adjustment.flip-v; toggled(on) => { Adjustment.flip-v = on; } } Text { text: "Vertical Flip"; color: Theme.fg; } }
     }
-    Text { text: "Images and Video Clips are independent targets. Locked/hidden tracks, canvas companion layers and manually animated transform fields are protected. Each Apply is one Undo step."; color: Theme.fg-muted; wrap: word-wrap; font-size: Theme.fs-sm; }
+    if root.page == 2: VerticalLayout {
+        spacing: 8px;
+        Select { options: ["None", "Blur", "Solid color"]; current: Adjustment.background-mode; changed(index) => { Adjustment.background-mode = index; } }
+        if Adjustment.background-mode == 1: Param { label: "Softness"; value <=> Adjustment.blur; minimum: 0; maximum: 1; step: 0.01; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; }
+        if Adjustment.background-mode == 2: ColourField { label: "Background color"; value: Adjustment.colour; alpha: false; changed(c) => { Adjustment.colour = c; } }
+    }
+    if root.page == 3: VerticalLayout {
+        spacing: 8px;
+        Text {text:"Zoom and pan video inside its fixed Canvas frame. Content outside the opening is hidden.";color:Theme.fg-muted;wrap:word-wrap;font-size:Theme.fs-sm;}
+        Param {label:"Video Zoom";value <=> Adjustment.scale;minimum:0.05;maximum:8;step:0.01;unit:"%";unit-scale:100;fmt:ParamFormat.fraction;}
+        Param {label:"Content X";value <=> Adjustment.position-x;minimum:-1;maximum:1;step:0.005;fmt:ParamFormat.centred;}
+        Param {label:"Content Y";value <=> Adjustment.position-y;minimum:-1;maximum:1;step:0.005;fmt:ParamFormat.centred;}
+        Text {text:"This page targets Canvas-framed video clips. Transform exposes the same content values.";color:Theme.fg-muted;wrap:word-wrap;font-size:Theme.fs-sm;}
+    }
+    Text { text: "Only eligible original media are targeted. Locked/hidden tracks and authored keys are protected. Apply is one Undo step."; color: Theme.fg-muted; wrap: word-wrap; font-size: Theme.fs-sm; }
+}
+export component MediaLayoutApplyBar inherits VerticalLayout {
+    in property <int> page;
+    function apply(selected: bool) {
+        if root.page == 2 { Backdrop.apply-bulk(Adjustment.background-mode,Adjustment.blur,Adjustment.colour,Keyframes.animation-images,Keyframes.animation-videos,selected); }
+        else { Keyframes.apply-adjustment(root.page,Keyframes.animation-images,Keyframes.animation-videos,selected,Adjustment.scale,Adjustment.position-x,Adjustment.position-y,Adjustment.rotation,Adjustment.opacity,Adjustment.flip-h,Adjustment.flip-v); }
+    }
+    padding: 8px; spacing: 8px;
+    Button { label: "Apply Selected"; primary: true; enabled: (root.page != 3 && Keyframes.animation-images) || Keyframes.animation-videos; clicked => { root.apply(true); } }
+    Button { label: "Apply All"; enabled: (root.page != 3 && Keyframes.animation-images) || Keyframes.animation-videos; clicked => { root.apply(false); } }
+    if root.page == 3: Button { label:"Reset Fit"; enabled:Keyframes.animation-videos;
+        clicked => {Keyframes.apply-adjustment(3,false,Keyframes.animation-videos,Keyframes.animation-scope == 1,1,0,0,Adjustment.rotation,Adjustment.opacity,Adjustment.flip-h,Adjustment.flip-v);} }
 }

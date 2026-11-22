@@ -532,6 +532,142 @@ fn unedited_legacy_headline(piece: &Clip, owner: &Clip) -> bool {
     Arc::make_mut(&mut expected).id = piece.id.clone();
     serde_json::to_value(piece).ok() == serde_json::to_value(expected.as_ref()).ok()
 }
+// Generated companions retain a canonical snapshot so later manual edits can be
+// distinguished from normal lifecycle changes. Identity is kept outside it.
+const COMPANION_SNAPSHOT: &str = "canvasGeneratedV1";
+const FOREGROUND_MASK: &str = "canvasGeneratedMaskV1";
+
+fn companion_value(clip: &Clip) -> Value {
+    let mut value = serde_json::to_value(clip).unwrap_or(Value::Null);
+    if let Some(map) = value.as_object_mut() {
+        for key in [COMPANION_SNAPSHOT, "id", "canvasOwner"] { map.remove(key); }
+    }
+    value
+}
+pub(crate) fn untouched_companion(clip: &Clip) -> bool {
+    clip.extra.get(COMPANION_SNAPSHOT) == Some(&companion_value(clip))
+}
+pub(crate) fn stamp_companion(clip: &mut Clip) {
+    *clip = clip.clone().tidy();
+    clip.extra.insert(COMPANION_SNAPSHOT.into(), companion_value(clip));
+}
+
+/// Follow an owner's normal timing edits, and remove companions with deleted
+/// owners, in the same command/undo step. Explicitly edited companion styling
+/// stays authored; only unchanged generated snapshots are refreshed.
+pub(crate) fn reconcile_companions(before: &Project, after: &mut Project) {
+    use std::collections::HashMap;
+    for timeline in &mut after.timelines {
+        let Some(old) = before.timelines.iter().find(|old| old.id == timeline.id) else { continue; };
+        let owners: HashMap<_,_> = timeline.clips.iter()
+            .filter(|clip| !clip.extra.contains_key("canvasOwner"))
+            .map(|clip| (clip.id.clone(),clip.clone())).collect();
+        let timeline = Arc::make_mut(timeline);
+        timeline.clips.retain(|piece| {
+            let Some(owner) = piece.extra.get("canvasOwner").and_then(Value::as_str) else { return true; };
+            !(old.clip(owner).is_some() && !owners.contains_key(owner))
+        });
+        for piece in &mut timeline.clips {
+            let Some(owner_id) = piece.extra.get("canvasOwner").and_then(Value::as_str) else { continue; };
+            let (Some(owner),Some(previous)) = (owners.get(owner_id),old.clip(owner_id)) else { continue; };
+            let owner_changed = owner.start != previous.start || owner.duration != previous.duration
+                || owner.source_start != previous.source_start || owner.speed != previous.speed
+                || owner.speed_curve != previous.speed_curve;
+            if !owner_changed { continue; }
+            let backdrop = piece.extra.get("canvasRole").and_then(Value::as_str) == Some("backdrop");
+            if piece.start == owner.start && piece.duration == owner.duration
+                && (!backdrop || (piece.source_start == owner.source_start && piece.speed == owner.speed
+                    && piece.speed_curve == owner.speed_curve)) { continue; }
+            let untouched = untouched_companion(piece);
+            let piece = Arc::make_mut(piece);
+            if piece.duration != owner.duration {
+                let from = if previous.speed == owner.speed {
+                    (owner.source_start - previous.source_start) / previous.speed
+                } else { 0.0 };
+                piece.rewindow_keys(piece.duration,from,from+owner.duration);
+                piece.rewindow_caption(from,from+owner.duration);
+            }
+            piece.start = owner.start;
+            piece.duration = owner.duration;
+            if backdrop {
+                piece.source_start = owner.source_start;
+                piece.speed = owner.speed;
+                piece.speed_curve = owner.speed_curve.clone();
+            }
+            if untouched { stamp_companion(piece); }
+        }
+    }
+}
+
+/// True if an edit changed clips on one of the protected tracks. Track IDs
+/// are timeline-local; selecting another timeline is not a clip modification.
+pub fn protected_tracks_changed(before: &Project, after: &Project, timeline_id: &str, locked: &[String]) -> bool {
+    let Some(old) = before.timelines.iter().find(|t| t.id == timeline_id) else { return false; };
+    let new = after.timelines.iter().find(|t| t.id == timeline_id);
+    locked.iter().any(|track| {
+        let mut a: Vec<_> = old.clips.iter().filter(|c| &c.track_id == track).collect();
+        let mut b: Vec<_> = new.into_iter().flat_map(|t| &t.clips).filter(|c| &c.track_id == track).collect();
+        a.sort_by(|a,b|a.id.cmp(&b.id)); b.sort_by(|a,b|a.id.cmp(&b.id));
+        a != b
+    })
+}
+
+#[derive(Default, Debug)]
+pub struct Conflicts {
+    pub masks: Vec<String>,
+    pub customized_layers: Vec<String>,
+}
+impl Conflicts {
+    pub fn is_empty(&self) -> bool { self.masks.is_empty() && self.customized_layers.is_empty() }
+}
+
+fn authored_mask(project: &Project, clip: &Clip) -> bool {
+    let Some(mask) = clip.mask else { return false; };
+    if crate::motion_preset::generated_ownership(clip).and_then(|record|record.style)
+        .is_some_and(|style|style.owns_mask && style.applied_mask==clip.mask) {return false;}
+
+    if let Some(saved) = clip.extra.get(FOREGROUND_MASK) {
+        return saved != &json!(Some(mask));
+    }
+    // Read legacy preset-owned masks conservatively, using the saved layout
+    // geometry rather than the current foreground transform or old base mask.
+    let previous = clip.extra.get("canvasPreset").cloned()
+        .and_then(|value| serde_json::from_value::<Config>(value).ok());
+    if let Some(previous) = previous {
+        if let Some(media) = project.media_by_id(&clip.media_id) {
+            let (sw,sh) = (media.width.unwrap_or(0) as f64,media.height.unwrap_or(0) as f64);
+            let video = project.active().video;
+            if sw > 0.0 && sh > 0.0 && previous.radius > 0.0 {
+                let short = sw.min(sh);
+                let fit = (video.width as f64 / sw).min(video.height as f64 / sh);
+                let scale = (previous.foreground.width * video.width as f64 / (sw*fit))
+                    .min(previous.foreground.height * video.height as f64 / (sh*fit));
+                let mut expected = ClipMask::of(MaskShape::Rectangle);
+                expected.width=sw/short; expected.height=sh/short; expected.feather=0.0;
+                expected.roundness=(previous.radius * video.height as f64 / scale / (short*fit/2.0)).clamp(0.0,1.0);
+                return mask != expected.tidy();
+            }
+        }
+    }
+    true
+}
+
+/// Inspect the actual current mask and owned layers without mutating anything.
+pub fn conflicts(project: &Project, targets: &[String]) -> Conflicts {
+    let mut result = Conflicts::default();
+    for id in targets {
+        let Some(owner) = project.active().clip(id) else { continue; };
+        if authored_mask(project,owner) { result.masks.push(owner.name.clone()); }
+        for piece in &project.active().clips {
+            if piece.extra.get("canvasOwner") == Some(&json!(id))
+                && !untouched_companion(piece) && !unedited_legacy_headline(piece,owner) {
+                result.customized_layers.push(piece.name.clone());
+            }
+        }
+    }
+    result
+}
+
 /// Apply to explicit unlocked visual targets. No media IO or source mutation.
 pub fn apply(
     project: &mut Project,
@@ -540,7 +676,17 @@ pub fn apply(
     targets: Vec<String>,
     locked: Vec<String>,
 ) -> Result<Outcome, CommandError> {
+    apply_with_confirmation(project,mint,config,targets,locked,false)
+}
+
+/// Explicitly confirmed replacement is still transactional and lock-protected.
+pub fn apply_with_confirmation(project: &mut Project, mint: &mut IdMint, config: Config,
+    targets: Vec<String>, locked: Vec<String>, replace_conflicts: bool) -> Result<Outcome, CommandError> {
     config.validate().map_err(error)?;
+    let conflicts = conflicts(project,&targets);
+    if !replace_conflicts && !conflicts.is_empty() {
+        return Err(error("Canvas conflicts with an authored mask or customized layer; confirm replacement or cancel"));
+    }
     if targets.is_empty() {
         return Err(error("Select at least one image/video canvas target"));
     }
@@ -557,6 +703,10 @@ pub fn apply(
         }
         if locked.contains(&original.track_id) {
             return Err(error("Canvas target is on a locked track"));
+        }
+        if staged.active().clips.iter().any(|piece|
+            piece.extra.get("canvasOwner") == Some(&json!(&id)) && locked.contains(&piece.track_id)) {
+            return Err(error("Canvas companion is on a locked track; unlock it before replacing the layout"));
         }
         let media = staged
             .media_by_id(&original.media_id)
@@ -604,29 +754,6 @@ pub fn apply(
             .unwrap_or_else(|| serde_json::to_value(&original).unwrap_or(Value::Null));
         let base: Clip = serde_json::from_value(baseline.clone())
             .map_err(|_| error("Canvas original snapshot is invalid"))?;
-        if base.mask.is_some() {
-            return Err(error(
-                "Remove the existing authored mask before applying a canvas layout",
-            ));
-        }
-        // An older preset may have added a blue/white/yellow headline band.
-        // Remove only exact, unedited generated rectangles on explicit reapply.
-        // Refuse to overwrite edited banners or old generated headline text:
-        // the user can inspect and delete those clips explicitly in the editor.
-        for piece in &staged.active().clips {
-            if piece.extra.get("canvasOwner") == Some(&json!(&id))
-                && matches!(
-                    piece.extra.get("canvasRole").and_then(Value::as_str),
-                    Some("headline" | "headlineText")
-                )
-                && !unedited_legacy_headline(piece, &original)
-            {
-                return Err(error(format!(
-                    "Existing Canvas headline '{}' may be edited. Remove it explicitly in the timeline before reapplying Canvas; genuine Text captions will be preserved.",
-                    piece.name
-                )));
-            }
-        }
         staged
             .active_mut()
             .clips
@@ -635,6 +762,12 @@ pub fn apply(
         if config.background != "none" {
             let bg_lane = track(&mut staged, mint, &original.track_id, "backdrop", true);
             let mut bg = base.clone();
+            // Restoration metadata is immutable; playback state is current.
+            bg.start = original.start;
+            bg.duration = original.duration;
+            bg.source_start = original.source_start;
+            bg.speed = original.speed;
+            bg.speed_curve = original.speed_curve.clone();
             bg.id = mint.next("c");
             bg.track_id = bg_lane;
             bg.name = "Canvas source background".into();
@@ -774,29 +907,36 @@ pub fn apply(
             .active_mut()
             .clip_mut(&id)
             .ok_or(CommandError::MediaGone)?;
-        foreground.scale = scale;
-        if config.preset >= 4 {
-            foreground.rotation = config.rotation;
+        // Migrate only unchanged legacy generated placement. Later manual
+        // values remain the content's values, while the immutable restoration
+        // snapshot remains available for Undo/removal compatibility.
+        if !original.extra.contains_key(crate::canvas_viewport::KEY) {
+            if let Some(previous)=original.extra.get("canvasPreset").cloned().and_then(|v|serde_json::from_value::<Config>(v).ok()) {
+                let old_scale=(previous.foreground.width*w/fw).min(previous.foreground.height*h/fh);
+                let old_x=previous.foreground.x+previous.foreground.width/2.0-0.5;
+                let old_y=previous.foreground.y+previous.foreground.height/2.0-0.5;
+                if (original.scale-old_scale).abs()<1e-9 {foreground.scale=base.scale;}
+                if (original.offset_x-old_x).abs()<1e-9 {foreground.offset_x=base.offset_x;}
+                if (original.offset_y-old_y).abs()<1e-9 {foreground.offset_y=base.offset_y;}
+                if previous.preset>=4 && (original.rotation-previous.rotation).abs()<1e-9 {foreground.rotation=base.rotation;}
+            }
         }
-        let (x, y) = actual.center();
-        foreground.offset_x = x;
-        foreground.offset_y = y;
-        foreground.background = Some(Background::None);
-        if config.radius > 0.0 {
-            let mut mask = ClipMask::of(MaskShape::Rectangle);
-            mask.width = sw / short;
-            mask.height = sh / short;
-            mask.feather = 0.0;
-            mask.roundness = (config.radius * h / scale / (short * fit / 2.0)).clamp(0.0, 1.0);
-            foreground.mask = Some(mask);
-        } else {
-            foreground.mask = None;
-        }
+        foreground.background=Some(Background::None);
+        let motion_mask=crate::motion_preset::generated_ownership(&original).and_then(|record|record.style)
+            .is_some_and(|style|style.owns_mask && style.applied_mask==original.mask);
+        foreground.mask=if motion_mask {original.mask}else{None};
+        let (x,y)=actual.center();
+        let viewport=crate::canvas_viewport::Viewport {version:1,scale,x,y,width:actual.width,height:actual.height,
+            rotation:config.rotation,radius:config.radius};
+        if !viewport.valid() {return Err(error("Invalid Canvas aperture geometry"));}
+        foreground.extra.insert(crate::canvas_viewport::KEY.into(),json!(viewport));
         foreground.extra.insert(
             "canvasPreset".into(),
             serde_json::to_value(&config).map_err(|e| error(e.to_string()))?,
         );
         foreground.extra.insert("canvasOriginal".into(), baseline);
+        foreground.extra.insert(FOREGROUND_MASK.into(), json!(foreground.mask));
+        for layer in &mut layers { stamp_companion(Arc::make_mut(layer)); }
         staged.active_mut().clips.extend(layers);
         // Empty legacy banner/headline lanes can be removed without touching
         // authored captions or clips that share those old tracks.
@@ -950,7 +1090,8 @@ mod tests {
             (2.0, 4.0, 1.0)
         );
         assert_eq!(source.media_id, "m1");
-        assert!(source.scale < 1.0);
+        assert_eq!(source.scale,1.0);
+        assert!(crate::canvas_viewport::Viewport::of(source).unwrap().scale<1.0);
         assert_no_canvas_headline(&p);
         assert!(p.active().clips.iter().any(|c|
             c.extra.get("canvasRole") == Some(&json!("badgeText"))));
@@ -1296,4 +1437,188 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn reapply_background_uses_current_playback_state() {
+        let (mut p, mut m) = fixture();
+        let config = Config::preset(3).unwrap();
+        apply(&mut p,&mut m,config.clone(),vec!["c1".into()],vec![]).unwrap();
+        let foreground = p.active_mut().clip_mut("c1").unwrap();
+        foreground.start = 7.0;
+        foreground.duration = 1.5;
+        foreground.source_start = 3.0;
+        foreground.speed = 2.0;
+        apply(&mut p,&mut m,config,vec!["c1".into()],vec![]).unwrap();
+        let bg = p.active().clips.iter().find(|c|c.extra.get("canvasRole") == Some(&json!("backdrop"))).unwrap();
+        assert_eq!((bg.start,bg.duration,bg.source_start,bg.speed),(7.0,1.5,3.0,2.0));
+        let foreground = p.active().clip("c1").unwrap();
+        let baseline: Clip = serde_json::from_value(foreground.extra["canvasOriginal"].clone()).unwrap();
+        assert_eq!((baseline.start,baseline.duration,baseline.source_start),(2.0,4.0,1.0));
+    }
+
+    #[test]
+    fn locked_companion_reapply_is_atomic() {
+        let (mut p, mut m) = fixture();
+        let config = Config::preset(3).unwrap();
+        apply(&mut p,&mut m,config.clone(),vec!["c1".into()],vec![]).unwrap();
+        let lane = p.active().clips.iter().find(|c|c.extra.contains_key("canvasOwner")).unwrap().track_id.clone();
+        let before = p.clone();
+        let result = apply(&mut p,&mut m,config,vec!["c1".into()],vec![lane]);
+        assert!(result.is_err());
+        assert_eq!(p,before);
+    }
+    fn linked_editor() -> crate::Editor {
+        let (mut project,mut mint) = fixture();
+        project.media[0].path="source.mp4".into();
+        apply(&mut project,&mut mint,Config::preset(3).unwrap(),vec!["c1".into()],vec![]).unwrap();
+        let settings=crate::DocumentSettings {name:"Canvas links".into(),width:1920,height:1080,rate_num:30,rate_den:1};
+        crate::Editor::from_document(&crate::to_document(&settings,&project)).unwrap()
+    }
+    fn group_size(project:&Project,owner:&str)->usize {
+        project.active().clips.iter().filter(|c|c.extra.get("canvasOwner")==Some(&json!(owner))).count()
+    }
+    fn assert_group_timing(project:&Project,owner:&str) {
+        let foreground=project.active().clip(owner).unwrap();
+        for piece in &project.active().clips {
+            if piece.extra.get("canvasOwner")!=Some(&json!(owner)) {continue;}
+            assert_eq!((piece.start,piece.duration),(foreground.start,foreground.duration));
+            if piece.extra.get("canvasRole")==Some(&json!("backdrop")) {
+                assert_eq!((piece.source_start,piece.speed),(foreground.source_start,foreground.speed));
+            }
+        }
+    }
+    #[test]
+    fn deleting_canvas_owner_removes_companions_in_one_undo_step() {
+        for ripple in [false,true] {
+            let mut editor=linked_editor();
+            let before=editor.project().clone();
+            assert!(group_size(&before,"c1")>0);
+            editor.apply(crate::Command::RemoveClips {clip_ids:vec!["c1".into()],ripple}).unwrap();
+            assert_eq!(group_size(editor.project(),"c1"),0);
+            assert!(editor.project().active().clip("c1").is_none());
+            assert!(editor.undo()); assert_eq!(editor.project(),&before);
+            assert!(editor.redo()); assert_eq!(group_size(editor.project(),"c1"),0);
+        }
+    }
+    #[test]
+    fn canvas_trim_move_speed_and_split_keep_independent_groups() {
+        use crate::commands::{Command,TrimEdge,ClipMove};
+        let mut editor=linked_editor();
+        for command in [
+            Command::TrimClip {clip_id:"c1".into(),edge:TrimEdge::Start,delta:0.5,ripple:false},
+            Command::TrimClip {clip_id:"c1".into(),edge:TrimEdge::End,delta:-0.5,ripple:false},
+            Command::MoveClips {moves:vec![ClipMove {clip_id:"c1".into(),track_id:"T1".into(),start:4.0}]},
+            Command::SetClipSpeed {clip_id:"c1".into(),speed:1.5},
+        ] {editor.apply(command).unwrap();assert_group_timing(editor.project(),"c1");}
+        let count=group_size(editor.project(),"c1");
+        let tail=editor.apply(Command::SplitClips {clip_ids:vec!["c1".into()],time:5.0}).unwrap().created_id.unwrap();
+        assert_eq!(group_size(editor.project(),"c1"),count);
+        assert_eq!(group_size(editor.project(),&tail),count);
+        assert_group_timing(editor.project(),"c1");assert_group_timing(editor.project(),&tail);
+        assert!(conflicts(editor.project(),&["c1".into(),tail.clone()]).is_empty());
+        editor.apply(Command::RemoveClips {clip_ids:vec!["c1".into()],ripple:false}).unwrap();
+        assert_eq!(group_size(editor.project(),&tail),count);
+        assert_group_timing(editor.project(),&tail);
+    }
+    #[test]
+    fn selected_owner_and_companions_split_only_once_and_rebind_tail() {
+        let mut editor=linked_editor();
+        let ids=editor.project().active().clips.iter().map(|c|c.id.clone()).collect();
+        let count=editor.project().active().clips.len();
+        editor.apply(crate::Command::SplitClips {clip_ids:ids,time:4.0}).unwrap();
+        assert_eq!(editor.project().active().clips.len(),count*2);
+        let owners:Vec<_>=editor.project().active().clips.iter().filter(|c|!c.extra.contains_key("canvasOwner")).map(|c|c.id.clone()).collect();
+        assert_eq!(owners.len(),2);
+        for id in owners {assert_group_timing(editor.project(),&id);assert!(group_size(editor.project(),&id)>0);}
+    }
+    #[test]
+    fn indirect_canvas_edits_on_locked_companions_roll_back() {
+        use crate::commands::{Command,TrimEdge};
+        let mut editor=linked_editor();
+        let before=editor.project().clone();
+        let locked=before.active().clips.iter().find(|c|c.extra.contains_key("canvasOwner")).unwrap().track_id.clone();
+        for command in [Command::RemoveClips {clip_ids:vec!["c1".into()],ripple:true},
+            Command::SplitClips {clip_ids:vec!["c1".into()],time:4.0},
+            Command::TrimClip {clip_id:"c1".into(),edge:TrimEdge::End,delta:-1.0,ripple:false}] {
+            assert!(editor.apply(Command::ProtectCanvasTracks {timeline_id:before.active().id.clone(),locked_tracks:vec![locked.clone()],command:Box::new(command)}).is_err());
+            assert_eq!(editor.project(),&before);
+        }
+    }
+    #[test]
+    fn current_authored_masks_and_customized_layers_require_explicit_replacement() {
+        use crate::commands::{Command,ClipPatch};
+        let mut editor=linked_editor();
+        let companion=editor.project().active().clips.iter().find(|c|c.extra.contains_key("canvasOwner")).unwrap().id.clone();
+        editor.apply(Command::UpdateClip {clip_id:"c1".into(),patch:ClipPatch {mask:Some(Some(ClipMask::of(MaskShape::Circle))),..Default::default()}}).unwrap();
+        editor.apply(Command::UpdateClip {clip_id:companion,patch:ClipPatch {name:Some("My custom background".into()),..Default::default()}}).unwrap();
+        let found=conflicts(editor.project(),&["c1".into()]);
+        assert_eq!(found.masks.len(),1);assert_eq!(found.customized_layers,vec!["My custom background"]);
+        let before=editor.project().clone();
+        let config=Config::preset(6).unwrap();
+        assert!(editor.apply(Command::ApplyCanvasPreset {config:config.clone(),targets:vec!["c1".into()],locked_tracks:vec![]}).is_err());
+        assert_eq!(editor.project(),&before); // Cancel or refused Apply cannot change data.
+        editor.apply(Command::ApplyCanvasPresetConfirmed {config,targets:vec!["c1".into()],locked_tracks:vec![]}).unwrap();
+        assert!(conflicts(editor.project(),&["c1".into()]).is_empty());
+        assert!(editor.undo());assert_eq!(editor.project(),&before);
+    }
+    #[test]
+    fn first_application_authored_mask_confirmation_does_not_block_future_reapply() {
+        let (mut project,mut mint)=fixture();
+        project.active_mut().clip_mut("c1").unwrap().mask=Some(ClipMask::of(MaskShape::Circle));
+        let before=project.clone();let config=Config::preset(3).unwrap();
+        assert!(apply(&mut project,&mut mint,config.clone(),vec!["c1".into()],vec![]).is_err());
+        assert_eq!(project,before);
+        apply_with_confirmation(&mut project,&mut mint,config.clone(),vec!["c1".into()],vec![],true).unwrap();
+        apply(&mut project,&mut mint,config,vec!["c1".into()],vec![]).unwrap();
+        assert!(conflicts(&project,&["c1".into()]).is_empty());
+    }
+
+    #[test]
+    fn fixed_viewport_preserves_content_adjustments_in_both_application_orders() {
+        use crate::commands::{apply as command,Command};
+        let (mut before,mut bm)=fixture();let (mut after,mut am)=fixture();
+        let adjustment=Command::SetClipTransform {clip_id:"c1".into(),scale:Some(2.2),offset_x:Some(0.15),offset_y:Some(-0.1),rotation:Some(21.0),stretch_x:None,stretch_y:None};
+        command(&mut before,&mut bm,adjustment.clone()).unwrap();
+        apply(&mut before,&mut bm,Config::preset(6).unwrap(),vec!["c1".into()],vec![]).unwrap();
+        apply(&mut after,&mut am,Config::preset(6).unwrap(),vec!["c1".into()],vec![]).unwrap();
+        command(&mut after,&mut am,adjustment).unwrap();
+        let a=before.active().clip("c1").unwrap();let b=after.active().clip("c1").unwrap();
+        assert_eq!((a.scale,a.offset_x,a.offset_y,a.rotation),(b.scale,b.offset_x,b.offset_y,b.rotation));
+        assert_eq!(crate::canvas_viewport::Viewport::of(a),crate::canvas_viewport::Viewport::of(b));
+        apply(&mut after,&mut am,Config::preset(5).unwrap(),vec!["c1".into()],vec![]).unwrap();
+        let b=after.active().clip("c1").unwrap();
+        assert_eq!((b.scale,b.offset_x,b.offset_y,b.rotation),(2.2,0.15,-0.1,21.0));
+    }
+    #[test]
+    fn content_keyframes_compose_inside_fixed_aperture_and_survive_reapply() {
+        use crate::model::{KeyProperty,KeyEase};
+        let (mut project,mut mint)=fixture();
+        project.media[0].path="source.mp4".into();
+        let clip=project.active_mut().clip_mut("c1").unwrap();
+        clip.set_key(KeyProperty::Scale,0.0,1.0,KeyEase::LINEAR);
+        clip.set_key(KeyProperty::Scale,0.75,2.5,KeyEase::LINEAR);
+        clip.offset_x=0.12;clip.offset_y=-0.08;clip.rotation=22.0;
+        let keys=clip.keys.clone();
+        apply(&mut project,&mut mint,Config::preset(6).unwrap(),vec!["c1".into()],vec![]).unwrap();
+        apply(&mut project,&mut mint,Config::preset(6).unwrap(),vec!["c1".into()],vec![]).unwrap();
+        let clip=project.active().clip("c1").unwrap();assert_eq!(clip.keys,keys);
+        let frame=crate::canvas_viewport::Viewport::of(clip).unwrap().engine(1920.0/1080.0);
+        let aperture=frame.aperture();
+        let samples:Vec<_>=[0,15,30,60,90].into_iter().map(|index|{
+            let at=f64::from(index)/30.0/clip.duration;
+            let t=frame.compose(concat_core::timeline::Transform {scale:clip.value_at(KeyProperty::Scale,at),offset_x:clip.offset_x,offset_y:clip.offset_y,rotation:clip.rotation,..Default::default()});
+            serde_json::json!({"frame":index+60,"scale":t.scale,"pan_x":t.offset_x,"pan_y":t.offset_y,"rotation_degrees":t.rotation})
+        }).collect();
+        let mask=aperture.uniform(1920.0,1080.0,1.0/1080.0);
+        let coverage:Vec<_>=(0..=10).flat_map(|x|(0..=10).map(move|y|{
+            let (u,v)=(x as f32/10.0,y as f32/10.0);
+            serde_json::json!({"u":u,"v":v,"coverage":concat_core::mask::coverage(&mask,u,v)})
+        })).collect();
+        if let Ok(directory)=std::env::var("CONCAT_CANVAS_FIXTURE_DIR") {
+            std::fs::create_dir_all(&directory).unwrap();
+            let settings=crate::DocumentSettings {name:"Viewport".into(),width:1920,height:1080,rate_num:30,rate_den:1};
+            let data=serde_json::json!({"document":crate::to_document(&settings,&project),"samples":samples,"coverage":coverage});
+            std::fs::write(std::path::Path::new(&directory).join("viewport-contract.json"),serde_json::to_vec_pretty(&data).unwrap()).unwrap();
+        }
+    }
+
 }

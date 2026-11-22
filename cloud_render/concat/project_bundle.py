@@ -122,12 +122,12 @@ def restore(archive: Path, destination: Path) -> dict:
             if control.get("version") != 1 or control.get("project_file") not in PROJECT_NAMES:
                 raise TransferError("Unsupported bundle format")
             # Older stored v1 ZIPs had no contract field: retain recovery/retry support.
-            # New ZIPs must identify this worker's exact render manifest contract.
+            # v2 adds fixed Canvas viewports; this worker also reads stored v1 ZIPs.
             declared = control.get("render_contract")
             if "render_contract" in control and (not isinstance(declared, dict)
                     or declared.get("id") != RENDER_CONTRACT_ID
                     or type(declared.get("version")) is not int
-                    or declared["version"] != RENDER_CONTRACT_VERSION):
+                    or declared["version"] not in (1, RENDER_CONTRACT_VERSION)):
                 raise TransferError("Concat ZIP render contract does not match this Salad worker image")
             project_name = control["project_file"]
             refs = control.get("references")

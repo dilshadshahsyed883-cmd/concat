@@ -48,7 +48,7 @@ class RenderContractTests(unittest.TestCase):
         pack(self.project, source)
         for name, change in (
             ("wrong-id", lambda c: c.update(render_contract={"id": "wrong", "version": 1})),
-            ("wrong-version", lambda c: c.update(render_contract={"id": RENDER_CONTRACT_ID, "version": 2})),
+            ("wrong-version", lambda c: c.update(render_contract={"id": RENDER_CONTRACT_ID, "version": RENDER_CONTRACT_VERSION + 1})),
             ("boolean-version", lambda c: c.update(render_contract={"id": RENDER_CONTRACT_ID, "version": True})),
             ("string-version", lambda c: c.update(render_contract={"id": RENDER_CONTRACT_ID, "version": "1"})),
             ("float-version", lambda c: c.update(render_contract={"id": RENDER_CONTRACT_ID, "version": 1.0})),
@@ -73,6 +73,14 @@ class RenderContractTests(unittest.TestCase):
         restore(old, self.root / "legacy-out")
         self.assertTrue((self.root / "legacy-out/concat.json").is_file())
 
+    def test_stored_contract_v1_zip_remains_readable_by_v2_worker(self):
+        source = self.root / "current.zip"
+        pack(self.project, source)
+        old = self.root / "stored-v1.zip"
+        self.rewrite_control(source, old, lambda c:c.update(render_contract={"id":RENDER_CONTRACT_ID,"version":1}))
+        restore(old,self.root / "stored-v1-out")
+        self.assertTrue((self.root / "stored-v1-out/concat.json").is_file())
+
     def test_embedded_and_standalone_windows_helpers_have_identical_contract(self):
         root = Path(__file__).resolve().parents[3]
         standalone = (root / "concat_gpu/concat_gpu_client.ps1").read_text(encoding="utf-8")
@@ -80,7 +88,7 @@ class RenderContractTests(unittest.TestCase):
         self.assertEqual(standalone, embedded)
         self.assertEqual((root / "concat_gpu/concat_gpu_client.ps1").read_bytes(),
                          (root / "upstream/src/crates/concat/src/concat_gpu_client.ps1").read_bytes())
-        self.assertIn('render_contract=[ordered]@{id="concat-cuda-hybrid-v1";version=1}', standalone)
+        self.assertIn('render_contract=[ordered]@{id="concat-cuda-hybrid-v1";version=2}', standalone)
         self.assertIn('$capabilities.render_contract.id -cne "concat-cuda-hybrid-v1"', standalone)
 
     def test_rejected_contract_keeps_source_and_does_not_block_following_job(self):

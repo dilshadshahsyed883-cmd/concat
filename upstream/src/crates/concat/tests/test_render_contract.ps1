@@ -1,7 +1,7 @@
 # Exercise the embedded EXE functions with authenticated HTTP mocks, no GPU or builds.
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "../src/concat_gpu_client.ps1") -DefineOnly
-$script:contract = @{id="concat-cuda-hybrid-v1"; version=1}
+$script:contract = @{id="concat-cuda-hybrid-v1"; version=2}
 $script:calls = @()
 function Invoke-RestMethod {
     param($MaximumRedirection,$Uri,$Headers,$TimeoutSec)
@@ -21,7 +21,7 @@ function Invoke-RestMethod {
     }
 }
 $auth = @{Authorization="Bearer fixture"}
-foreach ($version in @([int]1,[long]1)) {
+foreach ($version in @([int]2,[long]2)) {
     $script:contract = @{id="concat-cuda-hybrid-v1"; version=$version}
     $caps = Test-Worker "https://fixture.invalid" $auth
     if ($caps.gpu_captions.available) {throw "Contract must not imply GPU ASR availability"}
@@ -41,7 +41,7 @@ foreach ($bad in @(
     @{},
     @{id="other"; version=1},
     @{id="CONCAT-CUDA-HYBRID-V1"; version=1},
-    @{id="concat-cuda-hybrid-v1"; version=2},
+    @{id="concat-cuda-hybrid-v1"; version=1},
     @{id="concat-cuda-hybrid-v1"; version="1"},
     @{id="concat-cuda-hybrid-v1"; version=$true},
     @{id="concat-cuda-hybrid-v1"; version=[double]1},

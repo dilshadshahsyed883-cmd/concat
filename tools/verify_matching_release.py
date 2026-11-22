@@ -9,7 +9,7 @@ import time
 
 sha = os.environ['GITHUB_SHA']
 repo = os.environ['GITHUB_REPOSITORY']
-contract = {'id': 'concat-cuda-hybrid-v1', 'version': 1}
+contract = {'id': 'concat-cuda-hybrid-v1', 'version': 2}
 windows = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8-sig'))
 assert windows['source_sha'] == sha and windows['render_contract'] == contract
 assert windows['smoke'] == 'passed'
