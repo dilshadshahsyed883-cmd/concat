@@ -26,7 +26,8 @@ from fastapi import HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
 from .cloud_render_production import ProductionQueue, Worker, WorkerWait
-from .salad_idle import SaladIdleStop
+from .salad_idle import SaladIdleStop, group_path, SLUG
+from .salad_worker import SaladAutoWorker, DEFAULTS, LIMITS, GROUP_KEYS
 
 CHUNK_MAX = 8 * 1024 * 1024
 MEDIA_MAX = 20 * 1024 * 1024 * 1024
@@ -204,6 +205,7 @@ class CloudRender:
         self.path.chmod(0o600)
         self.production = ProductionQueue(self, self.production_worker)
         self.salad_idle = SaladIdleStop(self)
+        self.salad_worker = SaladAutoWorker(self)
         for job in pending:
             self.pool.submit(self._upload, job)
 
@@ -240,11 +242,15 @@ class CloudRender:
             self.put(con, "receiver_token", new)
         return {"receiver_token": new, "warning": "Shown once; replace RENDER_OUTPUT_TOKEN in the Salad worker securely."}
 
+    def salad_group_path(self, con):
+        return group_path({key: self.get(con, key) for key in GROUP_KEYS})
+
     def config(self):
         with self.connection() as con:
             cfg = {k: self.get(con, k) for k in ("auto_upload","endpoint","priority","health_path","timeout","salad_key","worker_key","enabled","render_concurrency","auto_shutdown",
-                "idle_timeout_minutes","salad_idle_status","salad_idle_since")}
-        return {**GPU, "concurrency": int(cfg["render_concurrency"] or "1"),
+                "idle_timeout_minutes","salad_idle_status","salad_idle_since", *GROUP_KEYS)}
+            lifecycle = self.salad_worker.snapshot(con)
+        return {**GPU, **lifecycle, "concurrency": int(cfg["render_concurrency"] or "1"),
                 "auto_upload": cfg["auto_upload"] == "1",
                 "endpoint": cfg["endpoint"], "priority": cfg["priority"] or "high",
                 "health_path": cfg["health_path"] or "/health/ready",
@@ -260,7 +266,7 @@ class CloudRender:
                 "drive_bridge_available": self.production.drive.available()}
 
     def save(self, obj):
-        accepted = {"auto_upload","endpoint","priority","health_path","timeout","salad_key","worker_key","concurrency","auto_shutdown","idle_timeout_minutes"}
+        accepted = {"auto_upload","endpoint","priority","health_path","timeout","salad_key","worker_key","concurrency","auto_shutdown","idle_timeout_minutes", *DEFAULTS, *GROUP_KEYS}
         if not isinstance(obj, dict) or set(obj) - accepted:
             raise HTTPException(400, "Unknown GPU configuration field")
         if "auto_shutdown" in obj and type(obj["auto_shutdown"]) is not bool:
@@ -268,9 +274,29 @@ class CloudRender:
         if "idle_timeout_minutes" in obj and (type(obj["idle_timeout_minutes"]) is not int
                 or not 1 <= obj["idle_timeout_minutes"] <= 60):
             raise HTTPException(400, "Idle timeout must be a whole number from 1 to 60 minutes")
+        if "auto_start" in obj and type(obj["auto_start"]) is not bool:
+            raise HTTPException(400, "Auto worker must be enabled or disabled")
+        for key, (minimum, maximum) in LIMITS.items():
+            if key in obj and (type(obj[key]) is not int or not minimum <= obj[key] <= maximum):
+                raise HTTPException(400, f"{key} must be a whole number from {minimum} to {maximum}")
+        for key in GROUP_KEYS:
+            if key in obj and (not isinstance(obj[key], str) or
+                               (obj[key] and not SLUG.fullmatch(obj[key]))):
+                raise HTTPException(400, "Use valid Salad organization, project and group slugs")
         with self.lock, self.connection() as con:
+            if obj.get('auto_start') and self.get(con, 'salad_manual_action'):
+                raise HTTPException(409, "Wait for the manual worker action to finish before enabling Automatic mode")
+            for key in (*DEFAULTS, *GROUP_KEYS):
+                if key in obj:
+                    value = int(obj[key]) if key == "auto_start" else obj[key]
+                    self.put(con, key, value)
             if "auto_shutdown" in obj:
                 self.put(con, "auto_shutdown", int(obj["auto_shutdown"]))
+            if "auto_start" in obj:
+                if not obj['auto_start']:
+                    self.put(con, 'auto_shutdown', 0)
+                self.put(con, 'salad_idle_since', 0)
+                self.put(con, 'salad_idle_attempt', 0)
             if "idle_timeout_minutes" in obj:
                 self.put(con, "idle_timeout_minutes", obj["idle_timeout_minutes"])
             if "auto_shutdown" in obj or "idle_timeout_minutes" in obj:
@@ -310,7 +336,7 @@ class CloudRender:
                     if len(value) > 1024 or "\n" in value or "\r" in value:
                         raise HTTPException(400, "Invalid key")
                     self.put(con, k, value)
-        if "auto_shutdown" in obj or "idle_timeout_minutes" in obj:
+        if set(obj) & {"auto_shutdown", "idle_timeout_minutes", *DEFAULTS, *GROUP_KEYS}:
             self.production.wake.set()
         if "concurrency" in obj:
             # Apply immediately when the Salad worker is connected. If it is
@@ -351,7 +377,7 @@ class CloudRender:
                 self.put(con, "enabled", int(healthy))
         return {"ok": healthy, "status": status, "connected": healthy if connect else self.config()["enabled"]}
 
-    def production_worker(self, pinned):
+    def production_worker(self, pinned, *, require_enabled=True):
         with self.connection() as con:
             url = endpoint_url(self.get(con, "endpoint"))
             enabled = self.get(con, "enabled") == "1"
@@ -361,7 +387,7 @@ class CloudRender:
             timeout = int(self.get(con, "timeout") or 300)
         if pinned and url != pinned:
             raise WorkerWait("Restore the original GPU endpoint to recover or cancel this project.")
-        if not enabled or not url or not token:
+        if (require_enabled and not enabled) or not url or not token:
             raise WorkerWait("Enable a worker with its endpoint and renderer token in GPU Config.")
         return Worker(url, token, gateway, health, timeout)
 
@@ -406,8 +432,9 @@ class CloudRender:
             self.pool.submit(self._upload, job)
 
     def disconnect(self):
-        with self.connection() as con:
+        with self.lock, self.connection() as con:
             self.put(con, "enabled", "0")
+            self.put(con, "production_queue", "paused")
         return {"ok": True}
 
     def local(self, job):

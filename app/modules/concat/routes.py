@@ -139,6 +139,18 @@ async def connect_worker(request: Request, principal: Principal = Depends(curren
     return await run_in_threadpool(_manager(request, principal).probe, True)
 
 
+@router.post("/api/cloud-render/gpu/worker/{action}")
+async def manual_worker(action: str, request: Request, principal: Principal = Depends(current_principal)):
+    _csrf(request)
+    return await run_in_threadpool(_manager(request, principal).salad_worker.manual, action)
+
+
+@router.post("/api/cloud-render/gpu/auto-retry")
+async def retry_auto_worker(request: Request, principal: Principal = Depends(current_principal)):
+    _csrf(request)
+    return _manager(request, principal).salad_worker.retry()
+
+
 @router.post("/api/cloud-render/gpu/disconnect")
 async def disconnect_worker(request: Request, principal: Principal = Depends(current_principal)):
     _csrf(request)

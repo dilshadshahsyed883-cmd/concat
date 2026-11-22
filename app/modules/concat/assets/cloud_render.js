@@ -41,34 +41,39 @@
   };
   let configured=false;
   let config={};
-  const updateIdleControls=()=>{
-    const enabled=$("cr-auto-shutdown").checked;
-    const input=$("cr-idle-minutes");
-    input.disabled=!enabled;
-    const v=Number(input.value);
-    $("cr-idle-up").disabled=!enabled||v>=60;
-    $("cr-idle-down").disabled=!enabled||v<=1;
+  const workerFields = {image_pull_threshold:"cr-pull-threshold", image_pull_seconds:"cr-pull-seconds"};
+  const groupFields = {salad_organization:"cr-salad-organization", salad_project:"cr-salad-project", salad_container_group:"cr-salad-container-group"};
+  const updateAutomation=()=>{
+    const threshold=$("cr-pull-threshold"), seconds=$("cr-pull-seconds");
+    $("cr-health-rule").textContent="Keep the instance if Docker image download reaches "+threshold.value+"% within "+seconds.value+" seconds; otherwise reallocate, up to 3 attempts.";
+    for(const [input,minus,plus] of [[threshold,"cr-threshold-minus","cr-threshold-plus"],[seconds,"cr-timer-minus","cr-timer-plus"]]){
+      $(minus).disabled=Number(input.value)<=Number(input.min);
+      $(plus).disabled=Number(input.value)>=Number(input.max);
+    }
+    const automatic=$("cr-auto-start").value==="automatic";
+    $("cr-manual-start").disabled=automatic;
+    $("cr-manual-stop").disabled=automatic;
   };
-  const changeIdleMinutes=step=>{
-    const input=$("cr-idle-minutes");
-    input.value=String(Math.min(60,Math.max(1,Number(input.value||5)+step)));
-    updateIdleControls();
+  const stepInput=(id,step)=>{
+    const input=$(id);
+    input.value=String(Math.min(Number(input.max),Math.max(Number(input.min),Number(input.value||input.min)+step)));
+    updateAutomation();
   };
+  const workerLabel=worker=>(worker.salad_worker_status||"disabled").replaceAll("_"," ")
+    +(worker.salad_worker_progress==null?"":" · image "+worker.salad_worker_progress+"%")
+    +" · reallocations "+(worker.salad_reallocations||0)+"/3";
   async function loadConfig(){
     config = await api("/config");
     configured=true;
     $("cr-auto").checked=!!config.auto_upload;
     $("cr-endpoint").value=config.endpoint||"";
     $("cr-concurrency").value=String(config.concurrency||1);
-    $("cr-auto-shutdown").checked=!!config.auto_shutdown;
-    $("cr-idle-minutes").value=String(config.idle_timeout_minutes||5);
-    updateIdleControls();
-    const idleStatus = config.salad_idle_status || "disabled";
-    $("cr-idle-status").textContent = !config.auto_shutdown
-      ? "Disabled · default 5 minutes"
-      : !config.auto_shutdown_ready
-      ? "Setup required: configure dedicated Salad group identifiers and API key on VPS"
-      : "Enabled · " + idleStatus.replaceAll("_"," ");
+    $("cr-auto-start").value=config.auto_start?"automatic":"manual";
+    for(const [key,id] of Object.entries(workerFields)) $(id).value=String(config[key]);
+    for(const [key,id] of Object.entries(groupFields)) $(id).value=config[key]||"";
+    $("cr-connection-setup").open=!(config.endpoint&&config.salad_key_saved&&config.worker_key_saved&&config.auto_shutdown_ready);
+    $("cr-automation-status").textContent=workerLabel(config);
+    updateAutomation();
     $("cr-concurrency-status").textContent = "Saved limit: " + (config.concurrency||1) + " · synchronized on connection/dispatch";
     $("cr-salad-key-state").textContent=config.salad_key_saved?"Saved":"Not saved";
     $("cr-worker-key-state").textContent=config.worker_key_saved?"Saved":"Not saved";
@@ -136,6 +141,10 @@
       + " · GPU " + data.active + "/" + data.concurrency + " active"
       + " · Drive " + (data.intake_active || 0) + " downloading/verifying"
       + " · " + (data.ready_for_gpu || 0) + " ready";
+    const worker=data.worker||{};
+    $("cr-auto-worker-status").textContent=(worker.auto_start?"Automatic · ":"Manual · ")+workerLabel(worker)
+      +" · shutdown "+(worker.salad_idle_status||"waiting").replaceAll("_"," ");
+    $("cr-automation-status").textContent=workerLabel(worker);
     for (const [action, state] of [["start","stopped"],["pause","running"],["resume","paused"]]) {
       $("cr-"+action+"-queue").disabled = data.state !== state;
     }
@@ -235,28 +244,38 @@
   $("cr-save-auto").onclick=()=>operations("Preference saved",async()=>{
     await send("/config",{auto_upload:$("cr-auto").checked});await loadConfig();
   });
-  $("cr-auto-shutdown").addEventListener("change",updateIdleControls);
-  $("cr-idle-minutes").addEventListener("input",updateIdleControls);
-  $("cr-idle-up").onclick=()=>changeIdleMinutes(1);
-  $("cr-idle-down").onclick=()=>changeIdleMinutes(-1);
+  $("cr-auto-start").addEventListener("change",updateAutomation);
+  for(const id of Object.values(workerFields)) $(id).addEventListener("input",updateAutomation);
+  for(const [button,input,step] of [["cr-threshold-minus","cr-pull-threshold",-1],["cr-threshold-plus","cr-pull-threshold",1],["cr-timer-minus","cr-pull-seconds",-1],["cr-timer-plus","cr-pull-seconds",1]]) $(button).onclick=()=>stepInput(input,step);
   $("cr-save-gpu").onclick=()=>operations("GPU config saved",async()=>{
-    // Leave operational priority, timeout, and health path untouched on the server.
-    const minutes=Number($("cr-idle-minutes").value);
-    if(!Number.isInteger(minutes)||minutes<1||minutes>60)
-      throw Error("Idle timeout must be 1–60 whole minutes");
-    const obj={endpoint:$("cr-endpoint").value.trim(),
-      concurrency:Number($("cr-concurrency").value),
-      auto_shutdown:$("cr-auto-shutdown").checked,
-      idle_timeout_minutes:minutes};
+    const obj={endpoint:$("cr-endpoint").value.trim(),concurrency:Number($("cr-concurrency").value)};
+    for(const [key,id] of Object.entries(groupFields)) obj[key]=$(id).value.trim();
     if($("cr-salad-key").value) obj.salad_key=$("cr-salad-key").value;
     if($("cr-worker-key").value) obj.worker_key=$("cr-worker-key").value;
-    const saved = await send("/config",obj);
+    const saved=await send("/config",obj);
     $("cr-salad-key").value="";$("cr-worker-key").value="";
     await loadConfig();
-    $("cr-concurrency-status").textContent = saved.concurrency_sync === "applied"
-      ? "Applied to connected worker"
-      : "Saved · will apply when the worker is connected or the queue runs";
+    $("cr-concurrency-status").textContent=saved.concurrency_sync==="applied"?"Applied to connected worker":"Saved · will apply when the worker is connected or the queue runs";
   });
+  $("cr-save-automation").onclick=()=>operations("Automation settings saved",async()=>{
+    const obj={auto_start:$("cr-auto-start").value==="automatic"};
+    for(const [key,id] of Object.entries(workerFields)){
+      const input=$(id),value=Number(input.value);
+      if(!Number.isInteger(value)||value<Number(input.min)||value>Number(input.max)) throw Error("Enter a whole number from "+input.min+" to "+input.max);
+      obj[key]=value;
+    }
+    await send("/config",obj);
+    await loadConfig();
+    await loadProduction();
+  });
+  for(const action of ["start","stop"]) $("cr-manual-"+action).onclick=()=>operations("Worker "+action+" queued",async()=>{
+    await send("/gpu/worker/"+action);
+    await loadProduction();
+  });
+  $("cr-auto-retry").onclick=async()=>{
+    if(!window.confirm("Reset worker action retries? Check Salad first if a start, stop or reallocation is unconfirmed."))return;
+    await operations("Worker action retry",()=>send("/gpu/auto-retry"));
+  };
   $("cr-test").onclick=async()=>{
     try {
       msg("Testing worker connection...");
@@ -284,7 +303,7 @@
   }
   Promise.all([loadConfig(),loadProduction()]).catch(e=>msg(e.message,true));
   // Refresh state labels while Production is visible.
-  window.setInterval(()=>{if(!document.hidden&&!$("cr-production").hidden)loadProduction().catch(()=>{});},5000);
+  window.setInterval(()=>{if(!document.hidden&&(!$("cr-production").hidden||!$("cr-gpu").hidden))loadProduction().catch(()=>{});},5000);
   // Refresh the visible list to surface queued/verified delivery states.
   window.setInterval(()=>{if(configured&&!document.hidden&&!$("cr-media").hidden)refresh().catch(()=>{});},12000);
 })();

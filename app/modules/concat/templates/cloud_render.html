@@ -2,7 +2,7 @@
 {% block title %}Concat{% endblock %}
 {% block subtitle %}Concat Production queue, rendered media and SaladCloud GPU connection{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="/concat/assets/cloud_render.css?v=20261122-idle-stop-v1">
+<link rel="stylesheet" href="/concat/assets/cloud_render.css?v=20261122-auto-worker-v1">
 <section id="cloud-render" data-csrf="{{ csrf_token }}" data-initial-tab="{{ initial_tab }}" aria-labelledby="cloud-heading">
   <h2 id="cloud-heading" class="visually-hidden">Concat Studio workspace</h2>
   <div class="cr-navigation">
@@ -35,6 +35,7 @@
         <button class="cr-btn secondary" id="cr-pause-queue" type="button" disabled>Pause Queue</button>
         <button class="cr-btn primary" id="cr-resume-queue" type="button" disabled>Resume Queue</button>
       </div>
+      <p id="cr-auto-worker-status" role="status">Auto worker disabled</p>
       <p class="cr-note">Pause holds new submissions; active renders can finish.</p>
     </div>
     <div class="cr-list" id="cr-production-list"><p>Loading projects…</p></div>
@@ -57,31 +58,21 @@
     <div class="cr-list" id="cr-media-list"><p>Loading media...</p></div>
   </section>
   <section class="cr-section" id="cr-gpu" hidden>
-    <div class="cr-card">
+    <details class="cr-card" id="cr-connection-setup">
+      <summary>Salad Connection Setup</summary>
       <div class="cr-row"><h3>GPU Configuration</h3><span id="cr-connection" class="cr-pill">Not connected</span></div>
       <div class="cr-field"><label for="cr-endpoint">SaladCloud Gateway HTTPS URL</label><input id="cr-endpoint" placeholder="https://your-renderer.salad.cloud" inputmode="url" autocomplete="off"></div>
       <div class="cr-fields">
         <div class="cr-field"><label for="cr-salad-key">Salad API Key</label><input id="cr-salad-key" type="password" autocomplete="new-password" placeholder="Leave blank to keep saved key"><small id="cr-salad-key-state">Not saved</small></div>
         <div class="cr-field"><label for="cr-worker-key">RENDERER_API_TOKEN</label><input id="cr-worker-key" type="password" autocomplete="new-password" placeholder="Leave blank to keep saved token"><small id="cr-worker-key-state">Not saved</small></div>
+        <div class="cr-field"><label for="cr-salad-organization">Organization</label><input id="cr-salad-organization" autocomplete="off" placeholder="Organization slug (or VPS setting)"></div>
+        <div class="cr-field"><label for="cr-salad-project">Project</label><input id="cr-salad-project" autocomplete="off" placeholder="Project slug (or VPS setting)"></div>
+        <div class="cr-field"><label for="cr-salad-container-group">Container group</label><input id="cr-salad-container-group" autocomplete="off" placeholder="Group slug (or VPS setting)"></div>
       </div>
       <div class="cr-field"><label for="cr-concurrency">GPU render concurrency (1 Salad replica)</label>
         <select id="cr-concurrency"><option value="1">1 — Sequential (default)</option><option value="2">2 — Parallel renders</option></select>
         <small>Same GPU, maximum 2 simultaneous renders. Changes do not interrupt running jobs.</small>
         <small id="cr-concurrency-status" role="status">Setting is applied when the worker is reachable.</small>
-      </div>
-      <div class="cr-field" id="cr-salad-idle-config">
-        <label class="cr-check" for="cr-auto-shutdown"><input id="cr-auto-shutdown" type="checkbox">Salad Auto Shutdown</label>
-        <small>Stop the dedicated SaladCloud GPU group after all jobs and deliveries finish and it stays idle.</small>
-        <label for="cr-idle-minutes">Idle shutdown timeout (minutes)</label>
-        <div class="cr-idle-spinner">
-          <input id="cr-idle-minutes" type="number" min="1" max="60" step="1" value="5" inputmode="numeric">
-          <div class="cr-idle-arrows">
-            <button class="cr-idle-arrow" id="cr-idle-up" type="button" aria-label="Increase idle minutes by one">▲</button>
-            <button class="cr-idle-arrow" id="cr-idle-down" type="button" aria-label="Decrease idle minutes by one">▼</button>
-          </div>
-          <span>minutes</span>
-        </div>
-        <small id="cr-idle-status" role="status">Disabled · default 5 minutes</small>
       </div>
       <div class="cr-row cr-row-wrap">
         <button class="cr-btn primary" id="cr-save-gpu" type="button">Save GPU Config</button>
@@ -89,7 +80,29 @@
         <button class="cr-btn secondary" id="cr-connect" type="button">Connect Worker</button>
         <button class="cr-btn danger" id="cr-disconnect" type="button">Disconnect</button>
       </div>
-      <p class="cr-note">Container resources and image are managed in SaladCloud.</p>
+      <p class="cr-note">Use a dedicated group with one replica and Salad autostart off. Container resources and image are managed in SaladCloud.</p>
+    </details>
+    <div class="cr-card" id="cr-worker-automation">
+      <div class="cr-row cr-row-wrap"><h3>Salad Worker Automation</h3><span id="cr-automation-status" class="cr-pill" role="status">Loading worker status…</span></div>
+      <div class="cr-field"><label for="cr-auto-start">Operating mode</label>
+        <select id="cr-auto-start"><option value="automatic">Automatic</option><option value="manual">Manual</option></select>
+      </div>
+      <div class="cr-fields">
+        <div class="cr-field"><label for="cr-pull-threshold">Minimum image download (%)</label>
+          <div class="cr-stepper"><button class="cr-btn secondary" id="cr-threshold-minus" type="button" aria-label="Decrease download threshold">−</button><input id="cr-pull-threshold" type="number" min="1" max="100" step="1" value="8" inputmode="numeric"><button class="cr-btn secondary" id="cr-threshold-plus" type="button" aria-label="Increase download threshold">+</button></div>
+        </div>
+        <div class="cr-field"><label for="cr-pull-seconds">Health-check timer (seconds)</label>
+          <div class="cr-stepper"><button class="cr-btn secondary" id="cr-timer-minus" type="button" aria-label="Decrease health-check timer">−</button><input id="cr-pull-seconds" type="number" min="5" max="600" step="1" value="20" inputmode="numeric"><button class="cr-btn secondary" id="cr-timer-plus" type="button" aria-label="Increase health-check timer">+</button></div>
+        </div>
+      </div>
+      <p class="cr-note" id="cr-health-rule" role="status">Keep the instance if Docker image download reaches 8% within 20 seconds; otherwise reallocate, up to 3 attempts.</p>
+      <p id="cr-idle-status">Automatic shutdown: 1 minute after the queue and deliveries finish (Automatic mode only).</p>
+      <div class="cr-actions">
+        <button class="cr-btn primary" id="cr-save-automation" type="button">Save Automation Settings</button>
+        <button class="cr-btn secondary" id="cr-manual-start" type="button">Start Worker</button>
+        <button class="cr-btn danger" id="cr-manual-stop" type="button">Stop Worker</button>
+        <button class="cr-btn secondary" id="cr-auto-retry" type="button">Retry Worker Action</button>
+      </div>
     </div>
     <div class="cr-card">
       <h3>GPU → VPS Output Receiver</h3>
@@ -100,5 +113,5 @@
     </div>
   </section>
 </section>
-<script defer src="/concat/assets/cloud_render.js?v=20261122-idle-stop-v1"></script>
+<script defer src="/concat/assets/cloud_render.js?v=20261122-auto-worker-v1"></script>
 {% endblock %}

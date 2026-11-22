@@ -28,10 +28,14 @@ jobs:
           python -m unittest discover -s tests -p 'test_reused_*.py' -v
           python -m unittest app.modules.concat.test_routes -v
           python -m unittest discover -s tests -p 'test_concat_drive_intake.py' -v
+          python -m unittest discover -s tests -p 'test_salad_auto_worker.py' -v
           python -m unittest discover -s tests -p 'test_concat_outputs_upload.py' -v
           python -m unittest discover -s app/modules/uploader/tests -p 'test_*.py' -v
       - name: Browser shell JavaScript syntax
-        run: node --check app/static/app.js
+        run: |
+          node --check app/static/app.js
+          node --check app/modules/concat/assets/cloud_render.js
+          node tests/js/salad_auto_worker.test.js
       - name: Thumbnail browser limit regressions
         run: node tests/js/thumbnail_limits.test.js
       - name: VPS1-style Concat shell UX and authentication regressions

@@ -70,3 +70,9 @@
 #cloud-render .cr-idle-arrows{display:flex;flex-direction:column;gap:2px}
 #cloud-render .cr-idle-arrow{font-size:10px;line-height:1;border:1px solid #d1d9e5;border-radius:5px;background:#fff;padding:4px 9px;cursor:pointer}
 #cloud-render .cr-idle-arrow:disabled{opacity:.45;cursor:not-allowed}
+
+#cr-connection-setup > summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
+#cr-connection-setup[open] > summary { margin-bottom: 18px; }
+.cr-stepper { display: flex; align-items: center; gap: 8px; }
+.cr-stepper input { min-width: 0; flex: 1; width: 80px; }
+.cr-stepper .cr-btn { flex: 0 0 42px; padding: 10px; }

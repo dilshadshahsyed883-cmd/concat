@@ -78,10 +78,43 @@ class StudioTests(unittest.TestCase):
         self.assertEqual(self.client.post("/api/cloud-render/config",
             headers=token, json={"auto_upload": True}).status_code, 200)
 
+    def test_auto_worker_settings_validation_isolation_and_retry_csrf(self):
+        token = self.auth_csrf()
+        page = self.client.get("/concat/gpu-config").text
+        self.assertIn('<details class="cr-card" id="cr-connection-setup">', page)
+        self.assertIn('id="cr-pull-threshold"', page)
+        self.assertIn('id="cr-pull-seconds"', page)
+        path = "/api/cloud-render/config"
+        saved = self.client.post(path, headers=token, json={"auto_start": True,
+            "image_pull_threshold": 12, "image_pull_seconds": 35,
+            "salad_organization": "owner-org", "salad_project": "owner-project",
+            "salad_container_group": "owner-group"})
+        self.assertEqual(saved.status_code, 200, saved.text)
+        self.assertEqual(saved.json()["image_pull_threshold"], 12)
+        self.assertEqual(saved.json()["image_pull_seconds"], 35)
+        self.assertTrue(saved.json()["auto_start"])
+        for bad in (0, 101, True, 8.5, "8"):
+            self.assertEqual(self.client.post(path, headers=token,
+                json={"image_pull_threshold": bad}).status_code, 400)
+        retry = "/api/cloud-render/gpu/auto-retry"
+        self.assertEqual(self.client.post(retry).status_code, 403)
+        self.assertEqual(self.client.post(retry, headers=token).status_code, 200)
+        self.assertEqual(self.client.post("/api/cloud-render/gpu/worker/start", headers=token).status_code, 409)
+        self.client.post(path, headers=token, json={"auto_start": False})
+        self.assertEqual(self.client.post("/api/cloud-render/gpu/worker/start").status_code, 403)
+        self.assertEqual(self.client.post("/api/cloud-render/gpu/worker/start", headers=token).status_code, 200)
+        self.owner = "bob"
+        cfg = self.client.get(path).json()
+        self.assertFalse(cfg["auto_start"])
+        self.assertEqual(cfg["salad_container_group"], "")
+        self.assertEqual(cfg["image_pull_threshold"], 8)
+        self.owner = None
+        self.assertEqual(self.client.post(retry, headers=token).status_code, 401)
+
     def test_salad_idle_controls_and_persistence(self):
         page = self.client.get("/concat/gpu-config")
         self.assertEqual(page.status_code, 200)
-        for ident in ("cr-auto-shutdown", "cr-idle-minutes", "cr-idle-up", "cr-idle-down"):
+        for ident in ("cr-auto-start", "cr-pull-threshold", "cr-pull-seconds", "cr-save-automation"):
             self.assertIn('id="' + ident + '"', page.text)
         token = self.auth_csrf()
         for bad in (0, 61, True, 1.5, "5"):

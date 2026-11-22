@@ -88,6 +88,9 @@ the current Salad idle auto-shutdown feature.
 
 See [release gates](deploy/RELEASE_GATES.md) for private environment,
 preflight, backup/rollback, loopback staging, and separate HTTPS Nginx cutover.
+See [Salad Auto Worker](deploy/SALAD_AUTO_WORKER.md) for the verified-Drive
+startup gate, adjustable 8%/20s API image-pull check, bounded reallocation and
+60-second idle shutdown, without GPU image changes.
 See [Salad idle auto-shutdown](deploy/SALAD_IDLE_AUTOSTOP.md) for the opt-in
 1–60 minute timer (default 5) and required dedicated group identifiers.
 

@@ -456,6 +456,7 @@ class ProductionQueue:
             ready = sum(item["state"] == "Ready for GPU" for item in items)
             return {"state": self.media.get(con, "production_queue"),
                     "concurrency": concurrency, "active": active,
+                    "worker": self.media.salad_worker.snapshot(con),
                     "intake_active": intake, "ready_for_gpu": ready, "items": items}
 
     def control(self, action):
@@ -518,13 +519,30 @@ class ProductionQueue:
 
     def tick(self):
         with self.media.lock, self.media.connection() as con:
+            manual_pending = self.media.salad_worker.tick_manual(con)
+            # A cancellation must not power on an otherwise unused GPU.
+            con.execute("""UPDATE production_jobs SET state='Cancelled',error=''
+                WHERE cancel_requested=1 AND submitted_at=0
+                  AND state IN ('Ready for GPU','Waiting for Worker')""")
             # GPU slots count only dispatched/waiting jobs, never Drive intake.
             active = con.execute("""SELECT * FROM production_jobs
                 WHERE state IN ('Waiting for Worker','Uploading to GPU','Rendering','Delivering')
                 ORDER BY id""").fetchall()
             limit = int(self.media.get(con, "render_concurrency") or "1")
+            if con.execute("SELECT 1 FROM production_jobs WHERE state NOT IN ('Completed','Failed','Cancelled') LIMIT 1").fetchone():
+                self.media.put(con, "salad_idle_since", 0)
             row = None
-            if len(active) < limit and self.media.get(con, "production_queue") == "running":
+            pending_intake = con.execute("""SELECT 1 FROM production_jobs
+                WHERE state IN ('Queued','Downloading','Verifying ZIP','Retrying Drive') LIMIT 1""").fetchone()
+            if (not manual_pending and not pending_intake and len(active) < limit
+                    and self.media.get(con, "production_queue") == "running"):
+                ready = con.execute("SELECT 1 FROM production_jobs WHERE state='Ready for GPU' LIMIT 1").fetchone()
+                permitted = not ready or self.media.salad_worker.ensure_ready(con)
+            else:
+                permitted = False
+                if pending_intake and self.media.get(con, "auto_start") == "1":
+                    self.media.put(con, "salad_worker_status", "waiting_for_drive")
+            if permitted and len(active) < limit and self.media.get(con, "production_queue") == "running":
                 row = con.execute("SELECT * FROM production_jobs WHERE state='Ready for GPU' ORDER BY id LIMIT 1").fetchone()
                 if row is not None:
                     con.execute("UPDATE production_jobs SET state='Waiting for Worker' WHERE id=?", (row["id"],))

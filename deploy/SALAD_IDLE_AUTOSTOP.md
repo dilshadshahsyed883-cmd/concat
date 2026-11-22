@@ -1,7 +1,9 @@
 # Concat Web SaladCloud idle auto-stop (canonical main)
 
-The owner-only GPU Config page includes an opt-in **Salad Auto Shutdown** toggle
-(default OFF), with a 1–60 minute up/down input (default 5, step 1).
+The previous opt-in **Salad Auto Shutdown** API fields remain compatible.
+GPU Config now presents [Salad Worker Automation](SALAD_AUTO_WORKER.md):
+Automatic mode includes a fixed 60-second idle stop, and saving Manual mode
+disables legacy automatic shutdown. Legacy saved timeouts are retained.
 
 ## VPS configuration (private /etc/concat-web/concat-web.env)
 Set these three **identifiers**, matching the dedicated SaladCloud GPU group:
@@ -26,7 +28,9 @@ already stopped; check the Salad portal for final status.
 This assumes **dedicated Concat worker ownership**. Do not enable it when
 other services or people submit jobs directly to the same worker: the existing
 worker protocol reports active renders but does not enumerate all queued
-out-of-band jobs. Auto-stop does not auto-start stopped Salad groups.
+out-of-band jobs. For automatic startup plus fixed 60-second shutdown, use the opt-in
+[Salad Auto Worker](SALAD_AUTO_WORKER.md). It uses the same dedicated group and
+existing credentials; no GPU image rebuild is required.
 
 Release is manual from an exact reviewed main SHA via
 `deploy/manual-integration-release.sh`; GitHub CI does not deploy.
