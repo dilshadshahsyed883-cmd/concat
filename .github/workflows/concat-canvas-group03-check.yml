@@ -1,0 +1,49 @@
+name: Group 03 Canvas native engine verification
+
+on:
+  push:
+    branches:
+      - issue-115/group-03-canvas-preset-size
+    paths:
+      - 'upstream/src/crates/concat-project/**'
+      - 'upstream/src/crates/concat/src/**'
+      - 'upstream/src/crates/concat/ui/**'
+      - '.github/workflows/concat-canvas-group03-check.yml'
+  pull_request:
+    paths:
+      - 'upstream/src/crates/concat-project/**'
+      - '.github/workflows/concat-canvas-group03-check.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: group03-canvas-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-engine:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f
+        with:
+          toolchain: "1.93.0"
+          components: rustfmt
+      - name: Parse edited Rust files
+        run: |
+          for path in upstream/src/crates/concat-project/src/{canvas_motion,canvas_preset,motion_preset,animation_settings}.rs \
+                      upstream/src/crates/concat/src/{lib,prefs,studio}.rs \
+                      upstream/src/crates/concat/src/studio/bulk_presets.rs; do
+            rustfmt --edition 2024 --emit stdout "$path" > /dev/null
+          done
+      - name: Check native Canvas and Basic/Physics project tests
+        working-directory: upstream/src
+        run: |
+          cargo test --locked -p concat-project --lib canvas_motion
+          cargo test --locked -p concat-project --lib canvas_preset
+          cargo test --locked -p concat-project --lib motion_preset
+          cargo test --locked -p concat-project --lib animation_settings
