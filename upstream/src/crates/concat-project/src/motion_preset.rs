@@ -768,6 +768,9 @@ mod tests {
                 clip,
                 FRAME,
                 CanvasMotionControls {
+                    // This legacy dense-key scenario explicitly exercises a
+                    // short manual motion on a much longer timeline clip.
+                    auto_fit: false,
                     duration_seconds: 1.0,
                     ..Default::default()
                 },
