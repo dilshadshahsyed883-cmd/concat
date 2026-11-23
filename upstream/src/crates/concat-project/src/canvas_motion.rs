@@ -141,6 +141,9 @@ impl CanvasMotionPreset {
             Self::Diagonal => ([-0.32, -0.32], [0.04, 0.04]),
             Self::Documentary => ([-0.03, 0.0], [0.03, 0.0]),
             Self::FocusJourney => ([-0.32, 0.0], [0.32, 0.0]),
+            // A boomerang must actually leave its launch point before
+            // returning. The shared center scale peak is independent.
+            Self::BoomerangReturn => ([-0.3, -0.12], [0.3, 0.18]),
             Self::Alternating => {
                 if seed % 2 == 0 {
                     ([-0.32, -0.32], [0.0, 0.0])
@@ -247,6 +250,31 @@ impl CanvasMotionPreset {
                     ease((u - peak) / (1.0 - peak)))
             };
             let mut scale = start + (finish - start) * leg;
+            if self == Self::CenterPop {
+                // A fast impulse followed by a softer settle, unlike the
+                // ordinary centered Zoom. The pulse is zero at checkpoints.
+                let q = if u <= peak { u / peak }
+                    else { (u - peak) / (1.0 - peak) };
+                scale += if u <= peak {
+                    0.10 * (std::f64::consts::PI * q).sin() * (1.0 - q)
+                } else {
+                    0.035 * (2.0 * std::f64::consts::PI * q).sin() * (1.0 - q)
+                };
+            } else if self == Self::SpringSettle {
+                // The spring has a damped overshoot/return, not a second copy
+                // of centered Zoom; both endpoints and the peak are exact.
+                let q = if u <= peak { u / peak }
+                    else { (u - peak) / (1.0 - peak) };
+                scale += 0.075 * (3.0 * std::f64::consts::PI * q).sin()
+                    * (-2.0 * q).exp() * (1.0 - q);
+            } else if self == Self::PushPullZoom {
+                // Alternating inward/outward impulse within each leg. The
+                // universal Start/Peak/End values remain intact.
+                let q = if u <= peak { u / peak }
+                    else { (u - peak) / (1.0 - peak) };
+                scale += 0.075 * (2.0 * std::f64::consts::PI * q).sin()
+                    * (std::f64::consts::PI * q).sin();
+            }
             if self == Self::BreathingLoop {
                 // Exactly zero supplemental pulse at start, peak and end.
                 // The integer wave count makes restarts repeat-safe.
@@ -337,6 +365,11 @@ impl CanvasMotionPreset {
                     } else {
                         interpolate(controls.focus_middle, to, ease((t - span - hold)/span))
                     }
+                }
+                Self::Alternating => {
+                    let base = interpolate(from, to, t);
+                    [base[0] + 0.08 * (2.0 * std::f64::consts::PI * t).sin() * (1.0-t),
+                        base[1] + 0.04 * (4.0 * std::f64::consts::PI * t).sin() * (1.0-t)]
                 }
                 Self::SpringSettle => {
                     let damp = (0.5 / controls.intensity).clamp(0.2, 0.95);
@@ -569,6 +602,21 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn every_canvas_entry_has_a_distinct_native_motion_signature() {
+        let clip=Clip::blank("signature","T1",ClipKind::Video,"video",0.0,6.0);
+        let variants=CanvasMotionPreset::ALL;
+        let signatures: Vec<_>=variants.iter().map(|preset| {
+            (*preset,preset.keys(&clip,1.0/30.0,CanvasMotionControls::default()).unwrap())
+        }).collect();
+        for (index,(first,a)) in signatures.iter().enumerate() {
+            for (second,b) in signatures.iter().skip(index+1) {
+                assert_ne!(a,b,"Canvas {:?} duplicates {:?}",first,second);
+            }
+        }
+    }
+
     #[test]
     fn all_variants_are_native_deterministic_and_protect_authored_keys() {
         for kind in [ClipKind::Image, ClipKind::Video] {
