@@ -323,10 +323,13 @@ export global Keyframes {
     }
     public function restore-current() {
         if animation-selected < 0 { return; }
-        let settings=Keyframes.load-animation(animation-selected);
-        animation-saved=settings;
-        physics-strength=settings.strength;physics-duration=settings.duration;physics-speed=settings.speed;physics-intensity=settings.intensity;
-        // Read the saved property, not the moved non-Copy local settings struct.
+        // The loaded struct is non-Copy. Move it once into the saved property,
+        // then read every field from that property (never from the moved local).
+        animation-saved=Keyframes.load-animation(animation-selected);
+        physics-strength=animation-saved.strength;
+        physics-duration=animation-saved.duration;
+        physics-speed=animation-saved.speed;
+        physics-intensity=animation-saved.intensity;
         canvas-motion=animation-saved.canvas;
         animation-has-override=Keyframes.has-animation-default(animation-selected);
     }

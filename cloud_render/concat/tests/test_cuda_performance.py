@@ -46,8 +46,10 @@ class StageProfilerTests(TestCase):
 class SourceFrameCacheTests(TestCase):
     def setUp(self):
         self.source = Path("video.mp4")
-        self.clip = SimpleNamespace(path=self.source,
-                                    span=SimpleNamespace(start=0),
+        # Use a native-shaped clip so frame-cache regressions also exercise
+        # the last-frame-hold span preflight added by the CUDA renderer.
+        self.clip = SimpleNamespace(id="cache-test-clip", path=self.source,
+                                    span=SimpleNamespace(start=0, end=300),
                                     speed=1.0, source_start=0.0)
         self.decoder = Mock()
         self.decoder.__len__ = Mock(return_value=240)
