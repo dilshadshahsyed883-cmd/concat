@@ -10,11 +10,12 @@ export component AnimationApplyBar inherits VerticalLayout {
             Keyframes.clear-generated-motion(Keyframes.animation-images,Keyframes.animation-videos,selected);
         } else if Keyframes.animation-favourites-browser {
             Keyframes.apply-animation-favourites(Keyframes.favourite-pool,Keyframes.animation-images,Keyframes.animation-videos,selected);
-        } else if (Keyframes.animation-selected < 9 || Keyframes.animation-selected >= 30) {
+        } else if (Keyframes.animation-selected < 9 || (Keyframes.animation-selected >= 30 && Keyframes.animation-selected < 45)) {
             Keyframes.apply-physics-bulk(Keyframes.animation-selected,mode,Keyframes.animation-images,Keyframes.animation-videos,selected,
-                Keyframes.physics-strength,Keyframes.physics-duration,Keyframes.physics-speed,Keyframes.physics-intensity);
+                Keyframes.physics-strength,Keyframes.physics-duration,Keyframes.physics-speed,Keyframes.physics-intensity,
+                Keyframes.canvas-motion.auto-fit);
         } else {
-            Keyframes.apply-canvas-motion(Keyframes.animation-selected - 9,mode,Keyframes.animation-images,Keyframes.animation-videos,selected,Keyframes.canvas-motion);
+            Keyframes.apply-canvas-motion((Keyframes.animation-selected >= 45 ? Keyframes.animation-selected - 24 : Keyframes.animation-selected - 9),mode,Keyframes.animation-images,Keyframes.animation-videos,selected,Keyframes.canvas-motion);
         }
     }
     padding: 8px; spacing: 6px;
@@ -29,7 +30,7 @@ export component AnimationApplyBar inherits VerticalLayout {
         enabled: root.targets; clicked => {root.apply(Keyframes.animation-scope == 1,2);}
     }
     if !Keyframes.animation-favourites-browser && Keyframes.animation-selected >= 0: Button {
-        label: (Keyframes.animation-selected < 9 || Keyframes.animation-selected >= 30) ? "Favorite Basic / Physics Randomly" : "Favorite Canvas Motion Randomly";
+        label: (Keyframes.animation-selected < 9 || (Keyframes.animation-selected >= 30 && Keyframes.animation-selected < 45)) ? "Favorite Basic / Physics Randomly" : "Favorite Canvas Motion Randomly";
         enabled: root.targets; clicked => {root.apply(Keyframes.animation-scope == 1,3);}
     }
 }

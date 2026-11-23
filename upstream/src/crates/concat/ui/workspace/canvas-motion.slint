@@ -4,6 +4,7 @@ import { Button } from "../primitives/modal.slint";
 import { Select } from "../primitives/select.slint";
 import { Param, ParamFormat, Check } from "../inspector/controls.slint";
 import { Keyframes, CanvasMotionData } from "../timeline/model.slint";
+
 export component CanvasMotionPanel inherits VerticalLayout {
     in property <bool> images: true;
     in property <bool> videos: true;
@@ -12,40 +13,128 @@ export component CanvasMotionPanel inherits VerticalLayout {
     in property <bool> inspector-mode: false;
     property <CanvasMotionData> settings <=> Keyframes.canvas-motion;
     spacing: 8px;
-    if !root.inspector-mode: Text { text: "Canvas Motion"; color: Theme.fg; font-size: Theme.fs; }
-    if !root.inspector-mode: Select { options: ["Top-left to Center", "Top-right to Center", "Bottom-left to Center", "Bottom-right to Center", "Center Pop", "Zoom at Left", "Zoom at Center", "Zoom at Right", "Reverse to Corner", "Slide from Left", "Slide from Right", "Slide from Top", "Slide from Bottom", "Diagonal Fly-in", "Spring Settle", "Documentary Pan", "Fade and Scale", "Alternating Inset", "Breathing Loop", "In / Hold / Out", "Focus Journey"]; current <=> root.preset; }
-    if !root.inspector-mode: Button { label: Keyframes.physics-favourites[9 + root.preset] ? "★ Favorite" : "☆ Favorite";
-        clicked => { Keyframes.toggle-physics-favourite(9 + root.preset); } }
-    if root.preset != 15 && root.preset != 18: Param { label: "Start Scale"; value <=> root.settings.start-scale; minimum: 0.05; maximum: 1; step: 0.01; fmt: ParamFormat.steps; }
-    if root.preset != 15: Param { label: root.preset == 18 ? "Base Scale" : "End Scale"; value <=> root.settings.end-scale; minimum: 0.05; maximum: 1; step: 0.01; fmt: ParamFormat.steps; }
-    if root.preset == 15: Text { text: "Documentary Pan uses fixed base scale 0.88 → 0.96 (adjustable via Strength)."; color: Theme.fg-muted; wrap: word-wrap; font-size: Theme.fs-sm; }
-    if root.preset == 18: Text { text: "Breathing Loop repeats a gentle zoom and returns to Base Scale at the end of the clip."; color: Theme.fg-muted; wrap: word-wrap; font-size: Theme.fs-sm; }
-    if root.preset != 19: Param { label: root.preset == 18 ? "Approx. Cycle (seconds)" : "Motion Duration (seconds)"; value <=> root.settings.duration; minimum: 0.05; maximum: 60; step: 0.1; fmt: ParamFormat.steps; }
-    if root.preset == 19: Text { text: "Entry and exit are independent. Hold = 0 fills the clip until the exit; a positive Hold ends the animation earlier."; color: Theme.fg-muted; wrap: word-wrap; font-size: Theme.fs-sm; }
-    if root.preset == 19: Param { label: "Entry (seconds)"; value <=> root.settings.entry-seconds; minimum: 0.05; maximum: 60; step: 0.05; fmt: ParamFormat.steps; }
-    if root.preset == 19: Param { label: "Hold (0 = auto)"; value <=> root.settings.hold-seconds; minimum: 0; maximum: 60; step: 0.1; fmt: ParamFormat.steps; }
-    if root.preset == 19: Param { label: "Exit (seconds)"; value <=> root.settings.exit-seconds; minimum: 0.05; maximum: 60; step: 0.05; fmt: ParamFormat.steps; }
-    Param { label: "Delay (seconds)"; value <=> root.settings.delay; minimum: 0; maximum: 60; step: 0.1; fmt: ParamFormat.steps; }
-    Param { label: "Speed"; value <=> root.settings.speed; minimum: 0.25; maximum: 3; step: 0.05; fmt: ParamFormat.steps; }
-    Param { label: "Strength"; value <=> root.settings.strength; minimum: 0.1; maximum: 2; step: 0.05; fmt: ParamFormat.steps; }
-    if root.preset == 14: Param { label: "Spring Intensity"; value <=> root.settings.intensity; minimum: 0.2; maximum: 2; step: 0.05; fmt: ParamFormat.steps; }
-    Param { label: "Background Blur"; value <=> root.settings.blur; minimum: 0; maximum: 1; step: 0.05; fmt: ParamFormat.steps; }
-    Param { label: "Foreground Corners"; value <=> root.settings.corner-radius; minimum: 0; maximum: 0.2; step: 0.005; fmt: ParamFormat.steps; }
-    if root.preset == 20: Text { text: "Moves between Start, Middle and End points with an adjustable pause at Middle. Enable custom anchors to edit Start/End."; color: Theme.fg-muted; wrap: word-wrap; font-size: Theme.fs-sm; }
-    if root.preset == 20: Param { label: "Middle X"; value <=> root.settings.focus-middle-x; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
-    if root.preset == 20: Param { label: "Middle Y"; value <=> root.settings.focus-middle-y; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
-    if root.preset == 20: Param { label: "Middle Hold (seconds)"; value <=> root.settings.focus-hold; minimum: 0; maximum: root.settings.duration * 0.8 / root.settings.speed; step: 0.1; fmt: ParamFormat.steps; }
-    if root.preset == 17: Param { label: "Random Seed"; value: root.settings.seed; changed(v) => { root.settings.seed = Math.round(v); } minimum: 0; maximum: 65535; step: 1; fmt: ParamFormat.steps; }
-    if root.settings.custom-anchors && root.preset != 18: Param { label: "Start X"; value <=> root.settings.start-x; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
-    if root.settings.custom-anchors && root.preset != 18: Param { label: "Start Y"; value <=> root.settings.start-y; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
-    if root.settings.custom-anchors && root.preset != 18: Param { label: "End X"; value <=> root.settings.end-x; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
-    if root.settings.custom-anchors && root.preset != 18: Param { label: "End Y"; value <=> root.settings.end-y; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
-    HorizontalLayout {
-        if root.preset != 18: Check { checked: root.settings.reverse; toggled(on) => { root.settings.reverse = on; } }
-        if root.preset != 18: Text { text: "Reverse"; color: Theme.fg; }
-        if root.preset != 18: Check { checked: root.settings.custom-anchors; toggled(on) => { root.settings.custom-anchors = on; } }
-        if root.preset != 18: Text { text: "Use custom X/Y anchors"; color: Theme.fg; }
-    }
-    if root.preset != 18: Select { options: ["Linear", "Smooth"]; current: root.settings.easing; changed(index) => { root.settings.easing = index; } }
 
+    if !root.inspector-mode: Text {
+        text: "Canvas Motion"; color: Theme.fg; font-size: Theme.fs;
+    }
+    if !root.inspector-mode: Select {
+        options: ["Top-left to Center", "Top-right to Center", "Bottom-left to Center", "Bottom-right to Center", "Center Pop", "Zoom at Left", "Zoom at Center", "Zoom at Right", "Reverse to Corner", "Slide from Left", "Slide from Right", "Slide from Top", "Slide from Bottom", "Diagonal Fly-in", "Spring Settle", "Documentary Pan", "Fade and Scale", "Alternating Inset", "Breathing Loop", "In / Hold / Out", "Focus Journey", "Orbit In", "Spiral Zoom", "S-Curve Glide", "Boomerang Return", "Push-Pull Zoom", "Floating Loop", "Edge Sweep", "Arc Drift", "Pinball Journey", "Corner Relay", "Staircase Motion", "Wave Surf", "Magnetic Dock", "Rail Switch"];
+        current <=> root.preset;
+    }
+    if !root.inspector-mode: Button {
+        label: Keyframes.physics-favourites[9 + root.preset] ? "★ Favorite" : "☆ Favorite";
+        clicked => { Keyframes.toggle-physics-favourite(9 + root.preset); }
+    }
+    Text {
+        text: "Full-frame picture scale • 70% start / 100% peak / 70% end by default";
+        color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
+    }
+    Param {
+        label: "Start Scale"; value <=> root.settings.start-scale;
+        minimum: 0.4; maximum: 1; step: 0.01; fmt: ParamFormat.fraction;
+    }
+    Param {
+        label: "Middle / Peak Scale"; value <=> root.settings.middle-scale;
+        minimum: 0.5; maximum: 1; step: 0.01; fmt: ParamFormat.fraction;
+    }
+    Param {
+        label: "End Scale"; value <=> root.settings.end-scale;
+        minimum: 0.4; maximum: 1; step: 0.01; fmt: ParamFormat.fraction;
+    }
+    Param {
+        label: "Peak Time Position"; value <=> root.settings.peak-time;
+        minimum: 0.2; maximum: 0.8; step: 0.01; fmt: ParamFormat.fraction;
+    }
+    HorizontalLayout {
+        spacing: 8px;
+        Check {
+            checked: root.settings.auto-fit;
+            toggled(on) => { root.settings.auto-fit = on; }
+        }
+        Text { text: "Auto Fit to Clip (default)"; color: Theme.fg; }
+    }
+    if !root.settings.auto-fit: Param {
+        label: "Manual Duration (seconds)"; value <=> root.settings.duration;
+        minimum: 0.05; maximum: 60; step: 0.1; fmt: ParamFormat.seconds2;
+    }
+    if root.preset == 18 && root.settings.auto-fit: Param {
+        label: "Breathing Cycle Length (seconds)";
+        value <=> root.settings.duration;
+        minimum: 0.05; maximum: 60; step: 0.1; fmt: ParamFormat.seconds2;
+    }
+    if !root.settings.auto-fit: Param {
+        label: "Delay (seconds)"; value <=> root.settings.delay;
+        minimum: 0; maximum: 60; step: 0.1; fmt: ParamFormat.seconds2;
+    }
+    if root.preset == 19 && !root.settings.auto-fit: VerticalLayout {
+        spacing: 4px;
+        Param { label: "Entry (seconds)"; value <=> root.settings.entry-seconds; minimum: 0.05; maximum: 60; step: 0.05; fmt: ParamFormat.seconds2; }
+        Param { label: "Hold (0 = Auto)"; value <=> root.settings.hold-seconds; minimum: 0; maximum: 60; step: 0.1; fmt: ParamFormat.seconds2; }
+        Param { label: "Exit (seconds)"; value <=> root.settings.exit-seconds; minimum: 0.05; maximum: 60; step: 0.05; fmt: ParamFormat.seconds2; }
+    }
+    Param {
+        label: "Speed / Cadence"; value <=> root.settings.speed;
+        minimum: 0.25; maximum: 3; step: 0.05; fmt: ParamFormat.rate;
+    }
+    Param {
+        label: "Movement Strength"; value <=> root.settings.strength;
+        minimum: 0; maximum: 2; step: 0.05; fmt: ParamFormat.fraction;
+    }
+    if root.preset == 14: Param {
+        label: "Spring Intensity"; value <=> root.settings.intensity;
+        minimum: 0.2; maximum: 2; step: 0.05; fmt: ParamFormat.steps;
+    }
+    Param {
+        label: "Background Blur (normalized)"; value <=> root.settings.blur;
+        minimum: 0; maximum: 1; step: 0.05; fmt: ParamFormat.fraction;
+    }
+    Param {
+        label: "Foreground Corners (normalized)"; value <=> root.settings.corner-radius;
+        minimum: 0; maximum: 0.2; step: 0.005; fmt: ParamFormat.fraction;
+    }
+    if root.preset == 20: VerticalLayout {
+        spacing: 4px;
+        Param { label: "Middle X"; value <=> root.settings.focus-middle-x; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
+        Param { label: "Middle Y"; value <=> root.settings.focus-middle-y; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
+        Param { label: "Middle Hold (seconds)"; value <=> root.settings.focus-hold; minimum: 0; maximum: 60; step: 0.1; fmt: ParamFormat.seconds2; }
+    }
+    if root.preset == 17: Param {
+        label: "Random Seed"; value: root.settings.seed;
+        changed(v) => { root.settings.seed = Math.round(v); }
+        minimum: 0; maximum: 65535; step: 1; fmt: ParamFormat.steps;
+    }
+    if (root.preset < 21 && root.preset != 18 && root.preset != 4 &&
+        root.preset != 6 && root.preset != 16) || root.preset == 24: HorizontalLayout {
+        spacing: 8px;
+        Check {
+            checked: root.settings.custom-anchors;
+            toggled(on) => { root.settings.custom-anchors = on; }
+        }
+        Text { text: "Use custom X/Y anchors"; color: Theme.fg; }
+    }
+    if root.settings.custom-anchors && ((root.preset < 21 && root.preset != 18 &&
+        root.preset != 4 && root.preset != 6 && root.preset != 16) ||
+        root.preset == 24): VerticalLayout {
+        Param { label: "Start X"; value <=> root.settings.start-x; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
+        Param { label: "Start Y"; value <=> root.settings.start-y; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
+        Param { label: "End X"; value <=> root.settings.end-x; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
+        Param { label: "End Y"; value <=> root.settings.end-y; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
+    }
+    if root.preset != 25 && root.preset != 18 && root.preset != 4 && root.preset != 6 &&
+        root.preset != 16: HorizontalLayout {
+        spacing: 8px;
+        Check {
+            checked: root.settings.reverse;
+            toggled(on) => { root.settings.reverse = on; }
+        }
+        Text { text: "Reverse Path"; color: Theme.fg; }
+    }
+    Text { text: "Easing"; color: Theme.fg-muted; font-size: Theme.fs-sm; }
+    Select {
+        options: ["Linear", "Smooth", "Cinematic"];
+        current: root.settings.easing;
+        changed(index) => { root.settings.easing = index; }
+    }
+    // Save Default / Reset Default are rendered once by the shared
+    // animation inspector, which applies to Basic, Physics and Canvas.
 }

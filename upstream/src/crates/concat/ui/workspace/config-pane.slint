@@ -327,7 +327,8 @@ export component ConfigPane inherits Rectangle {
         "Center Pop", "Zoom at Left", "Zoom at Center", "Zoom at Right", "Reverse to Corner",
         "Slide from Left", "Slide from Right", "Slide from Top", "Slide from Bottom",
         "Diagonal Fly-in", "Spring Settle", "Documentary Pan", "Fade and Scale",
-        "Alternating Inset", "Breathing Loop", "In / Hold / Out", "Focus Journey"
+        "Alternating Inset", "Breathing Loop", "In / Hold / Out", "Focus Journey",
+        "Orbit In", "Spiral Zoom", "S-Curve Glide", "Boomerang Return", "Push-Pull Zoom", "Floating Loop", "Edge Sweep", "Arc Drift", "Pinball Journey", "Corner Relay", "Staircase Motion", "Wave Surf", "Magnetic Dock", "Rail Switch"
     ];
 
     // The tab strip follows the selection, and stays short: three tabs at
@@ -531,9 +532,10 @@ export component ConfigPane inherits Rectangle {
                         text: Keyframes.animation-selected == -1 ? "None / No Animation"
                             : Keyframes.animation-selected < 9
                             ? root.animation-basic-names[Keyframes.animation-selected]
-                            : Keyframes.animation-selected >= 30
+                            : Keyframes.animation-selected >= 30 && Keyframes.animation-selected < 45
                                 ? root.animation-expanded-names[Keyframes.animation-selected - 30]
-                                : root.animation-canvas-names[Keyframes.animation-selected - 9];
+                                : root.animation-canvas-names[Keyframes.animation-selected >= 45
+                                    ? Keyframes.animation-selected - 24 : Keyframes.animation-selected - 9];
                         color: Theme.fg;
                         font-size: Theme.fs;
                         font-weight: Theme.weight-title;
@@ -541,17 +543,26 @@ export component ConfigPane inherits Rectangle {
                     Text {
                         text: Keyframes.animation-selected == -1 ? "Clear generated motion only"
                             : Keyframes.animation-selected < 6 || (Keyframes.animation-selected >= 30 && Keyframes.animation-selected < 37) ? "Physics"
-                            : Keyframes.animation-selected < 9 || Keyframes.animation-selected >= 37 ? "Basic" : "Canvas Motion";
+                            : Keyframes.animation-selected < 9 || (Keyframes.animation-selected >= 37 && Keyframes.animation-selected < 45) ? "Basic" : "Canvas Motion";
                         color: Theme.fg-muted;
                         font-size: Theme.fs-sm;
                     }
 
-                    if (Keyframes.animation-selected >= 0 && Keyframes.animation-selected < 9) || Keyframes.animation-selected >= 30: VerticalLayout {
+                    if (Keyframes.animation-selected >= 0 && Keyframes.animation-selected < 9)
+                        || (Keyframes.animation-selected >= 30 && Keyframes.animation-selected < 45): VerticalLayout {
                         spacing: 8px;
                         Param { label: "Strength"; value <=> Keyframes.physics-strength;
                             minimum: 0.1; maximum: 2; step: 0.1; fmt: ParamFormat.fraction; }
-                        Param { label: "Duration (clip fraction)"; value <=> Keyframes.physics-duration;
-                            minimum: 0.1; maximum: 1; step: 0.05; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Check { checked: Keyframes.canvas-motion.auto-fit;
+                                toggled(on) => { Keyframes.canvas-motion.auto-fit = on; } }
+                            Text { text: "Auto Fit to Clip (default)"; color: Theme.fg; }
+                        }
+                        if !Keyframes.canvas-motion.auto-fit: Param {
+                            label: "Manual Duration (clip fraction)"; value <=> Keyframes.physics-duration;
+                            minimum: 0.1; maximum: 1; step: 0.05; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction;
+                        }
                         Param { label: "Speed"; value <=> Keyframes.physics-speed;
                             minimum: 0.25; maximum: 3; step: 0.05; fmt: ParamFormat.fraction; }
                         if Keyframes.animation-selected < 6 || (Keyframes.animation-selected >= 30 && Keyframes.animation-selected < 37): Param {
@@ -561,9 +572,10 @@ export component ConfigPane inherits Rectangle {
                         Text { text: "Choose targets above. The selected preset remains active while browsing other tabs.";
                             color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
                     }
-                    if Keyframes.animation-selected >= 9 && Keyframes.animation-selected < 30: CanvasMotionPanel {
+                    if (Keyframes.animation-selected >= 9 && Keyframes.animation-selected < 30)
+                        || (Keyframes.animation-selected >= 45 && Keyframes.animation-selected < 59): CanvasMotionPanel {
                         inspector-mode: true;
-                        preset: Keyframes.animation-selected - 9;
+                        preset: Keyframes.animation-selected >= 45 ? Keyframes.animation-selected - 24 : Keyframes.animation-selected - 9;
                         images: Keyframes.animation-images;
                         videos: Keyframes.animation-videos;
                         selected-only: Keyframes.animation-scope == 1;

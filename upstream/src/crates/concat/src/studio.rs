@@ -9698,7 +9698,7 @@ impl Studio {
         let parameters=self.selected_transition().and_then(|c|c.transition_in.as_ref()).map(|t|&t.params);
         app.global::<crate::ui::TransitionControls>().set_params(parameters.and_then(|p|serde_json::to_string_pretty(p).ok()).unwrap_or_else(||"{}".into()).into());
         let keys = app.global::<Keyframes>();
-        let physics_stars: Vec<bool> = (0..45).filter_map(bulk_presets::animation_favourite_id)
+        let physics_stars: Vec<bool> = (0..59).filter_map(bulk_presets::animation_favourite_id)
             .map(|preset| self.prefs.physics_motion_favourites.iter().any(|id| id == preset))
             .collect();
         keys.set_physics_favourites(slint::ModelRc::new(VecModel::from(physics_stars)));
@@ -10875,7 +10875,7 @@ impl Studio {
 
     /// Adds a simulated physics preset using normal native project keys.
     /// Manual keyframes are protected by the shared preset validation.
-    pub fn apply_physics_motion(&mut self, index: i32, strength: f32, duration: f32, speed: f32, intensity: f32) {
+    pub fn apply_physics_motion(&mut self, index: i32, strength: f32, duration: f32, speed: f32, intensity: f32, auto_fit: bool) {
         let Some(preset) = PhysicsPreset::from_index(index) else { return };
         self.flush_commit();
         let Some(clip) = self.sole_selection().and_then(|id| self.clip(&id)) else {
@@ -10892,7 +10892,7 @@ impl Studio {
         };
         match preset.keys_with(&base, self.frame_seconds(), PhysicsControls {
             strength: strength as f64,
-            duration: duration as f64,
+            duration: if auto_fit {1.0}else{duration as f64},
             speed: speed as f64,
             intensity: intensity as f64,
         }) {
