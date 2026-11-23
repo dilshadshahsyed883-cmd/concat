@@ -1414,8 +1414,11 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     editor.on_library_apply_transition(on_window!(|state, id: SharedString| {
         state.apply_transition(id.as_str());
     }));
-    editor.on_library_apply_random_transitions(on_window!(|state, mode: i32| {
-        state.apply_random_gpu_transitions(mode == 1, mode == 2);
+    editor.on_library_apply_transition_scoped(on_window!(|state, id: SharedString, images: bool, videos: bool, selected_only: bool| {
+        state.apply_transition_scoped(id.as_str(), images, videos, selected_only);
+    }));
+    editor.on_library_apply_random_transitions(on_window!(|state, mode: i32, images: bool, videos: bool, selected_only: bool| {
+        state.apply_random_gpu_transitions(images, videos, selected_only, mode == 1);
     }));
     editor.on_library_apply_random_effects(on_window!(|state| {
         let (images,videos,selected)=media_target_flags();
@@ -2102,6 +2105,9 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     }));
     editor.on_transition_remove(on_window!(|state| {
         state.remove_transition();
+    }));
+    editor.on_transition_clear(on_window!(|state, selected_only: bool, images: bool, videos: bool| {
+        state.clear_transitions_scoped(selected_only, images, videos);
     }));
     editor.on_transition_duration_set(on_window!(|state, seconds: f32| {
         state.set_transition_duration(seconds as f64);
