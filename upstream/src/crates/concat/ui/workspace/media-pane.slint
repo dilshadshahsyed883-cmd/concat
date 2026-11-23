@@ -1368,6 +1368,8 @@ export component ShelfGrid inherits Rectangle {
             LibraryFocus.selected-name = entry.name;
             LibraryFocus.selected-category = entry.category;
             LibraryFocus.selected-description = entry.description;
+            if root.page-kind == 2 { ParticleBulk.select-effect(entry.id); }
+            else { ParticleBulk.clear-preview(); }
         }
         payload: root.payload-kind == "" ? ""
             : "\{root.payload-kind}:\{entry.id}:\{entry.name}";
@@ -1848,19 +1850,53 @@ component AnimationCardGrid inherits Rectangle {
     }
 }
 
-// Star filtering collapses non-favorite rows rather than leaving card holes.
-// A single column is intentional here: it remains usable in narrow panels.
-component AnimationFavoriteCards inherits VerticalLayout {
+// Compact Favorites into two columns without leaving holes when items
+// are unstarred. Slint cannot filter the in-file preset model; counting
+// previous stars gives each visible card a stable, dense position.
+// The eight-position blocks cover 64 presets (current 29, plus headroom).
+component AnimationFavoriteCards inherits Rectangle {
     in property <[AnimationCardData]> basic;
     in property <[AnimationCardData]> canvas;
     callback picked(index: int);
     callback starred(index: int);
-    spacing: 0px;
+
+    property <length> gap: 6px;
+    property <length> card-h: 104px;
+    property <length> card-w: (root.width - root.gap) / 2;
+    property <int> favorite-count: root.favourite-rank(root.basic.length + root.canvas.length);
+
+    pure function count-eight(start: int, before: int) -> int {
+        return (start + 0 < before && Keyframes.physics-favourites[start + 0] ? 1 : 0)
+            + (start + 1 < before && Keyframes.physics-favourites[start + 1] ? 1 : 0)
+            + (start + 2 < before && Keyframes.physics-favourites[start + 2] ? 1 : 0)
+            + (start + 3 < before && Keyframes.physics-favourites[start + 3] ? 1 : 0)
+            + (start + 4 < before && Keyframes.physics-favourites[start + 4] ? 1 : 0)
+            + (start + 5 < before && Keyframes.physics-favourites[start + 5] ? 1 : 0)
+            + (start + 6 < before && Keyframes.physics-favourites[start + 6] ? 1 : 0)
+            + (start + 7 < before && Keyframes.physics-favourites[start + 7] ? 1 : 0);
+    }
+    pure function favourite-rank(before: int) -> int {
+        return root.count-eight(0, before)
+            + root.count-eight(8, before)
+            + root.count-eight(16, before)
+            + root.count-eight(24, before)
+            + root.count-eight(32, before)
+            + root.count-eight(40, before)
+            + root.count-eight(48, before)
+            + root.count-eight(56, before);
+    }
+
+    height: root.favorite-count > 0
+        ? Math.ceil(root.favorite-count / 2) * (root.card-h + root.gap) - root.gap
+        : 0px;
 
     for entry in root.basic: AnimationCard {
-        width: parent.width;
+        property <int> compact-index: root.favourite-rank(entry.index);
+        x: Math.mod(self.compact-index, 2) * (root.card-w + root.gap);
+        y: Math.floor(self.compact-index / 2) * (root.card-h + root.gap);
+        width: root.card-w;
+        height: root.card-h;
         visible: Keyframes.physics-favourites[entry.index];
-        height: Keyframes.physics-favourites[entry.index] ? 104px : 0px;
         item: entry;
         pool-selectable: true;
         current: Keyframes.animation-selected == entry.index;
@@ -1868,9 +1904,12 @@ component AnimationFavoriteCards inherits VerticalLayout {
         starred(id) => { root.starred(id); }
     }
     for entry in root.canvas: AnimationCard {
-        width: parent.width;
+        property <int> compact-index: root.favourite-rank(entry.index);
+        x: Math.mod(self.compact-index, 2) * (root.card-w + root.gap);
+        y: Math.floor(self.compact-index / 2) * (root.card-h + root.gap);
+        width: root.card-w;
+        height: root.card-h;
         visible: Keyframes.physics-favourites[entry.index];
-        height: Keyframes.physics-favourites[entry.index] ? 104px : 0px;
         item: entry;
         pool-selectable: true;
         current: Keyframes.animation-selected == entry.index;
@@ -2028,6 +2067,10 @@ export component MediaPane inherits Rectangle {
     // sounds, voice and import implementation accessible from the Media sidebar.
     property <bool> media-audio-view: false;
     function show-library() {
+        // Navigation ends any temporary effect audition. A draft remains
+        // available if the user returns to its preset, but is not rendered
+        // over unrelated pages or a replacement project.
+        ParticleBulk.clear-preview();
         if root.tab == 4 && !root.audio-shelf
             && Library.view(1).category != "Effects:Color"
             && Library.view(1).category != "Effects:Particles"
@@ -2097,7 +2140,22 @@ export component MediaPane inherits Rectangle {
         {index: 5, name: "Damped Shake", family: "Physics", art: @image-url("../assets/animation-card-5.svg")},
         {index: 6, name: "Push In", family: "Basic", art: @image-url("../assets/animation-card-6.svg")},
         {index: 7, name: "Pan Right", family: "Basic", art: @image-url("../assets/animation-card-7.svg")},
-        {index: 8, name: "Fade In", family: "Basic", art: @image-url("../assets/animation-card-8.svg")}
+        {index: 8, name: "Fade In", family: "Basic", art: @image-url("../assets/animation-card-8.svg")},
+        {index: 30, name: "Spring Slide", family: "Physics", art: @image-url("../assets/animation-card-4.svg")},
+        {index: 31, name: "Floating Bob", family: "Physics", art: @image-url("../assets/animation-card-2.svg")},
+        {index: 32, name: "Recoil Kick", family: "Physics", art: @image-url("../assets/animation-card-5.svg")},
+        {index: 33, name: "Spiral Zoom", family: "Physics", art: @image-url("../assets/animation-card-0.svg")},
+        {index: 34, name: "Orbit Motion", family: "Physics", art: @image-url("../assets/animation-card-1.svg")},
+        {index: 35, name: "Zigzag Drift", family: "Physics", art: @image-url("../assets/animation-card-4.svg")},
+        {index: 36, name: "Tumble Settle", family: "Physics", art: @image-url("../assets/animation-card-5.svg")},
+        {index: 37, name: "Push Out", family: "Basic", art: @image-url("../assets/animation-card-6.svg")},
+        {index: 38, name: "Pan Left", family: "Basic", art: @image-url("../assets/animation-card-7.svg")},
+        {index: 39, name: "Pan Up", family: "Basic", art: @image-url("../assets/animation-card-20.svg")},
+        {index: 40, name: "Pan Down", family: "Basic", art: @image-url("../assets/animation-card-21.svg")},
+        {index: 41, name: "Fade Out", family: "Basic", art: @image-url("../assets/animation-card-8.svg")},
+        {index: 42, name: "Rotate Left", family: "Basic", art: @image-url("../assets/animation-card-5.svg")},
+        {index: 43, name: "Rotate Right", family: "Basic", art: @image-url("../assets/animation-card-5.svg")},
+        {index: 44, name: "Opacity Pulse", family: "Basic", art: @image-url("../assets/animation-card-25.svg")}
     ];
     property <[AnimationCardData]> animation-canvas-cards: [
         {index: 9, name: "Top-left to Center", family: "Canvas", art: @image-url("../assets/animation-card-9.svg")},
@@ -2120,7 +2178,21 @@ export component MediaPane inherits Rectangle {
         {index: 26, name: "Alternating Inset", family: "Canvas", art: @image-url("../assets/animation-card-26.svg")},
         {index: 27, name: "Breathing Loop", family: "Canvas", art: @image-url("../assets/animation-card-27.svg")},
         {index: 28, name: "In / Hold / Out", family: "Canvas", art: @image-url("../assets/animation-card-28.svg")},
-        {index: 29, name: "Focus Journey", family: "Canvas", art: @image-url("../assets/animation-card-29.svg")}
+        {index: 29, name: "Focus Journey", family: "Canvas", art: @image-url("../assets/animation-card-29.svg")},
+        {index: 45, name: "Orbit In", family: "Canvas", art: @image-url("../assets/animation-card-30.svg")},
+        {index: 46, name: "Spiral Zoom", family: "Canvas", art: @image-url("../assets/animation-card-31.svg")},
+        {index: 47, name: "S-Curve Glide", family: "Canvas", art: @image-url("../assets/animation-card-32.svg")},
+        {index: 48, name: "Boomerang Return", family: "Canvas", art: @image-url("../assets/animation-card-33.svg")},
+        {index: 49, name: "Push-Pull Zoom", family: "Canvas", art: @image-url("../assets/animation-card-34.svg")},
+        {index: 50, name: "Floating Loop", family: "Canvas", art: @image-url("../assets/animation-card-35.svg")},
+        {index: 51, name: "Edge Sweep", family: "Canvas", art: @image-url("../assets/animation-card-36.svg")},
+        {index: 52, name: "Arc Drift", family: "Canvas", art: @image-url("../assets/animation-card-37.svg")},
+        {index: 53, name: "Pinball Journey", family: "Canvas", art: @image-url("../assets/animation-card-38.svg")},
+        {index: 54, name: "Corner Relay", family: "Canvas", art: @image-url("../assets/animation-card-39.svg")},
+        {index: 55, name: "Staircase Motion", family: "Canvas", art: @image-url("../assets/animation-card-40.svg")},
+        {index: 56, name: "Wave Surf", family: "Canvas", art: @image-url("../assets/animation-card-41.svg")},
+        {index: 57, name: "Magnetic Dock", family: "Canvas", art: @image-url("../assets/animation-card-42.svg")},
+        {index: 58, name: "Rail Switch", family: "Canvas", art: @image-url("../assets/animation-card-43.svg")}
     ];
 
 
@@ -2992,6 +3064,26 @@ export component MediaPane inherits Rectangle {
                         shelf: 3;
                         placeholder: I18n.t1("common.searchKind", I18n.t("mediaPane.transition"));
                     }
+                    // None is a selectable, non-destructive choice, not a catalogue transition.
+                    Rectangle {
+                        height: 38px;
+                        width: 164px;
+                        border-radius: Theme.r-sm;
+                        border-width: 1px;
+                        border-color: LibraryFocus.page == 1 && LibraryFocus.selected-id == "__none_transition__" ? Theme.accent : Theme.line;
+                        background: LibraryFocus.page == 1 && LibraryFocus.selected-id == "__none_transition__" ? Theme.field-active : Theme.field;
+                        Button {
+                            x: 4px; y: 4px; width: parent.width - 8px; height: 30px;
+                            label: "None / No Transition";
+                            clicked => {
+                                LibraryFocus.page = 1;
+                                LibraryFocus.selected-id = "__none_transition__";
+                                LibraryFocus.selected-name = "None / No Transition";
+                                LibraryFocus.selected-category = "Transitions";
+                                LibraryFocus.selected-description = "Select an existing cut or transition, then explicitly remove it in Details. Browsing None makes no changes.";
+                            }
+                        }
+                    }
                     ShelfGrid {
                         entries: root.catalogue-transitions;
                         page-kind: 1;
@@ -3023,6 +3115,26 @@ export component MediaPane inherits Rectangle {
                             : I18n.t1("common.searchKind", I18n.t("common.effect"));
                         reloads: true;
                         reload => { root.reload-packages(); }
+                    }
+                    // Visual-only clear choice: never offered for audio effects or starred/random pools.
+                    if !root.audio-shelf: Rectangle {
+                        height: 38px;
+                        width: 164px;
+                        border-radius: Theme.r-sm;
+                        border-width: 1px;
+                        border-color: LibraryFocus.page == 2 && LibraryFocus.selected-id == "__none_effect__" ? Theme.accent : Theme.line;
+                        background: LibraryFocus.page == 2 && LibraryFocus.selected-id == "__none_effect__" ? Theme.field-active : Theme.field;
+                        Button {
+                            x: 4px; y: 4px; width: parent.width - 8px; height: 30px;
+                            label: "None / No Effect";
+                            clicked => {
+                                LibraryFocus.page = 2;
+                                LibraryFocus.selected-id = "__none_effect__";
+                                LibraryFocus.selected-name = "None / No Effect";
+                                LibraryFocus.selected-category = "Video Effects";
+                                LibraryFocus.selected-description = "Pick exactly one applied visual effect in Details to remove. Other effects, audio and motion stay unchanged.";
+                            }
+                        }
                     }
                     ShelfGrid {
                         entries: root.audio-shelf ? root.catalogue-audio : root.catalogue-effects;
@@ -3076,6 +3188,10 @@ export component MediaPane inherits Rectangle {
                         options: ["Basic / Physics", "Canvas", "Favorites"];
                         current: root.animation-filter;
                         changed(index) => { root.animation-filter = index; }
+                    }
+                    Button {
+                        label: Keyframes.animation-selected == -1 ? "✓ None / No Animation" : "None / No Animation";
+                        clicked => { Keyframes.inspect(-1); }
                     }
                     if root.animation-filter == 0: VerticalLayout {
                         spacing: 6px;

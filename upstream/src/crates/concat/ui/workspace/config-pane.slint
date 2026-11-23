@@ -13,7 +13,7 @@ import { Editor } from "../editor.slint";
 import { LibraryFocus } from "library-focus.slint";
 import { CanvasPresetPanel, CanvasPresetApplyBar } from "canvas-presets.slint";
 import { MediaLayoutPanel, MediaLayoutApplyBar, MediaTargetControls } from "media-layout.slint";
-import { ParticleEffectsPanel, ParticleApplyBar } from "particle-effects.slint";
+import { ParticleBulk, ParticleEffectsPanel, ParticleApplyBar, EffectSettings } from "particle-effects.slint";
 import { CaptionPresetPreview, CaptionPresetPreviewPanel, CaptionPresetApplyBar } from "caption-preset-preview.slint";
 import { PaneKind, PaneSwitcher } from "pane-switcher.slint";
 import { EffectData } from "../demo/effects-panel.slint";
@@ -110,6 +110,72 @@ component TransitionRandomActions inherits VerticalLayout {
         color: Theme.fg-muted; wrap: word-wrap; font-size: Theme.fs-sm; }
 }
 
+// Tab-level settings: unlike TransitionPanel these never edit a selected cut.
+// Browsing Transitions always shows them above the random Apply controls.
+component TransitionTimingControls inherits VerticalLayout {
+    spacing: 8px;
+    padding-top: 8px;
+
+    Text {
+        text: "Transition Timing";
+        color: Theme.fg;
+        font-size: Theme.fs;
+        font-weight: Theme.weight-title;
+    }
+    Param {
+        label: "Duration";
+        value <=> Editor.transition-draft-duration;
+        minimum: 0.1;
+        maximum: 5;
+        step: 0.1;
+        default-value: 0.9;
+        fmt: ParamFormat.seconds2;
+        unit: "s";
+        changed(v) => { Editor.transition-draft-duration-set(v); }
+    }
+    if GpuCompatibility.enabled && GpuCompatibility.transitions: Param {
+        label: "GPU Intensity";
+        value <=> Editor.transition-draft-intensity;
+        minimum: 0;
+        maximum: 1;
+        step: 0.05;
+        default-value: 0.7;
+        fmt: ParamFormat.fraction;
+        unit: "%";
+        unit-scale: 100;
+        changed(v) => { Editor.transition-draft-intensity-set(v); }
+    }
+    Button {
+        label: "Apply Duration to All";
+        clicked => { Editor.transition-duration-all(Editor.transition-draft-duration); }
+    }
+    HorizontalLayout {
+        spacing: 6px;
+        Button {
+            label: "Save Default";
+            horizontal-stretch: 1;
+            clicked => {
+                Editor.transition-default-save(Editor.transition-draft-duration, Editor.transition-draft-intensity);
+            }
+        }
+        Button {
+            label: "Reset Default";
+            horizontal-stretch: 1;
+            clicked => {
+                Editor.transition-draft-duration = 0.9;
+                Editor.transition-draft-intensity = 0.7;
+                Editor.transition-default-reset();
+            }
+        }
+    }
+    Text {
+        text: "These settings apply to new transitions, including Random Apply. Existing cuts remain unchanged unless you explicitly use Apply Duration to All.";
+        color: Theme.fg-muted;
+        font-size: Theme.fs-sm;
+        wrap: word-wrap;
+    }
+}
+
 export component ConfigPane inherits Rectangle {
     // ── the demo-era seams, kept so main.rs keeps compiling ──────────────
     // The meter/mute machinery has nothing to drive since the demo effects
@@ -139,6 +205,7 @@ export component ConfigPane inherits Rectangle {
     // A library inspection belongs to the current project, not to whichever
     // project replaces it. Never keep stale clip/transition context on switch.
     changed project-folder => {
+        ParticleBulk.clear-preview();
         LibraryFocus.page = -1;
         LibraryFocus.selected-id = "";
         LibraryFocus.selected-name = "";
@@ -250,12 +317,18 @@ export component ConfigPane inherits Rectangle {
         "Spring Zoom", "Pendulum Swing", "Gravity Bounce", "Elastic Pop",
         "Inertia Glide", "Damped Shake", "Push In", "Pan Right", "Fade In"
     ];
+    property <[string]> animation-expanded-names: [
+        "Spring Slide", "Floating Bob", "Recoil Kick", "Spiral Zoom", "Orbit Motion",
+        "Zigzag Drift", "Tumble Settle", "Push Out", "Pan Left", "Pan Up",
+        "Pan Down", "Fade Out", "Rotate Left", "Rotate Right", "Opacity Pulse"
+    ];
     property <[string]> animation-canvas-names: [
         "Top-left to Center", "Top-right to Center", "Bottom-left to Center", "Bottom-right to Center",
         "Center Pop", "Zoom at Left", "Zoom at Center", "Zoom at Right", "Reverse to Corner",
         "Slide from Left", "Slide from Right", "Slide from Top", "Slide from Bottom",
         "Diagonal Fly-in", "Spring Settle", "Documentary Pan", "Fade and Scale",
-        "Alternating Inset", "Breathing Loop", "In / Hold / Out", "Focus Journey"
+        "Alternating Inset", "Breathing Loop", "In / Hold / Out", "Focus Journey",
+        "Orbit In", "Spiral Zoom", "S-Curve Glide", "Boomerang Return", "Push-Pull Zoom", "Floating Loop", "Edge Sweep", "Arc Drift", "Pinball Journey", "Corner Relay", "Staircase Motion", "Wave Surf", "Magnetic Dock", "Rail Switch"
     ];
 
     // The tab strip follows the selection, and stays short: three tabs at
@@ -318,7 +391,10 @@ export component ConfigPane inherits Rectangle {
         // user out of Canvas, Transitions or Effects settings.
         if (root.selected.id != root.browsing-selection-id) {
             root.browsing-selection-id = root.selected.id;
-            if LibraryFocus.page != 1 { LibraryFocus.page = -1; }
+            // Target selection must not replace the actively inspected effect.
+            if LibraryFocus.page != 1 && LibraryFocus.page != 2 && LibraryFocus.page != 9 {
+                LibraryFocus.page = -1;
+            }
         }
         if (root.selected.kind != root.strip-kind) {
             root.strip-kind = root.selected.kind;
@@ -453,41 +529,87 @@ export component ConfigPane inherits Rectangle {
                     spacing: 8px;
                     MediaTargetControls { }
                     Text {
-                        text: Keyframes.animation-selected < 9
+                        text: Keyframes.animation-selected == -1 ? "None / No Animation"
+                            : Keyframes.animation-selected < 9
                             ? root.animation-basic-names[Keyframes.animation-selected]
-                            : root.animation-canvas-names[Keyframes.animation-selected - 9];
+                            : Keyframes.animation-selected >= 30 && Keyframes.animation-selected < 45
+                                ? root.animation-expanded-names[Keyframes.animation-selected - 30]
+                                : root.animation-canvas-names[Keyframes.animation-selected >= 45
+                                    ? Keyframes.animation-selected - 24 : Keyframes.animation-selected - 9];
                         color: Theme.fg;
                         font-size: Theme.fs;
                         font-weight: Theme.weight-title;
                     }
                     Text {
-                        text: Keyframes.animation-selected < 6 ? "Physics"
-                            : Keyframes.animation-selected < 9 ? "Basic" : "Canvas Motion";
+                        text: Keyframes.animation-selected == -1 ? "Clear generated motion only"
+                            : Keyframes.animation-selected < 6 || (Keyframes.animation-selected >= 30 && Keyframes.animation-selected < 37) ? "Physics"
+                            : Keyframes.animation-selected < 9 || (Keyframes.animation-selected >= 37 && Keyframes.animation-selected < 45) ? "Basic" : "Canvas Motion";
                         color: Theme.fg-muted;
                         font-size: Theme.fs-sm;
                     }
 
-                    if Keyframes.animation-selected < 9: VerticalLayout {
+                    if (Keyframes.animation-selected >= 0 && Keyframes.animation-selected < 9)
+                        || (Keyframes.animation-selected >= 30 && Keyframes.animation-selected < 45): VerticalLayout {
                         spacing: 8px;
                         Param { label: "Strength"; value <=> Keyframes.physics-strength;
                             minimum: 0.1; maximum: 2; step: 0.1; fmt: ParamFormat.fraction; }
-                        Param { label: "Duration (clip fraction)"; value <=> Keyframes.physics-duration;
-                            minimum: 0.1; maximum: 1; step: 0.05; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Check { checked: Keyframes.canvas-motion.auto-fit;
+                                toggled(on) => { Keyframes.canvas-motion.auto-fit = on; } }
+                            Text { text: "Auto Fit to Clip (default)"; color: Theme.fg; }
+                        }
+                        if !Keyframes.canvas-motion.auto-fit: Param {
+                            label: "Manual Duration (clip fraction)"; value <=> Keyframes.physics-duration;
+                            minimum: 0.1; maximum: 1; step: 0.05; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction;
+                        }
                         Param { label: "Speed"; value <=> Keyframes.physics-speed;
                             minimum: 0.25; maximum: 3; step: 0.05; fmt: ParamFormat.fraction; }
-                        if Keyframes.animation-selected < 6: Param {
+                        if Keyframes.animation-selected < 6 || (Keyframes.animation-selected >= 30 && Keyframes.animation-selected < 37): Param {
                             label: "Physics Intensity"; value <=> Keyframes.physics-intensity;
                             minimum: 0.2; maximum: 2; step: 0.1; fmt: ParamFormat.fraction;
                         }
                         Text { text: "Choose targets above. The selected preset remains active while browsing other tabs.";
                             color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
                     }
-                    if Keyframes.animation-selected >= 9: CanvasMotionPanel {
+                    if (Keyframes.animation-selected >= 9 && Keyframes.animation-selected < 30)
+                        || (Keyframes.animation-selected >= 45 && Keyframes.animation-selected < 59): CanvasMotionPanel {
                         inspector-mode: true;
-                        preset: Keyframes.animation-selected - 9;
+                        preset: Keyframes.animation-selected >= 45 ? Keyframes.animation-selected - 24 : Keyframes.animation-selected - 9;
                         images: Keyframes.animation-images;
                         videos: Keyframes.animation-videos;
                         selected-only: Keyframes.animation-scope == 1;
+                    }
+                    if Keyframes.animation-selected >= 0: HorizontalLayout {
+                        spacing: 8px;
+                        Button {
+                            label: "Save Default";
+                            enabled: Keyframes.animation-dirty;
+                            clicked => { Keyframes.save-current(); }
+                        }
+                        Button {
+                            label: "Reset Default";
+                            enabled: Keyframes.animation-dirty || Keyframes.animation-has-override;
+                            clicked => { Keyframes.reset-current(); }
+                        }
+                    }
+                    if Keyframes.animation-selected >= 0: Text {
+                        text: Keyframes.animation-dirty
+                            ? "Unsaved edits — Save Default to reuse these settings."
+                            : Keyframes.animation-has-override
+                            ? "Saved custom default for this animation."
+                            : "Using original factory defaults.";
+                        color: Theme.fg-muted;
+                        font-size: Theme.fs-sm;
+                        wrap: word-wrap;
+                    }
+                    if Keyframes.animation-selected >= 0: Text {
+                        text: "Switching presets discards unsaved edits. Save/Reset never changes applied timeline animations.";
+                        color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
+                    }
+                    if Keyframes.animation-selected == -1: Text {
+                        text: "Selecting None changes nothing. Use Clear Selected Animation or Clear All Eligible Animations below. Hand-edited keys and unrelated styling are protected.";
+                        color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
                     }
                     Text { text: Keyframes.animation-timing; color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
                     Text {
@@ -537,7 +659,7 @@ export component ConfigPane inherits Rectangle {
                 Rectangle { horizontal-stretch: 1; }
                 Button {
                     label: "Back";
-                    clicked => { LibraryFocus.page = -1; }
+                    clicked => { ParticleBulk.clear-preview(); LibraryFocus.page = -1; }
                 }
                 VerticalLayout {
                     alignment: center;
@@ -589,13 +711,15 @@ export component ConfigPane inherits Rectangle {
                         }
                     }
                     if LibraryFocus.page == 2 && GpuCompatibility.enabled: MediaTargetControls { }
+                    if LibraryFocus.page == 2: EffectSettings { }
                     if LibraryFocus.page == 9: ParticleEffectsPanel { }
                     if LibraryFocus.page >= 10 && LibraryFocus.page <= 13: VerticalLayout {
                         spacing: 8px;
                         MediaTargetControls { }
                         MediaLayoutPanel { page: LibraryFocus.page - 10; }
                     }
-                    if LibraryFocus.page == 1 && root.on-transition: TransitionPanel {
+                    if LibraryFocus.page == 1: TransitionTimingControls { }
+                    if LibraryFocus.page == 1 && root.on-transition && LibraryFocus.selected-id != "__none_transition__": TransitionPanel {
                         transition: root.transition;
                         remove => { root.transition-remove(); }
                         duration-set(seconds) => { root.transition-duration-set(seconds); }
@@ -605,13 +729,51 @@ export component ConfigPane inherits Rectangle {
                         reset-default => { root.transition-default-reset(); }
                     }
 
-                    if LibraryFocus.page == 1 && !root.on-transition: Text {
+                    if LibraryFocus.page == 1 && !root.on-transition && LibraryFocus.selected-id != "__none_transition__": Text {
                         text: "Choose a transition card to apply it to an eligible cut. Select the cut on the timeline to adjust duration or intensity in the inspector. The card's Info action only browses details.";
                         color: Theme.fg-muted;
                         font-size: Theme.fs-sm;
                         wrap: word-wrap;
                     }
-                    if LibraryFocus.page == 2 && root.has-selection: PresetStack {
+                    if LibraryFocus.page == 1 && LibraryFocus.selected-id == "__none_transition__": VerticalLayout {
+                        spacing: 8px;
+                        Text {
+                            text: "Select None without changing the timeline. The button below removes only the selected incoming transition (a normal hard cut).";
+                            color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
+                        }
+                        Button {
+                            label: "Remove Selected Transition";
+                            enabled: root.on-transition || root.has-selection;
+                            clicked => { root.transition-remove(); }
+                        }
+                        if !root.on-transition && !root.has-selection: Text {
+                            text: "Choose a transition boundary or its incoming clip on the timeline.";
+                            color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
+                        }
+                    }
+                    if LibraryFocus.page == 2 && LibraryFocus.selected-id == "__none_effect__": VerticalLayout {
+                        spacing: 8px;
+                        Text {
+                            text: "None never clears the whole effects chain. Remove one applied video effect below; every other link remains.";
+                            color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
+                        }
+                        if root.has-selection && root.applied-visual.length == 0: Text {
+                            text: "No visual effects applied to this clip.";
+                            color: Theme.fg-muted; font-size: Theme.fs-sm;
+                        }
+                        if !root.has-selection: Text {
+                            text: "Select a clip with an applied visual effect first.";
+                            color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
+                        }
+                        if root.has-selection: VerticalLayout {
+                            spacing: 4px;
+                            for entry[index] in root.applied-visual: Button {
+                                label: "Remove " + entry.name;
+                                clicked => { root.chain-remove(false, index); }
+                            }
+                        }
+                    }
+                    if LibraryFocus.page == 2 && root.has-selection && LibraryFocus.selected-id != "__none_effect__": PresetStack {
                         noun: I18n.t("common.effect");
                         library-title: I18n.t("common.effects");
                         library: false;
@@ -704,7 +866,7 @@ export component ConfigPane inherits Rectangle {
                 height: 1px;
                 background: Theme.line;
             }
-                    if LibraryFocus.page == 2 && LibraryFocus.selected-id != "": Button {
+                    if LibraryFocus.page == 2 && LibraryFocus.selected-id != "" && LibraryFocus.selected-id != "__none_effect__": Button {
                         label: "Apply to Selected Clip";
                         enabled: root.has-selection;
                         clicked => { root.chain-add(false, LibraryFocus.selected-id); }

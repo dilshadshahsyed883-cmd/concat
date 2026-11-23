@@ -4,7 +4,8 @@ import { MediaTargetControls } from "media-layout.slint";
 import { Theme } from "../theme/theme.slint";
 import { Button } from "../primitives/modal.slint";
 import { Select } from "../primitives/select.slint";
-import { Check } from "../inspector/controls.slint";
+import { Check, Param, ColourField } from "../inspector/controls.slint";
+import { AppliedParamData, ColourKnobData } from "../inspector/clip-inspector.slint";
 import { IconButton } from "../primitives/panel.slint";
 import { Glyph } from "../icons.slint";
 import { LibraryFocus } from "library-focus.slint";
@@ -28,6 +29,69 @@ export global ParticleBulk {
     callback toggle-favourite(index: int);
     in property <[bool]> favourites;
     in-out property <int> preset: 0;
+
+    // Browser drafts are independent of the selected timeline clip. Rust owns
+    // these values and validates every key against the actual shader manifest.
+    in property <string> draft-id;
+    in property <[AppliedParamData]> draft-params;
+    in property <[ColourKnobData]> draft-colours;
+    callback select-effect(id: string);
+    callback change-param(id: string, key: string, value: float);
+    callback change-colour(id: string, key: string, value: color);
+    callback save-default(id: string);
+    callback reset-default(id: string);
+    callback clear-preview();
+}
+
+/// The same manifest-driven controls work for Color and Particle presets.
+export component EffectSettings inherits VerticalLayout {
+    spacing: 6px;
+    if LibraryFocus.selected-id != "" && ParticleBulk.draft-id == LibraryFocus.selected-id: VerticalLayout {
+        spacing: 6px;
+        Text { text: "Selected Effect Settings"; color: Theme.fg; font-size: Theme.fs; }
+        Text { text: "Preview only until you use Apply. Saved defaults affect new applications, not existing clips.";
+            color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
+        for p in ParticleBulk.draft-params: Rectangle {
+            property <AppliedParamData> data: p;
+            height: knob.preferred-height;
+            changed data => { knob.value = self.data.value; }
+            knob := Param {
+                label: p.label;
+                value: p.value;
+                minimum: p.min;
+                maximum: p.max;
+                step: p.step;
+                default-value: p.default-value;
+                unit: p.unit;
+                fmt: p.fmt;
+                changed(value) => { ParticleBulk.change-param(ParticleBulk.draft-id, p.key, value); }
+            }
+        }
+        for c in ParticleBulk.draft-colours: Rectangle {
+            height: swatch.preferred-height;
+            swatch := ColourField {
+                label: c.label;
+                value: c.value;
+                alpha: false;
+                changed(colour) => { ParticleBulk.change-colour(ParticleBulk.draft-id, c.key, colour); }
+            }
+        }
+        HorizontalLayout {
+            spacing: 6px;
+            Button {
+                label: "Save as Default";
+                clicked => { ParticleBulk.save-default(ParticleBulk.draft-id); }
+            }
+            Button {
+                label: "Reset Default";
+                clicked => { ParticleBulk.reset-default(ParticleBulk.draft-id); }
+            }
+        }
+    }
+    if LibraryFocus.selected-id == "" || ParticleBulk.draft-id != LibraryFocus.selected-id: Text {
+        text: "Select a Color or Particle card to edit its supported settings.";
+        color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
+    }
 }
 export component ParticleEffectsPanel inherits VerticalLayout {
     property <int> preset <=> ParticleBulk.preset;
@@ -38,8 +102,7 @@ export component ParticleEffectsPanel inherits VerticalLayout {
     Text { text: LibraryFocus.selected-name; color: Theme.fg-muted; wrap: word-wrap; }
 
     MediaTargetControls { }
-    Text { text: "Applied overlay parameters remain editable in Effects.";
-        color: Theme.fg-muted; wrap: word-wrap; font-size: Theme.fs-sm; }
+    EffectSettings { }
 }
 
 // The inspector scrolls settings, but not the five existing Apply actions.
@@ -84,7 +147,8 @@ export component ParticlePresetLibrary inherits VerticalLayout {
         LibraryFocus.selected-name = name;
         LibraryFocus.selected-category = index < 4 ? "Light"
             : index < 6 ? "Atmosphere" : index < 9 ? "Weather" : "Motion";
-        LibraryFocus.selected-description = "Apply to selected or all compatible visual clips. Overlay parameters remain editable on the applied clip.";
+        LibraryFocus.selected-description = "Configure this overlay here, then explicitly Apply. Applied instances remain editable on the clip.";
+        ParticleBulk.select-effect(LibraryFocus.selected-id);
     }
     // The backend publishes all twelve stable IDs in preset order.
     property <bool> has-starred:

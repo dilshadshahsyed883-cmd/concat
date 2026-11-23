@@ -67,4 +67,18 @@ mod tests {
             0.04
         );
     }
+    #[test]
+    fn legacy_canvas_controls_gain_auto_fit_and_peak_defaults() {
+        let original = serde_json::to_value(CanvasMotionControls::default()).unwrap();
+        let mut legacy = original.as_object().unwrap().clone();
+        legacy.remove("middle_scale");
+        legacy.remove("peak_time");
+        legacy.remove("auto_fit");
+        let settings = serde_json::json!({"canvas": legacy});
+        let restored = Settings::from_value(Some(&settings));
+        assert!(restored.canvas.auto_fit);
+        assert_eq!(restored.canvas.middle_scale, 1.0);
+        assert_eq!(restored.canvas.peak_time, 0.5);
+    }
+
 }

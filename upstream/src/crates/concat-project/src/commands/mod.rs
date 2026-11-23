@@ -437,6 +437,12 @@ pub enum Command {
         /// Canvas blur and generated mask; None restores unchanged preset-owned styling.
         canvas_style: Option<(f64, Option<ClipMask>)>,
     },
+    /// Explicit None action. Clears exactly owned generated motion and no manual keys.
+    ClearGeneratedMotion {
+        clip_id: String,
+        /// Preflight key signature, checked again when the command executes.
+        expected_keys: Vec<crate::model::ClipKey>,
+    },
     /// Puts a key on one property at one point of a clip, replacing
     /// whichever key on that property was already within a hair of it.
     ///
@@ -1127,6 +1133,8 @@ impl Command {
             Command::ReplaceClipMedia {
                 item, source_start, ..
             } => bad(item.duration) || bad(item.frame_rate) || bad(*source_start),
+            Command::ClearGeneratedMotion { expected_keys, .. } =>
+                expected_keys.iter().any(|key| bad([key.at, key.value]) || bad(key.ease.0)),
             Command::ApplyGeneratedMotion { expected_keys, keys, canvas_style, .. } => {
                 expected_keys.iter().chain(keys).any(|key| bad([key.at, key.value]) || bad(key.ease.0))
                     || canvas_style.as_ref().is_some_and(|(blur, mask)| {
@@ -1299,7 +1307,7 @@ fn apply_inner(project: &mut Project, mint: &mut IdMint, command: Command) -> Re
         | Command::MergeClips { .. }
         | Command::ConsolidateClips { .. }
         | Command::RemoveClips { .. }) => clips::apply(project, mint, command),
-        command @ (Command::ApplyGeneratedMotion { .. } | Command::UpdateClip { .. }
+        command @ (Command::ApplyGeneratedMotion { .. } | Command::ClearGeneratedMotion { .. } | Command::UpdateClip { .. }
         | Command::SetClipSpeed { .. }
         | Command::SetClipCutout { .. }
         | Command::AddCutoutStroke { .. }
