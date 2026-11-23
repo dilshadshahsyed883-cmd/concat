@@ -279,12 +279,16 @@ export global Keyframes {
     in-out property <AnimationInspectorData> animation-saved;
     in-out property <bool> animation-has-override: false;
     // Compare against the last loaded defaults; loading never marks the panel dirty.
-    out property <bool> animation-dirty: animation-selected < 0 ? false : (animation-selected < 9 || animation-selected >= 30)
+    out property <bool> animation-dirty: animation-selected < 0 ? false : (animation-selected < 9 || (animation-selected >= 30 && animation-selected < 45))
         ? (physics-strength != animation-saved.strength
             || physics-duration != animation-saved.duration
             || physics-speed != animation-saved.speed
-            || ((animation-selected < 6 || (animation-selected >= 30 && animation-selected < 37)) && physics-intensity != animation-saved.intensity))
+            || ((animation-selected < 6 || (animation-selected >= 30 && animation-selected < 37)) && physics-intensity != animation-saved.intensity)
+            || canvas-motion.auto-fit != animation-saved.canvas.auto-fit)
         : (canvas-motion.start-scale != animation-saved.canvas.start-scale
+            || canvas-motion.middle-scale != animation-saved.canvas.middle-scale
+            || canvas-motion.peak-time != animation-saved.canvas.peak-time
+            || canvas-motion.auto-fit != animation-saved.canvas.auto-fit
             || canvas-motion.end-scale != animation-saved.canvas.end-scale
             || canvas-motion.duration != animation-saved.canvas.duration
             || canvas-motion.delay != animation-saved.canvas.delay

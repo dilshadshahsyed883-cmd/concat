@@ -734,7 +734,7 @@ impl Studio {
     pub fn remember_animation_settings(&mut self,index:i32,strength:f32,duration:f32,speed:f32,intensity:f32,canvas:crate::ui::CanvasMotionData) {
         let Some(id)=animation_favourite_id(index) else {return;};
         let mut saved=self.animation_settings(index);
-        if (9..30).contains(&index) {saved.canvas=canvas_controls(&canvas);saved.corners=f64::from(canvas.corner_radius).clamp(0.0,0.2);}
+        if (9..30).contains(&index) || (45..59).contains(&index) {saved.canvas=canvas_controls(&canvas);saved.corners=f64::from(canvas.corner_radius).clamp(0.0,0.2);}
         else {
             saved.physics=PhysicsControls {strength:f64::from(strength),duration:f64::from(duration),speed:f64::from(speed),intensity:f64::from(intensity)};
             saved.canvas.auto_fit=canvas.auto_fit;
@@ -803,7 +803,9 @@ impl Studio {
         let permitted:Vec<_>=pool.into_iter().filter_map(|index|{
             let id=animation_favourite_id(index)?;
             if !self.prefs.physics_motion_favourites.iter().any(|f|f==id) {return None;}
-            let preset=if (9..30).contains(&index) {MotionKind::Canvas(CanvasMotionPreset::from_index(index-9)?)} else {animation_from_index(index)?};
+            let preset=if (9..30).contains(&index) || (45..59).contains(&index) {
+                MotionKind::Canvas(CanvasMotionPreset::from_index(if index>=45 {index-24}else{index-9})?)
+            } else {animation_from_index(index)?};
             Some((preset,self.animation_settings(index)))
         }).collect();
         if permitted.is_empty() {self.notify("Select at least one starred animation for the Favorites pool.",true);return;}
@@ -863,7 +865,10 @@ impl Studio {
                 || (ui.get_animation_scope()==1 && !self.selection.contains(&clip.id)) || self.locked(&clip.track_id)
                 || self.timeline().track(&clip.track_id).is_none_or(|t|!t.visible) {continue;}
             let Some(base)=concat_project::motion_preset::preset_base(clip,std::iter::empty()) else {continue;};
-            let keys=if (9..30).contains(&index) {CanvasMotionPreset::from_index(index-9).and_then(|p|p.keys(&base,self.frame_seconds(),canvas).ok())}
+            let keys=if (9..30).contains(&index) || (45..59).contains(&index) {
+                CanvasMotionPreset::from_index(if index>=45 {index-24}else{index-9})
+                    .and_then(|p|p.keys(&base,self.frame_seconds(),canvas).ok())
+            }
                 else {animation_from_index(index).and_then(|p|match p {
                     MotionKind::Basic(p)=>p.keys_with(&base,self.frame_seconds(),physics.strength,if auto_fit {1.0}else{physics.duration},if auto_fit {1.0}else{physics.speed}).ok().map(|k|k.0.to_vec()),
                     MotionKind::Physics(p)=>p.keys_with(&base,self.frame_seconds(),PhysicsControls {duration:if auto_fit {1.0}else{physics.duration},..physics}).ok().map(|k|k.0),_=>None})};
@@ -1303,11 +1308,14 @@ mod tests {
         assert!(animation_from_index(29).is_none());
         assert!(animation_from_index(30).is_some());
         assert!(animation_from_index(44).is_some());
-        assert_eq!(animation_favourite_id(45), None);
-        let ids: HashSet<_> = (0..45).map(|index| animation_favourite_id(index).unwrap()).collect();
-        assert_eq!(ids.len(), 45, "all persisted animation IDs must remain unique");
-        for canvas_index in 0..21 {
-            assert_eq!(animation_favourite_id(canvas_index + 9),
+        assert_eq!(animation_favourite_id(45), Some(CanvasMotionPreset::ALL[21].id()));
+        assert_eq!(animation_favourite_id(58), Some(CanvasMotionPreset::ALL[34].id()));
+        assert_eq!(animation_favourite_id(59), None);
+        let ids: HashSet<_> = (0..59).map(|index| animation_favourite_id(index).unwrap()).collect();
+        assert_eq!(ids.len(), 59, "all persisted animation IDs must remain unique");
+        for canvas_index in 0..35 {
+            let card_index = if canvas_index < 21 { canvas_index+9 } else { canvas_index+24 };
+            assert_eq!(animation_favourite_id(card_index),
                 CanvasMotionPreset::from_index(canvas_index).map(CanvasMotionPreset::id));
         }
         for index in (0..9).chain(30..45) {

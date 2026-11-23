@@ -30,7 +30,7 @@ export component AnimationApplyBar inherits VerticalLayout {
         enabled: root.targets; clicked => {root.apply(Keyframes.animation-scope == 1,2);}
     }
     if !Keyframes.animation-favourites-browser && Keyframes.animation-selected >= 0: Button {
-        label: (Keyframes.animation-selected < 9 || Keyframes.animation-selected >= 30) ? "Favorite Basic / Physics Randomly" : "Favorite Canvas Motion Randomly";
+        label: (Keyframes.animation-selected < 9 || (Keyframes.animation-selected >= 30 && Keyframes.animation-selected < 45)) ? "Favorite Basic / Physics Randomly" : "Favorite Canvas Motion Randomly";
         enabled: root.targets; clicked => {root.apply(Keyframes.animation-scope == 1,3);}
     }
 }

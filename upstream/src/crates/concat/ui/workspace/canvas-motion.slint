@@ -135,19 +135,6 @@ export component CanvasMotionPanel inherits VerticalLayout {
         current: root.settings.easing;
         changed(index) => { root.settings.easing = index; }
     }
-    HorizontalLayout {
-        spacing: 8px;
-        Button { label: "Save as Default";
-            clicked => {
-                Keyframes.remember-current();
-                Keyframes.save-animation-default(Keyframes.animation-selected);
-            }
-        }
-        Button { label: "Reset Default";
-            clicked => {
-                Keyframes.reset-animation-default(Keyframes.animation-selected);
-                Keyframes.restore-current();
-            }
-        }
-    }
+    // Save Default / Reset Default are rendered once by the shared
+    // animation inspector, which applies to Basic, Physics and Canvas.
 }
