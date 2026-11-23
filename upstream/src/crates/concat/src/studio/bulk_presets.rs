@@ -569,7 +569,11 @@ impl Studio {
             };
             if incoming.transition_in.as_ref() == Some(&transition) {
                 unchanged += 1;
-                continue;
+                // Even a visually identical explicit Apply transfers authorship
+                // from Random to Manual so a later reroll cannot overwrite it.
+                if !incoming.extra.contains_key("concatRandomTransition") {
+                    continue;
+                }
             }
             commands.push(Command::UpdateClip {
                 clip_id: incoming.id.clone(),
