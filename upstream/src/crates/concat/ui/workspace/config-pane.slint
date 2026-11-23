@@ -601,7 +601,7 @@ export component ConfigPane inherits Rectangle {
                         MediaTargetControls { }
                         MediaLayoutPanel { page: LibraryFocus.page - 10; }
                     }
-                    if LibraryFocus.page == 1 && root.on-transition: TransitionPanel {
+                    if LibraryFocus.page == 1 && root.on-transition && LibraryFocus.selected-id != "__none_transition__": TransitionPanel {
                         transition: root.transition;
                         remove => { root.transition-remove(); }
                         duration-set(seconds) => { root.transition-duration-set(seconds); }
@@ -611,13 +611,51 @@ export component ConfigPane inherits Rectangle {
                         reset-default => { root.transition-default-reset(); }
                     }
 
-                    if LibraryFocus.page == 1 && !root.on-transition: Text {
+                    if LibraryFocus.page == 1 && !root.on-transition && LibraryFocus.selected-id != "__none_transition__": Text {
                         text: "Choose a transition card to apply it to an eligible cut. Select the cut on the timeline to adjust duration or intensity in the inspector. The card's Info action only browses details.";
                         color: Theme.fg-muted;
                         font-size: Theme.fs-sm;
                         wrap: word-wrap;
                     }
-                    if LibraryFocus.page == 2 && root.has-selection: PresetStack {
+                    if LibraryFocus.page == 1 && LibraryFocus.selected-id == "__none_transition__": VerticalLayout {
+                        spacing: 8px;
+                        Text {
+                            text: "Select None without changing the timeline. The button below removes only the selected incoming transition (a normal hard cut).";
+                            color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
+                        }
+                        Button {
+                            label: "Remove Selected Transition";
+                            enabled: root.on-transition || root.has-selection;
+                            clicked => { root.transition-remove(); }
+                        }
+                        if !root.on-transition && !root.has-selection: Text {
+                            text: "Choose a transition boundary or its incoming clip on the timeline.";
+                            color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
+                        }
+                    }
+                    if LibraryFocus.page == 2 && LibraryFocus.selected-id == "__none_effect__": VerticalLayout {
+                        spacing: 8px;
+                        Text {
+                            text: "None never clears the whole effects chain. Remove one applied video effect below; every other link remains.";
+                            color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
+                        }
+                        if root.has-selection && root.applied-visual.length == 0: Text {
+                            text: "No visual effects applied to this clip.";
+                            color: Theme.fg-muted; font-size: Theme.fs-sm;
+                        }
+                        if !root.has-selection: Text {
+                            text: "Select a clip with an applied visual effect first.";
+                            color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
+                        }
+                        if root.has-selection: VerticalLayout {
+                            spacing: 4px;
+                            for entry[index] in root.applied-visual: Button {
+                                label: "Remove " + entry.name;
+                                clicked => { root.chain-remove(false, index); }
+                            }
+                        }
+                    }
+                    if LibraryFocus.page == 2 && root.has-selection && LibraryFocus.selected-id != "__none_effect__": PresetStack {
                         noun: I18n.t("common.effect");
                         library-title: I18n.t("common.effects");
                         library: false;
@@ -710,7 +748,7 @@ export component ConfigPane inherits Rectangle {
                 height: 1px;
                 background: Theme.line;
             }
-                    if LibraryFocus.page == 2 && LibraryFocus.selected-id != "": Button {
+                    if LibraryFocus.page == 2 && LibraryFocus.selected-id != "" && LibraryFocus.selected-id != "__none_effect__": Button {
                         label: "Apply to Selected Clip";
                         enabled: root.has-selection;
                         clicked => { root.chain-add(false, LibraryFocus.selected-id); }
