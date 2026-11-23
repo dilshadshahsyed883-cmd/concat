@@ -43,11 +43,17 @@ class MergedConcatContractTests(unittest.TestCase):
 
         ui = (source / "concat/ui/workspace/media-pane.slint").read_text()
         inspector = (source / "concat/ui/workspace/config-pane.slint").read_text()
-        for label in ("Apply to Selected Randomly", "Apply Favorites to All Randomly"):
-            self.assertNotIn(label, ui)
+        # Issue 116 supersedes the old three-button random contract.
+        for obsolete in ("Apply to Selected Randomly", "Apply Favorites to All Randomly"):
+            self.assertNotIn(obsolete, ui)
+            self.assertNotIn(obsolete, inspector)
+        for label in ('label: "Apply Randomly"', 'label: "Apply Favorites Randomly"'):
             self.assertIn(label, inspector)
-        self.assertIn("Editor.library-apply-random-transitions(1)", inspector)
-        self.assertIn("Editor.library-apply-random-transitions(2)", inspector)
+        self.assertIn('Editor.library-apply-random-transitions(0, Editor.transition-images, Editor.transition-videos, Editor.transition-scope == 1)', inspector)
+        self.assertIn('Editor.library-apply-random-transitions(1, Editor.transition-images, Editor.transition-videos, Editor.transition-scope == 1)', inspector)
+        self.assertNotIn('root.apply-transition(id);', ui)
+        self.assertIn('label: "Clear Selected Transition(s)"', inspector)
+        self.assertIn('label: "Clear All Eligible Transitions"', inspector)
 
         captions = (source / "concat/src/panes/captions.rs").read_text()
         self.assertIn("karaoke_words_aligned(&segments, subject.start, subject.speed)", captions)
