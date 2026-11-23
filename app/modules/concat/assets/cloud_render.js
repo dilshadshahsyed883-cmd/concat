@@ -217,25 +217,101 @@
   for (const [action, label] of [["start","Queue started"],["pause","Queue paused"],["resume","Queue resumed"]]) {
     $("cr-"+action+"-queue").onclick = () => productionAction("/queue/"+action, label);
   }
-  $("cr-production-form").onsubmit = async event => {
-    event.preventDefault();
-    const input = $("cr-drive-link");
-    const submit = $("cr-scan");
-    submit.disabled = true;
+  let savedDriveLink = '', driveBusy = false, sourceLoading = false, sourceSaving = false;
+  const driveDialog = $('cr-drive-source-dialog');
+  const updateDriveControls = () => {
+    $('cr-scan').disabled = driveBusy || sourceSaving;
+    $('cr-edit-drive-source').disabled = driveBusy || sourceLoading || sourceSaving;
+    $('cr-sync-drive').disabled = driveBusy || sourceLoading || sourceSaving || !savedDriveLink;
+    $('cr-save-drive-source').disabled = driveBusy || sourceLoading || sourceSaving;
+  };
+  async function loadDriveSource() {
+    sourceLoading = true;
+    updateDriveControls();
     try {
-      msg("Scanning Drive…");
-      const result = await send("/production/scan", {link:input.value.trim()});
-      msg(result.added || result.duplicates
-        ? result.added+" added · "+result.duplicates+" already in the queue"
-        : "No ZIP files found in this folder.");
-      input.value = "";
-      await loadProduction();
-    } catch (e) {
-      msg(e.message, true);
+      const source = await api('/production/drive-source');
+      savedDriveLink = typeof source.link === 'string' ? source.link : '';
+      $('cr-saved-drive-link').value = savedDriveLink;
+      $('cr-drive-source-state').textContent = savedDriveLink
+        ? 'Saved Drive link ready. Click Sync Drive to scan for new ZIPs.'
+        : 'Save a Drive link to enable Sync Drive.';
     } finally {
-      submit.disabled = false;
+      sourceLoading = false;
+      updateDriveControls();
+    }
+  }
+  $('cr-edit-drive-source').onclick = async () => {
+    if (driveBusy || sourceSaving || driveDialog.open) return;
+    $('cr-drive-source-message').textContent = 'Loading saved link…';
+    $('cr-saved-drive-link').disabled = true;
+    driveDialog.showModal();
+    try {
+      await loadDriveSource();
+      $('cr-drive-source-message').textContent = '';
+    } catch (error) {
+      $('cr-drive-source-message').textContent = error.message;
+    } finally {
+      $('cr-saved-drive-link').disabled = false;
+      if (driveDialog.open) $('cr-saved-drive-link').focus();
     }
   };
+  $('cr-close-drive-source').onclick = () => { driveDialog.close(); $('cr-edit-drive-source').focus(); };
+  $('cr-drive-source-form').onsubmit = async event => {
+    event.preventDefault();
+    if (sourceSaving || sourceLoading || driveBusy) return;
+    sourceSaving = true;
+    $('cr-save-drive-source').textContent = 'Saving…';
+    updateDriveControls();
+    try {
+      const source = await send('/production/drive-source', {link: $('cr-saved-drive-link').value.trim()});
+      savedDriveLink = source.link;
+      $('cr-drive-source-state').textContent = 'Drive link saved. Click Sync Drive to scan for new ZIPs.';
+      $('cr-drive-source-message').textContent = '';
+      driveDialog.close();
+      $('cr-edit-drive-source').focus();
+    } catch (error) {
+      $('cr-drive-source-message').textContent = error.message;
+    } finally {
+      sourceSaving = false;
+      $('cr-save-drive-source').textContent = 'Save Drive Link';
+      updateDriveControls();
+      if (!driveDialog.open) $('cr-edit-drive-source').focus();
+    }
+  };
+  async function scanDrive(saved) {
+    if (driveBusy || (saved && !savedDriveLink)) return;
+    driveBusy = true;
+    const trigger = $(saved ? 'cr-sync-drive' : 'cr-scan');
+    const label = trigger.textContent;
+    trigger.textContent = saved ? 'Syncing Drive…' : 'Scanning Drive…';
+    trigger.setAttribute('aria-busy', 'true');
+    updateDriveControls();
+    $('cr-drive-source-state').textContent = saved ? 'Syncing saved Drive link…' : 'Scanning Drive link…';
+    try {
+      msg("Scanning Drive…");
+      const result = await send(saved ? '/production/sync-drive' : '/production/scan',
+        saved ? {} : {link: $('cr-drive-link').value.trim()});
+      const summary = result.added + ' added · ' + result.duplicates + ' duplicates · ' + (result.failed || 0) + ' failed';
+      const text = (result.added || result.duplicates) ? summary : 'No ZIP files found. ' + summary;
+      msg(text);
+      $('cr-drive-source-state').textContent = text;
+      if (!saved) $('cr-drive-link').value = '';
+      await loadProduction().catch(() => msg(text + ' · Queue refresh failed; refresh the page.', true));
+    } catch (e) {
+      msg(e.message, true);
+      $('cr-drive-source-state').textContent = 'Drive scan failed: ' + e.message;
+    } finally {
+      driveBusy = false;
+      trigger.textContent = label;
+      trigger.setAttribute('aria-busy', 'false');
+      updateDriveControls();
+    }
+  }
+  $('cr-production-form').onsubmit = event => {
+    event.preventDefault();
+    return scanDrive(false);
+  };
+  $('cr-sync-drive').onclick = () => scanDrive(true);
   document.querySelectorAll(".cr-tabs button").forEach(b=>b.addEventListener("click",()=>{
     document.querySelectorAll(".cr-tabs button").forEach(x=>{
       const active=x===b;x.classList.toggle("active",active);x.setAttribute("aria-selected",String(active));
@@ -306,6 +382,7 @@
     if (chosen) chosen.click();
   }
   Promise.all([loadConfig(),loadProduction()]).catch(e=>msg(e.message,true));
+  loadDriveSource().catch(() => { $('cr-drive-source-state').textContent = 'Could not load the saved Drive link. Use Save / Edit Drive Link to retry.'; });
   // Refresh state labels while Production is visible.
   window.setInterval(()=>{if(!document.hidden&&(!$("cr-production").hidden||!$("cr-gpu").hidden))loadProduction().catch(()=>{});},5000);
   // Refresh the visible list to surface queued/verified delivery states.

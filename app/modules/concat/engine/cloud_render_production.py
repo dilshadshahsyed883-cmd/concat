@@ -336,6 +336,7 @@ class ProductionQueue:
         self.thread = None
         self.intake_thread = None
         self.observation_cursor = 0
+        self.source_sync_lock = threading.Lock()
         with manager.connection() as con:
             con.execute("""CREATE TABLE IF NOT EXISTS production_jobs(
                 id INTEGER PRIMARY KEY AUTOINCREMENT, remote_id TEXT NOT NULL UNIQUE,
@@ -413,6 +414,33 @@ class ProductionQueue:
                     delay = 8
                 self.intake_wake.wait(delay)
                 self.intake_wake.clear()
+
+    def drive_source(self):
+        with self.media.connection() as con:
+            return {'link': self.media.get(con, 'production_drive_source')}
+
+    def save_drive_source(self, obj):
+        if not isinstance(obj, dict) or set(obj) != {'link'} or not isinstance(obj['link'], str):
+            raise HTTPException(400, 'Provide a Google Drive folder or ZIP link')
+        link = obj['link'].strip()
+        try:
+            drive_link(link)
+        except JobError as exc:
+            raise HTTPException(400, str(exc)) from None
+        with self.media.lock, self.media.connection() as con:
+            self.media.put(con, 'production_drive_source', link)
+        return {'link': link}
+
+    def sync_drive_source(self):
+        if not self.source_sync_lock.acquire(blocking=False):
+            raise HTTPException(409, 'Drive sync is already running')
+        try:
+            link = self.drive_source()['link']
+            if not link:
+                raise HTTPException(400, 'Save a Drive link before syncing')
+            return {**self.scan(link), 'failed': 0}
+        finally:
+            self.source_sync_lock.release()
 
     def scan(self, link):
         try:

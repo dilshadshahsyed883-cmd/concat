@@ -88,6 +88,78 @@ class StudioTests(unittest.TestCase):
         self.granted = False
         self.assertEqual(self.client.get('/api/cloud-render/metrics/report').status_code, 403)
 
+    def test_saved_drive_link_validation_csrf_and_owner_isolation(self):
+        token = self.auth_csrf()
+        url = '/api/cloud-render/production/drive-source'
+        sync = '/api/cloud-render/production/sync-drive'
+        link = 'https://drive.google.com/drive/folders/folder_1?resourcekey=key_1'
+        self.assertEqual(self.client.get(url).json(), {'link': ''})
+        self.assertEqual(self.client.post(url, json={'link': link}).status_code, 403)
+        self.assertEqual(self.client.post(sync).status_code, 403)
+        self.assertEqual(self.client.post(url, headers={**token, 'Origin': 'https://evil.test'}, json={'link': link}).status_code, 403)
+        self.assertEqual(self.client.post(sync, headers=token).status_code, 400)
+        for body in (None, [], {'link': 1}, {'link': ''}, {'link': 'https://evil.test/folder'},
+                     {'link': 'https://drive.google.com.evil.test/drive/folders/a'},
+                     {'link': link, 'owner': 'bob'}):
+            self.assertEqual(self.client.post(url, headers=token, json=body).status_code, 400)
+        self.assertEqual(self.client.post(url, headers={**token, 'Content-Type': 'application/json'}, content='{bad').status_code, 400)
+        manager = get_registry(self.app).for_principal(Principal('alice'))
+        with patch.object(manager.production.drive, 'discover') as discover:
+            self.assertEqual(self.client.post(url, headers=token, json={'link': '  '+link+'  '}).json(), {'link': link})
+            discover.assert_not_called()
+        reply = self.client.get(url)
+        self.assertEqual(reply.json(), {'link': link})
+        self.assertIn('no-store', reply.headers['cache-control'])
+        self.owner = 'bob'
+        self.assertEqual(self.client.get(url).json(), {'link': ''})
+        self.owner = None
+        self.assertEqual(self.client.get(url).status_code, 401)
+        self.owner = 'alice'
+        self.granted = False
+        self.assertEqual(self.client.get(url).status_code, 403)
+
+    def test_saved_drive_sync_reuses_dedup_and_preserves_pause_and_manual_source(self):
+        token = self.auth_csrf()
+        manager = get_registry(self.app).for_principal(Principal('alice'))
+        manager.production.close()
+        source = 'https://drive.google.com/drive/folders/saved-folder'
+        self.client.post('/api/cloud-render/production/drive-source', headers=token, json={'link': source})
+        candidates = [('drive-one', 'one.zip', '', 0, '', 'saved-folder', 'one.zip'),
+                      ('drive-two', 'two.zip', '', 0, '', 'saved-folder', 'two.zip')]
+        manager.production.control('pause')
+        with patch.object(manager.production.drive, 'discover', return_value=candidates) as discover:
+            one = self.client.post('/api/cloud-render/production/sync-drive', headers=token).json()
+            self.assertEqual(one, {'added': 2, 'duplicates': 0, 'failed': 0})
+            with manager.connection() as con:
+                con.execute("UPDATE production_jobs SET state='Completed' WHERE drive_id='drive-one'")
+            two = self.client.post('/api/cloud-render/production/sync-drive', headers=token).json()
+            self.assertEqual(two, {'added': 0, 'duplicates': 2, 'failed': 0})
+            self.assertEqual(discover.call_args.args, (source,))
+            manual = 'https://drive.google.com/file/d/manual-file/view'
+            self.assertEqual(self.client.post('/api/cloud-render/production/scan', headers=token, json={'link': manual}).status_code, 200)
+            self.assertEqual(discover.call_args.args, (manual,))
+        self.assertEqual(manager.production.drive_source(), {'link': source})
+        self.assertEqual(manager.production.snapshot()['state'], 'paused')
+        restored = CloudRender(manager.root, manager.tenant_key)
+        self.addCleanup(restored.pool.shutdown, wait=True)
+        self.assertEqual(restored.production.drive_source(), {'link': source})
+
+    def test_saved_sync_failure_and_overlap_release_lock(self):
+        token = self.auth_csrf()
+        manager = get_registry(self.app).for_principal(Principal('alice'))
+        manager.production.close()
+        manager.production.save_drive_source({'link': 'https://drive.google.com/drive/folders/saved-folder'})
+        path = '/api/cloud-render/production/sync-drive'
+        manager.production.source_sync_lock.acquire()
+        try:
+            self.assertEqual(self.client.post(path, headers=token).status_code, 409)
+        finally:
+            manager.production.source_sync_lock.release()
+        with patch.object(manager.production.drive, 'discover', side_effect=RuntimeError('Drive source permission denied')):
+            self.assertEqual(self.client.post(path, headers=token).status_code, 422)
+        with patch.object(manager.production.drive, 'discover', return_value=[]):
+            self.assertEqual(self.client.post(path, headers=token).json(), {'added': 0, 'duplicates': 0, 'failed': 0})
+
     def test_csrf_and_cross_origin_mutations(self):
         token = self.auth_csrf()
         self.assertEqual(self.client.post("/api/cloud-render/config", json={"auto_upload": True}).status_code, 403)

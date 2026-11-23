@@ -12,6 +12,9 @@ class Element {
   replaceChildren(...nodes) { this.children=nodes; }
   append(...nodes) { this.children.push(...nodes); }
   appendChild(node) { this.children.push(node); }
+  showModal() { this.open=true; }
+  close() { this.open=false; }
+  focus() {}
 }
 const dom=Object.fromEntries([...html.matchAll(/id="([^"]+)"/g)].map(x=>[x[1],new Element(x[1])]));
 for(const match of html.matchAll(/<input\s+([^>]+)>/g)){
@@ -21,9 +24,11 @@ for(const match of html.matchAll(/<input\s+([^>]+)>/g)){
  dom[id].previousElementSibling={textContent:id};
 }
 dom['cloud-render'].dataset={csrf:'offline-test',initialTab:'production'};
+dom['cr-sync-drive'].textContent='Sync Drive';
 const tabs=['production','media','gpu'].map(tab=>{const element=new Element(tab);element.dataset.tab=tab;return element;});
 let config={auto_start:false,auto_shutdown:false,idle_timeout_minutes:5,concurrency:1,image_pull_threshold:8,image_pull_seconds:20,salad_max_reallocations:3,salad_reallocate_cooldown:30};
 let saved=null, retryCalls=0;
+let driveSource='', syncCalls=0, releaseSync=null, holdSync=false, failSync=false;
 const context={
  document:{hidden:false,getElementById:id=>dom[id],createElement:tag=>new Element(tag),querySelectorAll:()=>tabs},
  window:{setInterval(){},confirm:()=>true,location:{origin:'https://fixture.example'}}, URL, console,
@@ -36,6 +41,15 @@ const context={
   else if(url.endsWith('/production'))data={state:'running',active:0,concurrency:1,items:[],worker:{...config,salad_worker_status:'checking_download',salad_worker_progress:5,salad_reallocations:0,salad_idle_status:'busy'}};
   else if(url.endsWith('/auto-retry'))retryCalls++;
   else if(url.includes('/gpu/worker/'))data={ok:true};
+  else if(url.endsWith('/production/drive-source')) {
+   if(options.method==='POST') driveSource=JSON.parse(options.body).link;
+   data={link:driveSource};
+  } else if(url.endsWith('/production/sync-drive')) {
+   syncCalls++;
+   if(holdSync) await new Promise(resolve=>{releaseSync=resolve;});
+   if(failSync) return {ok:false,headers:{get:()=> 'application/json'},json:async()=>({detail:'Drive permission denied'})};
+   data={added:1,duplicates:2,failed:0};
+  }
   return {ok:true,headers:{get:()=> 'application/json'},json:async()=>data};
  }
 };
@@ -47,6 +61,7 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
  assert.equal(dom['cr-connection-setup'].open,true,'incomplete setup expands');
  assert.equal(dom['cr-pull-threshold'].value,'8');
  assert.equal(dom['cr-pull-seconds'].value,'20');
+ assert.equal(dom['cr-sync-drive'].disabled,true,'no saved link disables sync');
  dom['cr-auto-start'].value='automatic';
  dom['cr-auto-start'].events.change();
  assert.equal(dom['cr-manual-start'].disabled,true);
@@ -91,6 +106,33 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
  dom['cr-report-hours'].value='168';
  dom['cr-report-hours'].events.change();
  assert.equal(dom['cr-download-report'].href,'/api/cloud-render/metrics/report?hours=168');
+ await dom['cr-edit-drive-source'].onclick();
+ assert.equal(dom['cr-drive-source-dialog'].open,true);
+ dom['cr-saved-drive-link'].value='https://drive.google.com/drive/folders/saved-folder';
+ await dom['cr-drive-source-form'].onsubmit({preventDefault(){}});
+ assert.equal(driveSource,'https://drive.google.com/drive/folders/saved-folder');
+ assert.equal(syncCalls,0,'saving never triggers scan');
+ assert.equal(dom['cr-sync-drive'].disabled,false);
+ assert.equal(dom['cr-drive-source-dialog'].open,false);
+ dom['cr-drive-link'].value='https://drive.google.com/file/d/manual-file/view';
+ holdSync=true;
+ const pending=dom['cr-sync-drive'].onclick();
+ await flush();
+ assert.equal(dom['cr-sync-drive'].disabled,true);
+ assert.equal(dom['cr-scan'].disabled,true);
+ assert.equal(dom['cr-edit-drive-source'].disabled,true);
+ assert.match(dom['cr-sync-drive'].textContent,/Syncing/);
+ await dom['cr-sync-drive'].onclick();
+ assert.equal(syncCalls,1,'double click does not issue a second request');
+ releaseSync(); await pending;
+ assert.match(dom['cr-drive-source-state'].textContent,/1 added.*2 duplicates.*0 failed/);
+ assert.equal(dom['cr-drive-link'].value,'https://drive.google.com/file/d/manual-file/view');
+ assert.equal(dom['cr-sync-drive'].disabled,false);
+ holdSync=false; failSync=true;
+ await dom['cr-sync-drive'].onclick();
+ assert.equal(dom['cr-sync-drive'].disabled,false,'errors restore controls');
+ assert.match(dom['cr-drive-source-state'].textContent,/permission denied/);
+ assert.equal(dom['cr-sync-drive'].textContent,'Sync Drive');
  dom['cr-report-hours'].value='999';
  dom['cr-report-hours'].events.change();
  assert.equal(dom['cr-download-report'].href,'/api/cloud-render/metrics/report?hours=168');

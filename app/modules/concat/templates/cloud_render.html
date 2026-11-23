@@ -2,7 +2,7 @@
 {% block title %}Concat{% endblock %}
 {% block subtitle %}Concat Production queue, rendered media and SaladCloud GPU connection{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="/concat/assets/cloud_render.css?v=20261123-report-v1">
+<link rel="stylesheet" href="/concat/assets/cloud_render.css?v=20261123-drive-source-v1">
 <section id="cloud-render" data-csrf="{{ csrf_token }}" data-initial-tab="{{ initial_tab }}" aria-labelledby="cloud-heading">
   <h2 id="cloud-heading" class="visually-hidden">Concat Studio workspace</h2>
   <div class="cr-navigation">
@@ -23,7 +23,14 @@
         <input id="cr-drive-link" type="url" placeholder="https://drive.google.com/..." autocomplete="off" required>
       </div>
       <p class="cr-note">Add a folder of Concat ZIPs or one ZIP. Share private links with your configured Drive account.</p>
-      <button class="cr-btn primary" id="cr-scan" type="submit">Scan &amp; Add to Queue</button>
+      <div class="cr-actions cr-drive-actions">
+        <button class="cr-btn primary" id="cr-scan" type="submit">Scan &amp; Add to Queue</button>
+        <div class="cr-saved-drive-actions">
+          <button class="cr-btn secondary" id="cr-edit-drive-source" type="button">Save / Edit Drive Link</button>
+          <button class="cr-btn secondary" id="cr-sync-drive" type="button" disabled>Sync Drive</button>
+        </div>
+      </div>
+      <p class="cr-note" id="cr-drive-source-state" role="status" aria-live="polite">Loading saved Drive link…</p>
     </form>
     <div class="cr-card">
       <div class="cr-row cr-row-wrap">
@@ -115,6 +122,15 @@
       <p class="cr-note">Token is displayed only after rotation. Configure the same token as RENDER_OUTPUT_TOKEN in the Salad worker; keep it secret. Rotation invalidates old worker access.</p>
     </div>
   </section>
+  <dialog id="cr-drive-source-dialog" aria-labelledby="cr-drive-source-title">
+    <div class="cr-row cr-row-wrap"><h3 id="cr-drive-source-title">Save / Edit Drive Link</h3><button class="cr-btn secondary" id="cr-close-drive-source" type="button" aria-label="Close saved Drive link">Close</button></div>
+    <form id="cr-drive-source-form">
+      <div class="cr-field"><label for="cr-saved-drive-link">Google Drive folder or ZIP link</label><input id="cr-saved-drive-link" type="url" required maxlength="4096" placeholder="https://drive.google.com/…" autocomplete="off"></div>
+      <p class="cr-note">This link is saved for your account. Use Sync Drive to scan it and add new ZIPs to the queue.</p>
+      <p id="cr-drive-source-message" role="status" aria-live="polite"></p>
+      <button class="cr-btn primary" id="cr-save-drive-source" type="submit">Save Drive Link</button>
+    </form>
+  </dialog>
 </section>
-<script defer src="/concat/assets/cloud_render.js?v=20261123-report-v1"></script>
+<script defer src="/concat/assets/cloud_render.js?v=20261123-drive-source-v1"></script>
 {% endblock %}

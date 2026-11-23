@@ -1,9 +1,10 @@
-"""Offline real Chromium export-control, TXT download and mobile layout check."""
+"""Offline real Chromium report/download and saved Drive sync/mobile checks."""
 import os
 from pathlib import Path
 import sys
 import tempfile
 import threading
+from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -22,15 +23,32 @@ with tempfile.TemporaryDirectory() as tmp:
     client = TestClient(app, base_url='https://concat.test')
     registry = get_registry(app)
     manager = registry.for_principal(principal)
+    manager.production.close()  # fixture tests scanning, never real Drive/GPU dispatch
     manager.metrics.event('job', {'average_fps': 42, 'speed_multiplier': 1.4}, job=1)
+    hold_sync = threading.Event()
+    release_sync = threading.Event()
+    discover_calls = []
+    def discover(link):
+        discover_calls.append(link)
+        if hold_sync.is_set():
+            assert release_sync.wait(15), 'test did not release pending sync'
+        return [('drive-ui-one', 'one.zip', '', 0, '', 'saved-ui-folder', 'one.zip')]
+    manager.production.drive.discover = discover
     # Use real HTTP for attachments. Chromium can cancel intercepted/fulfilled
     # attachment requests even when route.fulfill supplies the correct headers.
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
-            response = client.get(self.path)
+            self.reply(client.get(self.path))
+
+        def do_POST(self):
+            body = self.rfile.read(int(self.headers.get('Content-Length', 0)))
+            headers = {key: self.headers[key] for key in ('Content-Type', 'X-Cloud-Render-CSRF', 'Origin', 'Referer') if key in self.headers}
+            self.reply(client.post(self.path, content=body, headers=headers))
+
+        def reply(self, response):
             self.send_response(response.status_code)
             for key, value in response.headers.items():
-                if key.lower() not in ('content-length', 'transfer-encoding', 'connection', 'set-cookie'):
+                if key.lower() not in ('content-length', 'content-encoding', 'transfer-encoding', 'connection', 'set-cookie'):
                     self.send_header(key, value)
             self.send_header('Content-Length', str(len(response.content)))
             self.end_headers()
@@ -43,6 +61,7 @@ with tempfile.TemporaryDirectory() as tmp:
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
     server_thread.start()
     origin = f'http://127.0.0.1:{server.server_port}'
+    app.state.settings = replace(app.state.settings, origin=origin)
     try:
         with sync_playwright() as p:
             launch = {'headless': True, 'args': ['--no-sandbox']}
@@ -71,9 +90,40 @@ with tempfile.TemporaryDirectory() as tmp:
                 assert 'Requested range: 168 hours' in text
                 assert '"average_fps": 42' in text
                 assert page.locator('#cr-resource-dialog').count() == 0
+                before = len(discover_calls)
+                page.goto(origin + '/concat/production', wait_until='networkidle')
+                page.locator('#cr-edit-drive-source').wait_for(state='visible')
+                page.click('#cr-edit-drive-source')
+                page.locator('#cr-drive-source-dialog').wait_for(state='visible')
+                page.fill('#cr-saved-drive-link', 'https://drive.google.com/drive/folders/saved-ui-folder')
+                page.click('#cr-save-drive-source')
+                page.locator('#cr-drive-source-dialog').wait_for(state='hidden')
+                assert len(discover_calls) == before, 'save must not trigger Drive scan'
+                for selector in ('#cr-edit-drive-source', '#cr-sync-drive'):
+                    box = page.locator(selector).bounding_box()
+                    assert box and box['x'] >= 0 and box['x'] + box['width'] <= width + 1, (width, selector, box)
+                page.fill('#cr-drive-link', 'https://drive.google.com/file/d/manual-ui/view')
+                hold_sync.set(); release_sync.clear()
+                page.click('#cr-sync-drive')
+                page.wait_for_function("document.getElementById('cr-sync-drive').textContent.includes('Syncing')")
+                assert page.locator('#cr-sync-drive').is_disabled()
+                assert page.locator('#cr-scan').is_disabled()
+                page.evaluate('window.syncResponsive=false; setTimeout(()=>{window.syncResponsive=true;},20)')
+                page.wait_for_function('window.syncResponsive === true')
+                release_sync.set(); hold_sync.clear()
+                page.wait_for_function("!document.getElementById('cr-sync-drive').disabled")
+                assert 'duplicates' in page.locator('#cr-drive-source-state').inner_text()
+                assert page.input_value('#cr-drive-link').endswith('/manual-ui/view')
+                page.click('#cr-sync-drive')
+                page.wait_for_function("document.getElementById('cr-drive-source-state').textContent.includes('0 added · 1 duplicates')")
+                page.click('#cr-edit-drive-source')
+                page.locator('#cr-drive-source-dialog').wait_for(state='visible')
+                assert page.input_value('#cr-saved-drive-link').endswith('/saved-ui-folder')
+                page.keyboard.press('Escape')
+                page.locator('#cr-drive-source-dialog').wait_for(state='hidden')
             assert not errors, errors
             browser.close()
-        print('PASS: report controls, real TXT downloads and 1440/760/390/320px layouts')
+        print('PASS: TXT downloads, saved Drive popup/sync/dedup/responsiveness and 1440/760/390/320px layouts')
     finally:
         server.shutdown()
         server.server_close()

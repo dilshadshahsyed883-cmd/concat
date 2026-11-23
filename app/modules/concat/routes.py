@@ -184,6 +184,30 @@ async def scan_production(request: Request, principal: Principal = Depends(curre
     return await run_in_threadpool(_manager(request, principal).production.scan, body.get("link"))
 
 
+@router.get('/api/cloud-render/production/drive-source')
+async def read_drive_source(request: Request, principal: Principal = Depends(current_principal)):
+    from fastapi.responses import JSONResponse
+    result = await run_in_threadpool(_manager(request, principal).production.drive_source)
+    return JSONResponse(result, headers={'Cache-Control': 'private,no-store'})
+
+
+@router.post('/api/cloud-render/production/drive-source')
+async def save_drive_source(request: Request, principal: Principal = Depends(current_principal)):
+    _csrf(request)
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(400, 'Provide a JSON Drive link object') from None
+    return await run_in_threadpool(_manager(request, principal).production.save_drive_source,
+                                  body)
+
+
+@router.post('/api/cloud-render/production/sync-drive')
+async def sync_drive_source(request: Request, principal: Principal = Depends(current_principal)):
+    _csrf(request)
+    return await run_in_threadpool(_manager(request, principal).production.sync_drive_source)
+
+
 @router.post("/api/cloud-render/production/queue/{action}")
 async def control_queue(action: str, request: Request, principal: Principal = Depends(current_principal)):
     _csrf(request)

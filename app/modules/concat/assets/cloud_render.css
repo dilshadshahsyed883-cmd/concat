@@ -78,3 +78,8 @@
 .cr-stepper .cr-btn { flex: 0 0 42px; padding: 10px; }
 #cloud-render #cr-download-report{text-decoration:none;display:inline-flex;align-items:center}
 #cloud-render #cr-report-hours{width:auto;max-width:100%}
+#cloud-render .cr-drive-actions{justify-content:space-between;align-items:center}
+#cloud-render .cr-saved-drive-actions{display:flex;gap:8px;flex-wrap:wrap}
+#cloud-render #cr-drive-source-dialog{border:1px solid #d1d9e5;border-radius:16px;padding:24px;width:min(600px,calc(100vw - 24px));max-height:85vh;overflow:auto;box-shadow:0 20px 80px #17234a40}
+#cloud-render #cr-drive-source-dialog::backdrop{background:#10182870}
+#cloud-render [aria-busy="true"]{cursor:progress}
