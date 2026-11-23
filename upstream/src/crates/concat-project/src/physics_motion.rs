@@ -20,6 +20,13 @@ pub enum PhysicsPreset {
     ElasticPop,
     InertiaGlide,
     DampedShake,
+    SpringSlide,
+    FloatingBob,
+    RecoilKick,
+    SpiralZoom,
+    OrbitMotion,
+    ZigzagDrift,
+    TumbleSettle,
 }
 
 /// Parameters are baked into ordinary GPU-compatible keyframes. The project
@@ -61,13 +68,20 @@ impl PhysicsControls {
 }
 
 impl PhysicsPreset {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 13] = [
         Self::SpringZoom,
         Self::Pendulum,
         Self::GravityBounce,
         Self::ElasticPop,
         Self::InertiaGlide,
         Self::DampedShake,
+        Self::SpringSlide,
+        Self::FloatingBob,
+        Self::RecoilKick,
+        Self::SpiralZoom,
+        Self::OrbitMotion,
+        Self::ZigzagDrift,
+        Self::TumbleSettle,
     ];
 
     pub fn from_index(index: i32) -> Option<Self> {
@@ -82,6 +96,13 @@ impl PhysicsPreset {
             Self::ElasticPop => "physics.elastic-pop",
             Self::InertiaGlide => "physics.inertia-glide",
             Self::DampedShake => "physics.damped-shake",
+            Self::SpringSlide => "physics.spring-slide",
+            Self::FloatingBob => "physics.floating-bob",
+            Self::RecoilKick => "physics.recoil-kick",
+            Self::SpiralZoom => "physics.spiral-zoom",
+            Self::OrbitMotion => "physics.orbit-motion",
+            Self::ZigzagDrift => "physics.zigzag-drift",
+            Self::TumbleSettle => "physics.tumble-settle",
         }
     }
 
@@ -91,7 +112,130 @@ impl PhysicsPreset {
             Self::Pendulum | Self::DampedShake => KeyProperty::Rotation,
             Self::GravityBounce => KeyProperty::OffsetY,
             Self::InertiaGlide => KeyProperty::OffsetX,
+            Self::SpringSlide | Self::RecoilKick | Self::OrbitMotion | Self::ZigzagDrift =>
+                KeyProperty::OffsetX,
+            Self::FloatingBob => KeyProperty::OffsetY,
+            Self::SpiralZoom | Self::TumbleSettle => KeyProperty::Scale,
         }
+    }
+
+    fn extended_properties(self) -> &'static [KeyProperty] {
+        match self {
+            Self::SpringSlide => &[KeyProperty::OffsetX],
+            Self::FloatingBob => &[KeyProperty::OffsetY],
+            Self::RecoilKick => &[KeyProperty::OffsetX, KeyProperty::Rotation],
+            Self::SpiralZoom => &[KeyProperty::Scale, KeyProperty::Rotation],
+            Self::OrbitMotion | Self::ZigzagDrift => &[KeyProperty::OffsetX, KeyProperty::OffsetY],
+            Self::TumbleSettle => &[KeyProperty::Rotation, KeyProperty::Scale],
+            _ => &[],
+        }
+    }
+
+    /// Seven new motions share the existing four controls and GPU-native channels.
+    /// All paths are deterministic and settle or loop at a stable clip boundary.
+    fn extended_value(
+        self, clip: &Clip, property: KeyProperty, t: f64, controls: PhysicsControls,
+    ) -> f64 {
+        let c = controls.safe();
+        let u = ((t.clamp(0.0, 1.0) / c.duration).min(1.0) * c.speed).min(1.0);
+        let fade = (-5.0 * u / c.intensity).exp();
+        let result = match (self, property) {
+            (Self::SpringSlide, KeyProperty::OffsetX) =>
+                clip.offset_x - 0.18 * fade * (6.0 * PI * u).cos(),
+            (Self::FloatingBob, KeyProperty::OffsetY) =>
+                clip.offset_y + 0.045 * (4.0 * PI * u).sin(),
+            (Self::RecoilKick, KeyProperty::OffsetX) =>
+                clip.offset_x - 0.085 * fade * (3.0 * PI * u).sin(),
+            (Self::RecoilKick, KeyProperty::Rotation) =>
+                clip.rotation - 9.0 * fade * (3.0 * PI * u).sin(),
+            (Self::SpiralZoom, KeyProperty::Scale) =>
+                clip.scale * (1.0 + 0.16 * (1.0 - (-6.0 * u).exp())),
+            (Self::SpiralZoom, KeyProperty::Rotation) =>
+                clip.rotation + 15.0 * fade * (5.0 * PI * u).sin(),
+            (Self::OrbitMotion, KeyProperty::OffsetX) =>
+                clip.offset_x + 0.08 * ((2.0 * PI * u).cos() - 1.0),
+            (Self::OrbitMotion, KeyProperty::OffsetY) =>
+                clip.offset_y + 0.06 * (2.0 * PI * u).sin(),
+            (Self::ZigzagDrift, KeyProperty::OffsetX) =>
+                clip.offset_x + 0.10 * fade * (4.0 * PI * u).sin(),
+            (Self::ZigzagDrift, KeyProperty::OffsetY) =>
+                clip.offset_y + 0.04 * fade * (8.0 * PI * u).sin(),
+            (Self::TumbleSettle, KeyProperty::Rotation) =>
+                clip.rotation + 20.0 * fade * (5.0 * PI * u).cos(),
+            (Self::TumbleSettle, KeyProperty::Scale) =>
+                clip.scale * (1.0 + 0.12 * fade * (5.0 * PI * u).cos()),
+            _ => unreachable!("only supported extended properties are sampled"),
+        };
+        let base = match property {
+            KeyProperty::Scale => clip.scale,
+            KeyProperty::Rotation => clip.rotation,
+            KeyProperty::OffsetX => clip.offset_x,
+            KeyProperty::OffsetY => clip.offset_y,
+            _ => unreachable!(),
+        };
+        base + (result - base) * c.strength
+    }
+
+    fn extended_keys_with(
+        self, clip: &Clip, frame: f64, controls: PhysicsControls,
+    ) -> Result<(Vec<ClipKey>, f64), PresetError> {
+        if !self.extended_properties().is_empty() {
+            return self.extended_keys_with(clip, frame, controls);
+        }
+        if !matches!(clip.kind, ClipKind::Image | ClipKind::Video) {
+            return Err(PresetError::NeedsPicture);
+        }
+        if !frame.is_finite() || frame <= 0.0 || !clip.duration.is_finite() {
+            return Err(PresetError::TooShort);
+        }
+        let last = (clip.duration / frame - 1e-9).ceil() - 1.0;
+        // Oscillation needs at least three visible positions; two would alias a full loop.
+        if !last.is_finite() || last < 2.0 || last > i32::MAX as f64 {
+            return Err(PresetError::TooShort);
+        }
+        let properties = self.extended_properties();
+        if properties.iter().any(|property| clip.is_keyed(*property)) {
+            return Err(PresetError::AlreadyKeyed);
+        }
+        let controls = controls.safe();
+        let active = (last * controls.duration).ceil().clamp(2.0, last);
+        let steps = (active as usize)
+            .min((96.0 * controls.speed.max(1.0)).ceil() as usize).min(240).max(2);
+        let mut frames: Vec<f64> = (0..=steps)
+            .map(|i| (i as f64 * active / steps as f64).round()).collect();
+        frames.push(last);
+        frames.sort_by(f64::total_cmp);
+        frames.dedup();
+        let mut keys = Vec::with_capacity(frames.len() * properties.len());
+        let mut any_movement = false;
+        for &property in properties {
+            let base = match property {
+                KeyProperty::Scale => clip.scale,
+                KeyProperty::Rotation => clip.rotation,
+                KeyProperty::OffsetX => clip.offset_x,
+                KeyProperty::OffsetY => clip.offset_y,
+                _ => unreachable!(),
+            };
+            for &at in &frames {
+                let value = self.extended_value(clip, property, at / last, controls);
+                let value = match property {
+                    KeyProperty::Scale => value.clamp(ranges::MIN_SCALE, ranges::MAX_SCALE),
+                    KeyProperty::OffsetX | KeyProperty::OffsetY =>
+                        value.clamp(-ranges::MAX_OFFSET, ranges::MAX_OFFSET),
+                    KeyProperty::Rotation => value.clamp(-360.0, 360.0),
+                    _ => unreachable!(),
+                };
+                if !value.is_finite() { return Err(PresetError::NoChange); }
+                any_movement |= (value - base).abs() > 1e-9;
+                keys.push(ClipKey {
+                    property, at: at * frame / clip.duration,
+                    value, ease: KeyEase::LINEAR,
+                });
+            }
+        }
+        if !any_movement { return Err(PresetError::NoChange); }
+        let preview = clip.start + (last / 2.0).round() * frame;
+        Ok((keys, preview))
     }
 
     /// Sample physically modelled displacement at normalized clip time.
@@ -101,6 +245,9 @@ impl PhysicsPreset {
     }
 
     fn value_with(self, clip: &Clip, t: f64, controls: PhysicsControls) -> f64 {
+        if !self.extended_properties().is_empty() {
+            return self.extended_value(clip, self.property(), t, controls);
+        }
         let controls = controls.safe();
         let t = (t.clamp(0.0, 1.0) / controls.duration).min(1.0) * controls.speed;
         let base = match self.property() {
@@ -164,6 +311,7 @@ impl PhysicsPreset {
                 clip.rotation + (-5.5 * t / controls.intensity).exp()
                     * (5.0 * (23.0 * t).sin() + 1.5 * (39.0 * t).sin())
             }
+            _ => unreachable!("extended motion handled above"),
         };
         base + (original - base) * controls.strength
     }
@@ -252,8 +400,8 @@ mod tests {
     const FRAME: f64 = 1.0 / 30.0;
 
     #[test]
-    fn six_presets_generate_finite_frame_aligned_native_keys() {
-        for preset in PhysicsPreset::ALL {
+    fn original_six_presets_generate_finite_frame_aligned_native_keys() {
+        for preset in PhysicsPreset::ALL.into_iter().take(6) {
             for kind in [ClipKind::Image, ClipKind::Video] {
                 let clip = Clip::blank("c1", "t1", kind, "picture", 0.0, 3.0);
                 let (keys, preview) = preset.keys(&clip, FRAME).unwrap();
@@ -273,7 +421,7 @@ mod tests {
     fn one_and_two_frame_clips_are_safe() {
         let single = Clip::blank("c1", "t1", ClipKind::Image, "picture", 0.0, FRAME);
         let pair = Clip::blank("c2", "t1", ClipKind::Video, "picture", 0.0, 2.0 * FRAME);
-        for preset in PhysicsPreset::ALL {
+        for preset in PhysicsPreset::ALL.into_iter().take(6) {
             assert_eq!(preset.keys(&single, FRAME).unwrap_err(), PresetError::TooShort);
             let (keys, _) = preset.keys(&pair, FRAME).unwrap();
             assert_eq!(keys.len(), 2);
@@ -353,6 +501,28 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn expanded_physics_presets_are_deterministic_multi_channel_and_protect_manual_keys() {
+        let clip = Clip::blank("c1", "t1", ClipKind::Video, "picture", 0.0, 3.0);
+        for preset in PhysicsPreset::ALL.into_iter().skip(6) {
+            let (keys, preview) = preset.keys(&clip, FRAME).unwrap();
+            assert!(preview > clip.start && preview < clip.start + clip.duration);
+            assert!(keys.iter().all(|key| key.at >= 0.0 && key.at < 1.0 && key.value.is_finite()));
+            assert_eq!(keys, preset.keys(&clip, FRAME).unwrap().0);
+            for &property in preset.extended_properties() {
+                let channel: Vec<_> = keys.iter().filter(|k| k.property == property).collect();
+                assert!(channel.len() >= 3);
+                assert!(channel.windows(2).all(|pair| pair[0].at < pair[1].at));
+            }
+            let (Command::Batch { commands }, _) = preset.command(&clip, FRAME).unwrap()
+                else { panic!("expected a single native command batch") };
+            assert_eq!(commands.len(), keys.len());
+            let mut authored = clip.clone();
+            authored.set_key(preset.extended_properties()[0], 0.5, 0.3, KeyEase::LINEAR);
+            assert_eq!(preset.keys(&authored, FRAME).unwrap_err(), PresetError::AlreadyKeyed);
+        }
+    }
+
     #[test]
     fn short_fast_motion_samples_each_visible_active_frame() {
         let clip = Clip::blank("c1", "t1", ClipKind::Video, "picture", 0.0, 10.0);
