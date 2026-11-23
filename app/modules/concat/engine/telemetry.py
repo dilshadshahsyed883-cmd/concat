@@ -38,6 +38,18 @@ def stamp(ts):
     return datetime.fromtimestamp(ts, timezone.utc).isoformat(timespec='seconds')
 
 
+def effective_render_fps(payload):
+    """Frames / worker render seconds, only for completed, measured summaries."""
+    if not isinstance(payload, dict) or payload.get('summary') is not True:
+        return None
+    values = numbers(payload, JOB_FIELDS)
+    frames = values.get('rendered_frames') or values.get('total_frames')
+    seconds = values.get('render_time_seconds')
+    if not frames or not seconds:
+        return None
+    return frames / seconds
+
+
 class Telemetry:
     def __init__(self, manager):
         self.manager = manager
@@ -218,18 +230,25 @@ class Telemetry:
             return
         if not self.request_lock.acquire(blocking=False):
             return
+        response = None
+        stage = 'request'
         try:
             self.last_resource_poll = now
             self.worker_ready_at = 0
             response = requests.get(SALAD_API + path + '/instances',
                 headers={'Salad-Api-Key': key, 'Accept': 'application/json',
                          'Cache-Control': 'no-cache'}, timeout=(3, 5), allow_redirects=False)
+            stage = 'http_status'
             if response.status_code not in (200, 202):
-                raise ValueError('Unavailable')
+                raise ValueError('HTTP status unavailable')
+            stage = 'freshness'
             m.salad_worker.check_freshness(response, time.time())
-            instances = response.json().get('instances')
-            if not isinstance(instances, list) or len(instances) != 1:
-                raise ValueError('Unavailable')
+            stage = 'json'
+            body = response.json()
+            stage = 'instance_schema'
+            instances = body.get('instances') if isinstance(body, dict) else None
+            if not isinstance(instances, list) or len(instances) != 1 or not isinstance(instances[0], dict):
+                raise ValueError('Invalid instance collection')
             instance = instances[0]
             payload = numbers(instance, RESOURCE_FIELDS)
             payload.update(source='Salad API', source_sample_time=None,
@@ -250,9 +269,26 @@ class Telemetry:
                         self.event('worker_activity', {**context, **actual})
                 except (JobError, AttributeError, TypeError):
                     pass
-        except (requests.RequestException, ValueError, TypeError, AttributeError):
-            self.event('resources', {**context, 'source': 'Salad API',
-                                    'collection_status': 'request_failed'})
+        except (requests.RequestException, ValueError, TypeError, AttributeError, KeyError) as exc:
+            # Only bounded, allowlisted diagnostics: never store exception text,
+            # URLs, headers, response bodies, API keys or worker credentials.
+            if isinstance(exc, requests.Timeout):
+                reason = 'timeout'
+            elif isinstance(exc, requests.ConnectionError):
+                reason = 'connection_error'
+            elif isinstance(exc, requests.RequestException) and stage != 'json':
+                reason = 'transport_error'
+            else:
+                reason = {'http_status': 'http_error',
+                          'freshness': 'freshness_check_failed',
+                          'json': 'invalid_json',
+                          'instance_schema': 'invalid_instance_collection'}.get(stage, 'invalid_response')
+            diagnostic = {**context, 'source': 'Salad API',
+                          'collection_status': 'request_failed', 'failure_reason': reason}
+            code = getattr(response, 'status_code', None)
+            if type(code) is int and 100 <= code <= 599:
+                diagnostic['http_status'] = code
+            self.event('resources', diagnostic)
         finally:
             self.request_lock.release()
 
@@ -268,14 +304,31 @@ class Telemetry:
                  'Resource times are receipt times; Salad supplies no metric sample timestamp.',
                  'Only validated reported metrics are included. Gaps and restarts are not interpolated.',
                  'FPS is worker-reported; average_fps is a completed-render summary.',
+                 'Effective rendering FPS is calculated only when the completed worker reports frames and render seconds.',
                  'Concurrency comparisons are observational, not controlled benchmarks.', '']
         parsed = [(r, json.loads(r['payload'])) for r in rows]
         if rows:
             lines += [f'Available range: {stamp(rows[0]["ts"])} to {stamp(rows[-1]["ts"])}']
         else:
             lines += ['No samples in requested range.']
+        resource_samples = [p for r, p in parsed if r['kind'] == 'resources']
+        successes = [p for p in resource_samples if p.get('collection_status') == 'available']
+        failures = [p for p in resource_samples if p.get('collection_status') == 'request_failed']
+        lines += ['', 'Salad API collection health:']
+        lines.append(f'Available samples={len(successes)}; failed attempts={len(failures)}')
+        reasons = {}
+        for payload in failures:
+            key = payload.get('failure_reason', 'unknown')
+            code = payload.get('http_status')
+            if type(code) is int:
+                key += f' (HTTP {code})'
+            reasons[key] = reasons.get(key, 0) + 1
+        for reason, count in sorted(reasons.items()):
+            lines.append(f'{reason}: {count}')
+        if not successes:
+            lines.append('No validated Salad resource readings in this range; this does not mean zero utilization.')
         for key in RESOURCE_FIELDS:
-            values = [p[key] for r, p in parsed if r['kind'] == 'resources' and key in p]
+            values = [p[key] for p in successes if key in p]
             if values:
                 lines.append(f'{key}: sample mean={sum(values)/len(values):.2f}; peak={max(values):.2f}; n={len(values)}')
         summaries = {}
@@ -285,6 +338,10 @@ class Telemetry:
         lines += ['', 'Latest per-job worker metrics (survive media deletion):']
         for job, payload in summaries.items():
             lines.append(f'Job {job}: ' + json.dumps(payload, ensure_ascii=False))
+            calculated = effective_render_fps(payload)
+            if calculated is not None:
+                lines.append(f'Job {job}: effective rendering FPS={calculated:.2f} '
+                             '(completed worker frames / worker render seconds; calculated)')
         lines += ['', 'Observed concurrency comparison (configured slots, unequal workloads):']
         coverage = {1: 0.0, 2: 0.0}
         completions = {1: set(), 2: set()}
@@ -319,6 +376,16 @@ class Telemetry:
                 count = len(completions[slots])
                 lines.append(f'{slots} slots: observed active wall time={coverage[slots]:.1f}s; '
                              f'completed jobs={count}; observed jobs/hour={count*3600/coverage[slots]:.2f}')
+                measured = [summaries[j] for j in completions[slots]
+                            if j in summaries and effective_render_fps(summaries[j]) is not None]
+                if measured:
+                    total_frames = sum((p.get('rendered_frames') or p.get('total_frames')) for p in measured)
+                    total_render_seconds = sum(p['render_time_seconds'] for p in measured)
+                    lines.append(f'{slots} slots: completed worker summaries with measured frames/time='
+                                 f'{len(measured)}; frame-weighted effective rendering FPS='
+                                 f'{total_frames/total_render_seconds:.2f} '
+                                 '(sum of per-job frames / sum of per-job render seconds; '
+                                 'not combined GPU throughput)')
         if not all(coverage.values()):
             lines.append('Both concurrency settings have not yet accumulated measured coverage.')
         for start, stop in gaps:

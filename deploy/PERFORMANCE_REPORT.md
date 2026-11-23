@@ -40,8 +40,11 @@ and render mode. Summary recovery is retried at most every 20 seconds for five m
 completion; no dispatcher network wait is added. A failed summary request never
 prevents verified completion.
 
-Raw API bodies, errors, credentials, private URLs and tokens are never copied
-into samples or exported. Job attribution uses owner-local job IDs. Image-pull
+Raw API bodies, exception messages, credentials, private URLs and tokens are never copied
+into samples or exported. Salad API collection failures now retain only a fixed
+failure category and, when available, the numeric HTTP status (for example,
+429 or 503). The report groups succeeded and failed polls by these safe codes;
+failed polls never count as zero resource utilization. Job attribution uses owner-local job IDs. Image-pull
 reallocation candidates include list/final raw progress, normalized percentage,
 threshold, timer origin, decision and instance identity.
 
@@ -51,7 +54,14 @@ All TXT timestamps use UTC. Resource timestamps are receipt times; Salad does
 not provide a separate sample timestamp for these readings. Resource means are
 sample means, not time-weighted measurements. Completed-render average_fps and
 speed_multiplier are worker-reported, with frame/video/render durations where
-available. Job observations remain separate for parallel jobs.
+available. The export also calculates effective rendering FPS when a completed
+worker summary provides a positive rendered/total frame count and positive
+render_time_seconds. It labels this figure as calculated; it is not a live FPS
+sample, and no frame rate is inferred from queue start/end times alone.
+Where completed job summaries can be attributed to measured concurrency slots,
+the report includes aggregate effective FPS = sum(worker frames) / sum(worker
+render seconds). This is a duration-weighted per-job speed, not total GPU
+throughput, and is not extrapolated to unmeasured work. Job observations remain separate for parallel jobs.
 
 State durations measure observed transitions. First observations can be partway
 through a stage; the report cannot reconstruct time before installation, a
@@ -68,7 +78,8 @@ never added and labelled total wall time.
 
 ## Checks
 
-Offline tests cover parallel attribution, invalid/missing numbers, retry state,
+Offline tests cover safe Salad failure categories/HTTP status, calculated FPS,
+parallel attribution, invalid/missing numbers, retry state,
 push-delivery summaries, restart and deletion persistence, bounded history,
 resource polling limits, secret exclusion, observed wall-time accounting,
 authentication, revoked access, owner isolation, TXT response and time ranges.

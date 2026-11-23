@@ -5,6 +5,7 @@ import tempfile
 import time
 import unittest
 from unittest.mock import Mock, patch
+from requests import Timeout
 
 from app.modules.concat.engine.cloud_render import CloudRender
 from app.modules.concat.engine.telemetry import numbers, JOB_FIELDS
@@ -108,6 +109,80 @@ class TelemetryTests(unittest.TestCase):
         self.assertNotIn('SECRET', report)
         self.assertNotIn('secret.test', report)
         self.assertIn('"active_renders": 2', report)
+
+    def test_http_failure_reports_sanitized_status_without_response_body(self):
+        self.job(1)
+        self.manager.save({'salad_key': 'SECRET_API', 'salad_organization': 'org-one',
+            'salad_project': 'project-one', 'salad_container_group': 'group-one'})
+        response = Mock(status_code=429, headers={}, text='PRIVATE_SALAD_BODY')
+        with patch('app.modules.concat.engine.telemetry.requests.get', return_value=response):
+            self.metrics.collect()
+        payload = json.loads(self.samples('resources')[-1]['payload'])
+        self.assertEqual(payload['collection_status'], 'request_failed')
+        self.assertEqual(payload['failure_reason'], 'http_error')
+        self.assertEqual(payload['http_status'], 429)
+        report = self.metrics.report(24)
+        self.assertIn('http_error (HTTP 429): 1', report)
+        self.assertIn('No validated Salad resource readings', report)
+        self.assertNotIn('SECRET_API', report)
+        self.assertNotIn('PRIVATE_SALAD_BODY', report)
+
+    def test_timeout_and_freshness_failure_have_distinct_safe_causes(self):
+        self.job(1)
+        self.manager.save({'salad_key': 'SECRET_API', 'salad_organization': 'org-one',
+            'salad_project': 'project-one', 'salad_container_group': 'group-one'})
+        with patch('app.modules.concat.engine.telemetry.requests.get',
+                   side_effect=Timeout('PRIVATE_TIMEOUT_SECRET')):
+            self.metrics.collect()
+        payload = json.loads(self.samples('resources')[-1]['payload'])
+        self.assertEqual(payload['failure_reason'], 'timeout')
+        self.assertNotIn('http_status', payload)
+        self.metrics.last_resource_poll = 0
+        stale = Mock(status_code=200, headers={'Age': '100'},
+                     json=Mock(return_value={'instances': [{'state': 'running'}]}))
+        with patch('app.modules.concat.engine.telemetry.requests.get', return_value=stale):
+            self.metrics.collect()
+        payload = json.loads(self.samples('resources')[-1]['payload'])
+        self.assertEqual(payload['failure_reason'], 'freshness_check_failed')
+        self.assertEqual(payload['http_status'], 200)
+        self.assertNotIn('PRIVATE_TIMEOUT_SECRET', self.metrics.report(24))
+
+    def test_effective_fps_uses_only_completed_worker_frames_and_render_seconds(self):
+        self.job(1)
+        self.metrics.observe(1, {'state': 'delivered', 'total_frames': 1800,
+                                 'render_time_seconds': 120, 'average_fps': 15})
+        report = self.metrics.report(24)
+        self.assertIn('Job 1: effective rendering FPS=15.00', report)
+        self.assertIn('"average_fps": 15', report)
+        self.job(2)
+        self.metrics.observe(2, {'state': 'running', 'total_frames': 1800,
+                                 'render_time_seconds': 60})
+        self.job(3)
+        self.metrics.observe(3, {'state': 'delivered', 'total_frames': 1800,
+                                 'render_time_seconds': 0})
+        report = self.metrics.report(24)
+        self.assertNotIn('Job 2: effective rendering FPS=', report)
+        self.assertNotIn('Job 3: effective rendering FPS=', report)
+
+    def test_measured_fps_can_be_grouped_by_observed_concurrency(self):
+        self.job(1)
+        with patch('app.modules.concat.engine.telemetry.time.time') as clock:
+            clock.return_value = 1000
+            context = {'concurrency': 1, 'active_jobs': [1], 'instance': 'fixture'}
+            self.metrics.event('queue', context)
+            clock.return_value = 1010
+            self.metrics.event('queue', context)
+            clock.return_value = 1011
+            self.metrics.event('state', {**context, 'state': 'Completed',
+                                         'previous': 'Rendering'}, job=1)
+            clock.return_value = 1012
+            self.metrics.observe(1, {'state': 'delivered', 'rendered_frames': 900,
+                                     'render_time_seconds': 60})
+            clock.return_value = 1020
+            report = self.metrics.report(1)
+        self.assertIn('1 slots: observed active wall time=10.0s', report)
+        self.assertIn('frame-weighted effective rendering FPS=15.00', report)
+        self.assertIn('not combined GPU throughput', report)
 
     def test_stage_durations_and_parallel_wall_time(self):
         self.job(1, 'Queued')
