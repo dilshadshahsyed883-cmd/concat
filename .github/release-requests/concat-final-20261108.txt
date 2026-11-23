@@ -52,3 +52,23 @@ Windows image/EXE release artifacts only when existing gates pass.
 Record exact source SHA, image digest and smoke evidence.
 This is a candidate build, NOT permission to change the live Salad
 deployment, VPS, queue, production routing or previous verified releases.
+
+REBUILD REQUEST — 2026-11-23 Issue #115 verified integration
+Trigger BOTH the Windows x64 EXE and Concat Salad GPU candidate image from this
+one new main commit; use the exact same GITHUB_SHA for both artifacts.
+The source includes merged Issue #115 Groups 01, 02+07, 03+08, 04, 05, 06.
+Compatibility gates: preserve existing saved-project schemas, the native UI
+Animation/Transition/Effects inspector and None/Clear semantics, stable preset
+IDs 0–44 plus added Canvas indexes 45–58, the pinned Concat-CUDA hybrid v1
+render contract (version 2), PNG/JPEG + alpha support, all nine caption
+presets, small ASR model, existing queue/snapshot contracts, and prior working
+release rollback. Verify Native Rust/Slint, effect catalogue, Windows portable
+DLL smoke + sha256 and exact embedded source revision; GPU candidate worker
+imports, entrypoint/authenticated capabilities, manifest/smoke and immutable
+image digest. Publish matching prerelease ONLY after both build/compatibility
+gates succeed and exact source_SHA comparison passes.
+DO NOT touch live Salad deployment, Nginx, VPS services, Drive Bridge, queues,
+production routing, prior verified releases/images, or existing data. A built
+image alone is not physical NVIDIA GPU rendering acceptance. Manual Windows
+DPI/preview parity and RTX 3060 Ti GPU verification remain NOT VERIFIED
+until executed separately. This request triggers candidate builds only.
