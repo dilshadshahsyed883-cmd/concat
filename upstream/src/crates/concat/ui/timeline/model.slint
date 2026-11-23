@@ -270,9 +270,15 @@ export global Keyframes {
     out property <bool> has-favourite-pool: (favourite-pool[0] && physics-favourites[0]) || (favourite-pool[1] && physics-favourites[1]) || (favourite-pool[2] && physics-favourites[2]) || (favourite-pool[3] && physics-favourites[3]) || (favourite-pool[4] && physics-favourites[4]) || (favourite-pool[5] && physics-favourites[5]) || (favourite-pool[6] && physics-favourites[6]) || (favourite-pool[7] && physics-favourites[7]) || (favourite-pool[8] && physics-favourites[8]) || (favourite-pool[9] && physics-favourites[9]) || (favourite-pool[10] && physics-favourites[10]) || (favourite-pool[11] && physics-favourites[11]) || (favourite-pool[12] && physics-favourites[12]) || (favourite-pool[13] && physics-favourites[13]) || (favourite-pool[14] && physics-favourites[14]) || (favourite-pool[15] && physics-favourites[15]) || (favourite-pool[16] && physics-favourites[16]) || (favourite-pool[17] && physics-favourites[17]) || (favourite-pool[18] && physics-favourites[18]) || (favourite-pool[19] && physics-favourites[19]) || (favourite-pool[20] && physics-favourites[20]) || (favourite-pool[21] && physics-favourites[21]) || (favourite-pool[22] && physics-favourites[22]) || (favourite-pool[23] && physics-favourites[23]) || (favourite-pool[24] && physics-favourites[24]) || (favourite-pool[25] && physics-favourites[25]) || (favourite-pool[26] && physics-favourites[26]) || (favourite-pool[27] && physics-favourites[27]) || (favourite-pool[28] && physics-favourites[28]) || (favourite-pool[29] && physics-favourites[29]);
     callback remember-animation(index:int,strength:float,duration:float,speed:float,intensity:float,canvas:CanvasMotionData);
     callback load-animation(index:int)->AnimationInspectorData;
+    callback clear-generated-motion(images: bool, videos: bool, selected-only: bool);
     callback apply-animation-favourites(pool:[bool],images:bool,videos:bool,selected:bool);
-    public function remember-current() {Keyframes.remember-animation(animation-selected,physics-strength,physics-duration,physics-speed,physics-intensity,canvas-motion);}
+    public function remember-current() {
+        if animation-selected >= 0 {
+            Keyframes.remember-animation(animation-selected,physics-strength,physics-duration,physics-speed,physics-intensity,canvas-motion);
+        }
+    }
     public function restore-current() {
+        if animation-selected < 0 { return; }
         let settings=Keyframes.load-animation(animation-selected);
         physics-strength=settings.strength;physics-duration=settings.duration;physics-speed=settings.speed;physics-intensity=settings.intensity;
         canvas-motion=settings.canvas;
@@ -283,7 +289,8 @@ export global Keyframes {
         Keyframes.restore-current();
     }
 
-    // 0..8 = physics/basic, 9..28 = Canvas Motion; existing IDs are unchanged.
+    // -1 = UI-only None, 0..8 = physics/basic, 9..29 = Canvas Motion.
+    // None is never persisted as a preset ID or included in Favorites.
     in-out property <int> animation-selected: 0;
     in-out property <bool> animation-images: true;
     in-out property <bool> animation-videos: true;
