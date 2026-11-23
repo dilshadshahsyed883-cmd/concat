@@ -243,7 +243,8 @@ impl MotionPreset {
         self.keys_with(clip, frame, 1.0, 1.0, 1.0)
     }
 
-    /// Shared authoring controls, sampled as the same two editable keys.
+    /// Shared authoring controls, baked into native editable keys. Opacity Pulse
+    /// uses three visible-frame keys; the other Basic presets use two.
     pub fn keys_with(
         self,
         clip: &Clip,
