@@ -1219,7 +1219,7 @@ mod tests {
         assert_eq!(MOTION_PRESETS.len(), 24);
         assert_eq!(animation_favourite_id(0), Some("physics.spring-zoom"));
         assert_eq!(animation_favourite_id(8), Some("motion.fade-in"));
-        assert_eq!(animation_favourite_id(9), Some("canvas.top-left-center"));
+        assert_eq!(animation_favourite_id(9), Some(CanvasMotionPreset::ALL[0].id()));
         assert_eq!(animation_favourite_id(30), Some("physics.spring-slide"));
         assert_eq!(animation_favourite_id(36), Some("physics.tumble-settle"));
         assert_eq!(animation_favourite_id(37), Some("motion.push-out"));
