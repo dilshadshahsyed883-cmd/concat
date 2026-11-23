@@ -1850,19 +1850,53 @@ component AnimationCardGrid inherits Rectangle {
     }
 }
 
-// Star filtering collapses non-favorite rows rather than leaving card holes.
-// A single column is intentional here: it remains usable in narrow panels.
-component AnimationFavoriteCards inherits VerticalLayout {
+// Compact Favorites into two columns without leaving holes when items
+// are unstarred. Slint cannot filter the in-file preset model; counting
+// previous stars gives each visible card a stable, dense position.
+// The eight-position blocks cover 64 presets (current 29, plus headroom).
+component AnimationFavoriteCards inherits Rectangle {
     in property <[AnimationCardData]> basic;
     in property <[AnimationCardData]> canvas;
     callback picked(index: int);
     callback starred(index: int);
-    spacing: 0px;
+
+    property <length> gap: 6px;
+    property <length> card-h: 104px;
+    property <length> card-w: (root.width - root.gap) / 2;
+    property <int> favorite-count: root.favourite-rank(root.basic.length + root.canvas.length);
+
+    pure function count-eight(start: int, before: int) -> int {
+        return (start + 0 < before && Keyframes.physics-favourites[start + 0] ? 1 : 0)
+            + (start + 1 < before && Keyframes.physics-favourites[start + 1] ? 1 : 0)
+            + (start + 2 < before && Keyframes.physics-favourites[start + 2] ? 1 : 0)
+            + (start + 3 < before && Keyframes.physics-favourites[start + 3] ? 1 : 0)
+            + (start + 4 < before && Keyframes.physics-favourites[start + 4] ? 1 : 0)
+            + (start + 5 < before && Keyframes.physics-favourites[start + 5] ? 1 : 0)
+            + (start + 6 < before && Keyframes.physics-favourites[start + 6] ? 1 : 0)
+            + (start + 7 < before && Keyframes.physics-favourites[start + 7] ? 1 : 0);
+    }
+    pure function favourite-rank(before: int) -> int {
+        return root.count-eight(0, before)
+            + root.count-eight(8, before)
+            + root.count-eight(16, before)
+            + root.count-eight(24, before)
+            + root.count-eight(32, before)
+            + root.count-eight(40, before)
+            + root.count-eight(48, before)
+            + root.count-eight(56, before);
+    }
+
+    height: root.favorite-count > 0
+        ? Math.ceil(root.favorite-count / 2) * (root.card-h + root.gap) - root.gap
+        : 0px;
 
     for entry in root.basic: AnimationCard {
-        width: parent.width;
+        property <int> compact-index: root.favourite-rank(entry.index);
+        x: Math.mod(self.compact-index, 2) * (root.card-w + root.gap);
+        y: Math.floor(self.compact-index / 2) * (root.card-h + root.gap);
+        width: root.card-w;
+        height: root.card-h;
         visible: Keyframes.physics-favourites[entry.index];
-        height: Keyframes.physics-favourites[entry.index] ? 104px : 0px;
         item: entry;
         pool-selectable: true;
         current: Keyframes.animation-selected == entry.index;
@@ -1870,9 +1904,12 @@ component AnimationFavoriteCards inherits VerticalLayout {
         starred(id) => { root.starred(id); }
     }
     for entry in root.canvas: AnimationCard {
-        width: parent.width;
+        property <int> compact-index: root.favourite-rank(entry.index);
+        x: Math.mod(self.compact-index, 2) * (root.card-w + root.gap);
+        y: Math.floor(self.compact-index / 2) * (root.card-h + root.gap);
+        width: root.card-w;
+        height: root.card-h;
         visible: Keyframes.physics-favourites[entry.index];
-        height: Keyframes.physics-favourites[entry.index] ? 104px : 0px;
         item: entry;
         pool-selectable: true;
         current: Keyframes.animation-selected == entry.index;
