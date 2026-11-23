@@ -2992,6 +2992,26 @@ export component MediaPane inherits Rectangle {
                         shelf: 3;
                         placeholder: I18n.t1("common.searchKind", I18n.t("mediaPane.transition"));
                     }
+                    // None is a selectable, non-destructive choice, not a catalogue transition.
+                    Rectangle {
+                        height: 38px;
+                        width: 164px;
+                        border-radius: Theme.r-sm;
+                        border-width: 1px;
+                        border-color: LibraryFocus.page == 1 && LibraryFocus.selected-id == "__none_transition__" ? Theme.accent : Theme.line;
+                        background: LibraryFocus.page == 1 && LibraryFocus.selected-id == "__none_transition__" ? Theme.field-active : Theme.field;
+                        Button {
+                            x: 4px; y: 4px; width: parent.width - 8px; height: 30px;
+                            label: "None / No Transition";
+                            clicked => {
+                                LibraryFocus.page = 1;
+                                LibraryFocus.selected-id = "__none_transition__";
+                                LibraryFocus.selected-name = "None / No Transition";
+                                LibraryFocus.selected-category = "Transitions";
+                                LibraryFocus.selected-description = "Select an existing cut or transition, then explicitly remove it in Details. Browsing None makes no changes.";
+                            }
+                        }
+                    }
                     ShelfGrid {
                         entries: root.catalogue-transitions;
                         page-kind: 1;
@@ -3023,6 +3043,26 @@ export component MediaPane inherits Rectangle {
                             : I18n.t1("common.searchKind", I18n.t("common.effect"));
                         reloads: true;
                         reload => { root.reload-packages(); }
+                    }
+                    // Visual-only clear choice: never offered for audio effects or starred/random pools.
+                    if !root.audio-shelf: Rectangle {
+                        height: 38px;
+                        width: 164px;
+                        border-radius: Theme.r-sm;
+                        border-width: 1px;
+                        border-color: LibraryFocus.page == 2 && LibraryFocus.selected-id == "__none_effect__" ? Theme.accent : Theme.line;
+                        background: LibraryFocus.page == 2 && LibraryFocus.selected-id == "__none_effect__" ? Theme.field-active : Theme.field;
+                        Button {
+                            x: 4px; y: 4px; width: parent.width - 8px; height: 30px;
+                            label: "None / No Effect";
+                            clicked => {
+                                LibraryFocus.page = 2;
+                                LibraryFocus.selected-id = "__none_effect__";
+                                LibraryFocus.selected-name = "None / No Effect";
+                                LibraryFocus.selected-category = "Video Effects";
+                                LibraryFocus.selected-description = "Pick exactly one applied visual effect in Details to remove. Other effects, audio and motion stay unchanged.";
+                            }
+                        }
                     }
                     ShelfGrid {
                         entries: root.audio-shelf ? root.catalogue-audio : root.catalogue-effects;
@@ -3076,6 +3116,10 @@ export component MediaPane inherits Rectangle {
                         options: ["Basic / Physics", "Canvas", "Favorites"];
                         current: root.animation-filter;
                         changed(index) => { root.animation-filter = index; }
+                    }
+                    Button {
+                        label: Keyframes.animation-selected == -1 ? "✓ None / No Animation" : "None / No Animation";
+                        clicked => { Keyframes.inspect(-1); }
                     }
                     if root.animation-filter == 0: VerticalLayout {
                         spacing: 6px;
