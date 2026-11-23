@@ -317,6 +317,7 @@ impl MotionPreset {
             KeyProperty::Scale => (first + (final_value - first) * strength)
                 .clamp(ranges::MIN_SCALE, ranges::MAX_SCALE),
             KeyProperty::Opacity => (first + (final_value - first) * strength).clamp(0.0, 1.0),
+            KeyProperty::Rotation => (first + (final_value - first) * strength).clamp(-360.0, 360.0),
             _ => (first + (final_value - first) * strength)
                 .clamp(-ranges::MAX_OFFSET, ranges::MAX_OFFSET),
         };
