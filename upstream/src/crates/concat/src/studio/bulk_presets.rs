@@ -700,6 +700,42 @@ impl Studio {
     }
     /// Each chosen starred preset uses its own configured parameters. Timeline
     /// selection and preset pool selection are independent, with no empty fallback.
+    /// The explicit No Animation choice is a scoped, undoable clear.
+    /// Only exact persisted generated ownership is eligible.  Unowned/manual
+    /// keys, hidden/locked lanes and non-GPU picture targets are never touched.
+    pub fn clear_generated_motion_bulk(&mut self, images: bool, videos: bool, selected_only: bool) {
+        if !images && !videos {
+            self.notify("Choose Images or Video Clips first.", true);
+            return;
+        }
+        if !self.gpu_bulk_ready() { return; }
+        self.flush_commit();
+        let selected: HashSet<_> = self.selection.iter().cloned().collect();
+        if selected_only && selected.is_empty() {
+            self.notify("Select timeline media before clearing an animation.", true);
+            return;
+        }
+        let media = self.gpu_picture_media();
+        let commands: Vec<_> = self.timeline().clips.iter()
+            .filter(|clip| requested_picture(clip, images, videos)
+                && (!selected_only || selected.contains(&clip.id))
+                && !self.locked(&clip.track_id)
+                && self.timeline().track(&clip.track_id).is_some_and(|track| track.visible)
+                && media.contains(clip.media_id.as_str())
+                && concat_project::motion_preset::generated_ownership(clip).is_some())
+            .map(|clip| Command::ClearGeneratedMotion {
+                clip_id: clip.id.clone(),
+                expected_keys: clip.keys.clone(),
+            }).collect();
+        if commands.is_empty() {
+            self.notify("No owned generated animations to clear; manual keys and protected tracks are unchanged.", false);
+            return;
+        }
+        let count = commands.len();
+        self.apply(Command::Batch { commands });
+        self.notify(&format!("Cleared {count} owned animation(s); manual keys and unrelated settings preserved."), false);
+    }
+
     pub fn apply_animation_favourites(&mut self,pool:Vec<i32>,images:bool,videos:bool,selected_only:bool) {
         if !images && !videos {self.notify("Choose Images or Video Clips first.",true);return;}
         if !self.gpu_bulk_ready() {return;}
@@ -749,6 +785,10 @@ impl Studio {
         use slint::ComponentHandle;
         let ui=app.global::<crate::ui::Keyframes>();
         let index=ui.get_animation_selected();
+        if index < 0 {
+            ui.set_animation_timing("No Animation selected. Apply Selected or Apply All clears only owned generated motion.".into());
+            return;
+        }
         let physics=PhysicsControls {strength:f64::from(ui.get_physics_strength()),duration:f64::from(ui.get_physics_duration()),speed:f64::from(ui.get_physics_speed()),intensity:f64::from(ui.get_physics_intensity())};
         let canvas=canvas_controls(&ui.get_canvas_motion());
         let mut seconds=Vec::new();
