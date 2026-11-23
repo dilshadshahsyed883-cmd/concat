@@ -23,6 +23,14 @@ pub(super) fn apply(
             Ok(Outcome { created_id: None, applied })
         }
 
+        Command::ClearGeneratedMotion { clip_id, expected_keys } => {
+            let Some(clip) = project.active_mut().clip_mut(&clip_id) else {
+                return Ok(Outcome::default());
+            };
+            let applied = crate::motion_preset::clear_generated(clip, &expected_keys)?;
+            Ok(Outcome { created_id: None, applied })
+        }
+
         Command::UpdateClip { clip_id, patch } => {
             let timeline = project.active_mut();
             let Some(clip) = timeline.clip_mut(&clip_id) else {
