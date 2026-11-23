@@ -135,6 +135,7 @@ fn canvas_publish(app: &App, config: &concat_project::canvas_preset::Config) {
     panel.set_foreground_y(config.foreground.y as f32);
     panel.set_foreground_width(config.foreground.width as f32);
     panel.set_foreground_height(config.foreground.height as f32);
+    panel.set_foreground_size(config.picture_size_percent() as f32);
     panel.set_border_width(config.border_width as f32);
     panel.set_radius(config.radius as f32);
     panel.set_blur(config.blur as f32);
@@ -913,6 +914,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                     "foregroundY" => config.foreground.y = value,
                     "foregroundWidth" => config.foreground.width = value,
                     "foregroundHeight" => config.foreground.height = value,
+                    "foregroundSize" => { let _ = config.set_picture_size(value); },
                     "borderWidth" => config.border_width = value,
                     "radius" => config.radius = value,
                     "blur" => config.blur = value,
@@ -1689,12 +1691,18 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                 let (end_x,end_y)=c.end_anchor.map_or((0.0,0.0),|v|(v[0],v[1]));
                 result=AnimationInspectorData {strength:settings.physics.strength as f32,duration:settings.physics.duration as f32,
                     speed:settings.physics.speed as f32,intensity:settings.physics.intensity as f32,
-                    canvas:CanvasMotionData {start_scale:c.start_scale as f32,end_scale:c.end_scale as f32,duration:c.duration_seconds as f32,
+                    canvas:CanvasMotionData {start_scale:c.start_scale as f32,
+                        middle_scale:c.middle_scale as f32,peak_time:c.peak_time as f32,auto_fit:c.auto_fit,
+                        end_scale:c.end_scale as f32,duration:c.duration_seconds as f32,
                         delay:c.delay_seconds as f32,entry_seconds:c.entry_seconds as f32,hold_seconds:c.hold_seconds as f32,exit_seconds:c.exit_seconds as f32,
                         focus_middle_x:c.focus_middle[0] as f32,focus_middle_y:c.focus_middle[1] as f32,focus_hold:c.focus_hold_seconds as f32,
                         speed:c.speed as f32,strength:c.strength as f32,intensity:c.intensity as f32,blur:c.blur as f32,reverse:c.reverse,
                         custom_anchors:c.start_anchor.is_some() || c.end_anchor.is_some(),start_x:start_x as f32,start_y:start_y as f32,end_x:end_x as f32,end_y:end_y as f32,
-                        easing:if c.easing==concat_project::canvas_motion::MotionEasing::Linear {0}else{1},seed:c.seed.min(i32::MAX as u64) as i32,corner_radius:settings.corners as f32},
+                        easing:match c.easing {
+                            concat_project::canvas_motion::MotionEasing::Linear => 0,
+                            concat_project::canvas_motion::MotionEasing::Smooth => 1,
+                            concat_project::canvas_motion::MotionEasing::Cinematic => 2,
+                        },seed:c.seed.min(i32::MAX as u64) as i32,corner_radius:settings.corners as f32},
                 };
             });
             result
@@ -1722,14 +1730,14 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         keys.on_apply_random_motion(on_lanes!(|state| {
             state.apply_random_gpu_motion();
         }));
-        keys.on_apply_physics_motion(on_lanes!(|state, index: i32, strength: f32, duration: f32, speed: f32, intensity: f32| {
-            state.apply_physics_motion(index, strength, duration, speed, intensity);
+        keys.on_apply_physics_motion(on_lanes!(|state, index: i32, strength: f32, duration: f32, speed: f32, intensity: f32, auto_fit:bool| {
+            state.apply_physics_motion(index, strength, duration, speed, intensity, auto_fit);
         }));
         keys.on_apply_physics_bulk(on_lanes!(|state, preset: i32, mode: i32,
             images: bool, videos: bool, selected_only: bool,
-            strength: f32, duration: f32, speed: f32, intensity: f32| {
+            strength: f32, duration: f32, speed: f32, intensity: f32, auto_fit:bool| {
             state.apply_physics_bulk(preset, mode, images, videos, selected_only,
-                strength, duration, speed, intensity);
+                strength, duration, speed, intensity, auto_fit);
         }));
         keys.on_apply_canvas_motion(on_lanes!(|state, preset: i32, mode: i32, images: bool,
             videos: bool, selected_only: bool, settings: CanvasMotionData| {
