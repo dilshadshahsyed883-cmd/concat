@@ -326,7 +326,8 @@ export global Keyframes {
         let settings=Keyframes.load-animation(animation-selected);
         animation-saved=settings;
         physics-strength=settings.strength;physics-duration=settings.duration;physics-speed=settings.speed;physics-intensity=settings.intensity;
-        canvas-motion=settings.canvas;
+        // Read the saved property, not the moved non-Copy local settings struct.
+        canvas-motion=animation-saved.canvas;
         animation-has-override=Keyframes.has-animation-default(animation-selected);
     }
     public function inspect(index:int) {
