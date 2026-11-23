@@ -152,6 +152,16 @@ pub struct ClipPatch {
     )]
     #[cfg_attr(feature = "schema", schemars(with = "Option<Transition>"))]
     pub transition_in: Option<Option<Transition>>,
+    /// Exact owned random transition signature persisted in a clip's extras.
+    /// Absence leaves ownership alone (manual edits invalidate a mismatch),
+    /// null releases ownership (manual Apply/Clear), value stamps an owned draw.
+    #[serde(
+        default,
+        with = "double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "Option<Transition>"))]
+    pub random_transition_signature: Option<Option<Transition>>,
     /// The title styling, same three-way wire semantics as `transition_in`.
     /// Setting a style also renames the clip after its first line.
     #[serde(

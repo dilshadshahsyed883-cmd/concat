@@ -2336,7 +2336,8 @@ impl Studio {
             .filter(|value| value.is_finite() && (0.1..=5.0).contains(value))
             .unwrap_or(0.9);
         let transition_draft_intensity = prefs.transition_default_intensity
-            .filter(|value| value.is_finite() && (0.0..=1.0).contains(value));
+            .filter(|value| value.is_finite() && (0.0..=1.0).contains(value))
+            .or(Some(0.7));
         let mut studio = Self {
             prefs,
             transition_draft_duration,
@@ -4631,6 +4632,12 @@ impl Studio {
         );
     }
 
+    fn transition_editable(&self, clip: &Clip) -> bool {
+        !self.locked(&clip.track_id)
+            && !clip.extra.contains_key("canvasOwner")
+            && self.timeline().tracks.iter().any(|track| track.id == clip.track_id && track.visible)
+    }
+
     /// The clip that ends where `clip` starts, on the same track - the
     /// outgoing side of the cut a transition into `clip` rides. `None` when
     /// nothing is adjacent, which is when a transition has nothing to
@@ -4682,6 +4689,14 @@ impl Studio {
     /// the cut into it, for a transition picked after a click on the lane.
     /// The incoming clip's id, or what to say instead.
     fn transition_cut(&self) -> Result<String, String> {
+        if self.selection.is_empty() {
+            if let Some(id) = self.transition_selected.as_deref()
+                && let Some(clip) = self.clip(id)
+                && self.outgoing_of(clip).is_some()
+            {
+                return Ok(id.to_owned());
+            }
+        }
         match self.selection.as_slice() {
             [one] => Ok(one.clone()),
             [a, b] => {
@@ -4702,51 +4717,10 @@ impl Studio {
         }
     }
 
-    /// Puts the catalogue transition `id` on the cut the selection names;
-    /// see [`Studio::transition_cut`].
+    /// Legacy direct request uses the same validated Selected scope as the
+    /// explicit inspector button; no unguarded UpdateClip path remains.
     pub fn apply_transition(&mut self, id: &str) {
-        if cfg!(windows) && !gpu_catalogue_has("transitions", id) {
-            self.notify(&t("studio.unsupportedGpuControl"), true);
-            return;
-        }
-        let clip_id = match self.transition_cut() {
-            Ok(clip_id) => clip_id,
-            Err(why) => {
-                self.notify(&why, true);
-                return;
-            }
-        };
-        let Some(clip) = self.clip(&clip_id) else {
-            return;
-        };
-        // One clip with nothing meeting it has no cut to put a transition
-        // on: the answer is the other clip, not a longer one.
-        let Some(outgoing) = self.outgoing_of(clip) else {
-            self.notify(&t("studio.selectTwoAdjacentClips"), true);
-            return;
-        };
-        if !clip.kind.is_visual() || !outgoing.kind.is_visual() {
-            self.notify(&t("studio.selectVideoImageClip"), true);
-            return;
-        }
-        let requested = self.transition_draft_duration;
-        let intensity_default = self.transition_draft_intensity;
-        let Some(duration) = self.transition_duration(clip, requested) else {
-            self.notify(&t("studio.noRoomForTransition"), true);
-            return;
-        };
-        self.apply(Command::UpdateClip {
-            clip_id,
-            patch: ClipPatch {
-                transition_in: Some(Some(Transition {
-                    id: id.to_owned(),
-                    duration,
-                    intensity: intensity_default,
-                    params: Default::default(),
-                })),
-                ..ClipPatch::default()
-            },
-        });
+        self.apply_transition_scoped(id, true, true, true);
     }
 
     /// Editing the tab's draft changes only subsequent applications.
@@ -4781,7 +4755,7 @@ impl Studio {
 
     pub fn reset_transition_default(&mut self) {
         self.transition_draft_duration = 0.9;
-        self.transition_draft_intensity = None;
+        self.transition_draft_intensity = Some(0.7);
         self.prefs.transition_default_duration = None;
         self.prefs.transition_default_intensity = None;
         self.prefs.save(&self.host.dirs);
@@ -4811,6 +4785,10 @@ impl Studio {
         let Some(clip_id) = self.transition_target() else {
             return;
         };
+        if !self.clip(&clip_id).is_some_and(|clip| self.transition_editable(clip)) {
+            self.notify("Transition is on a protected or hidden track.", true);
+            return;
+        }
         self.transition_selected = None;
         self.apply(Command::UpdateClip {
             clip_id,
@@ -4838,7 +4816,7 @@ impl Studio {
         let plan = match transition_duration::plan(
             self.project(),
             seconds,
-            |track| self.locked(track),
+            |track| self.locked(track) || !self.timeline().tracks.iter().any(|lane| lane.id == track && lane.visible),
             |id| gpu_catalogue_has("transitions", id)
                 || matches!(id, "cross-fade" | "fade-black" | "push" | "zoom" | "wipe-left" | "wipe-right"),
         ) {
@@ -4861,6 +4839,10 @@ impl Studio {
         let Some(clip) = self.clip(clip_id) else {
             return;
         };
+        if !self.transition_editable(clip) {
+            self.notify("Transition is on a protected or hidden track.", true);
+            return;
+        }
         let Some(existing) = clip.transition_in.clone() else {
             return;
         };
@@ -4884,7 +4866,7 @@ impl Studio {
     /// Validate each explicit package control before recording a single undo step.
     pub fn set_transition_controls(&mut self, json:&str) {
         let Some(clip)=self.selected_transition().cloned() else {self.notify("Select a transition first",true);return;};
-        if self.locked(&clip.track_id){self.notify("Track is locked",true);return;}
+        if !self.transition_editable(&clip){self.notify("Transition is on a protected or hidden track",true);return;}
         let Some(mut transition)=clip.transition_in else{return;};
         if json.len()>8192 {self.notify("Transition settings exceed 8 KiB",true);return;}
         let params:std::collections::BTreeMap<String,f64>=match serde_json::from_str(json){Ok(v)=>v,Err(e)=>{self.notify(&e.to_string(),true);return;}};
@@ -4902,6 +4884,10 @@ impl Studio {
         }
         let Some(clip_id) = self.transition_target() else { return };
         let Some(clip) = self.clip(&clip_id) else { return };
+        if !self.transition_editable(clip) {
+            self.notify("Transition is on a protected or hidden track.", true);
+            return;
+        }
         let Some(existing) = clip.transition_in.clone() else { return };
         self.apply(Command::UpdateClip {
             clip_id,

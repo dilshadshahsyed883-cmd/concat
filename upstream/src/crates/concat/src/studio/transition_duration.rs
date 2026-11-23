@@ -37,6 +37,8 @@ fn requested_duration(timeline: &Timeline, seconds: f64) -> Option<f64> {
 fn pair_is_valid(previous: &Clip, incoming: &Clip, frame: f64, duration: f64) -> bool {
     matches!(previous.kind, ClipKind::Image | ClipKind::Video)
         && matches!(incoming.kind, ClipKind::Image | ClipKind::Video)
+        && !previous.extra.contains_key("canvasOwner")
+        && !incoming.extra.contains_key("canvasOwner")
         && (previous.start + previous.duration - incoming.start).abs() < frame / 2.0
         && duration <= previous.duration.min(incoming.duration) + 1e-9
 }
@@ -74,7 +76,7 @@ fn overlaps(a: (i64, i64), b: (i64, i64)) -> bool {
 
 /// Only existing transitions are patched. A cut that cannot take the requested
 /// frame count is skipped, rather than silently receiving a shorter duration.
-/// All project timelines are visited in one batch and the active tab is restored.
+/// Only the active timeline is visited; other timelines must not be edited.
 pub fn plan(
     project: &Project,
     seconds: f64,
@@ -86,6 +88,7 @@ pub fn plan(
     }
     let mut result = DurationPlan::default();
     for timeline in &project.timelines {
+        if timeline.id != project.active_timeline_id { continue; }
         let Some(wanted) = requested_duration(timeline, seconds) else {
             result.skipped += timeline.clips.iter().filter(|c| c.transition_in.is_some()).count();
             continue;
@@ -103,6 +106,7 @@ pub fn plan(
                 let Some(existing) = &clip.transition_in else { continue };
                 let native = existing.id.starts_with("concat.");
                 let candidate = !locked(&clip.track_id)
+                    && timeline.tracks.iter().any(|track| track.id == clip.track_id && track.visible)
                     && supported(&existing.id)
                     && index.checked_sub(1).is_some_and(|previous| {
                         pair_is_valid(clips[previous], clip, 1.0 / fps, wanted)
@@ -168,12 +172,8 @@ pub fn plan(
             }
         }
         if !commands.is_empty() {
-            result.commands.push(Command::SelectTimeline { timeline_id: timeline.id.clone() });
             result.commands.extend(commands);
         }
-    }
-    if !result.commands.is_empty() {
-        result.commands.push(Command::SelectTimeline { timeline_id: project.active_timeline_id.clone() });
     }
     Ok(result)
 }
@@ -301,17 +301,84 @@ mod tests {
     }
 
     #[test]
-    fn project_wide_batch_restores_active_timeline_and_scales_to_thousands() {
+    fn active_timeline_batch_preserves_other_timelines_and_scales_to_thousands() {
         let mut project=fixture(1500);
         let mut other=project.active().clone();
         other.id="other".into();
         for clip in &mut other.clips { Arc::make_mut(clip).id.push_str("-other"); }
         project.timelines.push(Arc::new(other));
+        let untouched=project.timelines[1].clone();
         let (result,mut editor)=run(&project,0.6);
-        assert_eq!((result.changed,result.skipped),(3000,0));
+        assert_eq!((result.changed,result.skipped),(1500,0));
         assert_eq!(editor.project().active_timeline_id,"main");
+        assert_eq!(editor.project().timelines[1],untouched);
         assert!(editor.undo());
         assert_eq!(document(editor.project()),document(&project));
+    }
+
+    #[test]
+    fn hidden_and_canvas_owned_cuts_are_skipped() {
+        let mut project=fixture(2);
+        project.active_mut().tracks.iter_mut().find(|t|t.id=="video").unwrap().visible=false;
+        let hidden=plan(&project,0.6,|_|false,|_|true).unwrap();
+        assert_eq!((hidden.changed,hidden.skipped),(0,2));
+        project.active_mut().tracks.iter_mut().find(|t|t.id=="video").unwrap().visible=true;
+        project.active_mut().clip_mut("c1").unwrap().extra.insert("canvasOwner".into(),json!("canvas"));
+        let canvas=plan(&project,0.6,|_|false,|_|true).unwrap();
+        assert_eq!((canvas.changed,canvas.skipped),(0,2));
+    }
+
+    #[test]
+    fn random_ownership_survives_save_reopen_manual_edit_and_undo() {
+        let original=fixture(2);
+        let mut editor=Editor::from_document(&document(&original)).unwrap();
+        let saved=editor.project().active().clip("c1").unwrap().transition_in.clone().unwrap();
+        editor.apply(Command::UpdateClip {
+            clip_id:"c1".into(),
+            patch: ClipPatch {
+                random_transition_signature:Some(Some(saved.clone())),
+                ..Default::default()
+            },
+        }).unwrap();
+        let after_ownership=document(editor.project());
+        let mut reopened=Editor::from_document(&after_ownership).unwrap();
+        let current=reopened.project().active().clip("c1").unwrap();
+        assert_eq!(
+            current.extra.get("concatRandomTransition"),
+            Some(&serde_json::to_value(&saved).unwrap())
+        );
+        let mut manual=saved.clone();
+        manual.intensity=Some(0.95);
+        reopened.apply(Command::UpdateClip {
+            clip_id:"c1".into(),
+            patch: ClipPatch {
+                transition_in:Some(Some(manual.clone())),
+                ..Default::default()
+            },
+        }).unwrap();
+        let edited=reopened.project().active().clip("c1").unwrap();
+        assert_eq!(edited.transition_in.as_ref(),Some(&manual));
+        assert_ne!(
+            edited.extra.get("concatRandomTransition"),
+            Some(&serde_json::to_value(&manual).unwrap()),
+            "a manual change must never still appear randomly managed"
+        );
+        assert!(reopened.undo());
+        let restored=reopened.project().active().clip("c1").unwrap();
+        assert_eq!(restored.transition_in.as_ref(),Some(&saved));
+        assert_eq!(restored.extra.get("concatRandomTransition"),
+            Some(&serde_json::to_value(&saved).unwrap()));
+        reopened.apply(Command::UpdateClip {
+            clip_id:"c1".into(),
+            patch:ClipPatch {
+                transition_in:Some(None),
+                random_transition_signature:Some(None),
+                ..Default::default()
+            },
+        }).unwrap();
+        let cleared=reopened.project().active().clip("c1").unwrap();
+        assert!(cleared.transition_in.is_none());
+        assert!(!cleared.extra.contains_key("concatRandomTransition"));
     }
 
     #[test]

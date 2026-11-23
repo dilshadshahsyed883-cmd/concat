@@ -1079,11 +1079,11 @@ component CatalogueCard inherits Rectangle {
                     height: 20px;
                     border-radius: Theme.r-xs;
                     background: plus.has-hover ? Theme.accent : Theme.scrim;
-                    visible: root.item.enabled && (card.has-hover || plus.has-hover);
+                    visible: root.item.enabled && !root.inspect-only && (card.has-hover || plus.has-hover);
 
                     plus := TouchArea {
                         mouse-cursor: pointer;
-                        clicked => { root.applied(); }
+                        clicked => { if root.inspect-only { root.inspected(); } else { root.applied(); } }
                     }
 
                     Icon {
@@ -2023,8 +2023,6 @@ export component MediaPane inherits Rectangle {
     callback add-shape(shape: string, label: string);
     /// Catalogue pages: apply to the selected clip; Rust validates & explains.
     callback apply-effect(effect-id: string);
-    callback apply-transition(transition-id: string);
-    callback apply-random-transitions(mode: int);
     callback apply-random-effects();
     /// Filters page: lay the look down as a layer at the playhead.
     callback apply-filter(filter-id: string, label: string);
@@ -3080,7 +3078,7 @@ export component MediaPane inherits Rectangle {
                                 LibraryFocus.selected-id = "__none_transition__";
                                 LibraryFocus.selected-name = "None / No Transition";
                                 LibraryFocus.selected-category = "Transitions";
-                                LibraryFocus.selected-description = "Select an existing cut or transition, then explicitly remove it in Details. Browsing None makes no changes.";
+                                LibraryFocus.selected-description = "Selecting None makes no changes. Use the dedicated Clear Selected or Clear All action.";
                             }
                         }
                     }
@@ -3088,9 +3086,9 @@ export component MediaPane inherits Rectangle {
                         entries: root.catalogue-transitions;
                         page-kind: 1;
                         glyph: Glyph.transition;
-                        // Transitions apply directly on single-click — no audition overlay.
+                        // Browse/select only. Explicit Apply in the inspector is the sole edit path.
+                        inspect-only: true;
                         auditions: false;
-                        applied(id, label) => { root.apply-transition(id); }
                     }
                     if root.catalogue-transitions.length == 0: Text {
                         text: Library.view(3).favourites ? "No starred transitions match this view. Turn off Favorites or choose another category." : "No transitions match the current search or category.";

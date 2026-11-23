@@ -170,7 +170,9 @@ export global Editor {
     callback library-add-shape(shape: string, label: string);
     callback library-apply-effect(effect-id: string);
     callback library-apply-transition(transition-id: string);
-    callback library-apply-random-transitions(mode: int);
+    // Transition cards inspect only; these callbacks are explicit inspector actions.
+    callback library-apply-transition-scoped(transition-id: string, images: bool, videos: bool, selected-only: bool);
+    callback library-apply-random-transitions(mode: int, images: bool, videos: bool, selected-only: bool);
     callback library-apply-random-effects();
     /// Filters page: lay the look down as a layer at the playhead.
     callback library-apply-filter(filter-id: string, label: string);
@@ -354,11 +356,16 @@ export global Editor {
     callback clip-enhance-run();
     /// The transition riding into the selected clip; see VideoPanel.
     callback transition-remove();
+    callback transition-clear(selected-only: bool, images: bool, videos: bool);
     callback transition-duration-set(seconds: float);
     callback transition-duration-all(seconds: float);
     callback transition-intensity-set(amount: float);
     callback transition-default-save(seconds: float, intensity: float);
     callback transition-default-reset();
+    // Separate transition target state: never leak animation/media-layout filters.
+    in-out property <bool> transition-images: true;
+    in-out property <bool> transition-videos: true;
+    in-out property <int> transition-scope: 0;
     // Session draft for NEW transitions; Save Default persists it explicitly.
     in-out property <float> transition-draft-duration: 0.9;
     in-out property <float> transition-draft-intensity: 0.7;
