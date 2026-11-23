@@ -10,7 +10,8 @@ export component AnimationApplyBar inherits VerticalLayout {
             Keyframes.apply-animation-favourites(Keyframes.favourite-pool,Keyframes.animation-images,Keyframes.animation-videos,selected);
         } else if Keyframes.animation-selected < 9 {
             Keyframes.apply-physics-bulk(Keyframes.animation-selected,mode,Keyframes.animation-images,Keyframes.animation-videos,selected,
-                Keyframes.physics-strength,Keyframes.physics-duration,Keyframes.physics-speed,Keyframes.physics-intensity);
+                Keyframes.physics-strength,Keyframes.physics-duration,Keyframes.physics-speed,Keyframes.physics-intensity,
+                Keyframes.canvas-motion.auto-fit);
         } else {
             Keyframes.apply-canvas-motion(Keyframes.animation-selected - 9,mode,Keyframes.animation-images,Keyframes.animation-videos,selected,Keyframes.canvas-motion);
         }
