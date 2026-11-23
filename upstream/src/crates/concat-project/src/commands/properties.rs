@@ -90,6 +90,22 @@ pub(super) fn apply(
             if let Some(transition) = patch.transition_in {
                 applied |= assign(&mut clip.transition_in, transition);
             }
+            if let Some(signature) = patch.random_transition_signature {
+                // A saved owned signature is compared with the *current* cut
+                // on the next random action. Hand-editing the cut leaves this
+                // marker behind, so the mismatch protects that manual edit.
+                let marker = "concatRandomTransition";
+                let next = signature.map(|cut| serde_json::to_value(cut)
+                    .expect("serializable transition signature"));
+                if clip.extra.get(marker) != next.as_ref() {
+                    applied = true;
+                    if let Some(value) = next {
+                        clip.extra.insert(marker.to_owned(), value);
+                    } else {
+                        clip.extra.remove(marker);
+                    }
+                }
+            }
             if let Some(text) = patch.text {
                 // The name follows the words, like addTextClip snapshots it.
                 if let Some(style) = &text {
