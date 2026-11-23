@@ -183,7 +183,9 @@ impl CanvasMotionPreset {
             return Err(PresetError::NoChange);
         }
         let last = (clip.duration / frame - 1e-9).ceil() - 1.0;
-        if !last.is_finite() || last < 1.0 || last > i32::MAX as f64 {
+        // A genuine start / middle / end envelope needs three visible
+        // frames. Two frames cannot contain all three distinct checkpoints.
+        if !last.is_finite() || last < 2.0 || last > i32::MAX as f64 {
             return Err(PresetError::TooShort);
         }
         // Auto Fit is exactly the clip's visible start to last frame. Manual
@@ -194,7 +196,7 @@ impl CanvasMotionPreset {
         let end = if controls.auto_fit { last } else {
             (delay + (controls.duration_seconds / frame).round().max(1.0)).min(last)
         };
-        if end <= delay {
+        if end - delay < 2.0 {
             return Err(PresetError::TooShort);
         }
         let peak_frame = (delay + (end - delay) * controls.peak_time).round()
@@ -584,6 +586,24 @@ mod tests {
     use crate::model::{ClipKind, Project};
     use crate::{DocumentSettings, Editor};
     use std::sync::Arc;
+
+
+    #[test]
+    fn fewer_than_three_visible_frames_never_fake_a_middle_peak() {
+        let frame=1.0/30.0;
+        for duration in [frame,2.0*frame] {
+            let clip=Clip::blank("short","T1",ClipKind::Image,"image",0.0,duration);
+            assert_eq!(CanvasMotionPreset::TopLeft.keys(
+                &clip,frame,CanvasMotionControls::default()),Err(PresetError::TooShort));
+        }
+        let clip=Clip::blank("three","T1",ClipKind::Video,"video",0.0,3.0*frame);
+        let keys=CanvasMotionPreset::TopLeft.keys(
+            &clip,frame,CanvasMotionControls::default()).unwrap();
+        let scale: Vec<_>=keys.iter().filter(|key|key.property==KeyProperty::Scale).collect();
+        assert_eq!(scale.first().unwrap().value,0.70);
+        assert_eq!(scale.last().unwrap().value,0.70);
+        assert!(scale.iter().any(|key|key.value==1.0));
+    }
 
     #[test]
     fn all_canvas_presets_fit_visible_clip_and_share_start_peak_end_scale() {
