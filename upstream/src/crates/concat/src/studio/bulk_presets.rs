@@ -1228,6 +1228,16 @@ mod tests {
         assert!(animation_from_index(30).is_some());
         assert!(animation_from_index(44).is_some());
         assert_eq!(animation_favourite_id(45), None);
+        let ids: HashSet<_> = (0..45).map(|index| animation_favourite_id(index).unwrap()).collect();
+        assert_eq!(ids.len(), 45, "all persisted animation IDs must remain unique");
+        for canvas_index in 0..21 {
+            assert_eq!(animation_favourite_id(canvas_index + 9),
+                CanvasMotionPreset::from_index(canvas_index).map(CanvasMotionPreset::id));
+        }
+        for index in (0..9).chain(30..45) {
+            let kind = animation_from_index(index).expect("all Basic/Physics cards must route");
+            assert_eq!(animation_favourite_id(index), Some(motion_id(kind)));
+        }
     }
 
     #[test]
