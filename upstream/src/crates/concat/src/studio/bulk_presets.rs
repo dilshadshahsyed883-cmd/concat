@@ -224,7 +224,7 @@ fn transition_span(previous: &Clip, incoming: &Clip, duration: f64, native: bool
 /// Match the worker's 30fps lane rounding and the native transition's
 /// requirement to fit both sides of the seam.
 fn transition_length(previous: &Clip, incoming: &Clip) -> Option<(f64, CutSpan)> {
-    transition_length_with_default(previous, incoming, 0.5)
+    transition_length_with_default(previous, incoming, 0.9)
 }
 
 fn transition_length_with_default(
@@ -506,9 +506,7 @@ impl Studio {
                 if !self.locked(&incoming.track_id)
                     && let Some((duration, span)) = transition_length_with_default(
                         previous, incoming,
-                        self.prefs.transition_default_duration
-                            .filter(|d| d.is_finite() && (0.1..=5.0).contains(d))
-                            .unwrap_or(0.5),
+                        self.transition_draft_duration,
                     )
                 {
                     plans.push((incoming, duration, old, span));
@@ -536,8 +534,7 @@ impl Studio {
         }
         let options: Vec<_> = plans.iter().map(|plan| (presets.len(), plan.2)).collect();
 
-        let saved_intensity = self.prefs.transition_default_intensity
-            .filter(|v| v.is_finite() && (0.0..=1.0).contains(v));
+        let saved_intensity = self.transition_draft_intensity;
         let mut generated = Vec::new();
         let commands: Vec<_> = plans
             .into_iter()
@@ -1339,15 +1336,15 @@ mod tests {
         let previous = Clip::blank("c1", "t1", ClipKind::Video, "previous", 0.0, 1.0);
         let mut incoming = Clip::blank("c2", "t1", ClipKind::Image, "incoming", 1.0, 1.0);
         let (length, span) = transition_length(&previous, &incoming).unwrap();
-        assert_eq!(length, 0.5);
-        assert_eq!((span.start, span.end), (23, 38));
+        assert_eq!(length, 0.9);
+        assert_eq!((span.start, span.end), (17, 44));
         let (remembered, _) = transition_length_with_default(&previous, &incoming, 0.7).unwrap();
         assert!((remembered - 0.7).abs() < 1e-12);
         let (clamped, _) = transition_length_with_default(&previous, &incoming, 2.0).unwrap();
         assert_eq!(clamped, 1.0);
         incoming.kind = ClipKind::Video;
         let (_, span) = transition_length(&previous, &incoming).unwrap();
-        assert_eq!((span.start, span.end), (30, 45));
+        assert_eq!((span.start, span.end), (30, 57));
         incoming.start = 1.1;
         assert!(transition_length(&previous, &incoming).is_none());
         incoming.start = 1.0;
