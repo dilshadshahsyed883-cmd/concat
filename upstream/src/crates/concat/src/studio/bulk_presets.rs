@@ -695,6 +695,18 @@ impl Studio {
             }
         }
     }
+    /// Report whether a preset has a stored override, distinct from draft edits.
+    pub fn has_animation_default(&self,index:i32)->bool {
+        animation_favourite_id(index).is_some_and(|id|self.prefs.animation_preset_settings.contains_key(id))
+    }
+    /// Reset factory values by removing this preset's saved override only.
+    /// Applied clip animation keys are not part of preferences.
+    pub fn reset_animation_settings(&mut self,index:i32) {
+        let Some(id)=animation_favourite_id(index) else {return;};
+        if self.prefs.animation_preset_settings.remove(id).is_some() {
+            self.prefs.save(&self.host.dirs);
+        }
+    }
     /// Each chosen starred preset uses its own configured parameters. Timeline
     /// selection and preset pool selection are independent, with no empty fallback.
     /// The explicit No Animation choice is a scoped, undoable clear.

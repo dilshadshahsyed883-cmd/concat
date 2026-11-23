@@ -557,6 +557,33 @@ export component ConfigPane inherits Rectangle {
                         videos: Keyframes.animation-videos;
                         selected-only: Keyframes.animation-scope == 1;
                     }
+                    if Keyframes.animation-selected >= 0: HorizontalLayout {
+                        spacing: 8px;
+                        Button {
+                            label: "Save Default";
+                            enabled: Keyframes.animation-dirty;
+                            clicked => { Keyframes.save-current(); }
+                        }
+                        Button {
+                            label: "Reset Default";
+                            enabled: Keyframes.animation-dirty || Keyframes.animation-has-override;
+                            clicked => { Keyframes.reset-current(); }
+                        }
+                    }
+                    if Keyframes.animation-selected >= 0: Text {
+                        text: Keyframes.animation-dirty
+                            ? "Unsaved edits — Save Default to reuse these settings."
+                            : Keyframes.animation-has-override
+                            ? "Saved custom default for this animation."
+                            : "Using original factory defaults.";
+                        color: Theme.fg-muted;
+                        font-size: Theme.fs-sm;
+                        wrap: word-wrap;
+                    }
+                    if Keyframes.animation-selected >= 0: Text {
+                        text: "Switching presets discards unsaved edits. Save/Reset never changes applied timeline animations.";
+                        color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
+                    }
                     if Keyframes.animation-selected == -1: Text {
                         text: "Selecting None changes nothing. Use Clear Selected Animation or Clear All Eligible Animations below. Hand-edited keys and unrelated styling are protected.";
                         color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;

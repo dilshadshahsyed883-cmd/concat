@@ -5,7 +5,7 @@ import { Keyframes } from "../timeline/model.slint";
 export component AnimationApplyBar inherits VerticalLayout {
     property <bool> targets: Keyframes.animation-images || Keyframes.animation-videos;
     function apply(selected:bool,mode:int) {
-        Keyframes.remember-current();
+        // Applying current values never saves them as defaults.
         if Keyframes.animation-selected == -1 {
             Keyframes.clear-generated-motion(Keyframes.animation-images,Keyframes.animation-videos,selected);
         } else if Keyframes.animation-favourites-browser {
