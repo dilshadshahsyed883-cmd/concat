@@ -318,7 +318,7 @@ export component ConfigPane inherits Rectangle {
         // user out of Canvas, Transitions or Effects settings.
         if (root.selected.id != root.browsing-selection-id) {
             root.browsing-selection-id = root.selected.id;
-            if LibraryFocus.page != 1 { LibraryFocus.page = -1; }
+            if LibraryFocus.page != 1 && !(LibraryFocus.page == 2 && LibraryFocus.selected-id == "__none_effect__") { LibraryFocus.page = -1; }
         }
         if (root.selected.kind != root.strip-kind) {
             root.strip-kind = root.selected.kind;
