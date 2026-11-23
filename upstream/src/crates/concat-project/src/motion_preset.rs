@@ -212,6 +212,14 @@ pub enum MotionPreset {
     PanRight,
     /// Raise opacity from zero to the clip's current setting.
     FadeIn,
+    PushOut,
+    PanLeft,
+    PanUp,
+    PanDown,
+    FadeOut,
+    RotateLeft,
+    RotateRight,
+    OpacityPulse,
 }
 
 /// Why a motion preset cannot be placed on this clip.
@@ -228,6 +236,23 @@ pub enum PresetError {
 }
 
 impl MotionPreset {
+    /// Stable catalogue IDs; never change existing IDs because user settings depend on them.
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::PushIn => "motion.push-in",
+            Self::PanRight => "motion.pan-right",
+            Self::FadeIn => "motion.fade-in",
+            Self::PushOut => "motion.push-out",
+            Self::PanLeft => "motion.pan-left",
+            Self::PanUp => "motion.pan-up",
+            Self::PanDown => "motion.pan-down",
+            Self::FadeOut => "motion.fade-out",
+            Self::RotateLeft => "motion.rotate-left",
+            Self::RotateRight => "motion.rotate-right",
+            Self::OpacityPulse => "motion.opacity-pulse",
+        }
+    }
+
     /// Build one undoable edit and return the timeline time of a frame in
     /// its range so the inspector can show the effect immediately.
     pub fn command(self, clip: &Clip, frame: f64) -> Result<(Command, f64), PresetError> {
@@ -246,11 +271,12 @@ impl MotionPreset {
     }
 
     /// Calculate the preset's native keys before committing an edit.
-    pub fn keys(self, clip: &Clip, frame: f64) -> Result<([ClipKey; 2], f64), PresetError> {
+    pub fn keys(self, clip: &Clip, frame: f64) -> Result<(Vec<ClipKey>, f64), PresetError> {
         self.keys_with(clip, frame, 1.0, 1.0, 1.0)
     }
 
-    /// Shared authoring controls, sampled as the same two editable keys.
+    /// Shared authoring controls, baked into native editable keys. Opacity Pulse
+    /// uses three visible-frame keys; the other Basic presets use two.
     pub fn keys_with(
         self,
         clip: &Clip,
@@ -258,7 +284,7 @@ impl MotionPreset {
         strength: f64,
         duration: f64,
         speed: f64,
-    ) -> Result<([ClipKey; 2], f64), PresetError> {
+    ) -> Result<(Vec<ClipKey>, f64), PresetError> {
         if !strength.is_finite()
             || !duration.is_finite()
             || !speed.is_finite()
@@ -299,11 +325,32 @@ impl MotionPreset {
                 clip.opacity,
                 (0.1 * clip.duration / frame).ceil().min(last),
             ),
+            Self::PushOut => (
+                KeyProperty::Scale,
+                (clip.scale * 1.18).min(ranges::MAX_SCALE),
+                clip.scale,
+                last,
+            ),
+            Self::PanLeft => (KeyProperty::OffsetX, clip.offset_x,
+                (clip.offset_x - 0.08).max(-ranges::MAX_OFFSET), last),
+            Self::PanUp => (KeyProperty::OffsetY, clip.offset_y,
+                (clip.offset_y - 0.08).max(-ranges::MAX_OFFSET), last),
+            Self::PanDown => (KeyProperty::OffsetY, clip.offset_y,
+                (clip.offset_y + 0.08).min(ranges::MAX_OFFSET), last),
+            Self::FadeOut => (KeyProperty::Opacity, clip.opacity, 0.0,
+                (0.1 * clip.duration / frame).ceil().min(last)),
+            Self::RotateLeft => (KeyProperty::Rotation, clip.rotation,
+                (clip.rotation - 12.0).max(-360.0), last),
+            Self::RotateRight => (KeyProperty::Rotation, clip.rotation,
+                (clip.rotation + 12.0).min(360.0), last),
+            Self::OpacityPulse => (KeyProperty::Opacity, clip.opacity,
+                clip.opacity * 0.65, last),
         };
         let final_value = match property {
             KeyProperty::Scale => (first + (final_value - first) * strength)
                 .clamp(ranges::MIN_SCALE, ranges::MAX_SCALE),
             KeyProperty::Opacity => (first + (final_value - first) * strength).clamp(0.0, 1.0),
+            KeyProperty::Rotation => (first + (final_value - first) * strength).clamp(-360.0, 360.0),
             _ => (first + (final_value - first) * strength)
                 .clamp(-ranges::MAX_OFFSET, ranges::MAX_OFFSET),
         };
@@ -315,16 +362,23 @@ impl MotionPreset {
             return Err(PresetError::NoChange);
         }
         let end = end_frame * frame / clip.duration;
-        let keys = [
+        let mut stops = vec![
             (0.0, first, KeyEase::LINEAR),
             (end, final_value, KeyEase::IN_OUT),
-        ]
-        .map(|(at, value, ease)| ClipKey {
-            property,
-            at,
-            value,
-            ease,
-        });
+        ];
+        if self == Self::OpacityPulse {
+            // A genuine down-and-up pulse needs three visible keyframes.
+            if end_frame < 2.0 { return Err(PresetError::TooShort); }
+            let middle = (end_frame / 2.0).round().clamp(1.0, end_frame - 1.0);
+            stops = vec![
+                (0.0, first, KeyEase::LINEAR),
+                (middle * frame / clip.duration, final_value, KeyEase::IN_OUT),
+                (end, first, KeyEase::IN_OUT),
+            ];
+        }
+        let keys = stops.into_iter().map(|(at, value, ease)| ClipKey {
+            property, at, value, ease,
+        }).collect();
         let preview = clip.start + (end_frame / 2.0).round() * frame;
         Ok((keys, preview))
     }
@@ -432,6 +486,30 @@ mod tests {
             MotionPreset::FadeIn.command(&clip, FRAME).unwrap_err(),
             PresetError::AlreadyKeyed,
         );
+    }
+
+    #[test]
+    fn expanded_basic_presets_are_native_bounded_and_frame_aligned() {
+        let clip = Clip::blank("c1", "t1", ClipKind::Video, "picture", 0.0, 3.0);
+        for preset in [
+            MotionPreset::PushOut, MotionPreset::PanLeft, MotionPreset::PanUp,
+            MotionPreset::PanDown, MotionPreset::FadeOut, MotionPreset::RotateLeft,
+            MotionPreset::RotateRight, MotionPreset::OpacityPulse,
+        ] {
+            let (keys, _) = preset.keys(&clip, FRAME).unwrap();
+            assert!(keys.len() >= 2);
+            assert!(keys.windows(2).all(|p| p[0].at < p[1].at));
+            assert!(keys.iter().all(|k| k.value.is_finite() && k.at < 1.0));
+            assert!(keys.iter().all(|k| k.property == keys[0].property));
+        }
+        let pulse = MotionPreset::OpacityPulse.keys(&clip, FRAME).unwrap().0;
+        assert_eq!(pulse.len(), 3);
+        assert!((pulse[0].value - pulse[2].value).abs() < 1e-10);
+        assert!(pulse[1].value < pulse[0].value);
+        let mut authored = clip.clone();
+        authored.set_key(KeyProperty::Rotation, 0.2, 10.0, KeyEase::LINEAR);
+        assert_eq!(MotionPreset::RotateRight.keys(&authored, FRAME).unwrap_err(),
+            PresetError::AlreadyKeyed);
     }
 
     #[test]

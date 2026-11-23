@@ -27,6 +27,15 @@ pub(super) fn animation_favourite_id(index: i32) -> Option<&'static str> {
         0..=5 => PhysicsPreset::from_index(index).map(PhysicsPreset::id),
         6 => Some("motion.push-in"), 7 => Some("motion.pan-right"), 8 => Some("motion.fade-in"),
         9..=29 => CanvasMotionPreset::from_index(index-9).map(CanvasMotionPreset::id),
+        30..=36 => PhysicsPreset::from_index(index-24).map(PhysicsPreset::id),
+        37 => Some(MotionPreset::PushOut.id()),
+        38 => Some(MotionPreset::PanLeft.id()),
+        39 => Some(MotionPreset::PanUp.id()),
+        40 => Some(MotionPreset::PanDown.id()),
+        41 => Some(MotionPreset::FadeOut.id()),
+        42 => Some(MotionPreset::RotateLeft.id()),
+        43 => Some(MotionPreset::RotateRight.id()),
+        44 => Some(MotionPreset::OpacityPulse.id()),
         _ => None,
     }
 }
@@ -36,15 +45,22 @@ fn animation_from_index(index: i32) -> Option<MotionKind> {
         6 => Some(MotionKind::Basic(MotionPreset::PushIn)),
         7 => Some(MotionKind::Basic(MotionPreset::PanRight)),
         8 => Some(MotionKind::Basic(MotionPreset::FadeIn)),
+        30..=36 => PhysicsPreset::from_index(index-24).map(MotionKind::Physics),
+        37 => Some(MotionKind::Basic(MotionPreset::PushOut)),
+        38 => Some(MotionKind::Basic(MotionPreset::PanLeft)),
+        39 => Some(MotionKind::Basic(MotionPreset::PanUp)),
+        40 => Some(MotionKind::Basic(MotionPreset::PanDown)),
+        41 => Some(MotionKind::Basic(MotionPreset::FadeOut)),
+        42 => Some(MotionKind::Basic(MotionPreset::RotateLeft)),
+        43 => Some(MotionKind::Basic(MotionPreset::RotateRight)),
+        44 => Some(MotionKind::Basic(MotionPreset::OpacityPulse)),
         _ => None,
     }
 }
 fn motion_id(preset: MotionKind) -> &'static str {
     match preset {
         MotionKind::Physics(p) => p.id(),
-        MotionKind::Basic(MotionPreset::PushIn) => "motion.push-in",
-        MotionKind::Basic(MotionPreset::PanRight) => "motion.pan-right",
-        MotionKind::Basic(MotionPreset::FadeIn) => "motion.fade-in",
+        MotionKind::Basic(p) => p.id(),
         MotionKind::Canvas(p) => p.id(),
     }
 }
@@ -66,7 +82,7 @@ pub(super) fn canvas_controls(settings: &crate::ui::CanvasMotionData)->CanvasMot
         }
 }
 
-const MOTION_PRESETS: [MotionKind; 9] = [
+const MOTION_PRESETS: [MotionKind; 24] = [
     MotionKind::Basic(MotionPreset::PushIn),
     MotionKind::Basic(MotionPreset::PanRight),
     MotionKind::Basic(MotionPreset::FadeIn),
@@ -76,6 +92,21 @@ const MOTION_PRESETS: [MotionKind; 9] = [
     MotionKind::Physics(PhysicsPreset::ElasticPop),
     MotionKind::Physics(PhysicsPreset::InertiaGlide),
     MotionKind::Physics(PhysicsPreset::DampedShake),
+    MotionKind::Physics(PhysicsPreset::SpringSlide),
+    MotionKind::Physics(PhysicsPreset::FloatingBob),
+    MotionKind::Physics(PhysicsPreset::RecoilKick),
+    MotionKind::Physics(PhysicsPreset::SpiralZoom),
+    MotionKind::Physics(PhysicsPreset::OrbitMotion),
+    MotionKind::Physics(PhysicsPreset::ZigzagDrift),
+    MotionKind::Physics(PhysicsPreset::TumbleSettle),
+    MotionKind::Basic(MotionPreset::PushOut),
+    MotionKind::Basic(MotionPreset::PanLeft),
+    MotionKind::Basic(MotionPreset::PanUp),
+    MotionKind::Basic(MotionPreset::PanDown),
+    MotionKind::Basic(MotionPreset::FadeOut),
+    MotionKind::Basic(MotionPreset::RotateLeft),
+    MotionKind::Basic(MotionPreset::RotateRight),
+    MotionKind::Basic(MotionPreset::OpacityPulse),
 ];
 
 #[derive(Clone, PartialEq)]
@@ -685,7 +716,7 @@ impl Studio {
     pub fn remember_animation_settings(&mut self,index:i32,strength:f32,duration:f32,speed:f32,intensity:f32,canvas:crate::ui::CanvasMotionData) {
         let Some(id)=animation_favourite_id(index) else {return;};
         let mut saved=self.animation_settings(index);
-        if index>=9 {saved.canvas=canvas_controls(&canvas);saved.corners=f64::from(canvas.corner_radius).clamp(0.0,0.2);}
+        if (9..30).contains(&index) {saved.canvas=canvas_controls(&canvas);saved.corners=f64::from(canvas.corner_radius).clamp(0.0,0.2);}
         else {saved.physics=PhysicsControls {strength:f64::from(strength),duration:f64::from(duration),speed:f64::from(speed),intensity:f64::from(intensity)};}
         if !saved.valid() {return;}
         if let Ok(value)=serde_json::to_value(saved) {
@@ -751,7 +782,7 @@ impl Studio {
         let permitted:Vec<_>=pool.into_iter().filter_map(|index|{
             let id=animation_favourite_id(index)?;
             if !self.prefs.physics_motion_favourites.iter().any(|f|f==id) {return None;}
-            let preset=if index>=9 {MotionKind::Canvas(CanvasMotionPreset::from_index(index-9)?)} else {animation_from_index(index)?};
+            let preset=if (9..30).contains(&index) {MotionKind::Canvas(CanvasMotionPreset::from_index(index-9)?)} else {animation_from_index(index)?};
             Some((preset,self.animation_settings(index)))
         }).collect();
         if permitted.is_empty() {self.notify("Select at least one starred animation for the Favorites pool.",true);return;}
@@ -806,7 +837,7 @@ impl Studio {
                 || (ui.get_animation_scope()==1 && !self.selection.contains(&clip.id)) || self.locked(&clip.track_id)
                 || self.timeline().track(&clip.track_id).is_none_or(|t|!t.visible) {continue;}
             let Some(base)=concat_project::motion_preset::preset_base(clip,std::iter::empty()) else {continue;};
-            let keys=if index>=9 {CanvasMotionPreset::from_index(index-9).and_then(|p|p.keys(&base,self.frame_seconds(),canvas).ok())}
+            let keys=if (9..30).contains(&index) {CanvasMotionPreset::from_index(index-9).and_then(|p|p.keys(&base,self.frame_seconds(),canvas).ok())}
                 else {animation_from_index(index).and_then(|p|match p {
                     MotionKind::Basic(p)=>p.keys_with(&base,self.frame_seconds(),physics.strength,physics.duration,physics.speed).ok().map(|k|k.0.to_vec()),
                     MotionKind::Physics(p)=>p.keys_with(&base,self.frame_seconds(),physics).ok().map(|k|k.0),_=>None})};
@@ -1019,7 +1050,7 @@ impl Studio {
         &mut self, mode: i32, preset: i32,
         images: bool, videos: bool, selected_only: bool,
     ) {
-        if mode == 0 && !(0..MOTION_PRESETS.len() as i32).contains(&preset) {
+        if mode == 0 && animation_from_index(preset).is_none() {
             self.notify("Choose a supported animation preset.", true);
             return;
         }
@@ -1076,7 +1107,7 @@ impl Studio {
             .collect();
         // On short clips a preset may have no valid keyframe span.
         // Omit only that target rather than misindexing another animation.
-        let chosen_preset = (mode == 0).then(|| MOTION_PRESETS[preset as usize]);
+        let chosen_preset = if mode == 0 { animation_from_index(preset) } else { None };
         plans.retain(|(_, _, choices, _)| chosen_preset.is_none_or(|wanted|
             choices.iter().any(|motion| motion.preset == wanted)));
         // Never depend on HashMap/track traversal ordering when applying
@@ -1231,6 +1262,32 @@ impl Studio {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn expanded_catalogue_preserves_existing_canvas_and_all_stable_ids() {
+        assert_eq!(MOTION_PRESETS.len(), 24);
+        assert_eq!(animation_favourite_id(0), Some("physics.spring-zoom"));
+        assert_eq!(animation_favourite_id(8), Some("motion.fade-in"));
+        assert_eq!(animation_favourite_id(9), Some(CanvasMotionPreset::ALL[0].id()));
+        assert_eq!(animation_favourite_id(30), Some("physics.spring-slide"));
+        assert_eq!(animation_favourite_id(36), Some("physics.tumble-settle"));
+        assert_eq!(animation_favourite_id(37), Some("motion.push-out"));
+        assert_eq!(animation_favourite_id(44), Some("motion.opacity-pulse"));
+        assert!(animation_from_index(29).is_none());
+        assert!(animation_from_index(30).is_some());
+        assert!(animation_from_index(44).is_some());
+        assert_eq!(animation_favourite_id(45), None);
+        let ids: HashSet<_> = (0..45).map(|index| animation_favourite_id(index).unwrap()).collect();
+        assert_eq!(ids.len(), 45, "all persisted animation IDs must remain unique");
+        for canvas_index in 0..21 {
+            assert_eq!(animation_favourite_id(canvas_index + 9),
+                CanvasMotionPreset::from_index(canvas_index).map(CanvasMotionPreset::id));
+        }
+        for index in (0..9).chain(30..45) {
+            let kind = animation_from_index(index).expect("all Basic/Physics cards must route");
+            assert_eq!(animation_favourite_id(index), Some(motion_id(kind)));
+        }
+    }
 
     #[test]
     fn a_full_repeat_is_changed_where_another_choice_exists() {

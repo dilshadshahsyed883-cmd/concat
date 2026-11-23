@@ -265,9 +265,9 @@ export global Keyframes {
     // Only the browsing tab controls this state, and a card click never applies keys.
     in-out property <bool> animation-browser: false;
     in-out property <bool> animation-favourites-browser: false;
-    in-out property <[bool]> favourite-pool: [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false];
+    in-out property <[bool]> favourite-pool: [false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false];
     in property <string> animation-timing;
-    out property <bool> has-favourite-pool: (favourite-pool[0] && physics-favourites[0]) || (favourite-pool[1] && physics-favourites[1]) || (favourite-pool[2] && physics-favourites[2]) || (favourite-pool[3] && physics-favourites[3]) || (favourite-pool[4] && physics-favourites[4]) || (favourite-pool[5] && physics-favourites[5]) || (favourite-pool[6] && physics-favourites[6]) || (favourite-pool[7] && physics-favourites[7]) || (favourite-pool[8] && physics-favourites[8]) || (favourite-pool[9] && physics-favourites[9]) || (favourite-pool[10] && physics-favourites[10]) || (favourite-pool[11] && physics-favourites[11]) || (favourite-pool[12] && physics-favourites[12]) || (favourite-pool[13] && physics-favourites[13]) || (favourite-pool[14] && physics-favourites[14]) || (favourite-pool[15] && physics-favourites[15]) || (favourite-pool[16] && physics-favourites[16]) || (favourite-pool[17] && physics-favourites[17]) || (favourite-pool[18] && physics-favourites[18]) || (favourite-pool[19] && physics-favourites[19]) || (favourite-pool[20] && physics-favourites[20]) || (favourite-pool[21] && physics-favourites[21]) || (favourite-pool[22] && physics-favourites[22]) || (favourite-pool[23] && physics-favourites[23]) || (favourite-pool[24] && physics-favourites[24]) || (favourite-pool[25] && physics-favourites[25]) || (favourite-pool[26] && physics-favourites[26]) || (favourite-pool[27] && physics-favourites[27]) || (favourite-pool[28] && physics-favourites[28]) || (favourite-pool[29] && physics-favourites[29]);
+    out property <bool> has-favourite-pool: (favourite-pool[0] && physics-favourites[0]) || (favourite-pool[1] && physics-favourites[1]) || (favourite-pool[2] && physics-favourites[2]) || (favourite-pool[3] && physics-favourites[3]) || (favourite-pool[4] && physics-favourites[4]) || (favourite-pool[5] && physics-favourites[5]) || (favourite-pool[6] && physics-favourites[6]) || (favourite-pool[7] && physics-favourites[7]) || (favourite-pool[8] && physics-favourites[8]) || (favourite-pool[9] && physics-favourites[9]) || (favourite-pool[10] && physics-favourites[10]) || (favourite-pool[11] && physics-favourites[11]) || (favourite-pool[12] && physics-favourites[12]) || (favourite-pool[13] && physics-favourites[13]) || (favourite-pool[14] && physics-favourites[14]) || (favourite-pool[15] && physics-favourites[15]) || (favourite-pool[16] && physics-favourites[16]) || (favourite-pool[17] && physics-favourites[17]) || (favourite-pool[18] && physics-favourites[18]) || (favourite-pool[19] && physics-favourites[19]) || (favourite-pool[20] && physics-favourites[20]) || (favourite-pool[21] && physics-favourites[21]) || (favourite-pool[22] && physics-favourites[22]) || (favourite-pool[23] && physics-favourites[23]) || (favourite-pool[24] && physics-favourites[24]) || (favourite-pool[25] && physics-favourites[25]) || (favourite-pool[26] && physics-favourites[26]) || (favourite-pool[27] && physics-favourites[27]) || (favourite-pool[28] && physics-favourites[28]) || (favourite-pool[29] && physics-favourites[29]) || (favourite-pool[30] && physics-favourites[30]) || (favourite-pool[31] && physics-favourites[31]) || (favourite-pool[32] && physics-favourites[32]) || (favourite-pool[33] && physics-favourites[33]) || (favourite-pool[34] && physics-favourites[34]) || (favourite-pool[35] && physics-favourites[35]) || (favourite-pool[36] && physics-favourites[36]) || (favourite-pool[37] && physics-favourites[37]) || (favourite-pool[38] && physics-favourites[38]) || (favourite-pool[39] && physics-favourites[39]) || (favourite-pool[40] && physics-favourites[40]) || (favourite-pool[41] && physics-favourites[41]) || (favourite-pool[42] && physics-favourites[42]) || (favourite-pool[43] && physics-favourites[43]) || (favourite-pool[44] && physics-favourites[44]);
     // Working edits stay local until the explicit Save Default action.
     callback remember-animation(index:int,strength:float,duration:float,speed:float,intensity:float,canvas:CanvasMotionData);
     callback reset-animation(index:int);
@@ -278,11 +278,11 @@ export global Keyframes {
     in-out property <AnimationInspectorData> animation-saved;
     in-out property <bool> animation-has-override: false;
     // Compare against the last loaded defaults; loading never marks the panel dirty.
-    out property <bool> animation-dirty: animation-selected < 0 ? false : animation-selected < 9
+    out property <bool> animation-dirty: animation-selected < 0 ? false : (animation-selected < 9 || animation-selected >= 30)
         ? (physics-strength != animation-saved.strength
             || physics-duration != animation-saved.duration
             || physics-speed != animation-saved.speed
-            || (animation-selected < 6 && physics-intensity != animation-saved.intensity))
+            || ((animation-selected < 6 || (animation-selected >= 30 && animation-selected < 37)) && physics-intensity != animation-saved.intensity))
         : (canvas-motion.start-scale != animation-saved.canvas.start-scale
             || canvas-motion.end-scale != animation-saved.canvas.end-scale
             || canvas-motion.duration != animation-saved.canvas.duration
@@ -330,7 +330,7 @@ export global Keyframes {
         Keyframes.restore-current();
     }
 
-    // -1 = UI-only None, 0..8 = physics/basic, 9..29 = Canvas Motion.
+    // -1 = UI-only None; 0..8 = original physics/basic; 9..29 = Canvas; 30..44 = new physics/basic.
     // None is never persisted as a preset ID or included in Favorites.
     in-out property <int> animation-selected: 0;
     in-out property <bool> animation-images: true;
