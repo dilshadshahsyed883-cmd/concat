@@ -93,3 +93,27 @@ No live Salad deploy, VPS changes, Nginx cutover, Drive Bridge, production
 traffic/queues, file deletion, or replacement of rollback image/release.
 Real NVIDIA GPU acceptance and manual Windows DPI/preview parity remain
 NOT VERIFIED unless physically tested later. Build candidates only.
+
+REBUILD REQUEST — 2026-11-23 Issue #115 complete Slint ownership fix (#125)
+Build the Windows portable Concat x64 EXE AND Salad CUDA GPU candidate image
+from this exact new main GITHUB_SHA, identical in both build outputs.
+The old b04d1012 Windows compile failed on moved Canvas; 485f5852 failed
+on moved intensity. PR #125 eliminates all reads from the moved Slint
+AnimationInspectorData local, and updates native CUDA clip test fixtures and
+auto-fit wiring contracts. The existing saved-property UI behavior remains.
+
+Before release, enforce full native Rust+Slint and Windows GUI compilation,
+Effect catalogue preflight, Windows pinned DLL and GUI smoke, project
+persistence, GPU image worker import, authenticated entrypoint/capabilities,
+package/source SHA provenance, image digest and EXE/ZIP SHA256. Preserve
+Concat CUDA hybrid v1 render contract version 2, project+queue schemas,
+PNG/JPEG alpha, 9 caption presets, ASR small, stable Animation/Favorites
+preset IDs 0–58, None/Clear behavior, Canvas+Physics/Basic timing and
+preset defaults. Match both artifacts to the exact same source revision.
+Publish prerelease only if the full matching compatibility gate passes.
+Prior working artifacts remain available for rollback.
+
+Candidate build only: NEVER deploy to live Salad/VPS/Nginx, restart workers,
+switch production traffic, update Drive Bridge, modify queues/delete media,
+or overwrite/delete previous releases/images. Real RTX GPU test and manual
+Windows DPI/preview acceptance remain NOT VERIFIED until separately tested.
