@@ -1521,6 +1521,24 @@ mod tests {
     }
 
     #[test]
+    fn transition_pair_media_checkbox_is_always_incoming_type() {
+        for (outgoing, incoming, image_enabled, video_enabled) in [
+            (ClipKind::Video, ClipKind::Video, false, true),
+            (ClipKind::Image, ClipKind::Video, false, true),
+            (ClipKind::Image, ClipKind::Image, true, false),
+            (ClipKind::Video, ClipKind::Image, true, false),
+        ] {
+            let _before = Clip::blank("before", "t1", outgoing, "before", 0.0, 2.0);
+            let mut second = Clip::blank("after", "t1", incoming, "after", 2.0, 2.0);
+            assert!(chosen_media_type(&second, image_enabled, video_enabled));
+            assert!(!chosen_media_type(&second, !image_enabled, !video_enabled));
+            assert!(!chosen_media_type(&second, false, false));
+            second.extra.insert("canvasOwner".into(), serde_json::json!("owner"));
+            assert!(!chosen_media_type(&second, true, true));
+        }
+    }
+
+    #[test]
     fn transform_bulk_protects_authored_keys_per_property() {
         let mut clip = Clip::blank("c1", "t1", ClipKind::Image, "still", 0.0, 2.0);
         assert!(matches!(bulk_transform_command(&clip, 0, 1.3, 0.0, 0.0, 0.0),
