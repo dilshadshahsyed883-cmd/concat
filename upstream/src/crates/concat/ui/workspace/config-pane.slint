@@ -250,6 +250,11 @@ export component ConfigPane inherits Rectangle {
         "Spring Zoom", "Pendulum Swing", "Gravity Bounce", "Elastic Pop",
         "Inertia Glide", "Damped Shake", "Push In", "Pan Right", "Fade In"
     ];
+    property <[string]> animation-expanded-names: [
+        "Spring Slide", "Floating Bob", "Recoil Kick", "Spiral Zoom", "Orbit Motion",
+        "Zigzag Drift", "Tumble Settle", "Push Out", "Pan Left", "Pan Up",
+        "Pan Down", "Fade Out", "Rotate Left", "Rotate Right", "Opacity Pulse"
+    ];
     property <[string]> animation-canvas-names: [
         "Top-left to Center", "Top-right to Center", "Bottom-left to Center", "Bottom-right to Center",
         "Center Pop", "Zoom at Left", "Zoom at Center", "Zoom at Right", "Reverse to Corner",
@@ -455,19 +460,21 @@ export component ConfigPane inherits Rectangle {
                     Text {
                         text: Keyframes.animation-selected < 9
                             ? root.animation-basic-names[Keyframes.animation-selected]
-                            : root.animation-canvas-names[Keyframes.animation-selected - 9];
+                            : Keyframes.animation-selected >= 30
+                                ? root.animation-expanded-names[Keyframes.animation-selected - 30]
+                                : root.animation-canvas-names[Keyframes.animation-selected - 9];
                         color: Theme.fg;
                         font-size: Theme.fs;
                         font-weight: Theme.weight-title;
                     }
                     Text {
-                        text: Keyframes.animation-selected < 6 ? "Physics"
-                            : Keyframes.animation-selected < 9 ? "Basic" : "Canvas Motion";
+                        text: Keyframes.animation-selected < 6 || (Keyframes.animation-selected >= 30 && Keyframes.animation-selected < 37) ? "Physics"
+                            : Keyframes.animation-selected < 9 || Keyframes.animation-selected >= 37 ? "Basic" : "Canvas Motion";
                         color: Theme.fg-muted;
                         font-size: Theme.fs-sm;
                     }
 
-                    if Keyframes.animation-selected < 9: VerticalLayout {
+                    if Keyframes.animation-selected < 9 || Keyframes.animation-selected >= 30: VerticalLayout {
                         spacing: 8px;
                         Param { label: "Strength"; value <=> Keyframes.physics-strength;
                             minimum: 0.1; maximum: 2; step: 0.1; fmt: ParamFormat.fraction; }
@@ -475,14 +482,14 @@ export component ConfigPane inherits Rectangle {
                             minimum: 0.1; maximum: 1; step: 0.05; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; }
                         Param { label: "Speed"; value <=> Keyframes.physics-speed;
                             minimum: 0.25; maximum: 3; step: 0.05; fmt: ParamFormat.fraction; }
-                        if Keyframes.animation-selected < 6: Param {
+                        if Keyframes.animation-selected < 6 || (Keyframes.animation-selected >= 30 && Keyframes.animation-selected < 37): Param {
                             label: "Physics Intensity"; value <=> Keyframes.physics-intensity;
                             minimum: 0.2; maximum: 2; step: 0.1; fmt: ParamFormat.fraction;
                         }
                         Text { text: "Choose targets above. The selected preset remains active while browsing other tabs.";
                             color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
                     }
-                    if Keyframes.animation-selected >= 9: CanvasMotionPanel {
+                    if Keyframes.animation-selected >= 9 && Keyframes.animation-selected < 30: CanvasMotionPanel {
                         inspector-mode: true;
                         preset: Keyframes.animation-selected - 9;
                         images: Keyframes.animation-images;
