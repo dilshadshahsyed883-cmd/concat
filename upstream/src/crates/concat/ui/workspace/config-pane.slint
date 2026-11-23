@@ -100,16 +100,41 @@ component FactHeading inherits HorizontalLayout {
     }
 }
 
+// Independent Transitions target filters; incoming (second) clip owns the class.
+component TransitionTargetControls inherits VerticalLayout {
+    spacing: 8px;
+    HorizontalLayout {
+        spacing: 8px;
+        Check { checked: Editor.transition-images; toggled(on) => { Editor.transition-images = on; } }
+        Text { text: "Images"; color: Theme.fg; vertical-alignment: center; }
+        Check { checked: Editor.transition-videos; toggled(on) => { Editor.transition-videos = on; } }
+        Text { text: "Video Clips"; color: Theme.fg; vertical-alignment: center; }
+    }
+    HorizontalLayout {
+        Text { text: "Bulk scope"; color: Theme.fg-muted; vertical-alignment: center; }
+        Select {
+            options: ["Whole timeline", "Selected media"];
+            current: Editor.transition-scope;
+            changed(index) => { Editor.transition-scope = index; }
+        }
+    }
+}
+
 component TransitionRandomActions inherits VerticalLayout {
     spacing: 5px;
     Text { text: "Random transitions"; color: Theme.fg; }
-    Button { label: "Apply to All Randomly"; clicked => { Editor.library-apply-random-transitions(0); } }
-    Button { label: "Apply to Selected Randomly"; clicked => { Editor.library-apply-random-transitions(1); } }
-    Button { label: "Apply Favorites to All Randomly"; clicked => { Editor.library-apply-random-transitions(2); } }
-    Text { text: "Selected uses incoming clips. Favorites includes all compatible categories.";
-        color: Theme.fg-muted; wrap: word-wrap; font-size: Theme.fs-sm; }
+    Button {
+        label: "Apply Randomly";
+        enabled: Editor.transition-images || Editor.transition-videos;
+        clicked => { Editor.library-apply-random-transitions(0, Editor.transition-images, Editor.transition-videos, Editor.transition-scope == 1); }
+    }
+    Button {
+        label: "Apply Favorites Randomly";
+        enabled: Editor.transition-images || Editor.transition-videos;
+        clicked => { Editor.library-apply-random-transitions(1, Editor.transition-images, Editor.transition-videos, Editor.transition-scope == 1); }
+    }
 }
-
+ 
 // Tab-level settings: unlike TransitionPanel these never edit a selected cut.
 // Browsing Transitions always shows them above the random Apply controls.
 component TransitionTimingControls inherits VerticalLayout {
@@ -639,7 +664,7 @@ export component ConfigPane inherits Rectangle {
                 padding-right: 8px;
                 spacing: 8px;
                 Text {
-                    text: LibraryFocus.page == 1 ? "Transitions"
+                    text: LibraryFocus.page == 1 ? "TRANSITION SETTINGS"
                         : LibraryFocus.page == 2 ? "Video Effects"
                         : LibraryFocus.page == 3 ? "Audio Effects"
                         : LibraryFocus.page == 4 ? "Filters"
@@ -681,7 +706,7 @@ export component ConfigPane inherits Rectangle {
                 VerticalLayout {
                     spacing: 8px;
                     padding: 8px;
-                    if LibraryFocus.selected-name != "": VerticalLayout {
+                    if LibraryFocus.page != 1 && LibraryFocus.selected-name != "": VerticalLayout {
                         spacing: 3px;
                         Text {
                             text: LibraryFocus.selected-name;
@@ -718,38 +743,54 @@ export component ConfigPane inherits Rectangle {
                         MediaTargetControls { }
                         MediaLayoutPanel { page: LibraryFocus.page - 10; }
                     }
-                    if LibraryFocus.page == 1: TransitionTimingControls { }
-                    if LibraryFocus.page == 1 && root.on-transition && LibraryFocus.selected-id != "__none_transition__": TransitionPanel {
-                        transition: root.transition;
-                        remove => { root.transition-remove(); }
-                        duration-set(seconds) => { root.transition-duration-set(seconds); }
-                        duration-all(seconds) => { root.transition-duration-all(seconds); }
-                        intensity-set(amount) => { root.transition-intensity-set(amount); }
-                        save-default(seconds, amount) => { root.transition-default-save(seconds, amount); }
-                        reset-default => { root.transition-default-reset(); }
-                    }
-
-                    if LibraryFocus.page == 1 && !root.on-transition && LibraryFocus.selected-id != "__none_transition__": Text {
-                        text: "Choose a transition card to apply it to an eligible cut. Select the cut on the timeline to adjust duration or intensity in the inspector. The card's Info action only browses details.";
-                        color: Theme.fg-muted;
-                        font-size: Theme.fs-sm;
-                        wrap: word-wrap;
-                    }
+                    if LibraryFocus.page == 1: TransitionTargetControls { }
                     if LibraryFocus.page == 1 && LibraryFocus.selected-id == "__none_transition__": VerticalLayout {
                         spacing: 8px;
                         Text {
-                            text: "Select None without changing the timeline. The button below removes only the selected incoming transition (a normal hard cut).";
-                            color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
+                            text: "None / No Transition";
+                            color: Theme.fg;
+                            font-size: Theme.fs-lg;
+                            font-weight: Theme.weight-title;
                         }
-                        Button {
-                            label: "Remove Selected Transition";
-                            enabled: root.on-transition || root.has-selection;
-                            clicked => { root.transition-remove(); }
+                        Text {
+                            text: "Selecting None does not change the timeline. Use one of the Clear buttons below to remove transitions from eligible incoming cuts.";
+                            color: Theme.fg-muted;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
                         }
-                        if !root.on-transition && !root.has-selection: Text {
-                            text: "Choose a transition boundary or its incoming clip on the timeline.";
-                            color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
+                    }
+                    if LibraryFocus.page == 1 && LibraryFocus.selected-id != "" && LibraryFocus.selected-id != "__none_transition__": VerticalLayout {
+                        spacing: 8px;
+                        Text {
+                            text: "Selected Transition";
+                            color: Theme.fg-muted;
+                            font-size: Theme.fs-sm;
                         }
+                        Text {
+                            text: LibraryFocus.selected-name;
+                            font-size: Theme.fs-lg;
+                            font-weight: Theme.weight-title;
+                            color: Theme.fg;
+                            wrap: word-wrap;
+                        }
+                        if LibraryFocus.selected-category != "": Text {
+                            text: LibraryFocus.selected-category;
+                            color: Theme.fg-muted;
+                            font-size: Theme.fs-sm;
+                        }
+                        if LibraryFocus.selected-description != "": Text {
+                            text: LibraryFocus.selected-description;
+                            color: Theme.fg-muted;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
+                        }
+                        TransitionTimingControls { }
+                    }
+                    if LibraryFocus.page == 1 && LibraryFocus.selected-id == "": Text {
+                        text: "Choose None to clear eligible transitions, or select a transition card to view its settings. Selection never applies an effect.";
+                        color: Theme.fg-muted;
+                        font-size: Theme.fs-sm;
+                        wrap: word-wrap;
                     }
                     if LibraryFocus.page == 2 && LibraryFocus.selected-id == "__none_effect__": VerticalLayout {
                         spacing: 8px;
@@ -879,7 +920,36 @@ export component ConfigPane inherits Rectangle {
                 images: Keyframes.animation-images;
                 videos: Keyframes.animation-videos;
             }
-            if LibraryFocus.page == 1 && GpuCompatibility.enabled && GpuCompatibility.transitions: TransitionRandomActions { }
+            // Footer actions are pinned below PaneScroll, including at high DPI.
+            if LibraryFocus.page == 1 && LibraryFocus.selected-id == "__none_transition__": VerticalLayout {
+                padding: 8px;
+                spacing: 6px;
+                Rectangle { height: 1px; background: Theme.line; }
+                Button {
+                    label: "Clear Selected Transition(s)";
+                    enabled: Editor.transition-images || Editor.transition-videos;
+                    clicked => { Editor.transition-clear(true, Editor.transition-images, Editor.transition-videos); }
+                }
+                Button {
+                    label: "Clear All Eligible Transitions";
+                    enabled: Editor.transition-images || Editor.transition-videos;
+                    clicked => { Editor.transition-clear(false, Editor.transition-images, Editor.transition-videos); }
+                }
+            }
+            if LibraryFocus.page == 1 && LibraryFocus.selected-id != "" && LibraryFocus.selected-id != "__none_transition__": VerticalLayout {
+                padding: 8px;
+                spacing: 6px;
+                Rectangle { height: 1px; background: Theme.line; }
+                Button {
+                    label: "Apply Transition";
+                    primary: true;
+                    enabled: Editor.transition-images || Editor.transition-videos;
+                    clicked => {
+                        Editor.library-apply-transition-scoped(LibraryFocus.selected-id, Editor.transition-images, Editor.transition-videos, Editor.transition-scope == 1);
+                    }
+                }
+                if GpuCompatibility.enabled && GpuCompatibility.transitions: TransitionRandomActions { }
+            }
             if LibraryFocus.page == 9: ParticleApplyBar { }
             if LibraryFocus.page >= 10 && LibraryFocus.page <= 13: MediaLayoutApplyBar { page: LibraryFocus.page - 10; }
             if LibraryFocus.page == 6 && GpuCompatibility.enabled && CaptionPresetPreview.chosen != "": CaptionPresetApplyBar { }
