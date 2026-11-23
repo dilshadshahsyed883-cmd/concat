@@ -343,6 +343,60 @@ impl Config {
         }
         Ok(())
     }
+
+    /// Percentage of the selected preset's own baseline picture aperture.
+    /// Independent Width/Height edits remain possible; area is the neutral
+    /// proportional-size readout for such an edited rectangle.
+    pub fn picture_size_percent(&self) -> f64 {
+        let Some(factory) = Self::preset(self.preset) else { return 100.0 };
+        let ratio = self.foreground.width * self.foreground.height
+            / (factory.foreground.width * factory.foreground.height);
+        100.0 * ratio.sqrt()
+    }
+
+    /// Scale the existing picture aperture proportionally around its center.
+    /// Unlike Content Zoom/Crop this changes the foreground rectangle itself;
+    /// companion border, shadow and mat are still generated from that rectangle.
+    /// Invalid/off-canvas geometry is clamped before it can reach a renderer.
+    pub fn set_picture_size(&mut self, percent: f64) -> Result<(), String> {
+        if !percent.is_finite() || !(40.0..=130.0).contains(&percent) {
+            return Err("Picture size must be within 40–130%".into());
+        }
+        let previous = self.foreground;
+        let current = self.picture_size_percent();
+        if !current.is_finite() || current <= 0.0 {
+            return Err("Invalid current picture geometry".into());
+        }
+        let cx = previous.x + previous.width / 2.0;
+        let cy = previous.y + previous.height / 2.0;
+        let extent = self.border_width
+            + if self.shadow_opacity > 0.0 { self.shadow_offset } else { 0.0 };
+        // Reserve decorative spill on all sides; Photo Print also extends
+        // downward beyond the aperture. Do not move the picture's center.
+        let w_room = 2.0 * (cx - extent).min(1.0 - cx - extent);
+        let h_room = 2.0 * (cy - extent)
+            .min(1.0 - cy - extent - self.mat_bottom);
+        let max_factor = (w_room / previous.width)
+            .min(h_room / previous.height).max(0.0);
+        let factor = (percent / current).min(max_factor);
+        if !factor.is_finite() || factor <= 0.0
+            || previous.width * factor < 0.05
+            || previous.height * factor < 0.05
+        {
+            return Err("Picture size would leave insufficient canvas space".into());
+        }
+        self.foreground = Rect {
+            x: cx - previous.width * factor / 2.0,
+            y: cy - previous.height * factor / 2.0,
+            width: previous.width * factor,
+            height: previous.height * factor,
+        };
+        if let Err(error) = self.validate() {
+            self.foreground = previous;
+            return Err(error);
+        }
+        Ok(())
+    }
     pub fn from_json(source: &str) -> Result<Self, String> {
         if source.len() > 65536 {
             return Err("Canvas profile exceeds 64 KiB".into());
@@ -1618,6 +1672,32 @@ mod tests {
             let settings=crate::DocumentSettings {name:"Viewport".into(),width:1920,height:1080,rate_num:30,rate_den:1};
             let data=serde_json::json!({"document":crate::to_document(&settings,&project),"samples":samples,"coverage":coverage});
             std::fs::write(std::path::Path::new(&directory).join("viewport-contract.json"),serde_json::to_vec_pretty(&data).unwrap()).unwrap();
+        }
+    }
+
+    #[test]
+    fn picture_size_is_relative_to_each_preset_and_preserves_center_and_aspect() {
+        for id in 1..=8 {
+            let mut config = Config::preset(id).unwrap();
+            let before = config.foreground;
+            assert!((config.picture_size_percent() - 100.0).abs() < 1e-7);
+            config.set_picture_size(75.0).unwrap();
+            let after = config.foreground;
+            assert!(config.validate().is_ok(), "preset {id}");
+            assert!((after.width / after.height - before.width / before.height).abs() < 1e-8);
+            assert!((after.x + after.width / 2.0 - before.x - before.width / 2.0).abs() < 1e-8);
+            assert!((after.y + after.height / 2.0 - before.y - before.height / 2.0).abs() < 1e-8);
+            assert!((config.picture_size_percent() - 75.0).abs() < 1e-7);
+        }
+    }
+
+    #[test]
+    fn picture_size_rejects_nonfinite_or_invalid_values_without_mutating() {
+        let mut config = Config::preset(4).unwrap();
+        let before = config.clone();
+        for invalid in [f64::NAN, f64::INFINITY, -1.0, 0.0, 140.0] {
+            assert!(config.set_picture_size(invalid).is_err());
+            assert_eq!(config, before);
         }
     }
 

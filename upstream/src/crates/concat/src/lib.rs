@@ -135,6 +135,7 @@ fn canvas_publish(app: &App, config: &concat_project::canvas_preset::Config) {
     panel.set_foreground_y(config.foreground.y as f32);
     panel.set_foreground_width(config.foreground.width as f32);
     panel.set_foreground_height(config.foreground.height as f32);
+    panel.set_foreground_size(config.picture_size_percent() as f32);
     panel.set_border_width(config.border_width as f32);
     panel.set_radius(config.radius as f32);
     panel.set_blur(config.blur as f32);
@@ -908,6 +909,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                     "foregroundY" => config.foreground.y = value,
                     "foregroundWidth" => config.foreground.width = value,
                     "foregroundHeight" => config.foreground.height = value,
+                    "foregroundSize" => { let _ = config.set_picture_size(value); },
                     "borderWidth" => config.border_width = value,
                     "radius" => config.radius = value,
                     "blur" => config.blur = value,
