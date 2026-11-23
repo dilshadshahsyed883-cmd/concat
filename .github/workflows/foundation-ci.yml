@@ -26,6 +26,7 @@ jobs:
         run: |
           python -m unittest discover -s tests -p 'test_foundation.py' -v
           python -m unittest discover -s tests -p 'test_reused_*.py' -v
+          python -m unittest discover -s tests -p 'test_youtube_thumbnail_discovery.py' -v
           python -m unittest app.modules.concat.test_routes -v
           python -m unittest discover -s tests -p 'test_concat_drive_intake.py' -v
           python -m unittest discover -s tests -p 'test_salad_auto_worker.py' -v

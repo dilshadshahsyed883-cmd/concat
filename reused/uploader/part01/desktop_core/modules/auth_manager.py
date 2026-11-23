@@ -40,6 +40,34 @@ SCOPES = [
 ]
 
 
+def apply_current_youtube_thumbnail_limit(service):
+    """Correct stale bundled discovery metadata before thumbnails() is created.
+
+    google-api-python-client 2.137 ships a static YouTube discovery document
+    with the former 2 MB `thumbnails.set` maximum. With static discovery on,
+    cache_discovery=False does not refresh that document. Generated resource
+    methods capture the maximum when they are first constructed, so update
+    only this method descriptor immediately after building the service.
+
+    YouTube increased the thumbnails.set maximum to 50 MB in September 2026:
+    https://developers.google.com/youtube/data/reference/rest/v3/thumbnails/set
+    """
+    root = getattr(service, "_rootDesc", None)
+    if not isinstance(root, dict):
+        raise RuntimeError("YouTube API discovery metadata is unavailable")
+    media = (
+        root.get("resources", {})
+        .get("thumbnails", {})
+        .get("methods", {})
+        .get("set", {})
+        .get("mediaUpload")
+    )
+    if not isinstance(media, dict):
+        raise RuntimeError("YouTube thumbnails.set discovery metadata is unavailable")
+    media["maxSize"] = "50MB"
+    return service
+
+
 def allow_localhost_http_oauth() -> None:
     """Allow OAuthlib to accept the local loopback HTTP redirect used by desktop apps.
 
@@ -495,4 +523,5 @@ class AuthManager:
     def build_youtube_service_from_credentials(credentials: Credentials, proxy_config: Optional[Dict[str, Any]] = None):
         http = build_proxied_http(proxy_config)
         authed_http = AuthorizedHttp(credentials, http=http)
-        return build("youtube", "v3", http=authed_http, cache_discovery=False)
+        service = build("youtube", "v3", http=authed_http, cache_discovery=False)
+        return apply_current_youtube_thumbnail_limit(service)
