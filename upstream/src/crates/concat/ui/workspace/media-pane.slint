@@ -1368,6 +1368,8 @@ export component ShelfGrid inherits Rectangle {
             LibraryFocus.selected-name = entry.name;
             LibraryFocus.selected-category = entry.category;
             LibraryFocus.selected-description = entry.description;
+            if root.page-kind == 2 { ParticleBulk.select-effect(entry.id); }
+            else { ParticleBulk.clear-preview(); }
         }
         payload: root.payload-kind == "" ? ""
             : "\{root.payload-kind}:\{entry.id}:\{entry.name}";

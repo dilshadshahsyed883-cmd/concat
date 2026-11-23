@@ -858,6 +858,24 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     app.global::<TransitionControls>().on_apply(on_window!(|state, json:SharedString| {
         state.set_transition_controls(&json);
     }));
+    app.global::<ParticleBulk>().on_select_effect(on_window!(|state, id:SharedString| {
+        state.effect_select(id.as_str());
+    }));
+    app.global::<ParticleBulk>().on_change_param(on_window!(|state, id:SharedString, key:SharedString, value:f32| {
+        state.effect_set_param(id.as_str(), key.as_str(), value);
+    }));
+    app.global::<ParticleBulk>().on_change_colour(on_window!(|state, id:SharedString, key:SharedString, value:slint::Color| {
+        state.effect_set_colour(id.as_str(), key.as_str(), value);
+    }));
+    app.global::<ParticleBulk>().on_save_default(on_window!(|state, id:SharedString| {
+        state.effect_save_default(id.as_str());
+    }));
+    app.global::<ParticleBulk>().on_reset_default(on_window!(|state, id:SharedString| {
+        state.effect_reset_default(id.as_str());
+    }));
+    app.global::<ParticleBulk>().on_clear_preview(on_window!(|state| {
+        state.effect_select("");
+    }));
     app.global::<ParticleBulk>().on_apply(on_window!(|state, preset:i32, mode:i32, selected_only:bool, images:bool, videos:bool| {
         state.apply_particle_bulk(preset,mode,selected_only,images,videos);
     }));
