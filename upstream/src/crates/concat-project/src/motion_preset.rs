@@ -171,6 +171,38 @@ pub fn replace_generated(
     Ok(changed)
 }
 
+/// Remove only an exactly recognized, still-owned generated animation.
+///
+/// None is intentionally not another `replace_generated` call: that command requires
+/// nonempty keys.  Never clear manually edited keys or unrelated style channels.
+pub fn clear_generated(
+    clip: &mut Clip,
+    expected_keys: &[ClipKey],
+) -> Result<bool, crate::CommandError> {
+    if !clip.kind.is_visual() || clip.keys != expected_keys {
+        return Err(crate::CommandError::UnsafeEdit {
+            reason: "Animation target changed before clearing".into(),
+        });
+    }
+    let Some(owned) = generated_ownership(clip) else {
+        return Err(crate::CommandError::UnsafeEdit {
+            reason: "Manual or unowned animation keys are protected".into(),
+        });
+    };
+    // Independently edited style no longer belongs to this animation.
+    if let Some(style) = owned.style {
+        if style.owns_background && clip.background == style.applied_background {
+            clip.background = style.before_background;
+        }
+        if style.owns_mask && clip.mask == style.applied_mask {
+            clip.mask = style.before_mask;
+        }
+    }
+    clip.keys.clear();
+    clip.extra.remove(OWNERSHIP_KEY);
+    Ok(true)
+}
+
 /// The starter animations available from the native picture inspector.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MotionPreset {
