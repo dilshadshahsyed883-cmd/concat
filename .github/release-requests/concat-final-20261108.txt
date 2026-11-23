@@ -117,3 +117,12 @@ Candidate build only: NEVER deploy to live Salad/VPS/Nginx, restart workers,
 switch production traffic, update Drive Bridge, modify queues/delete media,
 or overwrite/delete previous releases/images. Real RTX GPU test and manual
 Windows DPI/preview acceptance remain NOT VERIFIED until separately tested.
+
+REBUILD REQUEST — 2026-11-24 Issue 116 approved transition inspectors
+Build from main containing merged PR #127 (issue #126, internal Issue 116),
+source parent SHA 251fa61b1a7f2221a29fe35de3b667d2182b4f86.
+Trigger the existing Windows EXE and Salad CUDA candidate workflows with this
+single request commit; the resulting GITHUB_SHA is the shared provenance for
+both artifacts. Retain all existing compatibility and validation gates.
+Publish only a matched verified prerelease and immutable image; do not deploy
+or change live Salad, VPS, Nginx, Drive, existing images, or previous releases.
