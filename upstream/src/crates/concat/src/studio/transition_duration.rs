@@ -37,6 +37,8 @@ fn requested_duration(timeline: &Timeline, seconds: f64) -> Option<f64> {
 fn pair_is_valid(previous: &Clip, incoming: &Clip, frame: f64, duration: f64) -> bool {
     matches!(previous.kind, ClipKind::Image | ClipKind::Video)
         && matches!(incoming.kind, ClipKind::Image | ClipKind::Video)
+        && !previous.extra.contains_key("canvasOwner")
+        && !incoming.extra.contains_key("canvasOwner")
         && (previous.start + previous.duration - incoming.start).abs() < frame / 2.0
         && duration <= previous.duration.min(incoming.duration) + 1e-9
 }
@@ -74,7 +76,7 @@ fn overlaps(a: (i64, i64), b: (i64, i64)) -> bool {
 
 /// Only existing transitions are patched. A cut that cannot take the requested
 /// frame count is skipped, rather than silently receiving a shorter duration.
-/// All project timelines are visited in one batch and the active tab is restored.
+/// Only the active timeline is visited; other timelines must not be edited.
 pub fn plan(
     project: &Project,
     seconds: f64,
@@ -86,6 +88,7 @@ pub fn plan(
     }
     let mut result = DurationPlan::default();
     for timeline in &project.timelines {
+        if timeline.id != project.active_timeline_id { continue; }
         let Some(wanted) = requested_duration(timeline, seconds) else {
             result.skipped += timeline.clips.iter().filter(|c| c.transition_in.is_some()).count();
             continue;
@@ -103,6 +106,7 @@ pub fn plan(
                 let Some(existing) = &clip.transition_in else { continue };
                 let native = existing.id.starts_with("concat.");
                 let candidate = !locked(&clip.track_id)
+                    && timeline.tracks.iter().any(|track| track.id == clip.track_id && track.visible)
                     && supported(&existing.id)
                     && index.checked_sub(1).is_some_and(|previous| {
                         pair_is_valid(clips[previous], clip, 1.0 / fps, wanted)
@@ -168,12 +172,8 @@ pub fn plan(
             }
         }
         if !commands.is_empty() {
-            result.commands.push(Command::SelectTimeline { timeline_id: timeline.id.clone() });
             result.commands.extend(commands);
         }
-    }
-    if !result.commands.is_empty() {
-        result.commands.push(Command::SelectTimeline { timeline_id: project.active_timeline_id.clone() });
     }
     Ok(result)
 }
