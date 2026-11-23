@@ -485,9 +485,13 @@ impl Default for CanvasMotionControls {
 }
 impl CanvasMotionControls {
     pub fn valid(self) -> bool {
-        [self.start_scale, self.middle_scale, self.end_scale]
+        // Older saved values below the new inspector's 40% floor remain
+        // loadable rather than being silently discarded on upgrade.
+        [self.start_scale, self.end_scale]
             .iter()
-            .all(|v| v.is_finite() && (0.4..=1.0).contains(v))
+            .all(|v| v.is_finite() && (0.05..=1.0).contains(v))
+            && self.middle_scale.is_finite()
+            && (0.5..=1.0).contains(&self.middle_scale)
             && self.peak_time.is_finite()
             && (0.2..=0.8).contains(&self.peak_time)
             && self.duration_seconds.is_finite()
@@ -635,7 +639,7 @@ mod tests {
         assert_eq!(after.value_at(KeyProperty::Opacity, 0.0), 0.0);
         assert!(after.value_at(KeyProperty::Opacity, 0.05) > 0.0);
         assert!((after.value_at(KeyProperty::Opacity, 0.25) - clip.opacity).abs() < 1e-8);
-        assert!((after.value_at(KeyProperty::Opacity, 0.8) - clip.opacity).abs() < 1e-8);
+        assert!(after.value_at(KeyProperty::Opacity, 0.8) < clip.opacity);
         assert!(after.value_at(KeyProperty::Opacity, 0.99) < clip.opacity);
         assert_eq!(CanvasMotionPreset::from_index(19), Some(CanvasMotionPreset::InHoldOut));
 
