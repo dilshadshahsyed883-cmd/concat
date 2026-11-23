@@ -301,17 +301,31 @@ mod tests {
     }
 
     #[test]
-    fn project_wide_batch_restores_active_timeline_and_scales_to_thousands() {
+    fn active_timeline_batch_preserves_other_timelines_and_scales_to_thousands() {
         let mut project=fixture(1500);
         let mut other=project.active().clone();
         other.id="other".into();
         for clip in &mut other.clips { Arc::make_mut(clip).id.push_str("-other"); }
         project.timelines.push(Arc::new(other));
+        let untouched=project.timelines[1].clone();
         let (result,mut editor)=run(&project,0.6);
-        assert_eq!((result.changed,result.skipped),(3000,0));
+        assert_eq!((result.changed,result.skipped),(1500,0));
         assert_eq!(editor.project().active_timeline_id,"main");
+        assert_eq!(editor.project().timelines[1],untouched);
         assert!(editor.undo());
         assert_eq!(document(editor.project()),document(&project));
+    }
+
+    #[test]
+    fn hidden_and_canvas_owned_cuts_are_skipped() {
+        let mut project=fixture(2);
+        project.active_mut().tracks.iter_mut().find(|t|t.id=="video").unwrap().visible=false;
+        let hidden=plan(&project,0.6,|_|false,|_|true).unwrap();
+        assert_eq!((hidden.changed,hidden.skipped),(0,2));
+        project.active_mut().tracks.iter_mut().find(|t|t.id=="video").unwrap().visible=true;
+        project.active_mut().clip_mut("c1").unwrap().extra.insert("canvasOwner".into(),json!("canvas"));
+        let canvas=plan(&project,0.6,|_|false,|_|true).unwrap();
+        assert_eq!((canvas.changed,canvas.skipped),(0,2));
     }
 
     #[test]
