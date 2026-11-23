@@ -573,7 +573,11 @@ impl Studio {
             }
             commands.push(Command::UpdateClip {
                 clip_id: incoming.id.clone(),
-                patch: ClipPatch { transition_in: Some(Some(transition)), ..ClipPatch::default() },
+                patch: ClipPatch {
+                    transition_in: Some(Some(transition)),
+                    random_transition_signature: Some(None),
+                    ..ClipPatch::default()
+                },
             });
             pending.push((incoming.id.clone(), span, native));
         }
@@ -615,7 +619,7 @@ impl Studio {
         }
         let commands = ids.iter().map(|id| Command::UpdateClip {
             clip_id: id.clone(),
-            patch: ClipPatch { transition_in: Some(None), ..ClipPatch::default() },
+            patch: ClipPatch { transition_in: Some(None), random_transition_signature: Some(None), ..ClipPatch::default() },
         }).collect();
         let before = self.revision;
         self.apply(Command::Batch { commands });
@@ -672,8 +676,12 @@ impl Studio {
             }
             let existing = incoming.transition_in.as_ref();
             let target = (timeline_id.clone(), incoming.id.clone());
+            let saved_signature: Option<Transition> = incoming.extra
+                .get("concatRandomTransition")
+                .and_then(|value| serde_json::from_value(value.clone()).ok());
             let old = existing
-                .filter(|cut| self.bulk_transitions.0.get(&target) == Some(*cut))
+                .filter(|cut| self.bulk_transitions.0.get(&target) == Some(*cut)
+                    || saved_signature.as_ref() == Some(*cut))
                 .and_then(|cut| presets.iter().position(|id| *id == cut.id));
             // Never overwrite a manually applied/edited cut (including after reopen).
             if existing.is_some() && old.is_none() { skipped += 1; continue; }
@@ -713,7 +721,11 @@ impl Studio {
                 generated.push(((timeline_id.clone(), clip.id.clone()), transition.clone()));
                 Some(Command::UpdateClip {
                     clip_id: clip.id.clone(),
-                    patch: ClipPatch { transition_in: Some(Some(transition)), ..ClipPatch::default() },
+                    patch: ClipPatch {
+                        transition_in: Some(Some(transition.clone())),
+                        random_transition_signature: Some(Some(transition)),
+                        ..ClipPatch::default()
+                    },
                 })
             })
             .collect();
