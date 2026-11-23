@@ -502,7 +502,7 @@ impl Studio {
                 {
                     continue;
                 }
-                result.push((previous.clone(), incoming.clone()));
+                result.push(((*previous).clone(), (*incoming).clone()));
             }
         }
         result
@@ -663,7 +663,7 @@ impl Studio {
             let native = transition.id.starts_with("concat.");
             Some((clip.id.clone(), transition_span(previous, clip, transition.duration, native), native))
         }).collect();
-        let mut plans = Vec::new();
+        let mut plans: Vec<(&Clip, f64, Option<usize>, CutSpan)> = Vec::new();
         let mut skipped = 0usize;
         for (previous, incoming) in &pairs {
             if !media.contains(&previous.media_id) || !media.contains(&incoming.media_id) {
@@ -686,9 +686,7 @@ impl Studio {
                 || occupied.iter().any(|(other, old_span, _)| {
                     other != &incoming.id && span.overlaps(*old_span)
                 })
-                || plans.iter().any(|(_, _, _, other_span): &(&Clip, f64, Option<usize>, CutSpan)| {
-                    span.overlaps(*other_span)
-                })
+                || plans.iter().any(|(_, _, _, other_span)| span.overlaps(*other_span))
             {
                 skipped += 1;
                 continue;
