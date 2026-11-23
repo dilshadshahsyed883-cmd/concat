@@ -399,6 +399,11 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     // and a reset rebuilds every row that hangs off it.
     {
         let editor = app.global::<Editor>();
+        {
+            let state = shell.studio.borrow();
+            editor.set_transition_draft_duration(state.transition_draft_duration as f32);
+            editor.set_transition_draft_intensity(state.transition_draft_intensity.unwrap_or(0.7) as f32);
+        }
         let models = &shell.models;
         editor.set_timeline_tabs(ModelRc::from(models.tabs.clone()));
         editor.set_tracks(ModelRc::from(models.tracks.clone()));
@@ -2067,6 +2072,12 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     }));
     editor.on_transition_intensity_set(on_window!(|state, amount: f32| {
         state.set_transition_intensity(amount as f64);
+    }));
+    editor.on_transition_draft_duration_set(on_window!(|state, seconds: f32| {
+        state.set_transition_draft_duration(seconds as f64);
+    }));
+    editor.on_transition_draft_intensity_set(on_window!(|state, amount: f32| {
+        state.set_transition_draft_intensity(amount as f64);
     }));
     editor.on_transition_default_save(on_window!(|state, seconds: f32, amount: f32| {
         state.save_transition_default(seconds as f64, amount as f64);

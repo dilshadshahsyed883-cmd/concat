@@ -807,6 +807,10 @@ pub fn sync<T: Clone + PartialEq + 'static>(model: &VecModel<T>, next: Vec<T>) {
 pub struct Studio {
     pub host: Host,
     pub prefs: Preferences,
+    /// In-memory controls for new transitions, separate from saved preferences
+    /// and from already-authored timeline cuts.
+    pub transition_draft_duration: f64,
+    pub transition_draft_intensity: Option<f64>,
     /// What each effect library is showing, indexed the way `SHELF_KINDS`
     /// is: 0 filters, 1 effects, 2 audio.
     pub library: [LibraryView; 4],
@@ -2324,8 +2328,15 @@ impl Studio {
         let recents = projects::recents(&host.dirs.config);
         let text_presets = presets::all(&host.dirs);
         let cb_output_folder=if start.location.trim().is_empty() {host.dirs.data.join("C Builder Projects").to_string_lossy().into_owned()}else{start.location.clone()};
+        let transition_draft_duration = prefs.transition_default_duration
+            .filter(|value| value.is_finite() && (0.1..=5.0).contains(value))
+            .unwrap_or(0.9);
+        let transition_draft_intensity = prefs.transition_default_intensity
+            .filter(|value| value.is_finite() && (0.0..=1.0).contains(value));
         let mut studio = Self {
             prefs,
+            transition_draft_duration,
+            transition_draft_intensity,
             library: Default::default(),
             session: None,
             echo: None,
@@ -4588,11 +4599,8 @@ impl Studio {
             self.notify(&t("studio.selectVideoImageClip"), true);
             return;
         }
-        let requested = self.prefs.transition_default_duration
-            .filter(|value| value.is_finite() && (0.1..=5.0).contains(value))
-            .unwrap_or(0.5);
-        let intensity_default = self.prefs.transition_default_intensity
-            .filter(|value| value.is_finite() && (0.0..=1.0).contains(value));
+        let requested = self.transition_draft_duration;
+        let intensity_default = self.transition_draft_intensity;
         let Some(duration) = self.transition_duration(clip, requested) else {
             self.notify(&t("studio.noRoomForTransition"), true);
             return;
@@ -4611,6 +4619,20 @@ impl Studio {
         });
     }
 
+    /// Editing the tab's draft changes only subsequent applications.
+    /// A separate explicit Save Default action is required for persistence.
+    pub fn set_transition_draft_duration(&mut self, seconds: f64) {
+        if seconds.is_finite() && (0.1..=5.0).contains(&seconds) {
+            self.transition_draft_duration = seconds;
+        }
+    }
+
+    pub fn set_transition_draft_intensity(&mut self, amount: f64) {
+        if amount.is_finite() && (0.0..=1.0).contains(&amount) {
+            self.transition_draft_intensity = Some(amount);
+        }
+    }
+
     /// Only explicit user intent changes application defaults, never selection
     /// or navigation. The project keeps its own authored transition values.
     pub fn save_transition_default(&mut self, duration: f64, intensity: f64) {
@@ -4619,6 +4641,8 @@ impl Studio {
             self.notify("Cannot save transition defaults outside supported ranges", true);
             return;
         }
+        self.transition_draft_duration = duration;
+        self.transition_draft_intensity = Some(intensity);
         self.prefs.transition_default_duration = Some(duration);
         self.prefs.transition_default_intensity = Some(intensity);
         self.prefs.save(&self.host.dirs);
@@ -4626,6 +4650,8 @@ impl Studio {
     }
 
     pub fn reset_transition_default(&mut self) {
+        self.transition_draft_duration = 0.9;
+        self.transition_draft_intensity = None;
         self.prefs.transition_default_duration = None;
         self.prefs.transition_default_intensity = None;
         self.prefs.save(&self.host.dirs);
