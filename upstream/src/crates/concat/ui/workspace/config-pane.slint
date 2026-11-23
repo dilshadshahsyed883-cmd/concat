@@ -110,6 +110,72 @@ component TransitionRandomActions inherits VerticalLayout {
         color: Theme.fg-muted; wrap: word-wrap; font-size: Theme.fs-sm; }
 }
 
+// Tab-level settings: unlike TransitionPanel these never edit a selected cut.
+// Browsing Transitions always shows them above the random Apply controls.
+component TransitionTimingControls inherits VerticalLayout {
+    spacing: 8px;
+    padding-top: 8px;
+
+    Text {
+        text: "Transition Timing";
+        color: Theme.fg;
+        font-size: Theme.fs;
+        font-weight: Theme.weight-title;
+    }
+    Param {
+        label: "Duration";
+        value <=> Editor.transition-draft-duration;
+        minimum: 0.1;
+        maximum: 5;
+        step: 0.1;
+        default-value: 0.9;
+        fmt: ParamFormat.seconds2;
+        unit: "s";
+        changed(v) => { Editor.transition-draft-duration-set(v); }
+    }
+    if GpuCompatibility.enabled && GpuCompatibility.transitions: Param {
+        label: "GPU Intensity";
+        value <=> Editor.transition-draft-intensity;
+        minimum: 0;
+        maximum: 1;
+        step: 0.05;
+        default-value: 0.7;
+        fmt: ParamFormat.fraction;
+        unit: "%";
+        unit-scale: 100;
+        changed(v) => { Editor.transition-draft-intensity-set(v); }
+    }
+    Button {
+        label: "Apply Duration to All";
+        clicked => { Editor.transition-duration-all(Editor.transition-draft-duration); }
+    }
+    HorizontalLayout {
+        spacing: 6px;
+        Button {
+            label: "Save Default";
+            horizontal-stretch: 1;
+            clicked => {
+                Editor.transition-default-save(Editor.transition-draft-duration, Editor.transition-draft-intensity);
+            }
+        }
+        Button {
+            label: "Reset Default";
+            horizontal-stretch: 1;
+            clicked => {
+                Editor.transition-draft-duration = 0.9;
+                Editor.transition-draft-intensity = 0.7;
+                Editor.transition-default-reset();
+            }
+        }
+    }
+    Text {
+        text: "These settings apply to new transitions, including Random Apply. Existing cuts remain unchanged unless you explicitly use Apply Duration to All.";
+        color: Theme.fg-muted;
+        font-size: Theme.fs-sm;
+        wrap: word-wrap;
+    }
+}
+
 export component ConfigPane inherits Rectangle {
     // ── the demo-era seams, kept so main.rs keeps compiling ──────────────
     // The meter/mute machinery has nothing to drive since the demo effects
@@ -595,6 +661,7 @@ export component ConfigPane inherits Rectangle {
                         MediaTargetControls { }
                         MediaLayoutPanel { page: LibraryFocus.page - 10; }
                     }
+                    if LibraryFocus.page == 1: TransitionTimingControls { }
                     if LibraryFocus.page == 1 && root.on-transition: TransitionPanel {
                         transition: root.transition;
                         remove => { root.transition-remove(); }
