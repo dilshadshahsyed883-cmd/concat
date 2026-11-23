@@ -613,6 +613,54 @@ mod tests {
     }
 
     #[test]
+    fn explicit_none_clears_owned_keys_and_canvas_style_with_undo_redo() {
+        let mut editor = owned_fixture();
+        let original = editor.project().active().clip("c1").unwrap().clone();
+        editor.apply(generated_command(&editor, "c1", true, 0.6, 0.1)).unwrap();
+        let generated = editor.project().active().clip("c1").unwrap().clone();
+        assert!(!generated.keys.is_empty());
+        assert!(generated_ownership(&generated).is_some());
+
+        editor.apply(Command::ClearGeneratedMotion {
+            clip_id: "c1".into(),
+            expected_keys: generated.keys.clone(),
+        }).unwrap();
+        let cleared = editor.project().active().clip("c1").unwrap();
+        assert!(cleared.keys.is_empty());
+        assert_eq!(cleared.background, original.background);
+        assert_eq!(cleared.mask, original.mask);
+        assert!(cleared.extra.get(OWNERSHIP_KEY).is_none());
+
+        assert!(editor.undo());
+        assert_eq!(editor.project().active().clip("c1").unwrap(), &generated);
+        assert!(editor.redo());
+        assert!(editor.project().active().clip("c1").unwrap().keys.is_empty());
+    }
+
+    #[test]
+    fn explicit_none_rejects_unowned_and_manually_edited_keys() {
+        let mut editor = owned_fixture();
+        assert!(editor.apply(Command::ClearGeneratedMotion {
+            clip_id: "c1".into(), expected_keys: Vec::new(),
+        }).is_err());
+
+        editor.apply(generated_command(&editor, "c1", false, 0.0, 0.0)).unwrap();
+        editor.apply(Command::SetClipKey {
+            clip_id: "c1".into(),
+            property: KeyProperty::Scale,
+            at: 0.5,
+            value: 1.25,
+            ease: KeyEase::default(),
+        }).unwrap();
+        let authored = editor.project().active().clip("c1").unwrap().clone();
+        assert!(generated_ownership(&authored).is_none());
+        assert!(editor.apply(Command::ClearGeneratedMotion {
+            clip_id: "c1".into(), expected_keys: authored.keys.clone(),
+        }).is_err());
+        assert_eq!(editor.project().active().clip("c1").unwrap(), &authored);
+    }
+
+    #[test]
     fn style_only_updates_change_blur_and_corners_without_stacking_keys() {
         use crate::model::Background;
         let mut editor = owned_fixture();
