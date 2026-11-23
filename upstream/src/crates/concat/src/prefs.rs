@@ -63,6 +63,9 @@ pub struct Preferences {
     pub physics_motion_favourites: Vec<String>,
     /// Configured parameters keyed by stable animation preset ID.
     pub animation_preset_settings: BTreeMap<String,serde_json::Value>,
+    /// Explicit, per-preset video-effect defaults. Unsaved library edits are
+    /// session drafts, not project data and not persisted preferences.
+    pub effect_preset_defaults: BTreeMap<String, BTreeMap<String, f64>>,
     /// Explicitly saved editor Canvas defaults. Unlike project data these only
     /// seed the Canvas editor; they never rewrite an existing project.
     pub canvas_default: Option<String>,
@@ -585,6 +588,24 @@ mod tests {
         assert!(malformed.canvas_default.as_deref()
             .and_then(|json| concat_project::canvas_preset::Config::from_json(json).ok())
             .is_none());
+    }
+
+    #[test]
+    fn effect_defaults_round_trip_per_preset_and_are_absent_in_legacy_settings() {
+        let mut prefs = Preferences::default();
+        prefs.effect_preset_defaults.insert(
+            "concat.particles-gold-sparkles".into(),
+            BTreeMap::from([("density".into(), 72.0), ("opacity".into(), 0.5)]),
+        );
+        prefs.effect_preset_defaults.insert(
+            "concat.exposure".into(),
+            BTreeMap::from([("stops".into(), 1.25)]),
+        );
+        let restored: Preferences =
+            serde_json::from_str(&serde_json::to_string(&prefs).unwrap()).unwrap();
+        assert_eq!(restored.effect_preset_defaults, prefs.effect_preset_defaults);
+        let legacy: Preferences = serde_json::from_str(r#"{"dark":true}"#).unwrap();
+        assert!(legacy.effect_preset_defaults.is_empty());
     }
 
 }

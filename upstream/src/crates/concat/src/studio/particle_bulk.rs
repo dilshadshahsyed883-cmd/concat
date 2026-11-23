@@ -63,8 +63,12 @@ impl Studio {
             let id = &options[draw as usize % options.len()];
             let mut effects = clip.video_effects.clone();
             // Explicit application changes only the requested preset, preserving other overlays and authored effects.
-            let mut entry = AppliedFilter::new(id);
-            entry.params.insert("seed".into(), (draw % 65536) as f64);
+            let mut entry = self.effect_application(id);
+            // Preserve deterministic per-clip random seeds unless this preset
+            // has an explicitly edited/saved seed override.
+            if !entry.params.contains_key("seed") {
+                entry.params.insert("seed".into(), (draw % 65536) as f64);
+            }
             if let Some(index) = effects.iter().position(|e| &e.id == id) {
                 effects[index] = entry;
             } else {
