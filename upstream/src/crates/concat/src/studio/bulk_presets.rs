@@ -477,19 +477,169 @@ impl Studio {
         true
     }
 
-    /// Apply native GPU-supported transitions to every eligible cut in the
-    /// active timeline, with a single command for undo.
-    pub fn apply_random_gpu_transitions(&mut self, selected_only: bool, favourites_only: bool) {
-        if !self.gpu_bulk_ready() {
+
+    /// A seam belongs to its incoming (second) picture, regardless of the
+    /// outgoing picture's type. Never expose companion/hidden/locked tracks.
+    fn scoped_transition_pairs(&self, images: bool, videos: bool, selected_only: bool) -> Vec<(Clip, Clip)> {
+        if !images && !videos { return Vec::new(); }
+        let selected: HashSet<&str> = self.selection.iter().map(String::as_str)
+            .chain(self.transition_selected.as_deref()).collect();
+        let frame = self.frame_seconds();
+        let mut result = Vec::new();
+        for track in &self.timeline().tracks {
+            if !track.visible || self.locked(&track.id) { continue; }
+            let mut lane: Vec<&Clip> = self.timeline().clips.iter()
+                .filter(|clip| clip.track_id == track.id)
+                .map(|clip| clip.as_ref()).collect();
+            lane.sort_by(|a, b| a.start.total_cmp(&b.start).then_with(|| a.id.cmp(&b.id)));
+            for pair in lane.windows(2) {
+                let (previous, incoming) = (pair[0], pair[1]);
+                if !picture(previous)
+                    || !chosen_media_type(previous, true, true)
+                    || !chosen_media_type(incoming, images, videos)
+                    || (previous.start + previous.duration - incoming.start).abs() >= frame / 2.0
+                    || (selected_only && !selected.contains(incoming.id.as_str()))
+                {
+                    continue;
+                }
+                result.push((previous.clone(), incoming.clone()));
+            }
+        }
+        result
+    }
+
+    /// Explicit application replaces only eligible incoming cuts, in one
+    /// Undo step. Clicking a catalogue card never calls this method.
+    pub fn apply_transition_scoped(&mut self, id: &str, images: bool, videos: bool, selected_only: bool) {
+        if !images && !videos { self.notify("Choose Images or Video Clips first.", true); return; }
+        if id.is_empty() || id == "__none_transition__" {
+            self.notify("Choose a transition preset to apply.", true);
             return;
         }
-        // Selection is evaluated on the incoming clip at each cut. This
-        // supports one selected clip as well as multi-selected timeline clips.
-        let selected: HashSet<String> = self.selection.iter().cloned().collect();
-        if selected_only && selected.is_empty() {
-            self.notify("Select one or more incoming timeline clips first.", true);
+        if cfg!(windows) && !gpu_catalogue_has("transitions", id) {
+            self.notify(&t("studio.unsupportedGpuControl"), true);
             return;
         }
+        // Until non-default format parity is verified, decline instead of
+        // generating cuts with the worker's hard-coded 30fps assumptions.
+        if !self.gpu_bulk_ready() { return; }
+        if selected_only && self.selection.is_empty() && self.transition_selected.is_none() {
+            self.notify("Select incoming clips or a transition seam first.", true);
+            return;
+        }
+        let pairs = self.scoped_transition_pairs(images, videos, selected_only);
+        let media: HashSet<String> = self.gpu_picture_media().into_iter().map(str::to_owned).collect();
+        let occupied: Vec<(String, CutSpan, bool)> = self.timeline().clips.iter().filter_map(|clip| {
+            let transition = clip.transition_in.as_ref()?;
+            let previous = self.outgoing_of(clip)?;
+            let native = transition.id.starts_with("concat.");
+            Some((clip.id.clone(), transition_span(previous, clip, transition.duration, native), native))
+        }).collect();
+        let mut pending: Vec<(String, CutSpan, bool)> = Vec::new();
+        let mut commands = Vec::new();
+        let mut skipped = 0usize;
+        let mut unchanged = 0usize;
+        for (previous, incoming) in &pairs {
+            if !media.contains(&previous.media_id) || !media.contains(&incoming.media_id) {
+                skipped += 1;
+                continue;
+            }
+            let available_frames = (previous.duration.min(incoming.duration) * FPS).floor() as i64;
+            if available_frames < 3 { skipped += 1; continue; }
+            let wanted_frames = (self.transition_draft_duration * FPS).round().max(3.0) as i64;
+            let duration = wanted_frames.min(available_frames) as f64 / FPS;
+            let native = id.starts_with("concat.");
+            let span = transition_span(previous, incoming, duration, native);
+            if span.end - span.start < 3
+                || occupied.iter().any(|(other, old, other_native)| {
+                    other != &incoming.id && (native || *other_native) && span.overlaps(*old)
+                })
+                || pending.iter().any(|(_, other, other_native)| {
+                    (native || *other_native) && span.overlaps(*other)
+                })
+            {
+                skipped += 1;
+                continue;
+            }
+            let transition = Transition {
+                id: id.to_owned(),
+                duration,
+                intensity: self.transition_draft_intensity,
+                params: Default::default(),
+            };
+            if incoming.transition_in.as_ref() == Some(&transition) {
+                unchanged += 1;
+                continue;
+            }
+            commands.push(Command::UpdateClip {
+                clip_id: incoming.id.clone(),
+                patch: ClipPatch { transition_in: Some(Some(transition)), ..ClipPatch::default() },
+            });
+            pending.push((incoming.id.clone(), span, native));
+        }
+        let count = commands.len();
+        if count == 0 {
+            self.notify(&format!("Apply Transition: 0 applied, {skipped} skipped, {unchanged} unchanged."), false);
+            return;
+        }
+        let before = self.revision;
+        self.apply(Command::Batch { commands });
+        if self.revision != before {
+            let timeline = self.timeline().id.clone();
+            for (clip_id, _, _) in pending {
+                self.bulk_transitions.0.remove(&(timeline.clone(), clip_id));
+            }
+            self.notify(&format!("Apply Transition: {count} applied, {skipped} skipped, {unchanged} unchanged."), false);
+        }
+    }
+
+    /// None mode's two explicit scopes never consult the Apply scope dropdown.
+    /// Both manual and generated transitions are cleared, with one batch Undo.
+    pub fn clear_transitions_scoped(&mut self, selected_only: bool, images: bool, videos: bool) {
+        if !images && !videos { self.notify("Choose Images or Video Clips first.", true); return; }
+        if selected_only && self.selection.is_empty() && self.transition_selected.is_none() {
+            self.notify("Select incoming clips or a transition seam first.", true);
+            return;
+        }
+        self.flush_commit();
+        let pairs = self.scoped_transition_pairs(images, videos, selected_only);
+        let mut ids = Vec::new();
+        let mut unchanged = 0usize;
+        for (_, incoming) in &pairs {
+            if incoming.transition_in.is_some() { ids.push(incoming.id.clone()); }
+            else { unchanged += 1; }
+        }
+        if ids.is_empty() {
+            self.notify(&format!("Clear Transitions: 0 removed, {unchanged} unchanged."), false);
+            return;
+        }
+        let commands = ids.iter().map(|id| Command::UpdateClip {
+            clip_id: id.clone(),
+            patch: ClipPatch { transition_in: Some(None), ..ClipPatch::default() },
+        }).collect();
+        let before = self.revision;
+        self.apply(Command::Batch { commands });
+        if self.revision != before {
+            let timeline = self.timeline().id.clone();
+            for id in &ids { self.bulk_transitions.0.remove(&(timeline.clone(), id.clone())); }
+            if self.transition_selected.as_ref().is_some_and(|id| ids.contains(id)) {
+                self.transition_selected = None;
+            }
+            self.notify(&format!("Clear Transitions: {} removed, {unchanged} unchanged.", ids.len()), false);
+        }
+    }
+
+    /// Random choices obey the SAME selected/whole scope and incoming-type
+    /// check as explicit Apply/Clear. Manual or edited transitions are kept.
+    pub fn apply_random_gpu_transitions(
+        &mut self, images: bool, videos: bool, selected_only: bool, favourites_only: bool
+    ) {
+        if !images && !videos { self.notify("Choose Images or Video Clips first.", true); return; }
+        if selected_only && self.selection.is_empty() && self.transition_selected.is_none() {
+            self.notify("Select incoming clips or a transition seam first.", true);
+            return;
+        }
+        if !self.gpu_bulk_ready() { return; }
         let presets: Vec<_> = Catalogue::builtin()
             .of_kind(PackageKind::Transition)
             .map(|package| package.id())
@@ -497,137 +647,90 @@ impl Studio {
             .filter(|id| !favourites_only || self.prefs.favourites.iter().any(|star| star == id))
             .collect();
         if presets.is_empty() {
-            if favourites_only {
-                self.notify("Star at least one GPU-compatible transition first.", true);
-            }
+            self.notify(if favourites_only {
+                "Star at least one GPU-compatible transition first."
+            } else {
+                "No compatible GPU transitions are available."
+            }, true);
             return;
         }
-
-        let media = self.gpu_picture_media();
+        let media: HashSet<String> = self.gpu_picture_media().into_iter().map(str::to_owned).collect();
         let timeline_id = self.timeline().id.clone();
-        let mut lanes: HashMap<_, Vec<_>> = self
-            .timeline()
-            .tracks
-            .iter()
-            .filter(|track| track.visible)
-            .map(|track| (track.id.as_str(), Vec::new()))
-            .collect();
-        for clip in &self.timeline().clips {
-            if (picture(clip) || clip.kind == ClipKind::Layer)
-                && let Some(lane) = lanes.get_mut(clip.track_id.as_str())
-            {
-                lane.push(clip.as_ref());
-            }
-        }
+        let pairs = self.scoped_transition_pairs(images, videos, selected_only);
+        let occupied: Vec<(String, CutSpan, bool)> = self.timeline().clips.iter().filter_map(|clip| {
+            let transition = clip.transition_in.as_ref()?;
+            let previous = self.outgoing_of(clip)?;
+            let native = transition.id.starts_with("concat.");
+            Some((clip.id.clone(), transition_span(previous, clip, transition.duration, native), native))
+        }).collect();
         let mut plans = Vec::new();
-        let mut occupied = Vec::new();
-        for lane in lanes.values_mut() {
-            lane.sort_by(|a, b| a.start.total_cmp(&b.start));
-            for pair in lane.windows(2) {
-                let [previous, incoming] = [pair[0], pair[1]];
-                if !picture(previous)
-                    || !picture(incoming)
-                    || (selected_only && !selected.contains(&incoming.id))
-                    || !media.contains(previous.media_id.as_str())
-                    || !media.contains(incoming.media_id.as_str())
-                {
-                    continue;
-                }
-                let existing = incoming.transition_in.as_ref();
-
-                let target = (timeline_id.clone(), incoming.id.clone());
-                let old = existing
-                    .filter(|cut| self.bulk_transitions.0.get(&target) == Some(*cut))
-                    .and_then(|cut| presets.iter().position(|id| *id == cut.id));
-                if let Some(cut) = existing {
-                    let native = presets.iter().any(|id| *id == cut.id);
-                    occupied.push((
-                        &incoming.id,
-                        transition_span(previous, incoming, cut.duration, native),
-                    ));
-                    // A manually placed transition is not owned by this button.
-                    if old.is_none() {
-                        continue;
-                    }
-                }
-                if !self.locked(&incoming.track_id)
-                    && let Some((duration, span)) = transition_length_with_default(
-                        previous, incoming,
-                        self.transition_draft_duration,
-                    )
-                {
-                    plans.push((incoming, duration, old, span));
-                }
+        let mut skipped = 0usize;
+        for (previous, incoming) in &pairs {
+            if !media.contains(&previous.media_id) || !media.contains(&incoming.media_id) {
+                skipped += 1;
+                continue;
             }
-        }
-        plans.sort_by(|(a, _, _, a_span), (b, _, _, b_span)| {
-            (a_span.start, &a.id).cmp(&(b_span.start, &b.id))
-        });
-        let mut previous_span: Option<CutSpan> = None;
-        plans.retain(|(clip, _, _, span)| {
-            if previous_span.is_some_and(|previous| previous.overlaps(*span))
-                || occupied
-                    .iter()
-                    .any(|(id, existing)| *id != &clip.id && existing.overlaps(*span))
+            let existing = incoming.transition_in.as_ref();
+            let target = (timeline_id.clone(), incoming.id.clone());
+            let old = existing
+                .filter(|cut| self.bulk_transitions.0.get(&target) == Some(*cut))
+                .and_then(|cut| presets.iter().position(|id| *id == cut.id));
+            // Never overwrite a manually applied/edited cut (including after reopen).
+            if existing.is_some() && old.is_none() { skipped += 1; continue; }
+            let available_frames = (previous.duration.min(incoming.duration) * FPS).floor() as i64;
+            if available_frames < 3 { skipped += 1; continue; }
+            let wanted_frames = (self.transition_draft_duration * FPS).round().max(3.0) as i64;
+            let duration = wanted_frames.min(available_frames) as f64 / FPS;
+            let span = transition_span(previous, incoming, duration, true);
+            if span.end - span.start < 3
+                || occupied.iter().any(|(other, old_span, _)| {
+                    other != &incoming.id && span.overlaps(*old_span)
+                })
+                || plans.iter().any(|(_, _, _, other_span): &(&Clip, f64, Option<usize>, CutSpan)| {
+                    span.overlaps(*other_span)
+                })
             {
-                return false;
+                skipped += 1;
+                continue;
             }
-            previous_span = Some(*span);
-            true
-        });
+            plans.push((incoming, duration, old, span));
+        }
         if plans.is_empty() {
-            self.notify(&t("studio.randomNoGpuCuts"), true);
+            self.notify(&format!("Random transitions: 0 applied, {skipped} skipped."), false);
             return;
         }
         let options: Vec<_> = plans.iter().map(|plan| (presets.len(), plan.2)).collect();
-
-        let saved_intensity = self.transition_draft_intensity;
         let mut generated = Vec::new();
-        let commands: Vec<_> = plans
-            .into_iter()
+        let mut unchanged = 0usize;
+        let commands: Vec<_> = plans.into_iter()
             .zip(random_assignment(&options, fresh_draw()))
             .filter_map(|((clip, duration, old, _), chosen)| {
-                if old == Some(chosen) {
-                    return None;
-                }
+                if old == Some(chosen) { unchanged += 1; return None; }
                 let transition = Transition {
                     id: presets[chosen].to_owned(),
                     duration,
-                    intensity: saved_intensity,
+                    intensity: self.transition_draft_intensity,
                     params: Default::default(),
                 };
-                generated.push((
-                    (timeline_id.clone(), clip.id.clone()),
-                    transition.clone(),
-                ));
+                generated.push(((timeline_id.clone(), clip.id.clone()), transition.clone()));
                 Some(Command::UpdateClip {
                     clip_id: clip.id.clone(),
-                    patch: ClipPatch {
-                        transition_in: Some(Some(transition)),
-                        ..ClipPatch::default()
-                    },
+                    patch: ClipPatch { transition_in: Some(Some(transition)), ..ClipPatch::default() },
                 })
             })
             .collect();
         if commands.is_empty() {
-            self.notify(&t("studio.randomGpuCutsUnchanged"), false);
+            self.notify(&format!("Random transitions: 0 applied, {skipped} skipped, {unchanged} unchanged."), false);
             return;
         }
         let count = commands.len();
         let revision = self.revision;
         self.apply(Command::Batch { commands });
-
         if self.revision != revision {
-            for (target, transition) in generated {
-                self.bulk_transitions.0.insert(target, transition);
-            }
-            self.notify(
-                &tf("studio.randomGpuCutsApplied", &[&count.to_string()]),
-                false,
-            );
+            for (target, transition) in generated { self.bulk_transitions.0.insert(target, transition); }
+            self.notify(&format!("Random transitions: {count} applied, {skipped} skipped, {unchanged} unchanged."), false);
         }
     }
-
 
     /// Draw one compatible video effect per eligible picture clip. A second
     /// click replaces only the exact entry created by an earlier bulk click;
