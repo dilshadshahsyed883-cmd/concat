@@ -63,6 +63,9 @@ pub struct Preferences {
     pub physics_motion_favourites: Vec<String>,
     /// Configured parameters keyed by stable animation preset ID.
     pub animation_preset_settings: BTreeMap<String,serde_json::Value>,
+    /// Explicit Save as Default snapshots; unlike last-edited settings,
+    /// these are never overwritten by automatic parameter remembering.
+    pub animation_preset_defaults: BTreeMap<String,serde_json::Value>,
     /// Explicit, per-preset video-effect defaults. Unsaved library edits are
     /// session drafts, not project data and not persisted preferences.
     pub effect_preset_defaults: BTreeMap<String, BTreeMap<String, f64>>,
@@ -588,6 +591,20 @@ mod tests {
         assert!(malformed.canvas_default.as_deref()
             .and_then(|json| concat_project::canvas_preset::Config::from_json(json).ok())
             .is_none());
+    }
+
+    #[test]
+    fn explicit_animation_defaults_are_independent_of_last_edits() {
+        let mut prefs = Preferences::default();
+        prefs.animation_preset_settings.insert("canvas-motion.top-left".into(),
+            serde_json::json!({"strength":1.5}));
+        prefs.animation_preset_defaults.insert("canvas-motion.top-left".into(),
+            serde_json::json!({"strength":1.0}));
+        let back: Preferences = serde_json::from_str(
+            &serde_json::to_string(&prefs).unwrap()).unwrap();
+        assert_ne!(back.animation_preset_settings, back.animation_preset_defaults);
+        let legacy: Preferences = serde_json::from_str(r#"{"dark":true}"#).unwrap();
+        assert!(legacy.animation_preset_defaults.is_empty());
     }
 
     #[test]

@@ -57,7 +57,7 @@ export component CanvasMotionPanel inherits VerticalLayout {
         label: "Manual Duration (seconds)"; value <=> root.settings.duration;
         minimum: 0.05; maximum: 60; step: 0.1; fmt: ParamFormat.seconds2;
     }
-    if root.preset == 18: Param {
+    if root.preset == 18 && root.settings.auto-fit: Param {
         label: "Breathing Cycle Length (seconds)";
         value <=> root.settings.duration;
         minimum: 0.05; maximum: 60; step: 0.1; fmt: ParamFormat.seconds2;
@@ -103,7 +103,8 @@ export component CanvasMotionPanel inherits VerticalLayout {
         changed(v) => { root.settings.seed = Math.round(v); }
         minimum: 0; maximum: 65535; step: 1; fmt: ParamFormat.steps;
     }
-    if root.preset < 21 || root.preset == 24: HorizontalLayout {
+    if (root.preset < 21 && root.preset != 18 && root.preset != 4 &&
+        root.preset != 6 && root.preset != 16) || root.preset == 24: HorizontalLayout {
         spacing: 8px;
         Check {
             checked: root.settings.custom-anchors;
@@ -111,13 +112,16 @@ export component CanvasMotionPanel inherits VerticalLayout {
         }
         Text { text: "Use custom X/Y anchors"; color: Theme.fg; }
     }
-    if root.settings.custom-anchors && (root.preset < 21 || root.preset == 24): VerticalLayout {
+    if root.settings.custom-anchors && ((root.preset < 21 && root.preset != 18 &&
+        root.preset != 4 && root.preset != 6 && root.preset != 16) ||
+        root.preset == 24): VerticalLayout {
         Param { label: "Start X"; value <=> root.settings.start-x; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
         Param { label: "Start Y"; value <=> root.settings.start-y; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
         Param { label: "End X"; value <=> root.settings.end-x; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
         Param { label: "End Y"; value <=> root.settings.end-y; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
     }
-    if root.preset != 25: HorizontalLayout {
+    if root.preset != 25 && root.preset != 18 && root.preset != 4 && root.preset != 6 &&
+        root.preset != 16: HorizontalLayout {
         spacing: 8px;
         Check {
             checked: root.settings.reverse;
@@ -130,5 +134,20 @@ export component CanvasMotionPanel inherits VerticalLayout {
         options: ["Linear", "Smooth", "Cinematic"];
         current: root.settings.easing;
         changed(index) => { root.settings.easing = index; }
+    }
+    HorizontalLayout {
+        spacing: 8px;
+        Button { label: "Save as Default";
+            clicked => {
+                Keyframes.remember-current();
+                Keyframes.save-animation-default(Keyframes.animation-selected);
+            }
+        }
+        Button { label: "Reset Default";
+            clicked => {
+                Keyframes.reset-animation-default(Keyframes.animation-selected);
+                Keyframes.restore-current();
+            }
+        }
     }
 }

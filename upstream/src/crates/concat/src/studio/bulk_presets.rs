@@ -697,7 +697,9 @@ impl Studio {
     }
 
     pub fn animation_settings(&self,index:i32)->concat_project::animation_settings::Settings {
-        let value=animation_favourite_id(index).and_then(|id|self.prefs.animation_preset_settings.get(id));
+        let value=animation_favourite_id(index).and_then(|id|
+            self.prefs.animation_preset_settings.get(id)
+                .or_else(||self.prefs.animation_preset_defaults.get(id)));
         concat_project::animation_settings::Settings::from_value(value)
     }
     pub fn remember_animation_settings(&mut self,index:i32,strength:f32,duration:f32,speed:f32,intensity:f32,canvas:crate::ui::CanvasMotionData) {
@@ -715,6 +717,28 @@ impl Studio {
                 self.prefs.save(&self.host.dirs);
             }
         }
+    }
+
+    /// This writes a per-preset snapshot without touching any project clip.
+    /// Future knob changes continue to be automatically remembered separately.
+    pub fn save_animation_default(&mut self, index: i32) {
+        let Some(id)=animation_favourite_id(index) else {return;};
+        let settings=self.animation_settings(index);
+        if let Ok(value)=serde_json::to_value(settings) {
+            self.prefs.animation_preset_defaults.insert(id.into(),value);
+            self.prefs.save(&self.host.dirs);
+            self.notify("Saved this animation preset's defaults",false);
+        }
+    }
+
+    /// Reset means factory, not the last remembered edit, and never rewrites
+    /// an existing timeline animation or its generated-motion ownership.
+    pub fn reset_animation_default(&mut self, index: i32) {
+        let Some(id)=animation_favourite_id(index) else {return;};
+        self.prefs.animation_preset_defaults.remove(id);
+        self.prefs.animation_preset_settings.remove(id);
+        self.prefs.save(&self.host.dirs);
+        self.notify("Restored factory defaults for this animation",false);
     }
     /// Each chosen starred preset uses its own configured parameters. Timeline
     /// selection and preset pool selection are independent, with no empty fallback.

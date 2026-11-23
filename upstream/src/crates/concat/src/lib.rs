@@ -1667,6 +1667,13 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         keys.on_remember_animation(on_lanes!(|state,index:i32,strength:f32,duration:f32,speed:f32,intensity:f32,canvas:CanvasMotionData| {
             state.remember_animation_settings(index,strength,duration,speed,intensity,canvas);
         }));
+
+        keys.on_save_animation_default(on_lanes!(|state,index:i32| {
+            state.save_animation_default(index);
+        }));
+        keys.on_reset_animation_default(on_lanes!(|state,index:i32| {
+            state.reset_animation_default(index);
+        }));
         keys.on_load_animation(move |index| {
             let mut result=AnimationInspectorData::default();
             Shell::with(|shell,_| {
