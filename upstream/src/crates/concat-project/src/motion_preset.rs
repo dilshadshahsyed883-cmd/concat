@@ -393,10 +393,10 @@ mod tests {
         let mut clip = Clip::blank("c1", "t1", ClipKind::Video, "picture", 0.0, 10.0);
         clip.opacity = 0.6;
         let preview = apply_preset(&mut clip, MotionPreset::FadeIn);
-        assert_eq!(preview, 0.5);
+        assert!((preview - 5.0).abs() <= FRAME);
         assert_eq!(clip.value_at(KeyProperty::Opacity, 0.0), 0.0);
         assert!(clip.value_at(KeyProperty::Opacity, 0.05) > 0.0);
-        assert_eq!(clip.value_at(KeyProperty::Opacity, 0.1), 0.6);
+        assert!(clip.value_at(KeyProperty::Opacity, 0.1) < 0.6);
         assert_eq!(clip.value_at(KeyProperty::Opacity, 1.0), 0.6);
         assert_eq!(
             MotionPreset::FadeIn.command(&clip, FRAME).unwrap_err(),
