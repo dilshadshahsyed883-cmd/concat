@@ -203,6 +203,8 @@ class CloudRender:
             con.execute("UPDATE files SET state='failed',error='Interrupted Drive transfer; retry' WHERE state='uploading'")
             pending = [r["id"] for r in con.execute("SELECT id FROM files WHERE state='queued'")]
         self.path.chmod(0o600)
+        from .telemetry import Telemetry
+        self.metrics = Telemetry(self)
         self.production = ProductionQueue(self, self.production_worker)
         self.salad_idle = SaladIdleStop(self)
         self.salad_worker = SaladAutoWorker(self)

@@ -360,6 +360,7 @@ class ProductionQueue:
 
     def start(self):
         self.stop.clear()
+        self.media.metrics.start()
         self.thread = threading.Thread(target=self.run, name="cloud-render-production", daemon=True)
         self.intake_thread = threading.Thread(target=self.run_intake, name="cloud-render-drive-intake", daemon=True)
         self.intake_thread.start()
@@ -367,6 +368,7 @@ class ProductionQueue:
 
     def close(self):
         self.stop.set()
+        self.media.metrics.close()
         self.wake.set()
         self.intake_wake.set()
         if self.thread:
@@ -433,6 +435,8 @@ class ProductionQueue:
                 con.execute("""INSERT INTO production_jobs(
                     remote_id,drive_id,name,resource_keys,drive_size,drive_md5,folder_id,drive_path)
                     VALUES(?,?,?,?,?,?,?,?)""", (self.new_remote_id(), drive_id, name, keys, size, md5, folder, path))
+                job_id = con.execute('SELECT last_insert_rowid()').fetchone()[0]
+                self.media.metrics.state(con, job_id, 'Queued')
                 added += 1
             # Scanning arms dispatch automatically, but never overrides a
             # deliberate Pause. Intake runs even while GPU is paused/stopped.
@@ -494,6 +498,9 @@ class ProductionQueue:
                 con.execute("DELETE FROM production_jobs WHERE id=?", (job,))
             else:
                 raise HTTPException(409, "This action is unavailable in the current project state.")
+            saved = con.execute('SELECT state FROM production_jobs WHERE id=?', (job,)).fetchone()
+            if saved:
+                self.media.metrics.state(con, job, saved['state'])
         self.wake.set()
         self.intake_wake.set()
         return {"ok": True}
@@ -502,7 +509,9 @@ class ProductionQueue:
         fields = {"state": state, "error": error, **values}
         assignment = ",".join(key + "=?" for key in fields)
         with self.media.lock, self.media.connection() as con:
-            con.execute("UPDATE production_jobs SET " + assignment + " WHERE id=?", (*fields.values(), job))
+            changed = con.execute("UPDATE production_jobs SET " + assignment + " WHERE id=?", (*fields.values(), job))
+            if changed.rowcount:
+                self.media.metrics.state(con, job, state)
 
     def archive(self, job):
         return self.spool / f"{job}.zip"
@@ -546,6 +555,7 @@ class ProductionQueue:
                 row = con.execute("SELECT * FROM production_jobs WHERE state='Ready for GPU' ORDER BY id LIMIT 1").fetchone()
                 if row is not None:
                     con.execute("UPDATE production_jobs SET state='Waiting for Worker' WHERE id=?", (row["id"],))
+                    self.media.metrics.state(con, row['id'], 'Waiting for Worker')
             if row is None and active:
                 row = active[self.observation_cursor % len(active)]
                 self.observation_cursor += 1
@@ -742,6 +752,7 @@ class ProductionQueue:
 
     def observe(self, row, worker, status):
         job, remote_id = row["id"], row["remote_id"]
+        self.media.metrics.observe(job, status)
         state = status.get("state")
         if state in ("queued", "running", "delivering"):
             self.update(job, state="Delivering" if state == "delivering" else "Rendering")
@@ -808,6 +819,7 @@ class ProductionQueue:
                 raise JobError("Verified MP4 delivery was not recorded.")
             state = "Cancelled" if row["cancel_requested"] else "Completed"
             con.execute("UPDATE production_jobs SET state=?,error='' WHERE id=?", (state, job))
+            self.media.metrics.state(con, job, state)
         if state == "Completed":
             self.clean_input(job)
         self.output_part(job).unlink(missing_ok=True)

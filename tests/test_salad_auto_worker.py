@@ -396,6 +396,62 @@ class LifecycleTests(unittest.TestCase):
             self.assertEqual(self.status(), 'download_progress_unavailable')
         self.assertEqual(self.posts(), [])
 
+    def test_fractional_and_percentage_progress_use_saved_threshold(self):
+        self.manager.save({'image_pull_threshold': 24, 'image_pull_seconds': 60})
+        for value, percent, healthy in ((0.30, 30, True), (30, 30, True),
+                                        (0.24, 24, True), (24, 24, True),
+                                        (1.0, 100, True), (100, 100, True),
+                                        (0.23, 23, False), (23, 23, False),
+                                        (0, 0, False)):
+            with self.subTest(value=value):
+                self.manager.salad_worker.retry()
+                self.requests.clear()
+                self.instance['pulling_progress'] = value
+                self.check(1061)
+                config = self.manager.config()
+                self.assertEqual(config['salad_worker_progress'], percent)
+                self.assertEqual(self.status(), 'downloading_healthy' if healthy else 'reallocate_requested')
+                self.assertEqual(len(self.posts()), 0 if healthy else 1)
+
+    def test_final_confirmation_normalizes_and_exposes_latest_progress(self):
+        self.manager.save({'image_pull_threshold': 24, 'image_pull_seconds': 60})
+        original = self.api
+        for value, percent, healthy in ((0.30, 30, True), (30, 30, True),
+                                        (0.24, 24, True), (1.0, 100, True),
+                                        (0.23, 23, False)):
+            with self.subTest(value=value):
+                self.manager.salad_worker.retry()
+                self.requests.clear()
+                self.instance['pulling_progress'] = 0
+                def confirmed(method, url, **kw):
+                    if method == 'GET' and url.endswith('/instances/' + ID):
+                        return Mock(status_code=200, json=lambda: {**self.instance, 'pulling_progress': value})
+                    return original(method, url, **kw)
+                with patch('app.modules.concat.engine.salad_worker.requests.request', side_effect=confirmed):
+                    self.check(1061)
+                self.assertEqual(self.manager.config()['salad_worker_progress'], percent)
+                self.assertEqual(len(self.posts()), 0 if healthy else 1)
+
+    def test_fractional_exact_threshold_avoids_float_roundoff(self):
+        self.manager.save({'image_pull_threshold': 29})
+        self.instance['pulling_progress'] = 0.29
+        self.check(1020)
+        self.assertEqual(self.status(), 'downloading_healthy')
+        self.assertEqual(self.manager.config()['salad_worker_progress'], 29)
+        self.assertEqual(self.posts(), [])
+
+    def test_ready_instance_replaces_legacy_fractional_saved_progress(self):
+        self.instance['pulling_progress'] = 0
+        self.check(1000)
+        with self.manager.connection() as con:
+            record = self.manager.salad_worker._record(con)
+            record.update(progress=1.0, health_passed=True)
+            self.manager.salad_worker._save(con, record, 'ready')
+        self.instance.update(state='running', ready=True, pulling_progress=1.0)
+        self.assertTrue(self.check(1061))
+        self.assertEqual(self.manager.config()['salad_worker_progress'], 100)
+        self.assertEqual(self.posts(), [])
+
     def test_bad_timestamp_does_not_trigger_reallocation(self):
         for stamp in (None, 'invalid', self.stamp(5000), '2026-11-22T00:00:00'):
             self.instance['update_time'] = stamp

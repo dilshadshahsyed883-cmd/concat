@@ -13,7 +13,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
 
@@ -161,6 +161,18 @@ async def disconnect_worker(request: Request, principal: Principal = Depends(cur
 @router.get("/api/cloud-render/production")
 async def read_production(request: Request, principal: Principal = Depends(current_principal)):
     return _manager(request, principal).production.snapshot()
+
+
+@router.get('/api/cloud-render/metrics/report')
+async def metrics_report(request: Request, hours: int = 24,
+                         principal: Principal = Depends(current_principal)):
+    if hours not in (1, 24, 168):
+        raise HTTPException(400, 'Choose 1, 24 or 168 hours')
+    report = await run_in_threadpool(_manager(request, principal).metrics.report, hours)
+    return StreamingResponse((report[i:i+65536] for i in range(0, len(report), 65536)),
+        media_type='text/plain; charset=utf-8',
+        headers={'Content-Disposition': 'attachment; filename="concat-performance.txt"',
+                 'Cache-Control': 'private,no-store', 'X-Content-Type-Options': 'nosniff'})
 
 
 @router.post("/api/cloud-render/production/scan")

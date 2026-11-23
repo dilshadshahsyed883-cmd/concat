@@ -131,6 +131,10 @@
     }
   };
   let previousQueue = "";
+  $('cr-report-hours').addEventListener('change', () => {
+    const hours = $('cr-report-hours').value;
+    if (['1','24','168'].includes(hours)) $('cr-download-report').href = '/api/cloud-render/metrics/report?hours=' + hours;
+  });
   let queueRequest = 0;
   async function loadProduction(){
     const request = ++queueRequest;

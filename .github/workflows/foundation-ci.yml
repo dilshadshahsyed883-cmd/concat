@@ -29,6 +29,7 @@ jobs:
           python -m unittest app.modules.concat.test_routes -v
           python -m unittest discover -s tests -p 'test_concat_drive_intake.py' -v
           python -m unittest discover -s tests -p 'test_salad_auto_worker.py' -v
+          python -m unittest discover -s tests -p 'test_concat_telemetry.py' -v
           python -m unittest discover -s tests -p 'test_concat_outputs_upload.py' -v
           python -m unittest discover -s app/modules/uploader/tests -p 'test_*.py' -v
       - name: Browser shell JavaScript syntax
@@ -51,6 +52,7 @@ jobs:
           python -m pip install playwright==1.62.0
           python -m playwright install --with-deps chromium
           python tests/browser/concat_media_picker_layout.py
+          python tests/browser/concat_report_ui.py
       - name: VPS1-style Concat shell UX and authentication regressions
         run: python -m unittest discover -s tests -p 'test_scene_shell_ui.py' -v
       - name: Release script syntax (no SSH or deployment)

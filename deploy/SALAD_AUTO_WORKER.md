@@ -31,7 +31,14 @@ The existing five Drive retries at 20-second intervals are unchanged.
 The UI adjusts threshold/timer. The backend persists a maximum of three
 reallocations and a 30-second cooldown; API validation forbids a budget above three.
 Timer origin is the instance's `update_time` when its state is `downloading`.
-`pulling_progress` is a percentage from 0–100. At or above the threshold the
+`pulling_progress` accepts fractional and percentage representations. Numeric
+values from 0 through 1 are multiplied by 100 (`0.30` → 30%, `1.0` → 100%);
+values greater than 1 through 100 remain percentages (`30` → 30%). Both the
+list and final confirmation readings are normalized before comparison and
+storage for the UI. The overlapping 0–1 range has no unit metadata: a literal
+1% is therefore interpreted as 100%. This conservative convention can keep a
+slow instance, but avoids discarding a healthy fractional download. Invalid
+values remain unavailable. At or above the threshold the
 current download is kept. Below the threshold after the window, request
 reallocation of that instance. Missing/invalid progress or timestamps wait for
 valid API data; they are never interpreted as zero. Time spent allocating or

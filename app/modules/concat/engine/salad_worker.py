@@ -27,6 +27,18 @@ LIMITS = {'image_pull_threshold': (1, 100), 'image_pull_seconds': (5, 600),
 GROUP_KEYS = ('salad_organization', 'salad_project', 'salad_container_group')
 
 
+def image_pull_percent(value):
+    """Normalize fractional or percentage API progress to UI percentage units.
+
+    Values in [0, 1] use the fractional convention; (1, 100] are percentages.
+    The overlapping range is ambiguous without upstream unit metadata. Prefer
+    keeping an instance over reallocating a potentially healthy download.
+    """
+    if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 100:
+        return None
+    return round(value * 100, 10) if value <= 1 else value
+
+
 class SaladAutoWorker:
     def __init__(self, manager):
         self.manager = manager
@@ -189,7 +201,7 @@ class SaladAutoWorker:
             except (ValueError, TypeError, KeyError, AttributeError):
                 pass
             if instance.get('ready') is True or stage == 'creating':
-                record.update(accepted=True, health_passed=True)
+                record.update(accepted=True, health_passed=True, progress=100)
             if stage == 'running' and instance.get('ready') is True:
                 # API readiness alone is insufficient; check the unchanged worker.
                 m.put(con, 'enabled', '1')
@@ -224,11 +236,12 @@ class SaladAutoWorker:
                 if record.get('download_since') is not None and since < record['download_since']:
                     return status('stale_instance_response')
                 record.update(download_transition=transition, download_since=since, accepted=False)
-            progress = instance.get('pulling_progress')
-            if type(progress) not in (int, float) or not math.isfinite(progress) or not 0 <= progress <= 100:
+            progress = image_pull_percent(instance.get('pulling_progress'))
+            if progress is None:
                 record['progress'] = None
                 return status('download_progress_unavailable')
             record['progress'] = progress
+            record['raw_progress'] = instance['pulling_progress']
             if progress >= int(m.get(con, 'image_pull_threshold') or '8'):
                 record['accepted'] = True
             if record.get('accepted'):
@@ -254,9 +267,19 @@ class SaladAutoWorker:
                     or fresh.get('update_time') != transition or fresh.get('state') != 'downloading'
                     or fresh.get('ready') is True):
                 return status('instance_changed_rechecking')
-            value = fresh.get('pulling_progress')
-            if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 100:
+            value = image_pull_percent(fresh.get('pulling_progress'))
+            if value is None:
                 return status('download_progress_unavailable')
+            record['progress'] = value
+            m.metrics.event('image_decision', {
+                'instance': identity, 'download_since': record['download_since'],
+                'list_raw_progress': instance['pulling_progress'],
+                'confirmation_raw_progress': fresh['pulling_progress'],
+                'confirmation_percent': value,
+                'threshold_percent': int(m.get(con, 'image_pull_threshold') or '8'),
+                'window_seconds': int(m.get(con, 'image_pull_seconds') or '20'),
+                'decision': 'keep' if value >= int(m.get(con, 'image_pull_threshold') or '8') else 'reallocate',
+            }, con=con)
             if value >= int(m.get(con, 'image_pull_threshold') or '8'):
                 record.update(accepted=True, progress=value)
                 return status('downloading_healthy')

@@ -70,6 +70,24 @@ class StudioTests(unittest.TestCase):
         self.assertIn("copyMediaLink", self.client.get("/concat/assets/cloud_render.js").text)
         self.assertEqual(self.client.get("/cloud-render/", follow_redirects=False).status_code, 303)
 
+    def test_report_download_auth_range_and_owner_isolation(self):
+        self.auth_csrf()
+        alice = get_registry(self.app).for_principal(Principal('alice', is_active=True, concat_granted=True))
+        alice.metrics.event('collector', {'event': 'alice-only'})
+        reply = self.client.get('/api/cloud-render/metrics/report?hours=24')
+        self.assertEqual(reply.status_code, 200)
+        self.assertIn('attachment;', reply.headers['content-disposition'])
+        self.assertIn('no-store', reply.headers['cache-control'])
+        self.assertIn('alice-only', reply.text)
+        self.assertEqual(self.client.get('/api/cloud-render/metrics/report?hours=999').status_code, 400)
+        self.owner = 'bob'
+        self.assertNotIn('alice-only', self.client.get('/api/cloud-render/metrics/report').text)
+        self.owner = None
+        self.assertEqual(self.client.get('/api/cloud-render/metrics/report').status_code, 401)
+        self.owner = 'alice'
+        self.granted = False
+        self.assertEqual(self.client.get('/api/cloud-render/metrics/report').status_code, 403)
+
     def test_csrf_and_cross_origin_mutations(self):
         token = self.auth_csrf()
         self.assertEqual(self.client.post("/api/cloud-render/config", json={"auto_upload": True}).status_code, 403)
@@ -262,6 +280,8 @@ class StudioTests(unittest.TestCase):
     def test_job_and_queue_isolation(self):
         token = self.auth_csrf()
         alice = get_registry(self.app).for_principal(Principal("alice"))
+        # This test asserts owner isolation, not asynchronous Drive intake.
+        alice.production.close()
         with alice.connection() as db:
             db.execute("""INSERT INTO production_jobs
                         (remote_id, drive_id, name, resource_keys, drive_size,

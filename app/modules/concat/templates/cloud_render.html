@@ -2,7 +2,7 @@
 {% block title %}Concat{% endblock %}
 {% block subtitle %}Concat Production queue, rendered media and SaladCloud GPU connection{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="/concat/assets/cloud_render.css?v=20261122-auto-worker-v1">
+<link rel="stylesheet" href="/concat/assets/cloud_render.css?v=20261123-report-v1">
 <section id="cloud-render" data-csrf="{{ csrf_token }}" data-initial-tab="{{ initial_tab }}" aria-labelledby="cloud-heading">
   <h2 id="cloud-heading" class="visually-hidden">Concat Studio workspace</h2>
   <div class="cr-navigation">
@@ -102,7 +102,10 @@
         <button class="cr-btn secondary" id="cr-manual-start" type="button">Start Worker</button>
         <button class="cr-btn danger" id="cr-manual-stop" type="button">Stop Worker</button>
         <button class="cr-btn secondary" id="cr-auto-retry" type="button">Retry Worker Action</button>
+        <select id="cr-report-hours" aria-label="Report time range"><option value="1">Last hour</option><option value="24" selected>Last 24 hours</option><option value="168">Last 7 days</option></select>
+        <a class="cr-btn secondary" id="cr-download-report" href="/api/cloud-render/metrics/report?hours=24" download="concat-performance.txt">Download Report (.txt)</a>
       </div>
+      <p class="cr-note">Performance history is collected in the background, even with this page closed. Retained for up to 7 days or 20,000 samples.</p>
     </div>
     <div class="cr-card">
       <h3>GPU → VPS Output Receiver</h3>
@@ -113,5 +116,5 @@
     </div>
   </section>
 </section>
-<script defer src="/concat/assets/cloud_render.js?v=20261122-auto-worker-v1"></script>
+<script defer src="/concat/assets/cloud_render.js?v=20261123-report-v1"></script>
 {% endblock %}

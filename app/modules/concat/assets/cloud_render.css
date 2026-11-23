@@ -76,3 +76,5 @@
 .cr-stepper { display: flex; align-items: center; gap: 8px; }
 .cr-stepper input { min-width: 0; flex: 1; width: 80px; }
 .cr-stepper .cr-btn { flex: 0 0 42px; padding: 10px; }
+#cloud-render #cr-download-report{text-decoration:none;display:inline-flex;align-items:center}
+#cloud-render #cr-report-hours{width:auto;max-width:100%}
