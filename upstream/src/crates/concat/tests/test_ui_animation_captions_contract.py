@@ -113,9 +113,16 @@ class DesktopUiContractTests(unittest.TestCase):
     def test_canvas_preset_all_actions_are_not_selection_limited(self):
         actions = (ROOT / "ui/workspace/animation-actions.slint").read_text()
         presets = (ROOT / "ui/workspace/canvas-presets.slint").read_text()
-        for label in ('label: "Apply Selected"', 'label: "Apply All"'):
+        # Animation None exposes explicit clear wording while normal presets
+        # retain the original Apply Selected / Apply All actions.
+        for label in (
+            'label: Keyframes.animation-selected == -1 ? "Clear Selected Animation" : "Apply Selected"',
+            'label: Keyframes.animation-selected == -1 ? "Clear All Eligible Animations" : "Apply All"',
+        ):
             self.assertIn(label, actions)
+        for label in ('label: "Apply Selected"', 'label: "Apply All"'):
             self.assertIn(label, presets)
+        self.assertIn("Keyframes.clear-generated-motion(", actions)
         self.assertIn("Keyframes.animation-videos,selected,Keyframes.canvas-motion", actions)
         self.assertIn("CanvasPresets.apply(CanvasPresets.profile, true", presets)
         self.assertIn('label: "Apply Favorites Randomly"', presets)
