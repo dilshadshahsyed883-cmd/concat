@@ -179,9 +179,6 @@ impl PhysicsPreset {
     fn extended_keys_with(
         self, clip: &Clip, frame: f64, controls: PhysicsControls,
     ) -> Result<(Vec<ClipKey>, f64), PresetError> {
-        if !self.extended_properties().is_empty() {
-            return self.extended_keys_with(clip, frame, controls);
-        }
         if !matches!(clip.kind, ClipKind::Image | ClipKind::Video) {
             return Err(PresetError::NeedsPicture);
         }
@@ -323,6 +320,9 @@ impl PhysicsPreset {
     pub fn keys_with(
         self, clip: &Clip, frame: f64, controls: PhysicsControls,
     ) -> Result<(Vec<ClipKey>, f64), PresetError> {
+        if !self.extended_properties().is_empty() {
+            return self.extended_keys_with(clip, frame, controls);
+        }
         if !matches!(clip.kind, ClipKind::Image | ClipKind::Video) {
             return Err(PresetError::NeedsPicture);
         }
