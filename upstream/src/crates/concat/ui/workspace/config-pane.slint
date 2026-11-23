@@ -489,6 +489,33 @@ export component ConfigPane inherits Rectangle {
                         videos: Keyframes.animation-videos;
                         selected-only: Keyframes.animation-scope == 1;
                     }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Button {
+                            label: "Save Default";
+                            enabled: Keyframes.animation-dirty;
+                            clicked => { Keyframes.save-current(); }
+                        }
+                        Button {
+                            label: "Reset Default";
+                            enabled: Keyframes.animation-dirty || Keyframes.animation-has-override;
+                            clicked => { Keyframes.reset-current(); }
+                        }
+                    }
+                    Text {
+                        text: Keyframes.animation-dirty
+                            ? "Unsaved edits — Save Default to reuse these settings."
+                            : Keyframes.animation-has-override
+                            ? "Saved custom default for this animation."
+                            : "Using original factory defaults.";
+                        color: Theme.fg-muted;
+                        font-size: Theme.fs-sm;
+                        wrap: word-wrap;
+                    }
+                    Text {
+                        text: "Switching presets discards unsaved edits. Save/Reset never changes applied timeline animations.";
+                        color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
+                    }
                     Text { text: Keyframes.animation-timing; color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
                     Text {
                         text: "Generated keys remain editable. Existing manual keyframes are protected; bulk Apply is one Undo step.";
