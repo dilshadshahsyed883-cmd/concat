@@ -384,7 +384,7 @@ export component ConfigPane inherits Rectangle {
         // user out of Canvas, Transitions or Effects settings.
         if (root.selected.id != root.browsing-selection-id) {
             root.browsing-selection-id = root.selected.id;
-            if LibraryFocus.page != 1 { LibraryFocus.page = -1; }
+            if LibraryFocus.page != 1 && !(LibraryFocus.page == 2 && LibraryFocus.selected-id == "__none_effect__") { LibraryFocus.page = -1; }
         }
         if (root.selected.kind != root.strip-kind) {
             root.strip-kind = root.selected.kind;
@@ -519,7 +519,8 @@ export component ConfigPane inherits Rectangle {
                     spacing: 8px;
                     MediaTargetControls { }
                     Text {
-                        text: Keyframes.animation-selected < 9
+                        text: Keyframes.animation-selected == -1 ? "None / No Animation"
+                            : Keyframes.animation-selected < 9
                             ? root.animation-basic-names[Keyframes.animation-selected]
                             : root.animation-canvas-names[Keyframes.animation-selected - 9];
                         color: Theme.fg;
@@ -527,13 +528,14 @@ export component ConfigPane inherits Rectangle {
                         font-weight: Theme.weight-title;
                     }
                     Text {
-                        text: Keyframes.animation-selected < 6 ? "Physics"
+                        text: Keyframes.animation-selected == -1 ? "Clear generated motion only"
+                            : Keyframes.animation-selected < 6 ? "Physics"
                             : Keyframes.animation-selected < 9 ? "Basic" : "Canvas Motion";
                         color: Theme.fg-muted;
                         font-size: Theme.fs-sm;
                     }
 
-                    if Keyframes.animation-selected < 9: VerticalLayout {
+                    if Keyframes.animation-selected >= 0 && Keyframes.animation-selected < 9: VerticalLayout {
                         spacing: 8px;
                         Param { label: "Strength"; value <=> Keyframes.physics-strength;
                             minimum: 0.1; maximum: 2; step: 0.1; fmt: ParamFormat.fraction; }
@@ -554,6 +556,10 @@ export component ConfigPane inherits Rectangle {
                         images: Keyframes.animation-images;
                         videos: Keyframes.animation-videos;
                         selected-only: Keyframes.animation-scope == 1;
+                    }
+                    if Keyframes.animation-selected == -1: Text {
+                        text: "Selecting None changes nothing. Use Clear Selected Animation or Clear All Eligible Animations below. Hand-edited keys and unrelated styling are protected.";
+                        color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
                     }
                     Text { text: Keyframes.animation-timing; color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
                     Text {
@@ -662,7 +668,7 @@ export component ConfigPane inherits Rectangle {
                         MediaLayoutPanel { page: LibraryFocus.page - 10; }
                     }
                     if LibraryFocus.page == 1: TransitionTimingControls { }
-                    if LibraryFocus.page == 1 && root.on-transition: TransitionPanel {
+                    if LibraryFocus.page == 1 && root.on-transition && LibraryFocus.selected-id != "__none_transition__": TransitionPanel {
                         transition: root.transition;
                         remove => { root.transition-remove(); }
                         duration-set(seconds) => { root.transition-duration-set(seconds); }
@@ -672,13 +678,51 @@ export component ConfigPane inherits Rectangle {
                         reset-default => { root.transition-default-reset(); }
                     }
 
-                    if LibraryFocus.page == 1 && !root.on-transition: Text {
+                    if LibraryFocus.page == 1 && !root.on-transition && LibraryFocus.selected-id != "__none_transition__": Text {
                         text: "Choose a transition card to apply it to an eligible cut. Select the cut on the timeline to adjust duration or intensity in the inspector. The card's Info action only browses details.";
                         color: Theme.fg-muted;
                         font-size: Theme.fs-sm;
                         wrap: word-wrap;
                     }
-                    if LibraryFocus.page == 2 && root.has-selection: PresetStack {
+                    if LibraryFocus.page == 1 && LibraryFocus.selected-id == "__none_transition__": VerticalLayout {
+                        spacing: 8px;
+                        Text {
+                            text: "Select None without changing the timeline. The button below removes only the selected incoming transition (a normal hard cut).";
+                            color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
+                        }
+                        Button {
+                            label: "Remove Selected Transition";
+                            enabled: root.on-transition || root.has-selection;
+                            clicked => { root.transition-remove(); }
+                        }
+                        if !root.on-transition && !root.has-selection: Text {
+                            text: "Choose a transition boundary or its incoming clip on the timeline.";
+                            color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
+                        }
+                    }
+                    if LibraryFocus.page == 2 && LibraryFocus.selected-id == "__none_effect__": VerticalLayout {
+                        spacing: 8px;
+                        Text {
+                            text: "None never clears the whole effects chain. Remove one applied video effect below; every other link remains.";
+                            color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
+                        }
+                        if root.has-selection && root.applied-visual.length == 0: Text {
+                            text: "No visual effects applied to this clip.";
+                            color: Theme.fg-muted; font-size: Theme.fs-sm;
+                        }
+                        if !root.has-selection: Text {
+                            text: "Select a clip with an applied visual effect first.";
+                            color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
+                        }
+                        if root.has-selection: VerticalLayout {
+                            spacing: 4px;
+                            for entry[index] in root.applied-visual: Button {
+                                label: "Remove " + entry.name;
+                                clicked => { root.chain-remove(false, index); }
+                            }
+                        }
+                    }
+                    if LibraryFocus.page == 2 && root.has-selection && LibraryFocus.selected-id != "__none_effect__": PresetStack {
                         noun: I18n.t("common.effect");
                         library-title: I18n.t("common.effects");
                         library: false;
@@ -771,7 +815,7 @@ export component ConfigPane inherits Rectangle {
                 height: 1px;
                 background: Theme.line;
             }
-                    if LibraryFocus.page == 2 && LibraryFocus.selected-id != "": Button {
+                    if LibraryFocus.page == 2 && LibraryFocus.selected-id != "" && LibraryFocus.selected-id != "__none_effect__": Button {
                         label: "Apply to Selected Clip";
                         enabled: root.has-selection;
                         clicked => { root.chain-add(false, LibraryFocus.selected-id); }

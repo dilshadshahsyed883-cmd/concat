@@ -171,6 +171,38 @@ pub fn replace_generated(
     Ok(changed)
 }
 
+/// Remove only an exactly recognized, still-owned generated animation.
+///
+/// None is intentionally not another `replace_generated` call: that command requires
+/// nonempty keys.  Never clear manually edited keys or unrelated style channels.
+pub fn clear_generated(
+    clip: &mut Clip,
+    expected_keys: &[ClipKey],
+) -> Result<bool, crate::CommandError> {
+    if !clip.kind.is_visual() || clip.keys != expected_keys {
+        return Err(crate::CommandError::UnsafeEdit {
+            reason: "Animation target changed before clearing".into(),
+        });
+    }
+    let Some(owned) = generated_ownership(clip) else {
+        return Err(crate::CommandError::UnsafeEdit {
+            reason: "Manual or unowned animation keys are protected".into(),
+        });
+    };
+    // Independently edited style no longer belongs to this animation.
+    if let Some(style) = owned.style {
+        if style.owns_background && clip.background == style.applied_background {
+            clip.background = style.before_background;
+        }
+        if style.owns_mask && clip.mask == style.applied_mask {
+            clip.mask = style.before_mask;
+        }
+    }
+    clip.keys.clear();
+    clip.extra.remove(OWNERSHIP_KEY);
+    Ok(true)
+}
+
 /// The starter animations available from the native picture inspector.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MotionPreset {
@@ -578,6 +610,54 @@ mod tests {
             .apply(generated_command(&editor, "c1", false, 0.0, 0.0))
             .unwrap();
         assert!(generated_ownership(editor.project().active().clip("c1").unwrap()).is_some());
+    }
+
+    #[test]
+    fn explicit_none_clears_owned_keys_and_canvas_style_with_undo_redo() {
+        let mut editor = owned_fixture();
+        let original = editor.project().active().clip("c1").unwrap().clone();
+        editor.apply(generated_command(&editor, "c1", true, 0.6, 0.1)).unwrap();
+        let generated = editor.project().active().clip("c1").unwrap().clone();
+        assert!(!generated.keys.is_empty());
+        assert!(generated_ownership(&generated).is_some());
+
+        editor.apply(Command::ClearGeneratedMotion {
+            clip_id: "c1".into(),
+            expected_keys: generated.keys.clone(),
+        }).unwrap();
+        let cleared = editor.project().active().clip("c1").unwrap();
+        assert!(cleared.keys.is_empty());
+        assert_eq!(cleared.background, original.background);
+        assert_eq!(cleared.mask, original.mask);
+        assert!(cleared.extra.get(OWNERSHIP_KEY).is_none());
+
+        assert!(editor.undo());
+        assert_eq!(editor.project().active().clip("c1").unwrap(), &generated);
+        assert!(editor.redo());
+        assert!(editor.project().active().clip("c1").unwrap().keys.is_empty());
+    }
+
+    #[test]
+    fn explicit_none_rejects_unowned_and_manually_edited_keys() {
+        let mut editor = owned_fixture();
+        assert!(editor.apply(Command::ClearGeneratedMotion {
+            clip_id: "c1".into(), expected_keys: Vec::new(),
+        }).is_err());
+
+        editor.apply(generated_command(&editor, "c1", false, 0.0, 0.0)).unwrap();
+        editor.apply(Command::SetClipKey {
+            clip_id: "c1".into(),
+            property: KeyProperty::Scale,
+            at: 0.5,
+            value: 1.25,
+            ease: KeyEase::default(),
+        }).unwrap();
+        let authored = editor.project().active().clip("c1").unwrap().clone();
+        assert!(generated_ownership(&authored).is_none());
+        assert!(editor.apply(Command::ClearGeneratedMotion {
+            clip_id: "c1".into(), expected_keys: authored.keys.clone(),
+        }).is_err());
+        assert_eq!(editor.project().active().clip("c1").unwrap(), &authored);
     }
 
     #[test]

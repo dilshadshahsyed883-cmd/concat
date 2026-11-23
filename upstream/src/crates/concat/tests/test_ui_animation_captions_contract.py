@@ -113,12 +113,47 @@ class DesktopUiContractTests(unittest.TestCase):
     def test_canvas_preset_all_actions_are_not_selection_limited(self):
         actions = (ROOT / "ui/workspace/animation-actions.slint").read_text()
         presets = (ROOT / "ui/workspace/canvas-presets.slint").read_text()
-        for label in ('label: "Apply Selected"', 'label: "Apply All"'):
+        # Animation None exposes explicit clear wording while normal presets
+        # retain the original Apply Selected / Apply All actions.
+        for label in (
+            'label: Keyframes.animation-selected == -1 ? "Clear Selected Animation" : "Apply Selected"',
+            'label: Keyframes.animation-selected == -1 ? "Clear All Eligible Animations" : "Apply All"',
+        ):
             self.assertIn(label, actions)
+        for label in ('label: "Apply Selected"', 'label: "Apply All"'):
             self.assertIn(label, presets)
+        self.assertIn("Keyframes.clear-generated-motion(", actions)
         self.assertIn("Keyframes.animation-videos,selected,Keyframes.canvas-motion", actions)
         self.assertIn("CanvasPresets.apply(CanvasPresets.profile, true", presets)
         self.assertIn('label: "Apply Favorites Randomly"', presets)
+
+    def test_none_clear_selection_never_implicitly_edits_other_media(self):
+        actions = (ROOT / "ui/workspace/animation-actions.slint").read_text()
+        config = (ROOT / "ui/workspace/config-pane.slint").read_text()
+        model = (ROOT / "ui/timeline/model.slint").read_text()
+        project = (ROOT.parent / "concat-project/src/motion_preset.rs").read_text()
+        properties = (ROOT.parent / "concat-project/src/commands/properties.rs").read_text()
+
+        self.assertIn('Keyframes.inspect(-1);', MEDIA)
+        self.assertIn('Keyframes.animation-selected == -1', actions)
+        self.assertIn('Keyframes.clear-generated-motion(', actions)
+        self.assertIn('callback clear-generated-motion(', model)
+        self.assertIn('keys.on_clear_generated_motion(', LIB)
+        self.assertIn('clear_generated_motion_bulk(', BULK)
+        self.assertIn('generated_ownership(clip).is_some()', BULK)
+        self.assertIn('pub fn clear_generated(', project)
+        self.assertIn('Command::ClearGeneratedMotion', properties)
+
+        self.assertIn('LibraryFocus.selected-id = "__none_transition__";', MEDIA)
+        self.assertIn('LibraryFocus.selected-id = "__none_effect__";', MEDIA)
+        self.assertIn('label: "Remove Selected Transition"', config)
+        self.assertIn('root.transition-remove();', config)
+        self.assertIn('label: "Remove " + entry.name;', config)
+        self.assertIn('root.chain-remove(false, index);', config)
+        self.assertIn('LibraryFocus.selected-id != "__none_effect__"', config)
+        # No None selection may be forwarded through the normal Apply IDs.
+        self.assertNotIn('root.apply-transition("__none_transition__")', MEDIA)
+        self.assertNotIn('root.apply-effect("__none_effect__")', MEDIA)
 
     def test_generate_captions_reuses_existing_sheet(self):
         self.assertIn('label: "Generate Captions";', MEDIA)

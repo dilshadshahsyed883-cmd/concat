@@ -6,7 +6,9 @@ export component AnimationApplyBar inherits VerticalLayout {
     property <bool> targets: Keyframes.animation-images || Keyframes.animation-videos;
     function apply(selected:bool,mode:int) {
         Keyframes.remember-current();
-        if Keyframes.animation-favourites-browser {
+        if Keyframes.animation-selected == -1 {
+            Keyframes.clear-generated-motion(Keyframes.animation-images,Keyframes.animation-videos,selected);
+        } else if Keyframes.animation-favourites-browser {
             Keyframes.apply-animation-favourites(Keyframes.favourite-pool,Keyframes.animation-images,Keyframes.animation-videos,selected);
         } else if Keyframes.animation-selected < 9 {
             Keyframes.apply-physics-bulk(Keyframes.animation-selected,mode,Keyframes.animation-images,Keyframes.animation-videos,selected,
@@ -16,17 +18,17 @@ export component AnimationApplyBar inherits VerticalLayout {
         }
     }
     padding: 8px; spacing: 6px;
-    if Keyframes.animation-favourites-browser: Text {
+    if Keyframes.animation-favourites-browser && Keyframes.animation-selected >= 0: Text {
         text: "Check favorite cards to choose the pool. Each target receives one chosen animation.";
         color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
     }
-    Button { label: "Apply Selected"; enabled: root.targets && (!Keyframes.animation-favourites-browser || Keyframes.has-favourite-pool); clicked => {root.apply(true,0);} }
-    Button { label: "Apply All"; enabled: root.targets && (!Keyframes.animation-favourites-browser || Keyframes.has-favourite-pool); clicked => {root.apply(false,0);} }
-    if !Keyframes.animation-favourites-browser: Button {
+    Button { label: Keyframes.animation-selected == -1 ? "Clear Selected Animation" : "Apply Selected"; enabled: root.targets && (Keyframes.animation-selected == -1 || !Keyframes.animation-favourites-browser || Keyframes.has-favourite-pool); clicked => {root.apply(true,0);} }
+    Button { label: Keyframes.animation-selected == -1 ? "Clear All Eligible Animations" : "Apply All"; enabled: root.targets && (Keyframes.animation-selected == -1 || !Keyframes.animation-favourites-browser || Keyframes.has-favourite-pool); clicked => {root.apply(false,0);} }
+    if !Keyframes.animation-favourites-browser && Keyframes.animation-selected >= 0: Button {
         label: Keyframes.animation-scope == 1 ? "Random Selected" : "Random Whole Timeline";
         enabled: root.targets; clicked => {root.apply(Keyframes.animation-scope == 1,2);}
     }
-    if !Keyframes.animation-favourites-browser: Button {
+    if !Keyframes.animation-favourites-browser && Keyframes.animation-selected >= 0: Button {
         label: Keyframes.animation-selected < 9 ? "Favorite Basic / Physics Randomly" : "Favorite Canvas Motion Randomly";
         enabled: root.targets; clicked => {root.apply(Keyframes.animation-scope == 1,3);}
     }
