@@ -72,3 +72,24 @@ production routing, prior verified releases/images, or existing data. A built
 image alone is not physical NVIDIA GPU rendering acceptance. Manual Windows
 DPI/preview parity and RTX 3060 Ti GPU verification remain NOT VERIFIED
 until executed separately. This request triggers candidate builds only.
+
+REBUILD REQUEST — 2026-11-23 Issue #115 Windows Slint E0382 fix (#124)
+Build portable Windows x64 Concat EXE and Salad CUDA GPU candidate image
+from this request commit's exact SAME main GITHUB_SHA. The previous
+b04d101266cc3a6cf9eba5eb222b39e8f5b33db5 image built, but its matching
+Windows EXE failed due to a non-Copy moved CanvasMotionData in Slint
+restore-current(); this request includes PR #124's minimal ownership fix.
+
+Enforce matching immutable image digest, executable and ZIP SHA-256, source
+revision, GPU image smoke, authenticated capabilities, renderer contract
+concat-cuda-hybrid-v1 version 2, 9 caption presets, small ASR, saved project
+and queue schemas, PNG/JPEG alpha support, stable animation preset IDs,
+Canvas/Basic/Physics and None/Clear semantics, effect catalogue validation,
+Windows DLL bundling and startup smoke, native project persistence tests.
+Publish a matching GitHub prerelease ONLY if both builds and exact same-SHA
+verification succeed; do not substitute an earlier image.
+
+No live Salad deploy, VPS changes, Nginx cutover, Drive Bridge, production
+traffic/queues, file deletion, or replacement of rollback image/release.
+Real NVIDIA GPU acceptance and manual Windows DPI/preview parity remain
+NOT VERIFIED unless physically tested later. Build candidates only.
