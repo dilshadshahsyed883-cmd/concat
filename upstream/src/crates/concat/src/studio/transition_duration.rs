@@ -329,6 +329,59 @@ mod tests {
     }
 
     #[test]
+    fn random_ownership_survives_save_reopen_manual_edit_and_undo() {
+        let original=fixture(2);
+        let mut editor=Editor::from_document(&document(&original)).unwrap();
+        let saved=editor.project().active().clip("c1").unwrap().transition_in.clone().unwrap();
+        editor.apply(Command::UpdateClip {
+            clip_id:"c1".into(),
+            patch: ClipPatch {
+                random_transition_signature:Some(Some(saved.clone())),
+                ..Default::default()
+            },
+        }).unwrap();
+        let after_ownership=document(editor.project());
+        let mut reopened=Editor::from_document(&after_ownership).unwrap();
+        let current=reopened.project().active().clip("c1").unwrap();
+        assert_eq!(
+            current.extra.get("concatRandomTransition"),
+            Some(&serde_json::to_value(&saved).unwrap())
+        );
+        let mut manual=saved.clone();
+        manual.intensity=Some(0.95);
+        reopened.apply(Command::UpdateClip {
+            clip_id:"c1".into(),
+            patch: ClipPatch {
+                transition_in:Some(Some(manual.clone())),
+                ..Default::default()
+            },
+        }).unwrap();
+        let edited=reopened.project().active().clip("c1").unwrap();
+        assert_eq!(edited.transition_in.as_ref(),Some(&manual));
+        assert_ne!(
+            edited.extra.get("concatRandomTransition"),
+            Some(&serde_json::to_value(&manual).unwrap()),
+            "a manual change must never still appear randomly managed"
+        );
+        assert!(reopened.undo());
+        let restored=reopened.project().active().clip("c1").unwrap();
+        assert_eq!(restored.transition_in.as_ref(),Some(&saved));
+        assert_eq!(restored.extra.get("concatRandomTransition"),
+            Some(&serde_json::to_value(&saved).unwrap()));
+        reopened.apply(Command::UpdateClip {
+            clip_id:"c1".into(),
+            patch:ClipPatch {
+                transition_in:Some(None),
+                random_transition_signature:Some(None),
+                ..Default::default()
+            },
+        }).unwrap();
+        let cleared=reopened.project().active().clip("c1").unwrap();
+        assert!(cleared.transition_in.is_none());
+        assert!(!cleared.extra.contains_key("concatRandomTransition"));
+    }
+
+    #[test]
     fn proposed_overlapping_native_spans_are_skipped_without_touching_clips() {
         let mut project=fixture(2);
         let timeline=project.active_mut();
