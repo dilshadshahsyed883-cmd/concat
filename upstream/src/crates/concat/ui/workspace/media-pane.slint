@@ -2030,6 +2030,10 @@ export component MediaPane inherits Rectangle {
     // sounds, voice and import implementation accessible from the Media sidebar.
     property <bool> media-audio-view: false;
     function show-library() {
+        // Navigation ends any temporary effect audition. A draft remains
+        // available if the user returns to its preset, but is not rendered
+        // over unrelated pages or a replacement project.
+        ParticleBulk.clear-preview();
         if root.tab == 4 && !root.audio-shelf
             && Library.view(1).category != "Effects:Color"
             && Library.view(1).category != "Effects:Particles"

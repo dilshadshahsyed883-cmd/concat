@@ -139,6 +139,7 @@ export component ConfigPane inherits Rectangle {
     // A library inspection belongs to the current project, not to whichever
     // project replaces it. Never keep stale clip/transition context on switch.
     changed project-folder => {
+        ParticleBulk.clear-preview();
         LibraryFocus.page = -1;
         LibraryFocus.selected-id = "";
         LibraryFocus.selected-name = "";
