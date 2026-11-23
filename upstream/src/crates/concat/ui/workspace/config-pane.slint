@@ -453,7 +453,8 @@ export component ConfigPane inherits Rectangle {
                     spacing: 8px;
                     MediaTargetControls { }
                     Text {
-                        text: Keyframes.animation-selected < 9
+                        text: Keyframes.animation-selected == -1 ? "None / No Animation"
+                            : Keyframes.animation-selected < 9
                             ? root.animation-basic-names[Keyframes.animation-selected]
                             : root.animation-canvas-names[Keyframes.animation-selected - 9];
                         color: Theme.fg;
@@ -461,13 +462,14 @@ export component ConfigPane inherits Rectangle {
                         font-weight: Theme.weight-title;
                     }
                     Text {
-                        text: Keyframes.animation-selected < 6 ? "Physics"
+                        text: Keyframes.animation-selected == -1 ? "Clear generated motion only"
+                            : Keyframes.animation-selected < 6 ? "Physics"
                             : Keyframes.animation-selected < 9 ? "Basic" : "Canvas Motion";
                         color: Theme.fg-muted;
                         font-size: Theme.fs-sm;
                     }
 
-                    if Keyframes.animation-selected < 9: VerticalLayout {
+                    if Keyframes.animation-selected >= 0 && Keyframes.animation-selected < 9: VerticalLayout {
                         spacing: 8px;
                         Param { label: "Strength"; value <=> Keyframes.physics-strength;
                             minimum: 0.1; maximum: 2; step: 0.1; fmt: ParamFormat.fraction; }
@@ -488,6 +490,10 @@ export component ConfigPane inherits Rectangle {
                         images: Keyframes.animation-images;
                         videos: Keyframes.animation-videos;
                         selected-only: Keyframes.animation-scope == 1;
+                    }
+                    if Keyframes.animation-selected == -1: Text {
+                        text: "Selecting None changes nothing. Use Clear Selected Animation or Clear All Eligible Animations below. Hand-edited keys and unrelated styling are protected.";
+                        color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
                     }
                     Text { text: Keyframes.animation-timing; color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
                     Text {
