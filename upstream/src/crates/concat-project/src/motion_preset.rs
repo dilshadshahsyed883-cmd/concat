@@ -265,7 +265,9 @@ impl MotionPreset {
                 KeyProperty::Opacity,
                 0.0,
                 clip.opacity,
-                (0.1 * clip.duration / frame).ceil().min(last),
+                // Auto Fit is the default: fade over the visible clip,
+                // while explicit duration/speed still shorten the movement.
+                last,
             ),
         };
         let final_value = match property {

@@ -10853,7 +10853,7 @@ impl Studio {
 
     /// Adds a simulated physics preset using normal native project keys.
     /// Manual keyframes are protected by the shared preset validation.
-    pub fn apply_physics_motion(&mut self, index: i32, strength: f32, duration: f32, speed: f32, intensity: f32) {
+    pub fn apply_physics_motion(&mut self, index: i32, strength: f32, duration: f32, speed: f32, intensity: f32, auto_fit: bool) {
         let Some(preset) = PhysicsPreset::from_index(index) else { return };
         self.flush_commit();
         let Some(clip) = self.sole_selection().and_then(|id| self.clip(&id)) else {
@@ -10870,7 +10870,7 @@ impl Studio {
         };
         match preset.keys_with(&base, self.frame_seconds(), PhysicsControls {
             strength: strength as f64,
-            duration: duration as f64,
+            duration: if auto_fit {1.0}else{duration as f64},
             speed: speed as f64,
             intensity: intensity as f64,
         }) {

@@ -26,7 +26,7 @@ pub(super) fn animation_favourite_id(index: i32) -> Option<&'static str> {
     match index {
         0..=5 => PhysicsPreset::from_index(index).map(PhysicsPreset::id),
         6 => Some("motion.push-in"), 7 => Some("motion.pan-right"), 8 => Some("motion.fade-in"),
-        9..=29 => CanvasMotionPreset::from_index(index-9).map(CanvasMotionPreset::id),
+        9..=43 => CanvasMotionPreset::from_index(index-9).map(CanvasMotionPreset::id),
         _ => None,
     }
 }
@@ -51,7 +51,11 @@ fn motion_id(preset: MotionKind) -> &'static str {
 
 pub(super) fn canvas_controls(settings: &crate::ui::CanvasMotionData)->CanvasMotionControls {
     CanvasMotionControls {
-            start_scale: f64::from(settings.start_scale), end_scale: f64::from(settings.end_scale),
+            start_scale: f64::from(settings.start_scale),
+            middle_scale: f64::from(settings.middle_scale),
+            peak_time: f64::from(settings.peak_time),
+            auto_fit: settings.auto_fit,
+            end_scale: f64::from(settings.end_scale),
             duration_seconds: f64::from(settings.duration), delay_seconds: f64::from(settings.delay),
             entry_seconds: f64::from(settings.entry_seconds), hold_seconds: f64::from(settings.hold_seconds),
             exit_seconds: f64::from(settings.exit_seconds),
@@ -61,7 +65,11 @@ pub(super) fn canvas_controls(settings: &crate::ui::CanvasMotionData)->CanvasMot
             intensity: f64::from(settings.intensity), blur: f64::from(settings.blur), reverse: settings.reverse,
             start_anchor: settings.custom_anchors.then_some([f64::from(settings.start_x),f64::from(settings.start_y)]),
             end_anchor: settings.custom_anchors.then_some([f64::from(settings.end_x),f64::from(settings.end_y)]),
-            easing: if settings.easing == 0 { concat_project::canvas_motion::MotionEasing::Linear } else { concat_project::canvas_motion::MotionEasing::Smooth },
+            easing: match settings.easing {
+                0 => concat_project::canvas_motion::MotionEasing::Linear,
+                2 => concat_project::canvas_motion::MotionEasing::Cinematic,
+                _ => concat_project::canvas_motion::MotionEasing::Smooth,
+            },
             seed: settings.seed.max(0) as u64,
         }
 }
@@ -325,7 +333,7 @@ fn motion_choices(
     generated: &[GeneratedMotion],
     permitted: &[MotionKind],
 ) -> Option<(Vec<GeneratedMotion>, Option<usize>)> {
-    motion_choices_with_controls(clip, frame, generated, permitted, None)
+    motion_choices_with_controls(clip, frame, generated, permitted, None, true)
 }
 
 fn motion_choices_with_controls(
@@ -334,6 +342,7 @@ fn motion_choices_with_controls(
     generated: &[GeneratedMotion],
     permitted: &[MotionKind],
     controls: Option<PhysicsControls>,
+    auto_fit: bool,
 ) -> Option<(Vec<GeneratedMotion>, Option<usize>)> {
     let previous = generated
         .iter()
@@ -348,13 +357,19 @@ fn motion_choices_with_controls(
             let (keys, _) = match preset {
                 MotionKind::Basic(basic) => {
                     let c = controls.unwrap_or_default();
-                    let (keys, preview) = basic.keys_with(&base, frame, c.strength, c.duration, c.speed).ok()?;
+                    let (keys, preview) = basic.keys_with(&base, frame,
+                        c.strength, if auto_fit {1.0}else{c.duration},
+                        if auto_fit {1.0}else{c.speed}).ok()?;
                     (keys.to_vec(), preview)
                 }
                 // Vary physics per clip, with stable parameters so a reroll
                 // recognizes exactly the keys that the previous bulk action owns.
                 MotionKind::Physics(physics) => physics.keys_with(
-                    &base, frame, controls.unwrap_or_else(|| motion_controls(&clip.id)),
+                    &base, frame, {
+                        let mut c = controls.unwrap_or_else(|| motion_controls(&clip.id));
+                        if auto_fit {c.duration=1.0;}
+                        c
+                    },
                 ).ok()?,
                 MotionKind::Canvas(preset) => (preset.keys(&base, frame, CanvasMotionControls::default()).ok()?, base.start + base.duration/2.0),
             };
@@ -689,7 +704,10 @@ impl Studio {
         let Some(id)=animation_favourite_id(index) else {return;};
         let mut saved=self.animation_settings(index);
         if index>=9 {saved.canvas=canvas_controls(&canvas);saved.corners=f64::from(canvas.corner_radius).clamp(0.0,0.2);}
-        else {saved.physics=PhysicsControls {strength:f64::from(strength),duration:f64::from(duration),speed:f64::from(speed),intensity:f64::from(intensity)};}
+        else {
+            saved.physics=PhysicsControls {strength:f64::from(strength),duration:f64::from(duration),speed:f64::from(speed),intensity:f64::from(intensity)};
+            saved.canvas.auto_fit=canvas.auto_fit;
+        }
         if !saved.valid() {return;}
         if let Ok(value)=serde_json::to_value(saved) {
             if self.prefs.animation_preset_settings.get(id)!=Some(&value) {
@@ -722,8 +740,12 @@ impl Studio {
             let Some(base)=concat_project::motion_preset::preset_base(clip,std::iter::empty()) else {continue;};
             let choices:Vec<_>=permitted.iter().filter_map(|(preset,settings)|{
                 let (keys,style)=match preset {
-                    MotionKind::Basic(p)=>{let c=settings.physics;(p.keys_with(&base,frame,c.strength,c.duration,c.speed).ok()?.0.to_vec(),None)}
-                    MotionKind::Physics(p)=>(p.keys_with(&base,frame,settings.physics).ok()?.0,None),
+                    MotionKind::Basic(p)=>{let mut c=settings.physics;
+                        if settings.canvas.auto_fit { c.duration=1.0; c.speed=1.0; }
+                        (p.keys_with(&base,frame,c.strength,c.duration,c.speed).ok()?.0.to_vec(),None)}
+                    MotionKind::Physics(p)=>{let mut c=settings.physics;
+                        if settings.canvas.auto_fit { c.duration=1.0; }
+                        (p.keys_with(&base,frame,c).ok()?.0,None)},
                     MotionKind::Canvas(p)=>{
                         let mut controls=settings.canvas;
                         controls.seed=clip.id.bytes().fold(controls.seed,|h,b|h.wrapping_mul(31).wrapping_add(u64::from(b)));
@@ -751,6 +773,7 @@ impl Studio {
         let index=ui.get_animation_selected();
         let physics=PhysicsControls {strength:f64::from(ui.get_physics_strength()),duration:f64::from(ui.get_physics_duration()),speed:f64::from(ui.get_physics_speed()),intensity:f64::from(ui.get_physics_intensity())};
         let canvas=canvas_controls(&ui.get_canvas_motion());
+        let auto_fit=canvas.auto_fit;
         let mut seconds=Vec::new();
         for clip in &self.timeline().clips {
             if !chosen_media_type(clip,ui.get_animation_images(),ui.get_animation_videos())
@@ -759,8 +782,8 @@ impl Studio {
             let Some(base)=concat_project::motion_preset::preset_base(clip,std::iter::empty()) else {continue;};
             let keys=if index>=9 {CanvasMotionPreset::from_index(index-9).and_then(|p|p.keys(&base,self.frame_seconds(),canvas).ok())}
                 else {animation_from_index(index).and_then(|p|match p {
-                    MotionKind::Basic(p)=>p.keys_with(&base,self.frame_seconds(),physics.strength,physics.duration,physics.speed).ok().map(|k|k.0.to_vec()),
-                    MotionKind::Physics(p)=>p.keys_with(&base,self.frame_seconds(),physics).ok().map(|k|k.0),_=>None})};
+                    MotionKind::Basic(p)=>p.keys_with(&base,self.frame_seconds(),physics.strength,if auto_fit {1.0}else{physics.duration},if auto_fit {1.0}else{physics.speed}).ok().map(|k|k.0.to_vec()),
+                    MotionKind::Physics(p)=>p.keys_with(&base,self.frame_seconds(),PhysicsControls {duration:if auto_fit {1.0}else{physics.duration},..physics}).ok().map(|k|k.0),_=>None})};
             if let Some(mut keys)=keys {
                 keys.sort_by(|a,b|(a.property as u8).cmp(&(b.property as u8)).then_with(||a.at.total_cmp(&b.at)));
                 let end=keys.windows(2).filter(|pair|pair[0].property==pair[1].property && (pair[0].value-pair[1].value).abs()>1e-10)
@@ -779,6 +802,7 @@ impl Studio {
     pub fn apply_physics_bulk(
         &mut self, index: i32, mode: i32, images: bool, videos: bool,
         selected_only: bool, strength: f32, duration: f32, speed: f32, intensity: f32,
+        auto_fit: bool,
     ) {
         if !images && !videos {
             self.notify("Select Images or Video Clips before applying animations.", true);
@@ -830,13 +854,13 @@ impl Studio {
                 let target = (timeline.id.clone(), clip.id.clone());
                 let held = self.bulk_motion.0.get(&target)
                     .map_or(&[][..], Vec::as_slice);
+                let mut per_clip = if mode == 2 || mode == 3 {
+                    varied_physics_controls(controls, &clip.id)
+                } else { controls };
+                if auto_fit { per_clip.duration = 1.0; }
                 let (choices, old) =
                     motion_choices_with_controls(clip, frame, held, &permitted,
-                        Some(if mode == 2 || mode == 3 {
-                            varied_physics_controls(controls, &clip.id)
-                        } else {
-                            controls
-                        }))?;
+                        Some(per_clip), auto_fit)?;
                 Some((clip, target, choices, old))
             })
             .collect();

@@ -312,12 +312,12 @@ export global Keyframes {
     };
     callback apply-canvas-motion(preset: int, mode: int, images: bool, videos: bool,
         selected-only: bool, settings: CanvasMotionData);
-    callback apply-physics-motion(preset: int, strength: float, duration: float, speed: float, intensity: float);
+    callback apply-physics-motion(preset: int, strength: float, duration: float, speed: float, intensity: float, auto-fit: bool);
     callback toggle-physics-favourite(preset: int);
     callback apply-random-favourite-motion();
     // 0 selected preset, 2 randomized physics, 3 randomized starred physics.
     callback apply-physics-bulk(preset: int, mode: int, images: bool, videos: bool,
-        selected-only: bool, strength: float, duration: float, speed: float, intensity: float);
+        selected-only: bool, strength: float, duration: float, speed: float, intensity: float, auto-fit: bool);
     // Stable interface shared with the Animations-tab agent.
     // mode: 0 apply one preset to all, 1 random, 2 starred random.
     callback apply-bulk-motion(mode: int, images: bool, video-clips: bool, selected-only: bool);
