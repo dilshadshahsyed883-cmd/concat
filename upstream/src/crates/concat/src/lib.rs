@@ -1667,6 +1667,9 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             result
         });
         keys.invoke_restore_current();
+        keys.on_clear_generated_motion(on_lanes!(|state,images:bool,videos:bool,selected_only:bool| {
+            state.clear_generated_motion_bulk(images,videos,selected_only);
+        }));
         keys.on_apply_animation_favourites(on_lanes!(|state,pool:ModelRc<bool>,images:bool,videos:bool,selected:bool| {
             let indexes=(0..pool.row_count()).filter(|i|pool.row_data(*i)==Some(true)).map(|i|i as i32).collect();
             state.apply_animation_favourites(indexes,images,videos,selected);
