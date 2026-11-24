@@ -215,14 +215,15 @@ export component CanvasPresetLibrary inherits VerticalLayout {
         font-size: Theme.fs-sm;
         wrap: word-wrap;
     }
-    if root.visible-count > 0: grid := Rectangle {
+    grid := Rectangle {
         property <length> gap: 8px;
         property <length> min-card: 260px;
         property <length> card-h: 62px;
         property <int> cols: Math.max(1, Math.floor((self.width + self.gap) / (self.min-card + self.gap)));
         property <length> card-w: (self.width - (self.cols - 1) * self.gap) / self.cols;
         property <int> rows: Math.ceil(root.visible-count / self.cols);
-        height: self.rows * (self.card-h + self.gap) - self.gap;
+        visible: root.visible-count > 0;
+        height: self.rows > 0 ? self.rows * (self.card-h + self.gap) - self.gap : 0px;
         vertical-stretch: 0;
         clip: true;
         for name[index] in root.names: Rectangle {
@@ -284,7 +285,7 @@ export component CanvasPresetLibrary inherits VerticalLayout {
             TouchArea {
                 x: 0;
                 y: 0;
-                width: parent.width - 38px;
+                width: Math.max(0px, parent.width - 38px);
                 height: parent.height;
                 mouse-cursor: pointer;
                 clicked => { root.inspect(index, name); }
