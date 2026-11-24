@@ -707,6 +707,30 @@ mod tests {
     }
 
     #[test]
+    fn canvas_preset_overwrite_round_trips_and_undo_restores_canvas_animation() {
+        use crate::canvas_preset::Config;
+        let mut editor = owned_fixture();
+        editor.apply(generated_command(&editor,"c1",true,0.6,0.1)).unwrap();
+        let before=editor.project().active().clip("c1").unwrap().clone();
+        editor.apply(Command::ApplyCanvasPreset {
+            config: Config::preset(6).unwrap(), targets: vec!["c1".into()], locked_tracks:vec![]
+        }).unwrap();
+        let after=editor.project().active().clip("c1").unwrap().clone();
+        assert!(has_canvas_preset(&after));
+        assert!(after.keys.is_empty());
+        assert!(generated_ownership(&after).is_none());
+        assert!(editor.undo());
+        assert_eq!(editor.project().active().clip("c1").unwrap(),&before);
+        assert!(editor.redo());
+        assert_eq!(editor.project().active().clip("c1").unwrap(),&after);
+        let editor=reopen(&editor);
+        let clip=editor.project().active().clip("c1").unwrap();
+        assert!(has_canvas_preset(clip));
+        assert!(clip.keys.is_empty());
+        assert!(generated_ownership(clip).is_none());
+    }
+
+    #[test]
     fn generated_ownership_survives_reopen_cross_family_replacement_and_undo() {
         let mut editor = owned_fixture();
         for canvas in [false, true, true, false] {
