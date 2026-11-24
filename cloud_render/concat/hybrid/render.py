@@ -95,14 +95,14 @@ class Sources:
 
     def backdrop(self, clip, pixels):
         """Reuse still-image Canvas textures across frames without a reblur."""
-        cache_key = ((clip.path, clip.flip_h, clip.flip_v, clip.background)
-                     if clip.kind == "image" else None)
+        cache_key = (("procedural", clip.background) if clip.background.kind == "procedural" and not clip.background.uses_source
+                     else (clip.path, clip.flip_h, clip.flip_v, clip.background) if clip.kind == "image" else None)
         if cache_key is not None:
             cached = self.backgrounds.pop(cache_key, None)
             if cached is not None:
                 self.backgrounds[cache_key] = cached
                 return cached
-        dims = (self.dimensions(clip.path) if clip.background.kind == "blur"
+        dims = (self.dimensions(clip.path) if clip.background.uses_source
                 else (pixels.shape[1], pixels.shape[0]))
         backing = make_background(pixels, dims, clip.background)
         if cache_key is not None:

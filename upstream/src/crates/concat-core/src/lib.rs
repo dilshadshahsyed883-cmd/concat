@@ -18,6 +18,7 @@
 
 pub mod animate;
 pub mod arena;
+pub mod canvas_background;
 pub mod frame;
 pub mod mask;
 pub mod retime;

@@ -22,6 +22,8 @@ fn mode_of(background: &Background) -> i32 {
         Background::Blur { .. } => 1,
         Background::Color { .. } => 2,
         Background::Image { .. } => 3,
+        // Owned procedural patterns are edited in the Canvas Preset inspector.
+        Background::Procedural { .. } => 2,
     }
 }
 

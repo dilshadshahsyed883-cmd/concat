@@ -156,6 +156,11 @@ fn mask_distance(code: f32, p: vec2<f32>, half: vec2<f32>, radius: f32) -> f32 {
     if (shape == 6) {
         return mask_star(p.x / half.x, -p.y / half.y) * min(half.x, half.y);
     }
+    if (shape == 7) {
+        let ry = min(half.x, half.y);
+        let cy = -half.y + ry;
+        return max(mask_ellipse(vec2<f32>(p.x, min(p.y - cy, 0.0)), vec2<f32>(half.x, ry)), p.y - half.y);
+    }
     return -1.0;
 }
 

@@ -40,7 +40,10 @@ class SharedLayoutContractTests(unittest.TestCase):
         self.assertIn("Library.favourite(entry.id, on);", self.media)
         self.assertIn("auditions: false;", self.media)
         self.assertIn("root.apply-effect(id);", self.media)
-        self.assertIn("applied(id, label) => { root.apply-transition(id); }", self.media)
+        transition = self.media.split("if root.tab == 3: VerticalLayout {", 1)[1].split("if root.tab == 4:", 1)[0]
+        self.assertIn("inspect-only: true;", transition)
+        self.assertNotIn("root.apply-transition(id)", transition)
+        self.assertIn("Editor.library-apply-transition-scoped(LibraryFocus.selected-id", self.inspector)
         self.assertIn("payload-kind: \"filter\";", self.media)
         self.assertIn("auditioned(id) => { root.audition-filter(id); }", self.media)
 
@@ -91,15 +94,15 @@ class SharedLayoutContractTests(unittest.TestCase):
         for retired in ("Cinema Frame", "Editorial Panel"):
             self.assertNotIn(retired, self.canvas)
         model = source(ROOT.parent / "concat-project/src/canvas_preset.rs")
-        self.assertIn("pub const ACTIVE_PRESETS: [u32; 16] = [1, 2, 3, 4, 5, 6, 9, 12, 13, 14, 15, 16, 18, 11, 19, 20];", model)
+        self.assertIn("pub const ACTIVE_PRESETS: [u32; 18] = [1, 2, 3, 4, 5, 6, 9, 12, 13, 14, 15, 16, 18, 11, 19, 20, 10, 17];", model)
         self.assertIn("7 => { // Cinema Frame", model)
         self.assertIn("8 => { // Editorial Panel", model)
         self.assertIn('property <[string]> names:', self.canvas)
-        self.assertIn('property <[int]> ids: [1, 2, 3, 4, 5, 6, 9, 12, 13, 14, 15, 16, 18, 11, 19, 20];', self.canvas)
+        self.assertIn('property <[int]> ids: [1, 2, 3, 4, 5, 6, 9, 12, 13, 14, 15, 16, 18, 11, 19, 20, 10, 17];', self.canvas)
         self.assertIn('CanvasPresets.toggle-favourite(root.ids[index]);', self.canvas)
         for name in ("Broadcast Edge", "Focus Island", "Diagonal Cut", "Projector Slide",
                      "Browser Window", "Taped Memory", "Broken Grid", "Mirror Stage",
-                     "Image Echo", "Edge Bleed"):
+                     "Image Echo", "Edge Bleed", "Arch Window", "Orbital Frame"):
             self.assertIn(name, self.canvas)
         self.assertIn('CanvasPresets.edit-number("borderWidth", v);', self.canvas)
         self.assertIn('CanvasPresets.edit-colour("borderColor", c);', self.canvas)

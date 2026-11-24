@@ -103,6 +103,18 @@ class CanvasValidationTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 fitted_rect(*values)
 
+    def test_arch_and_circle_viewports_are_strict_and_distinct(self):
+        from cloud_render.concat.hybrid.viewport import parse_viewport
+        spec = dict(version=1,scale=.8,x=0.,y=0.,width=.5,height=.8,rotation=0.,radius=0.)
+        self.assertEqual(parse_viewport(spec).shape, 'rectangle')
+        arch = parse_viewport(dict(spec,shape='arch'))
+        circle = parse_viewport(dict(spec,shape='circle'))
+        self.assertGreater(arch.coverage(.72,.82,100,100),.99)
+        self.assertLess(arch.coverage(.72,.13,100,100),.01)
+        self.assertLess(circle.coverage(.72,.82,100,100),.01)
+        with self.assertRaises(ValueError):
+            parse_viewport(dict(spec,shape='unknown'))
+
     def test_canvas_not_allowed_on_audio(self):
         doc = minimal_project()
         doc["media"].append({"id": "audio", "kind": "audio", "path": "a.mp3"})
@@ -117,6 +129,18 @@ class CanvasValidationTests(unittest.TestCase):
 
 @unittest.skipUnless(with_gpu(), "CUDA is required for pixel equivalence tests")
 class CanvasCudaTests(unittest.TestCase):
+    def test_shaped_aperture_cuda_matches_numeric_reference(self):
+        import cupy as cp
+        import numpy as np
+        from cloud_render.concat.hybrid.viewport import parse_viewport, clip_viewport
+        for shape in ('circle','arch'):
+            view = parse_viewport(dict(version=1,scale=1.,x=.03,y=-.02,width=.64,height=.74,rotation=13.,radius=0.,shape=shape))
+            pixels=cp.ones((48,64,4),dtype=cp.float32)
+            actual=cp.asnumpy(clip_viewport(pixels,view)[...,3])
+            expected=np.array([[view.coverage((x+.5)/64,(y+.5)/48,64,48) for x in range(64)] for y in range(48)])
+            np.testing.assert_allclose(actual,expected,atol=1e-5)
+            self.assertTrue(bool(cp.all(pixels == 1.)))
+
     def test_blur_background_keeps_foreground_bytes_unchanged(self):
         import cupy as cp
         from cloud_render.concat.hybrid.animations import Transform, apply_transform

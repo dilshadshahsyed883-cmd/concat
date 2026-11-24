@@ -71,6 +71,8 @@ pub struct CanvasFrame {
     pub rotation:f64,
     /// Aperture corner radius in timeline heights.
     pub radius:f64,
+    /// Output-space aperture family; independent of the source clip mask.
+    pub aperture_shape: crate::mask::MaskShape,
     /// Timeline width divided by height, for rotation of normalized offsets.
     pub aspect:f64,
 }
@@ -85,7 +87,7 @@ impl CanvasFrame {
     }
     /// Output-space rounded aperture, independent of content zoom/pan/rotation.
     pub fn aperture(self)->ShapeMask {
-        ShapeMask {shape:crate::mask::MaskShape::Rectangle,x:self.x,y:self.y,width:self.width*self.aspect/self.aspect.min(1.0),height:self.height/self.aspect.min(1.0),
+        ShapeMask {shape:self.aperture_shape,x:self.x,y:self.y,width:self.width*self.aspect/self.aspect.min(1.0),height:self.height/self.aspect.min(1.0),
             rotation:self.rotation,roundness:(2.0*self.radius/(self.width*self.aspect).min(self.height)).clamp(0.0,1.0),
             feather:0.0,invert:false}
     }
@@ -789,7 +791,7 @@ mod canvas_frame_tests {
     use super::*;
     #[test]
     fn parent_composition_rotates_content_offsets_without_moving_aperture() {
-        let frame=CanvasFrame {scale:0.5,x:0.1,y:-0.1,width:0.4,height:0.4,rotation:90.0,radius:0.02,aspect:2.0};
+        let frame=CanvasFrame {scale:0.5,x:0.1,y:-0.1,width:0.4,height:0.4,rotation:90.0,radius:0.02,aperture_shape:crate::mask::MaskShape::Rectangle,aspect:2.0};
         let before=frame.aperture();
         let result=frame.compose(Transform {scale:2.0,offset_x:0.2,offset_y:0.4,rotation:15.0,..Transform::default()});
         assert!((result.scale-1.0).abs()<1e-10);
@@ -799,7 +801,7 @@ mod canvas_frame_tests {
     }
     #[test]
     fn portrait_canvas_aperture_uses_its_shorter_side() {
-        let frame=CanvasFrame {scale:0.7,x:0.0,y:0.0,width:0.8,height:0.7,rotation:0.0,radius:0.02,aspect:0.5};
+        let frame=CanvasFrame {scale:0.7,x:0.0,y:0.0,width:0.8,height:0.7,rotation:0.0,radius:0.02,aperture_shape:crate::mask::MaskShape::Rectangle,aspect:0.5};
         let mask=frame.aperture();
         assert_eq!((mask.width,mask.height),(0.8,1.4));
         let packed=mask.uniform(100.0,200.0,0.01);

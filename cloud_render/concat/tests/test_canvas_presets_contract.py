@@ -49,7 +49,7 @@ class CanvasPresetContracts(unittest.TestCase):
         files=list(Path(directory).glob('canvas-*.json'))
         self.assertEqual({p.name for p in files},
                          {f"canvas-{id}-{portrait}.json"
-                          for id in (1,2,3,4,5,6,7,8,9,12,13,14,15,16,18,11,19,20)
+                          for id in range(1,21)
                           for portrait in ("true","false")})
         for file in files:
             with self.subTest(file=file.name):
@@ -105,6 +105,20 @@ class CanvasPresetContracts(unittest.TestCase):
             actual = picture.transform(expected['frame'])
             for channel in ('scale', 'pan_x', 'pan_y', 'opacity'):
                 self.assertAlmostEqual(getattr(actual, channel), expected[channel], places=5)
+
+    def test_shaped_aperture_native_coverage_samples(self):
+        from cloud_render.concat.hybrid.viewport import parse_viewport
+        directory = os.environ.get('CONCAT_CANVAS_FIXTURE_DIR')
+        if not directory:
+            self.skipTest('Run native project tests with CONCAT_CANVAS_FIXTURE_DIR first')
+        for id in (10,17):
+            for portrait in ('true','false'):
+                sample = json.loads((Path(directory) / f'aperture-shape-{id}-{portrait}.json').read_text())
+                view = parse_viewport(sample['viewport'])
+                self.assertEqual(view.shape, 'arch' if id == 10 else 'circle')
+                for point in sample['samples']:
+                    actual = view.coverage(point['u'],point['v'],sample['width'],sample['height'])
+                    self.assertAlmostEqual(actual,point['coverage'],places=4)
 
     def test_native_fixed_viewport_transform_and_rounded_aperture_contract(self):
         from cloud_render.concat.hybrid.viewport import parse_viewport

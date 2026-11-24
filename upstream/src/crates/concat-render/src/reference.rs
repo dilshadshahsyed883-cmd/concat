@@ -749,7 +749,7 @@ mod tests {
     fn fixed_aperture_clips_enlarged_and_rotated_content() {
         use concat_core::timeline::CanvasFrame;
         let mut picture=layer(solid(40,40,[255,0,0,255]));
-        let frame=CanvasFrame {scale:0.5,x:0.0,y:0.0,width:0.5,height:0.5,rotation:12.0,radius:0.05,aspect:1.0};
+        let frame=CanvasFrame {scale:0.5,x:0.0,y:0.0,width:0.5,height:0.5,rotation:12.0,radius:0.05,aperture_shape:concat_core::mask::MaskShape::Rectangle,aspect:1.0};
         picture.transform=frame.compose(Transform {scale:3.0,offset_x:0.1,rotation:25.0,..Default::default()});
         picture.aperture=Some(frame.aperture());
         let result=render(40,40,vec![picture]);

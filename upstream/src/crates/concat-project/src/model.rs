@@ -731,11 +731,55 @@ pub enum Background {
         /// The colour, as a title's colours are written.
         color: String,
     },
+    /// Procedural pattern from the Canvas library; no additional media.
+    Procedural {
+        /// Saved style and rendering controls.
+        pattern: ProceduralBackground,
+    },
     /// A still from the bin, enlarged to cover the frame.
     Image {
         /// The bin item. One that has gone, or none yet, draws nothing.
         media_id: String,
     },
+}
+
+/// Persisted procedural background settings for an owned Canvas backdrop.
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProceduralBackground {
+    /// Stable style name.
+    pub style: String,
+    /// Base color.
+    pub color: String,
+    /// Accent color.
+    pub accent: String,
+    /// Effect intensity, 0–1.
+    pub intensity: f64,
+    /// Pattern density, 0–1.
+    pub density: f64,
+    /// Blur/edge softness, 0–1.
+    pub softness: f64,
+    /// Effect opacity, 0–1.
+    pub opacity: f64,
+    /// Lighting spread, 0–1.
+    pub spread: f64,
+    /// Pattern size, 0–1.
+    pub size: f64,
+}
+impl ProceduralBackground {
+    /// Convert the saved, validated values to the shared native renderer.
+    pub fn pattern(&self) -> Option<concat_core::canvas_background::Pattern> {
+        let values=[self.intensity,self.density,self.softness,self.opacity,self.spread,self.size];
+        if values.iter().any(|v| !v.is_finite() || !(0.0..=1.0).contains(v)) {return None;}
+        Some(concat_core::canvas_background::Pattern {
+            style:concat_core::canvas_background::style_id(&self.style)?,
+            color:rgb_of(&self.color)?,accent:rgb_of(&self.accent)?,
+            intensity:self.intensity as f32,density:self.density as f32,
+            softness:self.softness as f32,opacity:self.opacity as f32,
+            spread:self.spread as f32,size:self.size as f32,
+        })
+    }
 }
 
 impl Background {
@@ -775,6 +819,7 @@ impl Background {
     pub fn rgb(&self) -> Option<[u8; 3]> {
         match self {
             Background::Color { color } => rgb_of(color),
+            Background::Procedural { pattern } => rgb_of(&pattern.color),
             _ => None,
         }
     }
