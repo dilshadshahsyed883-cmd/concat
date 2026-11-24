@@ -10,7 +10,10 @@ and the response is sent in chunks with private/no-store headers.
 A dedicated background thread samples local job activity every 10 seconds while
 work is pending or the worker is enabled. It polls the saved Salad group and
 existing worker concurrency API at most every 20 seconds, separately from the
-production dispatcher. Worker API reads require a recent running/ready Salad
+production dispatcher. Resource polling is skipped when the lifecycle controller
+knows the instance is stopped, allocating, downloading or otherwise not ready.
+Local queue sampling continues. Empty instance collections and non-ready instances
+are unavailable rather than API failures; genuine failures back off up to five minutes. Worker API reads require a recent running/ready Salad
 instance observation and are blocked by the stop journal. An owner-specific file
 lock prevents duplicate collectors
 across web processes. Closing the page does not stop collection. No lifecycle
@@ -32,7 +35,12 @@ GPU/VRAM fields; worker active_renders/concurrency; and worker job frame counts,
 render duration, video duration, average_fps and speed_multiplier. The current
 worker supplies FPS/speed summaries after rendering; these are labelled summary
 metrics and are not presented as live per-job FPS. Missing fields are omitted.
-No log parsing or GPU image changes are included.
+New worker images can additionally expose authenticated read-only GPU/VRAM,
+temperature, encoder utilization and model readings, stored separately from
+Salad resource samples. Legacy workers continue without these fields. The
+report records observed pipeline capability, worker source SHA, scheduler
+dispatch reasons and measured successful delivery transfer metrics when supplied.
+No log parsing is included.
 
 If verified push delivery beats status polling, the background collector attempts a
 bounded read of that exact worker job's final summary, verifying its saved hash
