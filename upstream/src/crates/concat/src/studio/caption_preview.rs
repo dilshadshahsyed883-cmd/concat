@@ -300,12 +300,22 @@ impl Studio {
         ui.set_sample(self.caption_preview.preset.is_some() && rendered.sample);
         ui.set_demo_playing(self.caption_preview.demo_playing);
         if let Some(style) = self.caption_effective_style(chosen) {
-            let index = match style.font_family.as_str() {
-                "Inter" => if style.font_weight >= 900.0 { 2 } else { 3 },
-                "Montserrat" => 4,
-                "Archivo Black" => 5,
-                "Anton" => 6,
-                _ => if style.font_weight >= 700.0 { 1 } else { 0 },
+            let index = match (style.font_family.as_str(), style.font_weight) {
+                ("Hanken Grotesk", weight) if weight == 600.0 => 0,
+                ("Hanken Grotesk", weight) if weight == 700.0 => 1,
+                ("Inter", weight) if weight == 900.0 => 2,
+                ("Inter", weight) if weight == 700.0 => 3,
+                ("Montserrat", weight) if weight == 800.0 => 4,
+                ("Archivo Black", _) => 5,
+                ("Anton", _) => 6,
+                ("Hanken Grotesk", weight) if weight == 400.0 => 7,
+                ("Hanken Grotesk", weight) if weight == 500.0 => 8,
+                ("Inter", weight) if weight == 400.0 => 9,
+                ("Inter", weight) if weight == 600.0 => 10,
+                ("Montserrat", weight) if weight == 400.0 => 11,
+                ("Montserrat", weight) if weight == 700.0 => 12,
+                ("Montserrat", weight) if weight == 900.0 => 13,
+                _ => 0,
             };
             ui.set_font_index(index);
             ui.set_text_hex(style.color.into());
@@ -539,8 +549,16 @@ pub(crate) fn install(app: &App) {
                         2 => ("Inter", 900.0),
                         3 => ("Inter", 700.0),
                         4 => ("Montserrat", 800.0),
-                        5 => ("Archivo Black", 900.0),
-                        _ => ("Anton", 400.0),
+                        5 => ("Archivo Black", 400.0),
+                        6 => ("Anton", 400.0),
+                        7 => ("Hanken Grotesk", 400.0),
+                        8 => ("Hanken Grotesk", 500.0),
+                        9 => ("Inter", 400.0),
+                        10 => ("Inter", 600.0),
+                        11 => ("Montserrat", 400.0),
+                        12 => ("Montserrat", 700.0),
+                        13 => ("Montserrat", 900.0),
+                        _ => return,
                     };
                     style.font_family = family.into();
                     style.font_weight = weight;
