@@ -16,7 +16,8 @@ from pathlib import Path
 
 from .animations import apply_transform
 from .viewport import clip_viewport
-from .canvas import make_background
+from .canvas import make_background, fitted_rect
+from .canvas_style import make_styled_background, palette
 from .canvas_shapes import render_shape, apply_mask
 from .particles import ParticleEffect, apply as apply_particles
 from .cuda_audio import mux_cuda_audio
@@ -95,16 +96,31 @@ class Sources:
 
     def backdrop(self, clip, pixels):
         """Reuse still-image Canvas textures across frames without a reblur."""
+        styled = clip.background.kind == "styled"
         cache_key = ((clip.path, clip.flip_h, clip.flip_v, clip.background)
-                     if clip.kind == "image" else None)
+                     if clip.kind == "image" or (styled and not clip.background.dynamic) else None)
         if cache_key is not None:
             cached = self.backgrounds.pop(cache_key, None)
             if cached is not None:
                 self.backgrounds[cache_key] = cached
                 return cached
-        dims = (self.dimensions(clip.path) if clip.background.kind == "blur"
-                else (pixels.shape[1], pixels.shape[0]))
-        backing = make_background(pixels, dims, clip.background)
+        if styled:
+            dims = self.dimensions(clip.path)
+            height, width = pixels.shape[:2]
+            left, top, sw, sh = fitted_rect(*dims, width, height)
+            source = pixels[top:top+sh, left:left+sw]
+            colors = None
+            if clip.background.mode == "adaptiveColors":
+                if clip.kind == "image":
+                    first = cuda().asarray(decode_still_rgba(clip.path), dtype=cuda().float32) / 255.
+                else:
+                    first = self.decoder(clip.path).frame(0)
+                colors = palette(first, cuda())
+            backing = make_styled_background(clip.background, width, height, source, colors)
+        else:
+            dims = (self.dimensions(clip.path) if clip.background.kind == "blur"
+                    else (pixels.shape[1], pixels.shape[0]))
+            backing = make_background(pixels, dims, clip.background)
         if cache_key is not None:
             if len(self.backgrounds) >= 3:
                 self.backgrounds.popitem(last=False)

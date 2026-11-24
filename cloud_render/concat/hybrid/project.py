@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .animations import Transform
 from .canvas import CanvasBackground, parse_background
+from .canvas_style import StyledBackground, parse_style
 from .viewport import Viewport, parse_viewport
 from .canvas_shapes import Rectangle, RectangleMask, parse_shape, parse_mask
 from .particles import PARTICLE_IDS, ParticleEffect, parse_effect
@@ -101,6 +102,10 @@ def _validated_timeline(document):
             background = parse_background(clip["background"])
             if background is not None and kind not in ("image", "video"):
                 raise ValueError(f"Unsupported GPU Canvas background on clip {ident}")
+        if "canvasBackdropV1" in clip:
+            if kind not in ("image", "video") or clip.get("canvasRole") != "backdrop" or not clip.get("canvasOwner"):
+                raise ValueError(f"Unsupported styled Canvas background on clip {ident}")
+            parse_style(clip["canvasBackdropV1"])
         if "canvasViewportV1" in clip:
             if kind not in ("image","video"): raise ValueError(f"Unsupported Canvas viewport on clip {ident}")
             parse_viewport(clip["canvasViewportV1"])
@@ -620,8 +625,9 @@ def _plan_project(document, timeline, resolve_media):
                           {key: sorted(points.values()) for key, points in keys.items()},
                           filters_for(clip, start, duration), flip_h=bool(clip.get("flipH")),
                           flip_v=bool(clip.get("flipV")),
-                          background=(timeline_background if clip.get("background") is None
-                                      else parse_background(clip["background"])),
+                          background=(parse_style(clip["canvasBackdropV1"]) if "canvasBackdropV1" in clip else
+                                      (timeline_background if clip.get("background") is None
+                                       else parse_background(clip["background"]))),
                           shape=parse_shape(clip.get("shape")) if kind == "shape" else None,
                           mask=parse_mask(clip.get("mask")),
                           canvas_backdrop=clip.get("canvasRole") == "backdrop",
