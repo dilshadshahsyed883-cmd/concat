@@ -1288,6 +1288,47 @@ mod tests {
     }
 
     #[test]
+    fn clear_canvas_preserves_current_content_and_animation() {
+        let (mut project, mut mint)=fixture();
+        add_real_caption(&mut project);
+        let base=project.active().clip("c1").unwrap().clone();
+        apply(&mut project,&mut mint,Config::preset(6).unwrap(),vec!["c1".into()],vec![]).unwrap();
+        {
+            let clip=project.active_mut().clip_mut("c1").unwrap();
+            clip.scale=1.2;
+            generated_animation(clip,false);
+        }
+        let current=project.active().clip("c1").unwrap().clone();
+        assert!(clear(&mut project,vec!["c1".into()],vec![]).unwrap().applied);
+        let clip=project.active().clip("c1").unwrap();
+        assert!(!crate::motion_preset::has_canvas_preset(clip));
+        assert_eq!(clip.keys,current.keys);
+        assert_eq!(clip.scale,current.scale);
+        assert_eq!(clip.background,base.background);
+        assert_eq!(clip.mask,base.mask);
+        assert_eq!(crate::motion_preset::generated_ownership(clip),
+            crate::motion_preset::generated_ownership(&current));
+        assert_eq!(clip.media_id,current.media_id);
+        assert_eq!(clip.source_start,current.source_start);
+        assert!(project.active().clip("real-caption").is_some());
+        assert!(project.active().clips.iter().all(|c| !c.extra.contains_key("canvasOwner")));
+        assert!(!clear(&mut project,vec!["c1".into()],vec![]).unwrap().applied);
+    }
+
+    #[test]
+    fn clear_canvas_skips_locked_and_customized_companions() {
+        let (mut project, mut mint)=fixture();
+        // Retired presets remain readable and clearable in existing projects.
+        apply(&mut project,&mut mint,Config::preset(7).unwrap(),vec!["c1".into()],vec![]).unwrap();
+        let piece=project.active().clips.iter().find(|c|c.extra.contains_key("canvasOwner")).unwrap().clone();
+        assert!(!clear(&mut project,vec!["c1".into()],vec![piece.track_id.clone()]).unwrap().applied);
+        project.active_mut().clip_mut(&piece.id).unwrap().name="Customized".into();
+        assert!(!clear(&mut project,vec!["c1".into()],vec![]).unwrap().applied);
+        assert!(crate::motion_preset::has_canvas_preset(project.active().clip("c1").unwrap()));
+        assert_eq!(project.active().clip(&piece.id).unwrap().name,"Customized");
+    }
+
+    #[test]
     fn independent_presets_validate_and_round_trip() {
         for n in 1..=8 {
             let p = Config::preset(n).unwrap();
