@@ -1850,7 +1850,7 @@ component AnimationCardGrid inherits Rectangle {
     }
 }
 
-// Compact Favorites into two columns without leaving holes when items
+// Compact Favorites into responsive columns without leaving holes when items
 // are unstarred. Slint cannot filter the in-file preset model; counting
 // previous stars gives each visible card a stable, dense position.
 // The eight-position blocks cover 64 presets (current 29, plus headroom).
@@ -1862,7 +1862,9 @@ component AnimationFavoriteCards inherits Rectangle {
 
     property <length> gap: 6px;
     property <length> card-h: 104px;
-    property <length> card-w: (root.width - root.gap) / 2;
+    property <length> min-card: 140px;
+    property <int> cols: Math.max(1, Math.floor((root.width + root.gap) / (root.min-card + root.gap)));
+    property <length> card-w: (root.width - (root.cols - 1) * root.gap) / root.cols;
     property <int> favorite-count: root.favourite-rank(root.basic.length + root.canvas.length);
 
     pure function count-eight(start: int, before: int) -> int {
@@ -1887,13 +1889,13 @@ component AnimationFavoriteCards inherits Rectangle {
     }
 
     height: root.favorite-count > 0
-        ? Math.ceil(root.favorite-count / 2) * (root.card-h + root.gap) - root.gap
+        ? Math.ceil(root.favorite-count / root.cols) * (root.card-h + root.gap) - root.gap
         : 0px;
 
     for entry in root.basic: AnimationCard {
         property <int> compact-index: root.favourite-rank(entry.index);
-        x: Math.mod(self.compact-index, 2) * (root.card-w + root.gap);
-        y: Math.floor(self.compact-index / 2) * (root.card-h + root.gap);
+        x: Math.mod(self.compact-index, root.cols) * (root.card-w + root.gap);
+        y: Math.floor(self.compact-index / root.cols) * (root.card-h + root.gap);
         width: root.card-w;
         height: root.card-h;
         visible: Keyframes.physics-favourites[entry.index];
@@ -1905,8 +1907,8 @@ component AnimationFavoriteCards inherits Rectangle {
     }
     for entry in root.canvas: AnimationCard {
         property <int> compact-index: root.favourite-rank(entry.index);
-        x: Math.mod(self.compact-index, 2) * (root.card-w + root.gap);
-        y: Math.floor(self.compact-index / 2) * (root.card-h + root.gap);
+        x: Math.mod(self.compact-index, root.cols) * (root.card-w + root.gap);
+        y: Math.floor(self.compact-index / root.cols) * (root.card-h + root.gap);
         width: root.card-w;
         height: root.card-h;
         visible: Keyframes.physics-favourites[entry.index];
