@@ -13,7 +13,7 @@ import { Editor } from "../editor.slint";
 import { LibraryFocus } from "library-focus.slint";
 import { CanvasPresets, CanvasPresetPanel, CanvasPresetApplyBar, CanvasPresetClearBar } from "canvas-presets.slint";
 import { MediaLayoutPanel, MediaLayoutApplyBar, MediaTargetControls } from "media-layout.slint";
-import { ParticleBulk, ParticleEffectsPanel, ParticleApplyBar, EffectSettings } from "particle-effects.slint";
+import { ParticleBulk, ParticleEffectsPanel, ParticleApplyBar, EffectSettings, EffectDefaultBar } from "particle-effects.slint";
 import { CaptionPresetPreview, CaptionPresetPreviewPanel, CaptionPresetApplyBar } from "caption-preset-preview.slint";
 import { PaneKind, PaneSwitcher } from "pane-switcher.slint";
 import { EffectData } from "../demo/effects-panel.slint";
@@ -932,6 +932,9 @@ export component ConfigPane inherits Rectangle {
                 height: 1px;
                 background: Theme.line;
             }
+            if (LibraryFocus.page == 2 || LibraryFocus.page == 9) &&
+                LibraryFocus.selected-id != "" && LibraryFocus.selected-id != "__none_effect__" &&
+                ParticleBulk.draft-id == LibraryFocus.selected-id: EffectDefaultBar { }
                     if LibraryFocus.page == 2 && LibraryFocus.selected-id != "" && LibraryFocus.selected-id != "__none_effect__": Button {
                         label: "Apply to Selected Clip";
                         enabled: root.has-selection;

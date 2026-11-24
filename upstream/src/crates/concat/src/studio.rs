@@ -1791,6 +1791,24 @@ fn unpacked(value: f64) -> slint::Color {
     slint::Color::from_argb_u8(a, r, g, b)
 }
 
+// Browser-only allowlist: the manifests and applied clip controls retain all
+// renderer parameters, including hidden authored values and random seeds.
+fn particle_browser_param_visible(id: &str, key: &str) -> bool {
+    match key {
+        "density" | "size" | "speed" | "opacity" => true,
+        "twinkle" => id == "concat.particles-stars",
+        "glow" => matches!(id,
+            "concat.particles-gold-sparkles" | "concat.particles-embers" |
+            "concat.particles-fireflies" | "concat.particles-light-leaks"),
+        "direction" => matches!(id,
+            "concat.particles-rain" | "concat.particles-shooting-stars"),
+        _ => false,
+    }
+}
+
+const PARTICLE_BROWSER_RGB: &str = "particle-browser-rgb";
+const PARTICLE_BROWSER_RGB_KEYS: [&str; 3] = ["red", "green", "blue"];
+
 /// A chain's colour knobs, a row each, holding the document's colour or
 /// the default.
 fn chain_colours(chain: &[AppliedFilter]) -> Vec<ColourKnobData> {
@@ -4591,8 +4609,29 @@ impl Studio {
             return (Vec::new(), Vec::new());
         }
         let entry = self.effect_application(id);
-        let (_, params) = chain_rows(std::slice::from_ref(&entry));
-        let colours = chain_colours(std::slice::from_ref(&entry));
+        let (_, mut params) = chain_rows(std::slice::from_ref(&entry));
+        let mut colours = chain_colours(std::slice::from_ref(&entry));
+        if id.starts_with("concat.particles-") {
+            // Build a single RGB swatch from the existing normalized channels.
+            // This synthetic UI key is never stored in a project or preference.
+            if id == "concat.particles-light-leaks" {
+                let channel = |key: &str| -> Option<u8> {
+                    params.iter().find(|p| p.key.as_str() == key)
+                        .map(|p| (p.value.clamp(0.0, 1.0) * 255.0).round() as u8)
+                };
+                if let (Some(r), Some(g), Some(b)) =
+                    (channel("red"), channel("green"), channel("blue"))
+                {
+                    colours.push(ColourKnobData {
+                        entry: 0,
+                        key: PARTICLE_BROWSER_RGB.into(),
+                        label: "Color".into(),
+                        value: slint::Color::from_argb_u8(255, r, g, b),
+                    });
+                }
+            }
+            params.retain(|p| particle_browser_param_visible(id, p.key.as_str()));
+        }
         (params, colours)
     }
 
@@ -4622,6 +4661,23 @@ impl Studio {
             return;
         }
         let Some(package) = Self::effect_package(id) else { return };
+        if id == "concat.particles-light-leaks" && key == PARTICLE_BROWSER_RGB {
+            let channels = [value.red(), value.green(), value.blue()];
+            let values = PARTICLE_BROWSER_RGB_KEYS.into_iter().zip(channels)
+                .map(|(key, channel)| (key, f64::from(channel) / 255.0));
+            let values: Vec<_> = values.collect();
+            if !values.iter().all(|(key, value)| package.manifest.params.iter().any(|p| {
+                p.key.as_str() == *key && !p.kind.is_compound() && p.kind != ParamType::Color
+                    && *value >= p.min && *value <= p.max
+            })) {
+                return;
+            }
+            let initial = self.prefs.effect_preset_defaults.get(id).cloned().unwrap_or_default();
+            let draft = self.effect_drafts.entry(id.to_owned()).or_insert(initial);
+            draft.extend(values.into_iter().map(|(key, value)| (key.to_owned(), value)));
+            self.request_preview();
+            return;
+        }
         if !package.manifest.params.iter().any(|p| p.key == key && p.kind == ParamType::Color) {
             return;
         }
@@ -13170,6 +13226,37 @@ mod tests {
         custom_rate, fps_of, grading_rows, home_folder, key_commands, packed, place_in, shown,
         wheel_partners, write_keyable,
     };
+
+    #[test]
+    fn particle_browser_shows_only_relevant_controls() {
+        let common = ["density", "size", "speed", "opacity"];
+        let cases: [(&str, &[&str]); 12] = [
+            ("stars", &["twinkle"]),
+            ("gold-sparkles", &["glow"]),
+            ("embers", &["glow"]),
+            ("fireflies", &["glow"]),
+            ("bokeh", &[]),
+            ("dust-motes", &[]),
+            ("snow", &[]),
+            ("rain", &["direction"]),
+            ("ash", &[]),
+            ("light-leaks", &["glow"]),
+            ("shooting-stars", &["direction"]),
+            ("confetti", &[]),
+        ];
+        for (slug, extras) in cases {
+            let id = format!("concat.particles-{slug}");
+            for key in common {
+                assert!(super::particle_browser_param_visible(&id, key), "{id}: {key}");
+            }
+            for key in ["glow", "direction", "twinkle"] {
+                assert_eq!(super::particle_browser_param_visible(&id, key), extras.contains(&key), "{id}: {key}");
+            }
+            for key in ["seed", "size_variance", "lifetime", "fade", "red", "green", "blue", "points", "start", "end"] {
+                assert!(!super::particle_browser_param_visible(&id, key), "{id}: {key}");
+            }
+        }
+    }
 
     /// A pasted group keeps its shape from `base` on, its rows shifted
     /// and held inside the lanes it lands in, a locked row passed over
