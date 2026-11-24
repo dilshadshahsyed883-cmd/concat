@@ -73,6 +73,7 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
  await dom['cr-threshold-minus'].onclick();
  await dom['cr-timer-plus'].onclick();
  assert.match(dom['cr-health-rule'].textContent,/12% within 36 seconds/);
+ assert.match(dom['cr-health-rule'].textContent,/3 attempts per cycle.*5 minutes.*retry automatically/);
  await dom['cr-timer-minus'].onclick();
  dom['cr-salad-organization'].value='org-one';
  await dom['cr-save-automation'].onclick();

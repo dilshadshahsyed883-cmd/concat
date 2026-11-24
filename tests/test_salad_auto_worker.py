@@ -207,7 +207,7 @@ class LifecycleTests(unittest.TestCase):
             self.check(1020)
         self.assertEqual(self.posts(), [])
 
-    def test_three_attempt_hard_limit_for_replacement_instances(self):
+    def test_three_attempt_limit_per_cycle_and_automatic_retry(self):
         with self.assertRaises(HTTPException):
             self.manager.save({'salad_max_reallocations': 4})
         for attempt in range(1, 5):
@@ -217,6 +217,55 @@ class LifecycleTests(unittest.TestCase):
             self.check(now)
         self.assertEqual(len(self.posts()), 3)
         self.assertEqual(self.status(), 'reallocation_limit')
+        # Limit first observed at 1160; do not reallocate before 1460.
+        restored = CloudRender(Path(self.tmp.name), 'a' * 64)
+        self.addCleanup(restored.pool.shutdown, wait=True)
+        restored.production_worker = Mock(return_value=self.worker)
+        self.manager = restored
+        self.check(1457)
+        self.assertEqual(len(self.posts()), 3)
+        self.assertEqual(self.status(), 'reallocation_limit')
+        self.check(1460)
+        self.assertEqual(len(self.posts()), 4)
+        self.assertEqual(self.manager.config()['salad_reallocations'], 1)
+        # No duplicate request even if the response remains on the same machine.
+        self.check(1800)
+        self.assertEqual(len(self.posts()), 4)
+        self.assertEqual(self.status(), 'waiting_for_reallocation')
+        # A second exhausted cycle receives its own full cooldown.
+        for index, now in ((5, 1840), (6, 1880), (7, 1920)):
+            self.instance.update(machine_id=f'{index}b3a4591-efc3-46c0-b06a-3d820c0ec100',
+                                 update_time=self.stamp(now - 20))
+            self.check(now)
+        self.assertEqual(len(self.posts()), 6)
+        self.assertEqual(self.status(), 'reallocation_limit')
+        self.check(2217)
+        self.assertEqual(len(self.posts()), 6)
+        self.check(2220)
+        self.assertEqual(len(self.posts()), 7)
+
+    def test_worker_ready_during_retry_cycle_cooldown_clears_budget(self):
+        for attempt in range(1, 5):
+            now = 1000 + attempt * 40
+            self.instance.update(machine_id=f'{attempt}b3a4591-efc3-46c0-b06a-3d820c0ec100',
+                                 update_time=self.stamp(now - 20))
+            self.check(now)
+        self.assertEqual(self.status(), 'reallocation_limit')
+        self.instance.update(state='running', ready=True)
+        self.assertTrue(self.check(1163))
+        self.assertEqual(len(self.posts()), 3)
+        self.assertEqual(self.manager.config()['salad_reallocations'], 0)
+        with self.manager.connection() as con:
+            self.assertNotIn('retry_cycle_after', self.manager.salad_worker._record(con))
+
+    def test_zero_reallocation_budget_stays_disabled(self):
+        self.manager.save({'salad_max_reallocations': 0})
+        self.check(1020)
+        self.check(1400)
+        self.assertEqual(self.posts(), [])
+        self.assertEqual(self.status(), 'reallocation_limit')
+        with self.manager.connection() as con:
+            self.assertNotIn('retry_cycle_after', self.manager.salad_worker._record(con))
 
     def test_completed_download_before_deadline_passes_without_reallocation(self):
         self.instance['state'] = 'creating'
