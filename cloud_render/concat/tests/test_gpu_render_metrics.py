@@ -73,7 +73,7 @@ class PerformanceMetricsTests(unittest.TestCase):
             try:
                 worker.accept("metrics1", io.BytesIO(data), len(data),
                               hashlib.sha256(data).hexdigest(), "cuda-hybrid-v1")
-                worker.pool.shutdown(wait=True)
+                worker.shutdown()
                 status = worker.status("metrics1")
                 self.assertEqual(status["state"], "delivered")
                 self.assertEqual(status["rendered_frames"], 720)
@@ -89,9 +89,9 @@ class PerformanceMetricsTests(unittest.TestCase):
                 try:
                     self.assertEqual(fresh.status("metrics1"), status)
                 finally:
-                    fresh.pool.shutdown(wait=True)
+                    fresh.shutdown()
             finally:
-                worker.pool.shutdown(wait=True)
+                worker.shutdown()
 
 
 if __name__ == "__main__":

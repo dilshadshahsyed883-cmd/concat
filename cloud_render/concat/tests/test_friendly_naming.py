@@ -51,7 +51,7 @@ class WorkerNameTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.worker=RenderWorker(Path(self.temp.name),token=TOKEN,renderer=lambda _,out:out.write_bytes(MP4))
     def tearDown(self):
-        self.worker.pool.shutdown(wait=True);self.temp.cleanup()
+        self.worker.shutdown();self.temp.cleanup()
     def submit(self,name,override=None):
         doc={'name':name,'media':[]}
         if override is not None:doc['outputBasename']=override
@@ -61,7 +61,7 @@ class WorkerNameTests(unittest.TestCase):
                 z.writestr('project/concat.json',json.dumps(doc))
             data=stream.getvalue()
         self.worker.accept('unique_job_id',io.BytesIO(data),len(data),hashlib.sha256(data).hexdigest())
-        self.worker.pool.shutdown(wait=True)
+        self.worker.shutdown()
         return self.worker.status('unique_job_id')
     def test_saved_name_is_metadata_and_internal_paths_stay_unique(self):
         status=self.submit('My Voice.final')
