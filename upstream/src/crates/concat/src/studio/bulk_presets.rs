@@ -1625,6 +1625,22 @@ mod tests {
     }
 
     #[test]
+    fn mixed_animation_favorites_filter_by_clip_not_by_entire_pool() {
+        let mut clip = Clip::blank("c1", "t1", ClipKind::Video, "picture", 0.0, 2.0);
+        let pool = [MotionKind::Basic(MotionPreset::PushIn),
+            MotionKind::Physics(PhysicsPreset::SpringZoom),
+            MotionKind::Canvas(CanvasMotionPreset::ALL[0])];
+        assert_eq!(pool.iter().filter(|p| animation_allowed(&clip, **p)).count(), 3);
+        for marker in ["canvasPreset", concat_project::canvas_viewport::KEY] {
+            clip.extra.clear();
+            clip.extra.insert(marker.into(), serde_json::json!({}));
+            let allowed: Vec<_> = pool.iter().copied().filter(|p| animation_allowed(&clip,*p)).collect();
+            assert_eq!(allowed, pool[..2]);
+            assert!(!animation_allowed(&clip,pool[2]));
+        }
+    }
+
+    #[test]
     fn only_untouched_bulk_motion_can_be_rerolled() {
         let mut clip = Clip::blank("c1", "t1", ClipKind::Video, "picture", 0.0, 2.0);
         let (choices, old) = motion_choices(&clip, 1.0 / 30.0, &[], &MOTION_PRESETS).unwrap();
