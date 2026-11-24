@@ -58,7 +58,7 @@
         const label = document.createElement('p'); label.textContent = item.name;
         const choice = document.createElement('input'); choice.type = 'checkbox'; choice.dataset.thumbnailChoice = item.id; choice.disabled = item.in_use; choice.setAttribute('aria-label', 'Select ' + item.name + ' for deletion');
         const select = document.createElement('button'); select.type = 'button'; select.className = 'lum-button secondary'; select.textContent = 'Use';
-        select.addEventListener('click', () => { apply(dialog.closest('form'), item); dialog.close(); });
+        select.addEventListener('click', () => { if (dialog.onThumbnailSelected) { dialog.onThumbnailSelected(item); dialog.onThumbnailSelected = null; } else apply(dialog.closest('form'), item); dialog.close(); });
         const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'lum-button danger'; remove.textContent = item.in_use ? 'In use' : 'Delete'; remove.disabled = item.in_use;
         remove.addEventListener('click', () => deleteItems(dialog, [item.id]));
         tile.append(image, label, choice, select, remove); grid.append(tile);
@@ -149,7 +149,7 @@
   document.addEventListener('click', event => {
     const target = event.target;
     if (target.closest('[data-thumbnail-library-open]')) {
-      const dialog = query(target.closest('form'), '[data-thumbnail-library]'); dialog.showModal(); progress(); load(dialog);
+      const dialog = query(target.closest('form'), '[data-thumbnail-library]'); dialog.onThumbnailSelected = null; dialog.showModal(); progress(); load(dialog);
     }
     const dialog = target.closest('[data-thumbnail-library]'); if (!dialog) return;
     if (target.closest('[data-thumbnail-library-close]')) dialog.close();
@@ -165,7 +165,7 @@
     const form = event.target;
     const button = query(form, '[data-concat-add-queue]');
     if (!button) return;
-    event.preventDefault(); if (form.dataset.queueBusy === '1') return;
+    event.preventDefault(); if (form.dataset.queueBusy === '1' || form.dataset.sheetQueueBusy === '1') return;
     const body = new FormData(form), status = query(form, '[data-concat-queue-status]');
     form.dataset.queueBusy = '1'; button.disabled = true; button.classList.add('concat-processing'); button.textContent = 'Adding to Queue…';
     status.textContent = 'Submitting video details…';

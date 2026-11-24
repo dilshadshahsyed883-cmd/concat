@@ -25,7 +25,7 @@ from PIL import Image
 png=io.BytesIO(); Image.new('RGB',(120,68),'red').save(png,format='PNG'); png=png.getvalue()
 from playwright.sync_api import sync_playwright
 with sync_playwright() as p:
- browser=p.chromium.launch(headless=True,args=['--no-sandbox'])
+ browser=p.chromium.launch(headless=True,args=['--no-sandbox'], **({'executable_path':os.environ['CONCAT_TEST_BROWSER_EXECUTABLE']} if os.getenv('CONCAT_TEST_BROWSER_EXECUTABLE') else {}))
  page=browser.new_page()
  page.add_init_script("""(() => {
   window.testXHRs=[];
@@ -36,7 +36,7 @@ with sync_playwright() as p:
  pending_upload=[]
  pending_queue=[]
  items=[{'id':'a'*32,'name':'u1.png','size':len(png),'sha256':'a'*64,'in_use':False,'url':'/concat-uploader/api/concat/thumbnails/'+'a'*32+'/file'}]
- state={'sync_error':False,'hold_upload':False,'hold_queue':False}
+ state={'sync_error':False,'hold_upload':False,'hold_queue':False,'batch':False,'unknown_queue':False}
  def route(request):
   from urllib.parse import urlsplit
   path=urlsplit(request.request.url).path
@@ -56,6 +56,8 @@ with sync_playwright() as p:
    return request.fulfill(json={'ok':True,'deleted':['a'*32],'errors':[]})
   if path.endswith('/actions/add-video'):
    calls['queue']+=1
+   if state['unknown_queue']:
+    return request.abort()
    if state['hold_queue']:
     pending_queue.append(request); return
    return request.fulfill(json={'ok':True,'project_id':77,'queue_url':'/concat-uploader/app?tab=queue'})
@@ -65,7 +67,11 @@ with sync_playwright() as p:
    calls['sync']+=1
    if state['sync_error']:
     return request.fulfill(status=400,json={'detail':'Duplicate video names in metadata sheet'})
-   return request.fulfill(json={'ok':True,'video_link':'https://concat.test/api/cloud-render/media/video/file','title':'Sheet title <plain text>','description':'Line 1\nLine 2','thumbnail':items[0] if items else None,'thumbnail_message':'Thumbnail matched' if items else 'No matching thumbnail'})
+   draft={'video_link':'https://concat.test/api/cloud-render/media/video/file','video_name':'video.mp4','title':'Sheet title <plain text>','description':'Line 1\nLine 2','group_name':'Owned','channel_db_id':'1','channel':'Owner channel','privacy_status':'unlisted','app_upload_at':'2099-01-01T20:00','timezone_name':'Asia/Karachi','errors':[],'thumbnail':items[0] if items else None,'thumbnail_message':'Thumbnail matched' if items else 'No matching thumbnail'}
+   drafts=[draft]
+   if state['batch']:
+    drafts.append(dict(draft,video_name='second.mp4',video_link='https://concat.test/api/cloud-render/media/second/file',channel_db_id='',errors=['Channel missing']))
+   return request.fulfill(json={'ok':True,'items':drafts,'groups':['Owned'],'channels':[{'id':1,'channel_name':'Owner channel','channel_id':'UC-OWNED','groups':['Owned']}]})
   if path.endswith('/actions/concat/metadata-sheet'):
    calls['save']+=1
    return request.fulfill(json={'ok':True})
@@ -204,6 +210,41 @@ with sync_playwright() as p:
   page.wait_for_function("!document.querySelector('[data-concat-metadata-dialog]').open")
   assert page.inner_text('[data-concat-metadata-open]')=='Edit Metadata Sheet'
   print('PASS real Chromium media and metadata sync/popup layout:',width)
+ # Batch sync never queues automatically; invalid drafts can be corrected independently.
+ state['batch']=True
+ page.set_viewport_size({'width':1440,'height':1000})
+ page.goto('https://concat.test/concat-uploader/app?tab=add_video',wait_until='networkidle')
+ page.locator('#concat-media-video option').nth(1).wait_for(state='attached')
+ before_queue=calls['queue']
+ page.click('[data-concat-metadata-sync]')
+ page.wait_for_function("!document.querySelector('[data-concat-metadata-sync]').disabled")
+ assert page.locator('[data-sheet-review] tbody tr').count()==2
+ assert calls['queue']==before_queue
+ assert page.locator('[data-concat-add-queue]').is_visible(), 'Manual queue remains available'
+ assert page.locator('[data-thumbnail-library-open]').is_visible()
+ assert page.inner_text('[data-sheet-add]')=='Add 1 videos to Queue'
+ second=page.locator('[data-sheet-review] tbody tr').nth(1)
+ assert second.locator('input[type=checkbox]').is_disabled()
+ second.locator('select').nth(1).select_option('1')
+ second.locator('input[type=checkbox]').check()
+ assert page.inner_text('[data-sheet-add]')=='Add 2 videos to Queue'
+ page.click('[data-sheet-add]')
+ page.wait_for_function("!document.querySelector('[data-sheet-review]').dataset.busy")
+ assert calls['queue']==before_queue+2
+ assert page.locator('[data-sheet-review] tbody').inner_text().count('Queued #77')==2
+ assert page.locator('[data-sheet-add]').is_disabled()
+ page.click('[data-sheet-clear]')
+ assert page.locator('[data-sheet-review]').is_hidden()
+ # A lost admission response stops the batch and locks the uncertain row.
+ page.click('[data-concat-metadata-sync]')
+ page.wait_for_function("!document.querySelector('[data-concat-metadata-sync]').disabled")
+ state['unknown_queue']=True
+ before_queue=calls['queue']
+ page.click('[data-sheet-add]')
+ page.wait_for_function("!document.querySelector('[data-sheet-review]').dataset.busy")
+ assert calls['queue']==before_queue+1
+ assert 'Check Queue' in page.inner_text('[data-sheet-review] tbody')
+ assert page.locator('[data-sheet-add]').is_disabled()
  assert not errors,errors
  browser.close()
 client.close()
