@@ -135,15 +135,16 @@ class SaladAutoWorker:
                 raise ValueError('Stale Salad response')
 
     def can_dispatch_during_intake(self, con):
-        """Only reuse an existing worker; do not start one during Drive intake."""
+        """Allow monitoring a known worker; ensure_ready still gates new dispatch."""
         m = self.manager
         if m.get(con, 'salad_idle_status') in ('stopped', 'stop_requested', 'stop_pending_confirmation'):
             return False
         if con.execute("SELECT 1 FROM production_jobs WHERE submitted_at>0 AND state IN ('GPU Ready','Rendering','Delivering') LIMIT 1").fetchone():
             return True
         record = self._record(con)
-        return (m.get(con, 'salad_worker_status') == 'ready'
-                and record.get('group') == m.salad_group_path(con))
+        return (bool(record.get('group')) and record.get('group') == m.salad_group_path(con)
+                and (m.get(con, 'salad_worker_status') == 'ready'
+                     or bool(record.get('start_requested') or record.get('instance'))))
 
     def ensure_ready(self, con, *, manual=False):
         """Return permission for a *new* dispatch; never touch active renders."""
@@ -155,7 +156,7 @@ class SaladAutoWorker:
             self._save(con, record, value)
             return False
         pending_intake = con.execute("SELECT 1 FROM production_jobs WHERE state IN (?,?,?,?) LIMIT 1", INTAKE).fetchone()
-        if pending_intake and (manual or not self.can_dispatch_during_intake(con)):
+        if pending_intake and not self.can_dispatch_during_intake(con):
             return status('waiting_for_drive')
         # Recover active work through the established worker job protocol instead.
         if con.execute("SELECT 1 FROM production_jobs WHERE state IN (?,?,?,?,?) LIMIT 1", ACTIVE).fetchone():
@@ -201,6 +202,16 @@ class SaladAutoWorker:
             machine_id = str(UUID(instance['machine_id']))
             identity = instance_id + '/' + machine_id + '/' + str(instance.get('version', ''))
             if record.get('instance') != identity:
+                previous = record.get('instance')
+                if previous:
+                    requested = str(record.get('reallocated', '')).startswith(previous + '/')
+                    m.metrics.event('instance_change', {
+                        'previous_instance': previous, 'instance': identity,
+                        'previous_image_percent': record.get('progress'),
+                        'observed_state': instance.get('state'),
+                        'previous_reallocation_requested': requested,
+                        'cause': 'not_reported_by_salad',
+                    }, con=con)
                 record.update(instance=identity, accepted=False, progress=None,
                               download_since=None, download_transition=None, health_passed=False, latest_update=None)
             stage = instance.get('state', '').lower()
@@ -230,8 +241,6 @@ class SaladAutoWorker:
                 m.put(con, 'salad_stop_record', '')
                 self._save(con, record, 'ready')
                 return True
-            if pending_intake:
-                return status('waiting_for_drive')
             if record.get('health_passed'):
                 return status('health_check_passed')
             if stage != 'downloading':
@@ -270,6 +279,10 @@ class SaladAutoWorker:
             # restart. Wait for evidence of a new machine/download transition.
             if manual:
                 return status('manual_download_slow')
+            # Observe an already-started worker through new Drive intake, but
+            # do not initiate a replacement until intake has finished.
+            if pending_intake:
+                return status('checking_download')
             action = identity + '/' + str(transition)
             if record.get('reallocated') == action:
                 return status('waiting_for_reallocation')
