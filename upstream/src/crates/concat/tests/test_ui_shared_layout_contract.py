@@ -49,7 +49,7 @@ class SharedLayoutContractTests(unittest.TestCase):
                        "CaptionPresetApplyBar"):
             self.assertIn(marker, self.inspector)
         self.assertIn("vertical-stretch: 1;", self.inspector)
-        self.assertIn("if LibraryFocus.page == 8: CanvasPresetApplyBar", self.inspector)
+        self.assertIn("if LibraryFocus.page == 8 && CanvasPresets.selected != 0: CanvasPresetApplyBar", self.inspector)
         self.assertIn("if LibraryFocus.page == 9: ParticleApplyBar", self.inspector)
         self.assertIn("if LibraryFocus.page == 6 && GpuCompatibility.enabled && CaptionPresetPreview.chosen != \"\": CaptionPresetApplyBar", self.inspector)
         self.assertIn('label: "Apply Selected"', self.canvas)
@@ -86,9 +86,14 @@ class SharedLayoutContractTests(unittest.TestCase):
 
     def test_canvas_presets_retain_legacy_ids_and_distinct_single_media_families(self):
         for name in ("Sports Frame", "Orange Frame", "Adaptive Blur (Blurred Fill)",
-                     "Gallery Mat", "Floating Card", "Photo Print",
-                     "Cinema Frame", "Editorial Panel"):
+                     "Gallery Mat", "Floating Card", "Photo Print"):
             self.assertIn(name, self.canvas)
+        for retired in ("Cinema Frame", "Editorial Panel"):
+            self.assertNotIn(retired, self.canvas)
+        model = source(ROOT.parent / "concat-project/src/canvas_preset.rs")
+        self.assertIn("pub const ACTIVE_PRESETS: std::ops::RangeInclusive<u32> = 1..=6;", model)
+        self.assertIn("7 => { // Cinema Frame", model)
+        self.assertIn("8 => { // Editorial Panel", model)
         self.assertIn('property <[string]> names:', self.canvas)
         self.assertIn('CanvasPresets.toggle-favourite(index + 1);', self.canvas)
         self.assertIn('CanvasPresets.edit-number("borderWidth", v);', self.canvas)
@@ -103,7 +108,17 @@ class SharedLayoutContractTests(unittest.TestCase):
             self.assertNotIn(excluded, self.canvas)
         self.assertIn('["Transform", "Mirror / Flip", "Canvas", "Canvas Presets", "Content Zoom / Crop"]', self.media)
         self.assertIn('root.adjustment-page == 3: CanvasPresetLibrary', self.media)
-        self.assertIn('if LibraryFocus.page == 8: CanvasPresetApplyBar', self.inspector)
+        self.assertIn('if LibraryFocus.page == 8 && CanvasPresets.selected != 0: CanvasPresetApplyBar', self.inspector)
+
+    def test_canvas_none_inspects_and_clear_has_its_own_footer(self):
+        none = self.canvas.split('label: CanvasPresets.selected == 0', 1)[1].split('if root.favourites-only', 1)[0]
+        self.assertIn('CanvasPresets.selected = 0;', none)
+        self.assertNotIn('CanvasPresets.clear(', none)
+        self.assertNotIn('CanvasPresets.apply(', none)
+        self.assertIn('if LibraryFocus.page == 8 && CanvasPresets.selected == 0: CanvasPresetClearBar', self.inspector)
+        self.assertIn('if LibraryFocus.page == 8 && CanvasPresets.selected != 0: CanvasPresetApplyBar', self.inspector)
+        self.assertIn('CanvasPresets.clear(true, root.images, root.videos);', self.canvas)
+        self.assertIn('CanvasPresets.clear(false, root.images, root.videos);', self.canvas)
 
     def test_stable_canvas_and_particle_target_scopes(self):
         self.assertIn("CanvasPresets.apply(CanvasPresets.profile, false, root.images, root.videos);", self.canvas)
