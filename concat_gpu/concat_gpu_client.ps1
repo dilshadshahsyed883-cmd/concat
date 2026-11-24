@@ -102,8 +102,8 @@ function Concat-Bundle([string]$dir,[string]$zip,[string]$snapshot="") {
     if ($snapshot) {$manifest=$snapshot}
     if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) { throw "No saved Concat project (concat.json)" }
     $manifestSize=(Get-Item -LiteralPath $manifest).Length
-    if ($manifestSize -le 0 -or $manifestSize -gt 64MB) {
-        throw "GPU project JSON is $(Format-ByteSize $manifestSize); permitted size is 1 byte to 64 MiB."
+    if ($manifestSize -le 0 -or $manifestSize -gt 128MB) {
+        throw "GPU project JSON is $(Format-ByteSize $manifestSize); permitted size is 1 byte to 128 MiB."
     }
     $project=Get-Content -LiteralPath $manifest -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($null -eq $project.media) { throw "Concat document has no media table" }
@@ -401,7 +401,7 @@ function Validate-WorkerProject([string]$manifest,[string]$domain,$headers,$capa
         throw "GPU project manifest missing; save the project again."
     }
     [long]$size=(Get-Item -LiteralPath $manifest).Length
-    [long]$maxBytes=64MB
+    [long]$maxBytes=128MB
     if ($null -ne $capabilities.max_project_manifest_bytes) {
         [long]$serverLimit=$capabilities.max_project_manifest_bytes
         if ($serverLimit -le 0) {throw "Salad worker advertises an invalid project manifest limit."}

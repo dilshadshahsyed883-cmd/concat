@@ -686,7 +686,7 @@ class Handler(BaseHTTPRequestHandler):
             if length <= 0:
                 raise WorkerError(400, "GPU project JSON is empty")
             if length > MAX_PROJECT_MANIFEST_BYTES:
-                raise WorkerError(413, f"GPU project JSON is {length} bytes; maximum is {MAX_PROJECT_MANIFEST_BYTES} bytes (64 MiB)")
+                raise WorkerError(413, f"GPU project JSON is {length} bytes; maximum is {MAX_PROJECT_MANIFEST_BYTES} bytes ({MAX_PROJECT_MANIFEST_BYTES // (1024 * 1024)} MiB)")
             try:
                 manifest = json.loads(self.rfile.read(length))
             except (ValueError, UnicodeDecodeError, RecursionError):

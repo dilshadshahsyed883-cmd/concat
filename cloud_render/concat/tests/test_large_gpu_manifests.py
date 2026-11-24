@@ -135,7 +135,20 @@ class LargeManifestTests(unittest.TestCase):
         code, reply = self.request("POST", "/api/validate", b"", headers={
             "Content-Length": str(MAX_PROJECT_MANIFEST_BYTES + 1)})
         self.assertEqual(code, 413, reply)
-        self.assertIn("64 MiB", reply["error"])
+        self.assertIn("128 MiB", reply["error"])
+
+    def test_manifest_above_previous_limit_is_accepted(self):
+        self.assertEqual(MAX_PROJECT_MANIFEST_BYTES, 128 * 1024 * 1024)
+        body = fixture_bytes(1)
+        body += b" " * (65 * 1024 * 1024 - len(body))
+        code, reply = self.request("POST", "/api/validate", body)
+        self.assertEqual((code, reply.get("ok")), (200, True), reply)
+        self.assertEqual(reply["project_bytes"], len(body))
+        archive = self.root / "above-old-limit.zip"
+        archive.write_bytes(bundle_fixture(body))
+        restored = self.root / "above-old-limit"
+        restore(archive, restored)
+        self.assertEqual((restored / "concat.json.original").stat().st_size, len(body))
 
     def test_capabilities_advertise_real_limit(self):
         code, reply = self.request("GET", "/api/capabilities")
