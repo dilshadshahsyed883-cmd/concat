@@ -120,15 +120,29 @@ component TransitionTargetControls inherits VerticalLayout {
     }
 }
 
+// The preset footer is one compact, non-growing group. Keep the standalone
+// seam inspector's existing random-only presentation unchanged.
 component TransitionRandomActions inherits VerticalLayout {
-    spacing: 5px;
-    Text { text: "Random transitions"; color: Theme.fg; }
-    Button {
+    in property <bool> preset-footer: false;
+    vertical-stretch: 0;
+    padding: root.preset-footer ? 8px : 0px;
+    spacing: root.preset-footer ? 6px : 5px;
+    if root.preset-footer: Rectangle { height: 1px; background: Theme.line; }
+    if root.preset-footer: Button {
+        label: "Apply Transition";
+        primary: true;
+        enabled: Editor.transition-images || Editor.transition-videos;
+        clicked => {
+            Editor.library-apply-transition-scoped(LibraryFocus.selected-id, Editor.transition-images, Editor.transition-videos, Editor.transition-scope == 1);
+        }
+    }
+    if !root.preset-footer: Text { text: "Random transitions"; color: Theme.fg; }
+    if !root.preset-footer || (GpuCompatibility.enabled && GpuCompatibility.transitions): Button {
         label: "Apply Randomly";
         enabled: Editor.transition-images || Editor.transition-videos;
         clicked => { Editor.library-apply-random-transitions(0, Editor.transition-images, Editor.transition-videos, Editor.transition-scope == 1); }
     }
-    Button {
+    if !root.preset-footer || (GpuCompatibility.enabled && GpuCompatibility.transitions): Button {
         label: "Apply Favorites Randomly";
         enabled: Editor.transition-images || Editor.transition-videos;
         clicked => { Editor.library-apply-random-transitions(1, Editor.transition-images, Editor.transition-videos, Editor.transition-scope == 1); }
@@ -936,19 +950,8 @@ export component ConfigPane inherits Rectangle {
                     clicked => { Editor.transition-clear(false, Editor.transition-images, Editor.transition-videos); }
                 }
             }
-            if LibraryFocus.page == 1 && LibraryFocus.selected-id != "" && LibraryFocus.selected-id != "__none_transition__": VerticalLayout {
-                padding: 8px;
-                spacing: 6px;
-                Rectangle { height: 1px; background: Theme.line; }
-                Button {
-                    label: "Apply Transition";
-                    primary: true;
-                    enabled: Editor.transition-images || Editor.transition-videos;
-                    clicked => {
-                        Editor.library-apply-transition-scoped(LibraryFocus.selected-id, Editor.transition-images, Editor.transition-videos, Editor.transition-scope == 1);
-                    }
-                }
-                if GpuCompatibility.enabled && GpuCompatibility.transitions: TransitionRandomActions { }
+            if LibraryFocus.page == 1 && LibraryFocus.selected-id != "" && LibraryFocus.selected-id != "__none_transition__": TransitionRandomActions {
+                preset-footer: true;
             }
             if LibraryFocus.page == 9: ParticleApplyBar { }
             if LibraryFocus.page >= 10 && LibraryFocus.page <= 13: MediaLayoutApplyBar { page: LibraryFocus.page - 10; }
