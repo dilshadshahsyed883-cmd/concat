@@ -762,6 +762,14 @@ pub fn apply_with_confirmation(project: &mut Project, mint: &mut IdMint, config:
             piece.extra.get("canvasOwner") == Some(&json!(&id)) && locked.contains(&piece.track_id)) {
             return Err(error("Canvas companion is on a locked track; unlock it before replacing the layout"));
         }
+        // Canvas Preset wins over generated Canvas Animation, but never
+        // over Basic/Physics or manually authored keyframes. Stage the clear
+        // before creating the restoration snapshot or cloning companions.
+        let original = {
+            let clip = staged.active_mut().clip_mut(&id).ok_or(CommandError::MediaGone)?;
+            crate::motion_preset::clear_canvas_animation_for_preset(clip)?;
+            clip.clone()
+        };
         let media = staged
             .media_by_id(&original.media_id)
             .ok_or(CommandError::MediaGone)?;
@@ -806,8 +814,15 @@ pub fn apply_with_confirmation(project: &mut Project, mint: &mut IdMint, config:
             .get("canvasOriginal")
             .cloned()
             .unwrap_or_else(|| serde_json::to_value(&original).unwrap_or(Value::Null));
-        let base: Clip = serde_json::from_value(baseline.clone())
+        let mut base: Clip = serde_json::from_value(baseline.clone())
             .map_err(|_| error("Canvas original snapshot is invalid"))?;
+        // Older versions could store Canvas Animation in the restoration
+        // snapshot. Do not resurrect an exactly owned, overwritten animation.
+        let baseline = if !crate::motion_preset::edited_canvas_animation(&base)
+            && crate::motion_preset::clear_canvas_animation_for_preset(&mut base)?
+        {
+            serde_json::to_value(&base).map_err(|e| error(e.to_string()))?
+        } else { baseline };
         staged
             .active_mut()
             .clips
@@ -976,9 +991,10 @@ pub fn apply_with_confirmation(project: &mut Project, mint: &mut IdMint, config:
             }
         }
         foreground.background=Some(Background::None);
-        let motion_mask=crate::motion_preset::generated_ownership(&original).and_then(|record|record.style)
-            .is_some_and(|style|style.owns_mask && style.applied_mask==original.mask);
-        foreground.mask=if motion_mask {original.mask}else{None};
+        // The owned Canvas Motion mask was already cleared above. The
+        // fixed viewport defines the preset aperture; authored-mask conflicts
+        // still use the existing explicit confirmation path.
+        foreground.mask=None;
         let (x,y)=actual.center();
         let viewport=crate::canvas_viewport::Viewport {version:1,scale,x,y,width:actual.width,height:actual.height,
             rotation:config.rotation,radius:config.radius};
