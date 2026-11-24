@@ -771,8 +771,15 @@ export component ConfigPane inherits Rectangle {
                             wrap: word-wrap;
                         }
                     }
-                    if LibraryFocus.page == 2 && GpuCompatibility.enabled: MediaTargetControls { }
-                    if LibraryFocus.page == 2: EffectSettings { }
+                    if LibraryFocus.page == 2 && LibraryFocus.selected-id == "__none_effect__": HorizontalLayout {
+                        spacing: 8px;
+                        Check { checked: Keyframes.animation-images; toggled(on) => { Keyframes.animation-images = on; } }
+                        Text { text: "Images"; color: Theme.fg; vertical-alignment: center; }
+                        Check { checked: Keyframes.animation-videos; toggled(on) => { Keyframes.animation-videos = on; } }
+                        Text { text: "Video Clips"; color: Theme.fg; vertical-alignment: center; }
+                    }
+                    if LibraryFocus.page == 2 && LibraryFocus.selected-id != "__none_effect__" && GpuCompatibility.enabled: MediaTargetControls { }
+                    if LibraryFocus.page == 2 && LibraryFocus.selected-id != "__none_effect__": EffectSettings { }
                     if LibraryFocus.page == 9: ParticleEffectsPanel { }
                     if LibraryFocus.page >= 10 && LibraryFocus.page <= 13: VerticalLayout {
                         spacing: 8px;
@@ -828,27 +835,9 @@ export component ConfigPane inherits Rectangle {
                         font-size: Theme.fs-sm;
                         wrap: word-wrap;
                     }
-                    if LibraryFocus.page == 2 && LibraryFocus.selected-id == "__none_effect__": VerticalLayout {
-                        spacing: 8px;
-                        Text {
-                            text: "None never clears the whole effects chain. Remove one applied video effect below; every other link remains.";
-                            color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
-                        }
-                        if root.has-selection && root.applied-visual.length == 0: Text {
-                            text: "No visual effects applied to this clip.";
-                            color: Theme.fg-muted; font-size: Theme.fs-sm;
-                        }
-                        if !root.has-selection: Text {
-                            text: "Select a clip with an applied visual effect first.";
-                            color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
-                        }
-                        if root.has-selection: VerticalLayout {
-                            spacing: 4px;
-                            for entry[index] in root.applied-visual: Button {
-                                label: "Remove " + entry.name;
-                                clicked => { root.chain-remove(false, index); }
-                            }
-                        }
+                    if LibraryFocus.page == 2 && LibraryFocus.selected-id == "__none_effect__": Text {
+                        text: "Clear all visual effects from selected media or the active timeline. Locked or hidden tracks are protected.";
+                        color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
                     }
                     if LibraryFocus.page == 2 && root.has-selection && LibraryFocus.selected-id != "__none_effect__": PresetStack {
                         noun: I18n.t("common.effect");
@@ -898,7 +887,7 @@ export component ConfigPane inherits Rectangle {
                         }
                         commit => { root.clip-commit(); }
                     }
-                    if (LibraryFocus.page == 2 || LibraryFocus.page == 3) && !root.has-selection: Text {
+                    if (LibraryFocus.page == 3 || (LibraryFocus.page == 2 && LibraryFocus.selected-id != "__none_effect__")) && !root.has-selection: Text {
                         text: "Select a compatible clip to edit its applied effect parameters. Browsing and starring library presets do not modify a clip.";
                         color: Theme.fg-muted;
                         font-size: Theme.fs-sm;
@@ -948,10 +937,25 @@ export component ConfigPane inherits Rectangle {
                         enabled: root.has-selection;
                         clicked => { root.chain-add(false, LibraryFocus.selected-id); }
                     }
-                    if LibraryFocus.page == 2 && GpuCompatibility.enabled && GpuCompatibility.video-effects: Button {
+                    if LibraryFocus.page == 2 && LibraryFocus.selected-id != "__none_effect__" && GpuCompatibility.enabled && GpuCompatibility.video-effects: Button {
                         label: "Apply Randomly";
                         clicked => { Editor.library-apply-random-effects(); }
                     }
+            if LibraryFocus.page == 2 && LibraryFocus.selected-id == "__none_effect__": VerticalLayout {
+                padding: 8px;
+                spacing: 6px;
+                Rectangle { height: 1px; background: Theme.line; }
+                Button {
+                    label: "Clear Selected Effects";
+                    enabled: Keyframes.animation-images || Keyframes.animation-videos;
+                    clicked => { Editor.library-clear-effects(true, Keyframes.animation-images, Keyframes.animation-videos); }
+                }
+                Button {
+                    label: "Clear All Effects";
+                    enabled: Keyframes.animation-images || Keyframes.animation-videos;
+                    clicked => { Editor.library-clear-effects(false, Keyframes.animation-images, Keyframes.animation-videos); }
+                }
+            }
             if LibraryFocus.page == 8 && CanvasPresets.selected != 0: CanvasPresetApplyBar {
                 images: Keyframes.animation-images;
                 videos: Keyframes.animation-videos;

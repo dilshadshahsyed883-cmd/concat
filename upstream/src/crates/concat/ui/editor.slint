@@ -174,6 +174,7 @@ export global Editor {
     callback library-apply-transition-scoped(transition-id: string, images: bool, videos: bool, selected-only: bool);
     callback library-apply-random-transitions(mode: int, images: bool, videos: bool, selected-only: bool);
     callback library-apply-random-effects();
+    callback library-clear-effects(selected-only: bool, images: bool, videos: bool);
     /// Filters page: lay the look down as a layer at the playhead.
     callback library-apply-filter(filter-id: string, label: string);
     /// Filters page: show the look over the whole picture without laying

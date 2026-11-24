@@ -1471,6 +1471,9 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         let (images,videos,selected)=media_target_flags();
         state.apply_random_gpu_effects_scoped(images,videos,selected);
     }));
+    editor.on_library_clear_effects(on_window!(|state, selected_only: bool, images: bool, videos: bool| {
+        state.clear_visual_effects_scoped(selected_only, images, videos);
+    }));
     editor.on_library_save_template(on_window!(|state| {
         state.save_template();
     }));
