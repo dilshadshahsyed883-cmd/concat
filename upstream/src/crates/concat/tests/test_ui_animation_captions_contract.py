@@ -167,6 +167,21 @@ class DesktopUiContractTests(unittest.TestCase):
         self.assertNotIn('root.apply-transition("__none_transition__")', MEDIA)
         self.assertNotIn('root.apply-effect("__none_effect__")', MEDIA)
 
+    def test_animation_favorites_use_responsive_grid_columns(self):
+        normal = MEDIA.split("component AnimationCardGrid inherits Rectangle {", 1)[1].split("component AnimationFavoriteCards inherits Rectangle {", 1)[0]
+        favorites = MEDIA.split("component AnimationFavoriteCards inherits Rectangle {", 1)[1].split("export component MediaPane", 1)[0]
+        for line in (
+            "property <length> min-card: 140px;",
+            "property <int> cols: Math.max(1, Math.floor((root.width + root.gap) / (root.min-card + root.gap)));",
+            "property <length> card-w: (root.width - (root.cols - 1) * root.gap) / root.cols;",
+        ):
+            self.assertIn(line, normal)
+            self.assertIn(line, favorites)
+        self.assertIn("Math.ceil(root.favorite-count / root.cols)", favorites)
+        self.assertEqual(favorites.count("Math.mod(self.compact-index, root.cols)"), 2)
+        self.assertEqual(favorites.count("Math.floor(self.compact-index / root.cols)"), 2)
+        self.assertEqual(favorites.count("pool-selectable: true;"), 2)
+
     def test_transition_apply_footer_is_compact_and_non_growing(self):
         config = (ROOT / "ui/workspace/config-pane.slint").read_text()
         actions = config.split("component TransitionRandomActions inherits VerticalLayout {", 1)[1]
