@@ -12,6 +12,7 @@ from functools import cache
 from math import isfinite
 
 from .contract import cuda, rgba
+from .procedural_canvas import STYLES, render_pattern
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,18 @@ class CanvasBackground:
     kind: str
     amount: float = .5
     color: tuple[float, float, float] = (0., 0., 0.)
+    style: str = ""
+    accent: tuple[float, float, float] = (0., 0., 0.)
+    intensity: float = .5
+    density: float = .5
+    softness: float = .5
+    opacity: float = 1.
+    spread: float = .5
+    size: float = .5
+
+    @property
+    def uses_source(self):
+        return self.kind == "blur" or (self.kind == "procedural" and self.style in ("frostedGlass", "monochromeBackdrop", "prismRefraction"))
 
 
 def parse_background(spec):
@@ -50,6 +63,22 @@ def parse_background(spec):
         except ValueError as exc:
             raise ValueError("GPU Canvas solid color must be #rrggbb") from exc
         return CanvasBackground("color", color=tuple(value/255 for value in raw[:3]))
+    if kind == "procedural":
+        pattern = spec.get("pattern")
+        keys = {"style","color","accent","intensity","density","softness","opacity","spread","size"}
+        if set(spec) != {"kind","pattern"} or not isinstance(pattern,dict) or set(pattern) != keys or pattern["style"] not in STYLES:
+            raise ValueError("Unsupported GPU Canvas procedural pattern")
+        def rgb(value):
+            if not isinstance(value,str) or len(value) not in (7,9) or not value.startswith("#"):
+                raise ValueError("Invalid GPU Canvas pattern color")
+            try: return tuple(channel/255 for channel in bytes.fromhex(value[1:])[:3])
+            except ValueError as error: raise ValueError("Invalid GPU Canvas pattern color") from error
+        def unit(value):
+            if type(value) not in (int,float) or not isfinite(value) or not 0<=value<=1:
+                raise ValueError("GPU Canvas pattern controls must be between 0 and 100%")
+            return float(value)
+        values = {key:unit(pattern[key]) for key in keys-{"style","color","accent"}}
+        return CanvasBackground("procedural",color=rgb(pattern["color"]),accent=rgb(pattern["accent"]),style=pattern["style"],**values)
     raise ValueError(f"Unsupported GPU Canvas background kind: {kind}")
 
 
@@ -111,6 +140,8 @@ def make_background(pixels, source_size, background: CanvasBackground):
         for channel, value in enumerate((*background.color, 1.)):
             output[:, :, channel].fill(value)
         return output
+    if background.kind == "procedural":
+        return render_pattern(cp, frame, source_size, background, fitted_rect)
     if background.kind != "blur":
         raise ValueError("Unsupported GPU Canvas background mode")
     left, top, fitted_width, fitted_height = fitted_rect(
