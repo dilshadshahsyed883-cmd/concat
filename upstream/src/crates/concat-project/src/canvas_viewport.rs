@@ -5,6 +5,31 @@ use serde::{Deserialize, Serialize};
 
 /// Extension-map key; old readers keep this metadata while retaining native keys.
 pub const KEY: &str = "canvasViewportV1";
+
+/// Fixed output aperture family; rectangle is the unchanged legacy default.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ApertureShape {
+    /// Existing rounded rectangle.
+    #[default]
+    Rectangle,
+    /// Circular or elliptical output aperture.
+    Circle,
+    /// Architectural rounded-top aperture.
+    Arch,
+}
+impl ApertureShape {
+    fn is_rectangle(&self) -> bool { *self == Self::Rectangle }
+    /// Stable engine mask family.
+    pub fn engine(self) -> concat_core::mask::MaskShape {
+        use concat_core::mask::MaskShape;
+        match self {
+            Self::Rectangle => MaskShape::Rectangle,
+            Self::Circle => MaskShape::Circle,
+            Self::Arch => MaskShape::Arch,
+        }
+    }
+}
 /// Fixed frame geometry in timeline fractions. Content scale/X/Y/rotation stay
 /// on the ordinary clip, including authored keyframes.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -26,6 +51,9 @@ pub struct Viewport {
     pub rotation: f64,
     /// Opening corner radius in timeline heights.
     pub radius: f64,
+    /// Older serialized rectangles keep their exact metadata.
+    #[serde(default, skip_serializing_if = "ApertureShape::is_rectangle")]
+    pub shape: ApertureShape,
 }
 impl Viewport {
     /// Valid supported fixed-aperture geometry.
@@ -66,6 +94,7 @@ impl Viewport {
             height: self.height,
             rotation: self.rotation,
             radius: self.radius,
+            aperture_shape: self.shape.engine(),
             aspect,
         }
     }

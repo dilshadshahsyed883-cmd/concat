@@ -394,8 +394,28 @@ pub enum Backdrop {
     },
     /// One opaque colour.
     Colour([u8; 3]),
+    /// A procedural Canvas texture generated from normalized geometry.
+    Procedural(concat_core::canvas_background::Pattern),
     /// A still, enlarged to cover the frame.
     Image(Arc<Frame>),
+}
+
+// Bounded per-render-thread cache avoids regenerating and uploading static patterns
+// every video frame; source-dependent patterns are never cached across frames.
+fn pattern_texture(pattern:concat_core::canvas_background::Pattern,width:u32,height:u32,source:Option<&Frame>)->Arc<Frame> {
+    if pattern.uses_source(){return Arc::new(pattern.render(width,height,source));}
+    thread_local! {
+        static CACHE:std::cell::RefCell<Vec<(concat_core::canvas_background::Pattern,u32,u32,Arc<Frame>)>>=const {std::cell::RefCell::new(Vec::new())};
+    }
+    CACHE.with(|cache|{
+        let mut cache=cache.borrow_mut();
+        if let Some(i)=cache.iter().position(|(p,w,h,_)|*p==pattern&&*w==width&&*h==height){
+            let value=cache.remove(i);let frame=value.3.clone();cache.push(value);return frame;
+        }
+        let frame=Arc::new(pattern.render(width,height,None));
+        if cache.len()>=3{cache.remove(0);}
+        cache.push((pattern,width,height,frame.clone()));frame
+    })
 }
 
 impl PlannedLayer {
@@ -490,6 +510,10 @@ impl PlannedLayer {
                 layer.flip_v = false;
                 (Arc::new(solid), Vec::new())
             }
+            Backdrop::Procedural(pattern) => {
+                layer.warp = Warp::NONE; layer.crop = Crop::NONE; layer.flip_h = false; layer.flip_v = false;
+                (pattern_texture(*pattern,width,height,self.source.as_deref()),Vec::new())
+            }
             Backdrop::Image(still) => {
                 layer.warp = Warp::NONE;
                 layer.crop = Crop::NONE;
@@ -501,7 +525,7 @@ impl PlannedLayer {
         let cover = cover_of(&layer, &picture, width, height);
         // A colour stretches to the frame's shape; a picture keeps its own.
         let stretch = match backdrop {
-            Backdrop::Colour(_) => {
+            Backdrop::Colour(_) | Backdrop::Procedural(_) => {
                 let fitted = layer.geometry(&picture, width, height).fitted;
                 (
                     f64::from(width) / f64::from(fitted.0) / f64::from(cover),
@@ -513,7 +537,7 @@ impl PlannedLayer {
         // Two pixels over on the shorter side: the fit centres by whole
         // pixels, and a cover that met the edge exactly could leave a hair
         // of black along it.
-        let over = 1.0 + 2.0 / width.min(height).max(1) as f64;
+        let over = if matches!(backdrop,Backdrop::Procedural(_)){1.0}else{1.0 + 2.0 / width.min(height).max(1) as f64};
         layer.transform = Transform {
             scale: f64::from(cover) * over,
             stretch_x: stretch.0,

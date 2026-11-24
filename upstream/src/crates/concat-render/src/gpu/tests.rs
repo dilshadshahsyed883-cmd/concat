@@ -2280,12 +2280,15 @@ fn a_background_is_wiped_with_its_picture() {
 fn fixed_canvas_aperture_matches_reference_with_animated_content_geometry() {
     use concat_core::timeline::CanvasFrame;
     for (zoom,rotation) in [(1.0,0.0),(2.5,23.0),(0.8,-17.0)] {
-        let mut picture=layer(gradient(36,64));
-        let frame=CanvasFrame {scale:0.65,x:0.08,y:-0.05,width:0.25,height:0.65,
-            rotation:-12.0,radius:0.04,aspect:96.0/54.0};
-        picture.transform=frame.compose(Transform {scale:zoom,offset_x:0.12,offset_y:-0.07,rotation,..Default::default()});
-        picture.aperture=Some(frame.aperture());
-        let result=plan(96,54,vec![picture]);
-        assert_parity("fixed rotated Canvas aperture",&result,0.985);
+        for aperture_shape in [concat_core::mask::MaskShape::Rectangle,
+            concat_core::mask::MaskShape::Circle, concat_core::mask::MaskShape::Arch] {
+            let mut picture=layer(gradient(36,64));
+            let frame=CanvasFrame {scale:0.65,x:0.08,y:-0.05,width:0.25,height:0.65,
+                rotation:-12.0,radius:0.04,aperture_shape,aspect:96.0/54.0};
+            picture.transform=frame.compose(Transform {scale:zoom,offset_x:0.12,offset_y:-0.07,rotation,..Default::default()});
+            picture.aperture=Some(frame.aperture());
+            let result=plan(96,54,vec![picture]);
+            assert_parity("fixed rotated Canvas aperture",&result,0.985);
+        }
     }
 }
