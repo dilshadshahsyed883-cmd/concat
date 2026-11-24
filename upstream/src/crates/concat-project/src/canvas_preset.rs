@@ -1107,6 +1107,80 @@ mod tests {
         m.adopt_project(&p);
         (p, m)
     }
+    fn generated_animation(clip: &mut Clip, canvas: bool) {
+        use crate::motion_preset::{MotionPreset, replace_generated};
+        use crate::canvas_motion::{CanvasMotionPreset, CanvasMotionControls, rounded_mask};
+        let expected = clip.keys.clone();
+        let (id, keys, style) = if canvas {
+            let p = CanvasMotionPreset::ALL[0];
+            (p.id(), p.keys(clip, 1.0/30.0, CanvasMotionControls::default()).unwrap(),
+                Some((0.5, rounded_mask(1080, 1920, 0.1))))
+        } else {
+            let p = MotionPreset::PushIn;
+            (p.id(), p.keys(clip, 1.0/30.0).unwrap().0.to_vec(), None)
+        };
+        replace_generated(clip, &expected, keys, id.into(), style).unwrap();
+    }
+
+    #[test]
+    fn canvas_preset_replaces_canvas_animation_and_blocks_later_canvas_motion() {
+        use crate::motion_preset::{generated_ownership, replace_generated, has_canvas_preset};
+        use crate::canvas_motion::{CanvasMotionPreset, CanvasMotionControls};
+        let (mut project, mut mint) = fixture();
+        generated_animation(project.active_mut().clip_mut("c1").unwrap(), true);
+        apply(&mut project,&mut mint,Config::preset(6).unwrap(),vec!["c1".into()],vec![]).unwrap();
+        let clip=project.active_mut().clip_mut("c1").unwrap();
+        assert!(has_canvas_preset(clip));
+        assert!(clip.keys.is_empty());
+        assert!(generated_ownership(clip).is_none());
+        assert!(clip.mask.is_none());
+        assert_eq!(clip.background,Some(Background::None));
+        let baseline:Clip=serde_json::from_value(clip.extra["canvasOriginal"].clone()).unwrap();
+        assert!(baseline.keys.is_empty());
+        assert!(generated_ownership(&baseline).is_none());
+        let before=clip.clone();
+        let p=CanvasMotionPreset::ALL[0];
+        let keys=p.keys(clip,1.0/30.0,CanvasMotionControls::default()).unwrap();
+        assert!(replace_generated(clip,&[],keys,p.id().into(),Some((0.5,None))).is_err());
+        assert_eq!(*clip,before);
+    }
+
+    #[test]
+    fn canvas_preset_and_basic_animation_coexist_in_both_orders() {
+        use crate::motion_preset::{generated_ownership, clear_generated};
+        for animation_first in [true,false] {
+            let (mut project,mut mint)=fixture();
+            if animation_first {generated_animation(project.active_mut().clip_mut("c1").unwrap(),false);}
+            apply(&mut project,&mut mint,Config::preset(6).unwrap(),vec!["c1".into()],vec![]).unwrap();
+            if !animation_first {generated_animation(project.active_mut().clip_mut("c1").unwrap(),false);}
+            let clip=project.active().clip("c1").unwrap();
+            let keys=clip.keys.clone();
+            assert!(!keys.is_empty());
+            assert_eq!(generated_ownership(clip).unwrap().preset,"motion.push-in");
+            apply(&mut project,&mut mint,Config::preset(5).unwrap(),vec!["c1".into()],vec![]).unwrap();
+            let clip=project.active_mut().clip_mut("c1").unwrap();
+            assert_eq!(clip.keys,keys);
+            assert_eq!(generated_ownership(clip).unwrap().preset,"motion.push-in");
+            let viewport=crate::canvas_viewport::Viewport::of(clip);
+            assert!(viewport.is_some());
+            clear_generated(clip,&keys).unwrap();
+            assert_eq!(crate::canvas_viewport::Viewport::of(clip),viewport);
+            assert!(clip.extra.contains_key("canvasPreset"));
+        }
+    }
+
+    #[test]
+    fn canvas_preset_does_not_silently_delete_manually_edited_canvas_animation() {
+        let (mut project,mut mint)=fixture();
+        let clip=project.active_mut().clip_mut("c1").unwrap();
+        generated_animation(clip,true);
+        clip.keys[0].value += 0.001;
+        let before=project.clone();
+        assert!(apply_with_confirmation(&mut project,&mut mint,Config::preset(6).unwrap(),
+            vec!["c1".into()],vec![],true).is_err());
+        assert_eq!(project.active().clips,before.active().clips);
+    }
+
     #[test]
     fn independent_presets_validate_and_round_trip() {
         for n in 1..=8 {
