@@ -494,13 +494,11 @@ class RenderWorker:
             with self.lock:
                 if cancel.is_set():
                     raise CaptionCancelled("Job cancelled before publishing render; source bundle and output retained")
-                self._change(job, state="rendered", output_size=output.stat().st_size,
+                self._change(job, state="delivering" if self.receiver else "rendered", output_size=output.stat().st_size,
                              output_sha256=checksum,
                              **({"caption_state": "rendered"} if caption_result is not None else {}),
                              **self._performance_metrics(report, elapsed))
-            if self.receiver:
-                with self.lock:
-                    self._change(job, state="delivering")
+                if self.receiver:
                     self.delivery_pool.submit(self._retry, job, output)
         except CaptionCancelled as exc:
             self._change(job, state="cancelled", error=str(exc))
@@ -844,7 +842,8 @@ def main():
         server.serve_forever(poll_interval=0.5)
     finally:
         server.server_close()
-        worker.pool.shutdown(wait=False, cancel_futures=True)
+        worker.pool.shutdown(wait=True, cancel_futures=True)
+        worker.delivery_pool.shutdown(wait=True)
 
 
 if __name__ == "__main__":
