@@ -50,7 +50,7 @@ media = STAGING_ROOT / "source.mp4"
 media.write_bytes(b"\x00\x00\x00\x14ftyp" + b"media" * 8)
 db_path = DATA_ROOT / "schedule-tests.sqlite3"
 store = ProjectStore(db_path)
-assert store.setting("engine_enabled") == "0"
+assert store.setting("engine_enabled") == "1"
 
 def new_job(owner, channel, schedule=""):
     return store.create_project({
@@ -70,14 +70,18 @@ scheduled = new_job("owner-one", 2, future)
 another = new_job("owner-two", 3, future)
 assert store.get(scheduled)["status"] == "SCHEDULED"
 assert store.get(scheduled)["publish_at"] == ""  # no YouTube publication timer
-assert store.owner_queue_paused("owner-one") is True
+assert store.owner_queue_paused("owner-one") is False
 assert store.owner_scheduled_paused("owner-one") is False
+store.set_owner_queue_paused("owner-one", True)
 assert store.claim_next_eligible(schedule_only=True) is None  # not due
 
 past = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
 store.update(scheduled, app_upload_at=past)
 store.update(another, app_upload_at=past)
 store.set_owner_scheduled_paused("owner-two", True)
+assert store.claim_next_eligible(schedule_only=True) is None, "Due scheduled uploads still need the grace window"
+with store.connect() as con:
+    con.execute("UPDATE projects SET created_at=?", ((datetime.now(timezone.utc) - timedelta(minutes=6)).isoformat(),))
 restarted = ProjectStore(db_path)
 assert restarted.owner_scheduled_paused("owner-two") is True
 assert restarted.owner_queue_paused("owner-one") is True
@@ -88,7 +92,7 @@ assert restarted.claim_next_eligible(schedule_only=True) is None
 restarted.set_owner_scheduled_paused("owner-two", False)
 due2 = restarted.claim_next_eligible(schedule_only=True)
 assert due2["id"] == another, due2
-assert restarted.owner_queue_paused("owner-two") is True
+assert restarted.owner_queue_paused("owner-two") is False
 assert restarted.claim_next_eligible(schedule_only=True) is None
 restarted.set_owner_queue_paused("owner-one", False)
 claimed_manual = restarted.claim_next_eligible()

@@ -138,7 +138,7 @@ print(json.dumps(dict(job=job, duplicate_blocked=duplicate_blocked,
         )
         data = json.loads(done.stdout.strip())
         self.assertTrue(data["duplicate_blocked"])
-        self.assertTrue(data["paused"])
+        self.assertFalse(data["paused"])
         self.assertEqual(data["states"]["TOTAL"], 1)
         return data["job"]
 
@@ -154,7 +154,7 @@ print(json.dumps(dict(job=job, duplicate_blocked=duplicate_blocked,
         self.assertEqual(result["videos"]["items"][0]["status"], "ready")
         self.assertEqual(result["uploads"]["queued"], 1)
         self.assertEqual(result["uploads"]["jobs"][0]["id"], str(queued_id))
-        self.assertEqual(result["uploads"]["queue"]["state"], "stopped")
+        self.assertEqual(result["uploads"]["queue"]["state"], "running")
         self.assertIsNone(result["gpu"]["available"])
         # No reinitialization of queues: another read uses the same persistent DB.
         self.assertEqual(self.client.get("/api/v1/dashboard/overview").json()["uploads"]["total"], 1)

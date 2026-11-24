@@ -183,7 +183,7 @@ class UploaderDashboardProvider:
                     (owner_username,)
                 ).fetchone()
                 enabled = con.execute("SELECT value FROM settings WHERE key='engine_enabled'").fetchone()
-                running = bool(paused and not int(paused["paused"]) and enabled and enabled["value"] == "1")
+                running = bool((paused is None or not int(paused["paused"])) and enabled and enabled["value"] == "1")
         except (sqlite3.Error, OSError, KeyError, TypeError, ValueError) as exc:
             raise SourceUnavailable("Uploader owner store cannot be read") from exc
         return {

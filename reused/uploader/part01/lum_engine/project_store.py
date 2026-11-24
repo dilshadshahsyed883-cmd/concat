@@ -2,7 +2,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -11,6 +11,7 @@ from .config import DEFAULT_SETTINGS, PROJECT_DB, STAGING_ROOT, ensure_dirs
 ACTIVE_STATES = {"DOWNLOADING", "SOURCE_READY", "UPLOAD_QUEUED", "UPLOADING", "VERIFYING_REMOTE", "CLEANING"}
 TERMINAL_STATES = {"COMPLETED", "CANCELLED"}
 WAITING_STATES = {"QUEUED", "WAITING_SLOT", "SCHEDULED"}
+CONCAT_UPLOAD_GRACE_SECONDS = 300
 
 
 def now_iso() -> str:
@@ -26,6 +27,11 @@ def parse_time(value: str | None) -> datetime | None:
         return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
     except ValueError:
         return None
+
+
+def concat_grace_until(created_at: str | None) -> datetime | None:
+    created = parse_time(created_at)
+    return created + timedelta(seconds=CONCAT_UPLOAD_GRACE_SECONDS) if created else None
 
 
 class ProjectStore:
@@ -216,6 +222,12 @@ class ProjectStore:
             conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
             for key, value in DEFAULT_SETTINGS.items():
                 conn.execute("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)", (key, value))
+            # Enable the formerly opt-in Concat worker once; retain every saved
+            # owner pause because old admission and explicit pause used the same flag.
+            if os.getenv("LUM_ENGINE_INSTANCE") == "concat":
+                migrated = conn.execute("INSERT OR IGNORE INTO settings(key,value) VALUES('concat_auto_queue_v1','1')")
+                if migrated.rowcount and conn.execute("SELECT value FROM settings WHERE key='pause_after_current'").fetchone()[0] != "1":
+                    conn.execute("UPDATE settings SET value='1' WHERE key='engine_enabled'")
             # Upgrade legacy OFF flags without starting Copyright scheduling.
             if os.getenv("LUM_ENGINE_INSTANCE") == "copyright":
                 for key in ("sheets_sync_enabled", "auto_engine_enabled"):
@@ -249,8 +261,6 @@ class ProjectStore:
                 "SELECT paused FROM copyright_owner_queues WHERE owner_username=?",
                 (owner.strip(),),
             ).fetchone()
-        if row is None and os.getenv("LUM_ENGINE_INSTANCE") == "concat":
-            return True  # No Concat queue is ever armed before the owner clicks Start.
         return bool(row and int(row["paused"]))
 
     def set_owner_queue_paused(self, owner: str, paused: bool) -> None:
@@ -277,7 +287,7 @@ class ProjectStore:
             raise ValueError("Owner is required")
         with self.connect() as conn:
             conn.execute("""INSERT INTO copyright_owner_queues(owner_username,paused,scheduled_paused)
-                VALUES(?,1,?) ON CONFLICT(owner_username)
+                VALUES(?,0,?) ON CONFLICT(owner_username)
                 DO UPDATE SET scheduled_paused=excluded.scheduled_paused""",
                 (owner.strip(), int(bool(paused))))
 
@@ -385,12 +395,8 @@ class ProjectStore:
                     raise ValueError("Library thumbnail changed or was deleted; select it again")
                 conn.execute("INSERT INTO concat_thumbnail_uses(project_id,thumbnail_id,sha256) VALUES(?,?,?)",
                              (project_id, library_id, row[0]))
-            # Keep the manual queue paused on Concat admission. A timed job
-            # uses an independent scheduled pause gate and starts when due.
-            if os.getenv("LUM_ENGINE_INSTANCE") == "concat":
-                conn.execute("""INSERT INTO copyright_owner_queues(owner_username,paused)
-                    VALUES(?,1) ON CONFLICT(owner_username)
-                    DO UPDATE SET paused=1""", (values[0],))
+            # Admission never changes an owner's manual or scheduled pause.
+            # A new owner has no pause record and is eligible after the grace period.
             conn.execute("INSERT INTO project_events(project_id,level,message,created_at) VALUES(?,?,?,?)", (project_id,"INFO","Project accepted into VPS queue",stamp))
             return project_id
 
@@ -468,6 +474,10 @@ class ProjectStore:
             row = dict(raw)
             if row["status"] == "PAUSED":
                 continue
+            if os.getenv("LUM_ENGINE_INSTANCE") == "concat":
+                grace_until = concat_grace_until(row.get("created_at"))
+                if grace_until is None or now < grace_until:
+                    continue
             when = parse_time(row.get("app_upload_at"))
             if when and when > now:
                 if row["status"] != "SCHEDULED":
@@ -487,12 +497,17 @@ class ProjectStore:
                  if concat else "ORDER BY id ASC")
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
+            now = datetime.now(timezone.utc)
             rows = conn.execute(
                 "SELECT * FROM projects p WHERE status IN ('QUEUED','WAITING_SLOT','SCHEDULED') "
                 + self._owner_eligibility_clause() + schedule_gate + " " + order
             ).fetchall()
             for raw in rows:
                 row = dict(raw)
+                if concat:
+                    grace_until = concat_grace_until(row.get("created_at"))
+                    if grace_until is None or now < grace_until:
+                        continue
                 when = parse_time(row.get("app_upload_at"))
                 if when and when > now:
                     if row["status"] != "SCHEDULED":
