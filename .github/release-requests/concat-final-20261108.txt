@@ -144,3 +144,19 @@ verification was cancelled. Do not claim these passed or claim hardware parity.
 Candidate build only: no live Salad/VPS/Nginx/Drive Bridge or queue changes;
 preserve previous verified images and releases. Real NVIDIA rendering and
 Windows manual DPI/preview parity remain NOT VERIFIED.
+
+REBUILD REQUEST — 2026-11-24 Effects inspector and seven retired Canvas presets
+User requested both candidate builds from main, parent e2a3b9bf189ad2967fa531897930f717a6197a7f.
+Build Windows portable x64 EXE and Salad CUDA GPU candidate from this one
+request commit's exact identical GITHUB_SHA. Includes latest merged main,
+including PR #143 effect inspector controls and #146 active Canvas retirement
+(11 active presets; all 20 legacy preset IDs remain decodable).
+Keep existing release verification and compatibility gates intact, including
+concat-cuda-hybrid-v1 version 2, project and queue schemas, PNG/JPEG alpha,
+nine caption presets, ASR small, exact source SHA, EXE/ZIP SHA256 and immutable
+image digest, native Windows DLL/startup and GPU entrypoint/compatibility smoke.
+Pre-existing source CI failures were observed in the None/Clear UI contract
+and bulk-motion reroll regression; do not claim full source CI is green.
+Candidate builds only; no live Salad/VPS/Nginx/Drive Bridge/queue changes,
+production traffic switch or deletion of rollback artifacts. Real NVIDIA
+rendering and manual Windows DPI/preview parity remain NOT VERIFIED.
