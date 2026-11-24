@@ -58,6 +58,13 @@ fn animation_from_index(index: i32) -> Option<MotionKind> {
         _ => None,
     }
 }
+/// Choose compatible families before generating keys or drawing randomly.
+/// A mixed Favorites pool keeps Basic/Physics available on preset clips.
+fn animation_allowed(clip: &Clip, preset: MotionKind) -> bool {
+    !matches!(preset, MotionKind::Canvas(_))
+        || !concat_project::motion_preset::has_canvas_preset(clip)
+}
+
 fn motion_id(preset: MotionKind) -> &'static str {
     match preset {
         MotionKind::Physics(p) => p.id(),
@@ -931,12 +938,16 @@ impl Studio {
         if selected_only && selected.is_empty() {self.notify("Select eligible timeline media first.",true);return;}
         let media=self.gpu_picture_media();let frame=self.frame_seconds();
         let mut plans=Vec::new();
+        let mut blocked=0usize;
         for clip in &self.timeline().clips {
             if !chosen_media_type(clip,images,videos) || (selected_only && !selected.contains(&clip.id))
                 || self.locked(&clip.track_id) || self.timeline().track(&clip.track_id).is_none_or(|t|!t.visible)
                 || !media.contains(clip.media_id.as_str()) {continue;}
+            if !permitted.iter().any(|(preset,_)| animation_allowed(clip,*preset)) {
+                blocked+=1; continue;
+            }
             let Some(base)=concat_project::motion_preset::preset_base(clip,std::iter::empty()) else {continue;};
-            let choices:Vec<_>=permitted.iter().filter_map(|(preset,settings)|{
+            let choices:Vec<_>=permitted.iter().filter(|(preset,_)| animation_allowed(clip,*preset)).filter_map(|(preset,settings)|{
                 let (keys,style)=match preset {
                     MotionKind::Basic(p)=>{let mut c=settings.physics;
                         if settings.canvas.auto_fit { c.duration=1.0; c.speed=1.0; }
@@ -961,8 +972,15 @@ impl Studio {
             let (generated,style)=&choices[draw(choices.len())];
             commands.push(generated_motion_command(clip,generated,*style));
         }
-        if commands.is_empty(){self.notify("No eligible targets; manual keys and locked/hidden tracks are protected.",true);return;}
+        if commands.is_empty(){
+            self.notify(&format!("No eligible animation targets. {blocked} skipped: Canvas Preset active and no Basic/Physics favorite selected. Manual keys and locked/hidden tracks are protected."),true);
+            return;
+        }
+        let count=commands.len(); let revision=self.revision;
         self.apply(Command::Batch {commands});
+        if self.revision!=revision {
+            self.notify(&format!("Favorites animations: {count} applied, {blocked} skipped (Canvas Preset active; no compatible favorite)."),false);
+        }
     }
 
     pub(super) fn publish_animation_timing(&self,app:&crate::ui::App) {
@@ -981,6 +999,8 @@ impl Studio {
             if !chosen_media_type(clip,ui.get_animation_images(),ui.get_animation_videos())
                 || (ui.get_animation_scope()==1 && !self.selection.contains(&clip.id)) || self.locked(&clip.track_id)
                 || self.timeline().track(&clip.track_id).is_none_or(|t|!t.visible) {continue;}
+            if ((9..30).contains(&index) || (45..59).contains(&index))
+                && concat_project::motion_preset::has_canvas_preset(clip) {continue;}
             let Some(base)=concat_project::motion_preset::preset_base(clip,std::iter::empty()) else {continue;};
             let keys=if (9..30).contains(&index) || (45..59).contains(&index) {
                 CanvasMotionPreset::from_index(if index>=45 {index-24}else{index-9})
@@ -1137,10 +1157,14 @@ impl Studio {
         if selected_only && selected.is_empty() { self.notify("Select at least one timeline clip.", true); return; }
         let timeline = self.timeline(); let frame = self.frame_seconds(); let media = self.gpu_picture_media();
         let mut plans = Vec::new();
+        let mut blocked=0usize;
         for clip in &timeline.clips {
             if !requested_picture(clip, images, videos) || self.locked(&clip.track_id)
                 || timeline.track(&clip.track_id).is_none_or(|t| !t.visible)
                 || !media.contains(clip.media_id.as_str()) || (selected_only && !selected.contains(&clip.id)) { continue; }
+            if concat_project::motion_preset::has_canvas_preset(clip) {
+                blocked+=1; continue;
+            }
             let target = (timeline.id.clone(), clip.id.clone());
             let previous = self.bulk_motion.0.get(&target).and_then(|held|
                 held.iter().find(|held| held.keys == clip.keys));
@@ -1170,9 +1194,16 @@ impl Studio {
             commands.push(generated_motion_command(clip, &generated, Some((controls.blur, mask))));
             updates.push((target,generated));
         }
-        if commands.is_empty() {self.notify("No eligible media. Manual or unrecognized keyframes are protected; check targets, selection and locked/hidden tracks.",true);return;}
-        let revision=self.revision;self.apply(Command::Batch {commands});
-        if self.revision!=revision {for (target,motion) in updates {self.bulk_motion.remember(target,motion);}}
+        if commands.is_empty() {
+            self.notify(&format!("No eligible media. {blocked} skipped: Canvas Preset already applied. Manual or unrecognized keyframes and locked/hidden tracks are protected."),true);
+            return;
+        }
+        let count=commands.len(); let revision=self.revision;
+        self.apply(Command::Batch {commands});
+        if self.revision!=revision {
+            for (target,motion) in updates {self.bulk_motion.remember(target,motion);}
+            self.notify(&format!("Canvas Animation: {count} applied, {blocked} skipped (Canvas Preset active)."),false);
+        }
     }
 
     /// Kept as compatibility callbacks for older Animations-tab clients.
@@ -1591,6 +1622,22 @@ mod tests {
         assert!((0.1..=1.0).contains(&a.duration));
         assert!((0.25..=3.0).contains(&a.speed));
         assert!((0.2..=2.0).contains(&a.intensity));
+    }
+
+    #[test]
+    fn mixed_animation_favorites_filter_by_clip_not_by_entire_pool() {
+        let mut clip = Clip::blank("c1", "t1", ClipKind::Video, "picture", 0.0, 2.0);
+        let pool = [MotionKind::Basic(MotionPreset::PushIn),
+            MotionKind::Physics(PhysicsPreset::SpringZoom),
+            MotionKind::Canvas(CanvasMotionPreset::ALL[0])];
+        assert_eq!(pool.iter().filter(|p| animation_allowed(&clip, **p)).count(), 3);
+        for marker in ["canvasPreset", concat_project::canvas_viewport::KEY] {
+            clip.extra.clear();
+            clip.extra.insert(marker.into(), serde_json::json!({}));
+            let allowed: Vec<_> = pool.iter().copied().filter(|p| animation_allowed(&clip,*p)).collect();
+            assert_eq!(allowed, pool[..2]);
+            assert!(!animation_allowed(&clip,pool[2]));
+        }
     }
 
     #[test]

@@ -74,6 +74,42 @@ pub fn generated_ownership(clip: &Clip) -> Option<GeneratedOwnership> {
     saved_ownership(clip).filter(|saved| saved.keys == clip.keys)
 }
 
+/// Canvas layout and Canvas Motion are mutually exclusive; Basic/Physics
+/// still use the clip's ordinary content transform inside a fixed aperture.
+/// Recognize the persisted preset marker as well as the current viewport so
+/// older projects retain the same priority even before a layout is reapplied.
+pub fn has_canvas_preset(clip: &Clip) -> bool {
+    clip.extra.contains_key("canvasPreset")
+        || clip.extra.contains_key(crate::canvas_viewport::KEY)
+}
+
+/// Stable catalogue IDs, not UI row indexes or mutable style, identify family.
+pub fn is_canvas_animation(preset: &str) -> bool {
+    preset.starts_with("canvas-motion.")
+}
+
+/// A manually changed generated Canvas animation must not be silently erased.
+/// Retain the saved record even if its current key signature no longer matches.
+pub fn edited_canvas_animation(clip: &Clip) -> bool {
+    saved_ownership(clip).is_some_and(|saved|
+        is_canvas_animation(&saved.preset) && saved.keys != clip.keys)
+}
+
+/// Remove only recognized Canvas Animation; preserve Basic/Physics and authored
+/// motion. This is called inside the staged Canvas preset transaction.
+pub fn clear_canvas_animation_for_preset(clip: &mut Clip) -> Result<bool, crate::CommandError> {
+    if edited_canvas_animation(clip) {
+        return Err(crate::CommandError::UnsafeEdit {
+            reason: "Canvas Animation has manually edited keyframes; resolve those edits before applying a Canvas Preset.".into(),
+        });
+    }
+    if generated_ownership(clip).is_some_and(|saved| is_canvas_animation(&saved.preset)) {
+        let expected = clip.keys.clone();
+        return clear_generated(clip, &expected);
+    }
+    Ok(false)
+}
+
 /// Rewindowing owned keys is an editorial operation, not manual key authoring.
 pub(crate) fn refresh_ownership(clip: &mut Clip, mut saved: GeneratedOwnership) {
     saved.keys = clip.keys.clone();
@@ -92,6 +128,13 @@ pub fn replace_generated(
     canvas_style: Option<(f64, Option<crate::model::ClipMask>)>,
 ) -> Result<bool, crate::CommandError> {
     use crate::model::Background;
+    if (is_canvas_animation(&preset) || canvas_style.is_some())
+        && (has_canvas_preset(clip) || clip.extra.contains_key("canvasOwner"))
+    {
+        return Err(crate::CommandError::UnsafeEdit {
+            reason: "Canvas Animation cannot be applied to media with an active Canvas Preset.".into(),
+        });
+    }
     if clip.keys != expected_keys
         || !clip.kind.is_visual()
         || keys.is_empty()
@@ -661,6 +704,30 @@ mod tests {
         // Include JSON text IO, rather than only cloning in-memory Values.
         let text = serde_json::to_string(&to_document(&settings, editor.project())).unwrap();
         Editor::from_document(&serde_json::from_str(&text).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn canvas_preset_overwrite_round_trips_and_undo_restores_canvas_animation() {
+        use crate::canvas_preset::Config;
+        let mut editor = owned_fixture();
+        editor.apply(generated_command(&editor,"c1",true,0.6,0.1)).unwrap();
+        let before=editor.project().active().clip("c1").unwrap().clone();
+        editor.apply(Command::ApplyCanvasPreset {
+            config: Config::preset(6).unwrap(), targets: vec!["c1".into()], locked_tracks:vec![]
+        }).unwrap();
+        let after=editor.project().active().clip("c1").unwrap().clone();
+        assert!(has_canvas_preset(&after));
+        assert!(after.keys.is_empty());
+        assert!(generated_ownership(&after).is_none());
+        assert!(editor.undo());
+        assert_eq!(editor.project().active().clip("c1").unwrap(),&before);
+        assert!(editor.redo());
+        assert_eq!(editor.project().active().clip("c1").unwrap(),&after);
+        let editor=reopen(&editor);
+        let clip=editor.project().active().clip("c1").unwrap();
+        assert!(has_canvas_preset(clip));
+        assert!(clip.keys.is_empty());
+        assert!(generated_ownership(clip).is_none());
     }
 
     #[test]
