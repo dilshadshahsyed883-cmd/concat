@@ -40,7 +40,10 @@ class SharedLayoutContractTests(unittest.TestCase):
         self.assertIn("Library.favourite(entry.id, on);", self.media)
         self.assertIn("auditions: false;", self.media)
         self.assertIn("root.apply-effect(id);", self.media)
-        transition = self.media.split("if root.tab == 3: VerticalLayout {", 1)[1].split("if root.tab == 4:", 1)[0]
+        # The sidebar also has a tab-3 layout. Inspect the catalogue body,
+        # identified by its transition search, rather than the first tab match.
+        transition = self.media.split('placeholder: I18n.t1("common.searchKind", I18n.t("mediaPane.transition"));', 1)[1].split("if root.tab == 4:", 1)[0]
+        self.assertIn("entries: root.catalogue-transitions;", transition)
         self.assertIn("inspect-only: true;", transition)
         self.assertNotIn("root.apply-transition(id)", transition)
         self.assertIn("Editor.library-apply-transition-scoped(LibraryFocus.selected-id", self.inspector)
