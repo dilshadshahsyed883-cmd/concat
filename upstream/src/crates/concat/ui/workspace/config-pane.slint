@@ -11,7 +11,7 @@ import { Param, ParamFormat, Check } from "../inspector/controls.slint";
 import { CanvasMotionPanel } from "canvas-motion.slint";
 import { Editor } from "../editor.slint";
 import { LibraryFocus } from "library-focus.slint";
-import { CanvasPresetPanel, CanvasPresetApplyBar } from "canvas-presets.slint";
+import { CanvasPresets, CanvasPresetPanel, CanvasPresetApplyBar, CanvasPresetClearBar } from "canvas-presets.slint";
 import { MediaLayoutPanel, MediaLayoutApplyBar, MediaTargetControls } from "media-layout.slint";
 import { ParticleBulk, ParticleEffectsPanel, ParticleApplyBar, EffectSettings } from "particle-effects.slint";
 import { CaptionPresetPreview, CaptionPresetPreviewPanel, CaptionPresetApplyBar } from "caption-preset-preview.slint";
@@ -741,12 +741,34 @@ export component ConfigPane inherits Rectangle {
                             wrap: word-wrap;
                         }
                     }
-                    if LibraryFocus.page == 8: VerticalLayout {
+                    if LibraryFocus.page == 8 && CanvasPresets.selected != 0: VerticalLayout {
                         spacing: 8px;
                         MediaTargetControls { }
                         CanvasPresetPanel {
                             images: Keyframes.animation-images;
                             videos: Keyframes.animation-videos;
+                        }
+                    }
+                    if LibraryFocus.page == 8 && CanvasPresets.selected == 0: VerticalLayout {
+                        spacing: 8px;
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Check { checked: Keyframes.animation-images; toggled(on) => { Keyframes.animation-images = on; } }
+                            Text { text: "Images"; color: Theme.fg; vertical-alignment: center; }
+                            Check { checked: Keyframes.animation-videos; toggled(on) => { Keyframes.animation-videos = on; } }
+                            Text { text: "Video Clips"; color: Theme.fg; vertical-alignment: center; }
+                        }
+                        Text {
+                            text: "None / No Canvas Preset";
+                            color: Theme.fg;
+                            font-size: Theme.fs-lg;
+                            font-weight: Theme.weight-title;
+                        }
+                        Text {
+                            text: "Selecting None does not change the timeline. Use the Clear buttons below to remove applied Canvas Presets. Customized or locked layers are protected.";
+                            color: Theme.fg-muted;
+                            font-size: Theme.fs-sm;
+                            wrap: word-wrap;
                         }
                     }
                     if LibraryFocus.page == 2 && GpuCompatibility.enabled: MediaTargetControls { }
@@ -930,7 +952,11 @@ export component ConfigPane inherits Rectangle {
                         label: "Apply Randomly";
                         clicked => { Editor.library-apply-random-effects(); }
                     }
-            if LibraryFocus.page == 8: CanvasPresetApplyBar {
+            if LibraryFocus.page == 8 && CanvasPresets.selected != 0: CanvasPresetApplyBar {
+                images: Keyframes.animation-images;
+                videos: Keyframes.animation-videos;
+            }
+            if LibraryFocus.page == 8 && CanvasPresets.selected == 0: CanvasPresetClearBar {
                 images: Keyframes.animation-images;
                 videos: Keyframes.animation-videos;
             }

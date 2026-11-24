@@ -159,7 +159,7 @@ fn canvas_modify(app: &App, edit: impl FnOnce(&mut concat_project::canvas_preset
         return; // Keep invalid Advanced JSON drafts intact.
     };
     edit(&mut config);
-    if config.validate().is_ok() { canvas_publish(app, &config); }
+    if config.validate().is_ok() && concat_project::canvas_preset::ACTIVE_PRESETS.contains(&config.preset) { canvas_publish(app, &config); }
 }
 
 /// Opens this run's log file and makes it where the app writes things down.
@@ -900,6 +900,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     }));
     app.global::<CanvasPresets>().on_choose(move |index| {
         Shell::with(|_, app| {
+            if !concat_project::canvas_preset::ACTIVE_PRESETS.contains(&(index as u32)) { return; }
             if let Some(config) = concat_project::canvas_preset::Config::preset(index as u32) {
                 canvas_publish(&app, &config);
             }
@@ -956,10 +957,15 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         Shell::with(|_, app| {
             let panel = app.global::<CanvasPresets>();
             if let Ok(config) = concat_project::canvas_preset::Config::from_json(&panel.get_profile()) {
-                canvas_publish(&app, &config);
+                if concat_project::canvas_preset::ACTIVE_PRESETS.contains(&config.preset) {
+                    canvas_publish(&app, &config);
+                }
             }
         });
     });
+    app.global::<CanvasPresets>().on_clear(on_window!(|state,selected:bool,images:bool,videos:bool| {
+        state.clear_canvas_presets(selected,images,videos);
+    }));
     app.global::<CanvasPresets>().on_random_favourites(on_window!(|state,images:bool,videos:bool,selected:bool| {
         state.apply_canvas_favourites_randomly(images,videos,selected);
     }));
@@ -969,7 +975,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     app.global::<CanvasPresets>().on_toggle_favourite(move |preset| {
         Shell::with(|shell, app| {
             shell.studio.borrow_mut().toggle_canvas_preset_favourite(preset);
-            let stars = (1..=8).map(|index|
+            let stars = concat_project::canvas_preset::ACTIVE_PRESETS.map(|index|
                 shell.studio.borrow().prefs.canvas_preset_favourites
                     .iter().any(|held| held == &format!("canvas:{index}"))
             ).collect::<Vec<_>>();
@@ -983,6 +989,10 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             match concat_project::canvas_preset::Config::from_json(profile.as_str()) {
                 Ok(config) => {
                     let mut studio = shell.studio.borrow_mut();
+                    if !concat_project::canvas_preset::ACTIVE_PRESETS.contains(&config.preset) {
+                        app.global::<CanvasPresets>().set_default_status("Retired Canvas presets cannot be saved as defaults.".into());
+                        return;
+                    }
                     studio.prefs.canvas_default = serde_json::to_string(&config).ok();
                     studio.prefs.save(&studio.host.dirs);
                     app.global::<CanvasPresets>().set_default_status(
@@ -1011,9 +1021,10 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     Shell::with(|shell, app| {
         let remembered = shell.studio.borrow().prefs.canvas_default.as_deref()
             .and_then(|json| concat_project::canvas_preset::Config::from_json(json).ok())
+            .filter(|config| concat_project::canvas_preset::ACTIVE_PRESETS.contains(&config.preset))
             .unwrap_or_else(|| concat_project::canvas_preset::Config::preset(1)
                 .expect("sports canvas default"));
-        let stars = (1..=8)
+        let stars = concat_project::canvas_preset::ACTIVE_PRESETS
             .map(|index| shell.studio.borrow().prefs.canvas_preset_favourites
                 .iter().any(|held| held == &format!("canvas:{index}")))
             .collect::<Vec<_>>();

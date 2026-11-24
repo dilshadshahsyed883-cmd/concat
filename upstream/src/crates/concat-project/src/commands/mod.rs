@@ -579,6 +579,8 @@ pub enum Command {
     ApplyCanvasPreset { config: crate::canvas_preset::Config, targets: Vec<String>, locked_tracks: Vec<String> },
     /// Apply to exactly the targets whose authored conflicts the user confirmed.
     ApplyCanvasPresetConfirmed { config: crate::canvas_preset::Config, targets: Vec<String>, locked_tracks: Vec<String> },
+    /// Clear only Canvas-owned layout data and companions from eligible media.
+    ClearCanvasPresets { targets: Vec<String>, locked_tracks: Vec<String> },
     /// Protect locked Canvas companion tracks, including implicit lifecycle changes.
     ProtectCanvasTracks { timeline_id: String, locked_tracks: Vec<String>, command: Box<Command> },
     /// Import exact returned words once, replacing only the matching generated captions.
@@ -1288,6 +1290,8 @@ fn apply_inner(project: &mut Project, mint: &mut IdMint, command: Command) -> Re
             *project = staged;
             Ok(outcome)
         }
+        Command::ClearCanvasPresets { targets, locked_tracks } =>
+            crate::canvas_preset::clear(project, targets, locked_tracks),
         Command::ApplyCanvasPresetConfirmed {config,targets,locked_tracks} =>
             crate::canvas_preset::apply_with_confirmation(project,mint,config,targets,locked_tracks,true),
         Command::DragClips {request} => crate::drag_edit::apply(project,mint,request),

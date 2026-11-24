@@ -4104,6 +4104,10 @@ impl Studio {
         let config = match concat_project::canvas_preset::Config::from_json(json) {
             Ok(config) => config, Err(e) => { self.notify(&e, true); return; }
         };
+        if !concat_project::canvas_preset::ACTIVE_PRESETS.contains(&config.preset) {
+            self.notify("This Canvas preset is retired. Choose one of the six available presets.",true);
+            return;
+        }
         let targets: Vec<String> = self.timeline().clips.iter().filter(|c|
             ((c.kind==model::ClipKind::Image && images)||(c.kind==model::ClipKind::Video && videos)) && !c.extra.contains_key("canvasOwner")
             && !self.locked(&c.track_id)
@@ -4114,7 +4118,7 @@ impl Studio {
 
     pub fn apply_canvas_favourites_randomly(&mut self, images:bool,videos:bool,selected_only:bool) {
         if !images && !videos {self.notify("Choose Images or Video Clips first.",true);return;}
-        let pool:Vec<_>=(1..=8).filter(|preset|self.prefs.canvas_preset_favourites.contains(&format!("canvas:{preset}")))
+        let pool:Vec<_>=concat_project::canvas_preset::ACTIVE_PRESETS.filter(|preset|self.prefs.canvas_preset_favourites.contains(&format!("canvas:{preset}")))
             .filter_map(concat_project::canvas_preset::Config::preset).collect();
         if pool.is_empty() {self.notify("Star at least one Canvas preset first.",true);return;}
         let mut draw=bulk_presets::fresh_draw();
@@ -4126,6 +4130,32 @@ impl Studio {
             .map(|c|(pool[draw(pool.len())].clone(),vec![c.id.clone()])).collect();
         if plans.is_empty() {self.notify("No eligible media in the chosen scope.",true);return;}
         self.stage_canvas_plans(plans);
+    }
+
+    pub fn clear_canvas_presets(&mut self, selected_only:bool, images:bool, videos:bool) {
+        if !images && !videos { self.notify("Choose Images or Video Clips first.",true);return; }
+        self.flush_commit();
+        let locked_tracks:Vec<_>=self.timeline().tracks.iter().filter(|t|self.locked(&t.id)).map(|t|t.id.clone()).collect();
+        let mut targets=Vec::new();
+        let mut skipped=0;
+        for clip in &self.timeline().clips {
+            if !((clip.kind==model::ClipKind::Image && images)||(clip.kind==model::ClipKind::Video && videos))
+                || clip.extra.contains_key("canvasOwner")
+                || (selected_only && !self.selection.contains(&clip.id))
+                || !concat_project::motion_preset::has_canvas_preset(clip) {continue;}
+            if concat_project::canvas_preset::can_clear(self.project(),clip,&locked_tracks) {
+                targets.push(clip.id.clone());
+            } else {skipped+=1;}
+        }
+        if targets.is_empty() {
+            self.notify(&format!("No eligible Canvas Presets to clear. {skipped} protected or missing restoration data."),true);
+            return;
+        }
+        let count=targets.len(); let revision=self.revision;
+        self.apply(Command::ClearCanvasPresets {targets,locked_tracks});
+        if self.revision!=revision {
+            self.notify(&format!("Canvas Presets: {count} cleared, {skipped} skipped (protected layers or missing restoration data)."),false);
+        }
     }
 
     fn stage_canvas_plans(&mut self, plans:Vec<(concat_project::canvas_preset::Config,Vec<String>)>) {
@@ -9381,7 +9411,7 @@ impl Studio {
             }
         };
         let editor = app.global::<Editor>();
-        let canvas_stars = (1..=8)
+        let canvas_stars = concat_project::canvas_preset::ACTIVE_PRESETS
             .map(|id| format!("canvas:{id}"))
             .map(|id| self.prefs.canvas_preset_favourites.iter().any(|held| held == &id))
             .collect::<Vec<_>>();
@@ -10915,7 +10945,7 @@ impl Studio {
 
     /// Toggle a stable Canvas preset preference, never a project edit.
     pub fn toggle_canvas_preset_favourite(&mut self, preset: i32) {
-        if !(1..=8).contains(&preset) { return; }
+        if !(1..=6).contains(&preset) { return; }
         let id = format!("canvas:{preset}");
         if self.prefs.canvas_preset_favourites.iter().any(|key| key == &id) {
             self.prefs.canvas_preset_favourites.retain(|key| key != &id);

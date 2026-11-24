@@ -39,6 +39,7 @@ export global CanvasPresets {
     callback choose(preset: int);
     callback apply(profile: string, all: bool, images: bool, videos: bool);
     callback random-favourites(images: bool, videos: bool, selected: bool);
+    callback clear(selected: bool, images: bool, videos: bool);
     callback save-default(profile: string);
     callback reset-default();
     in-out property <string> default-status;
@@ -55,8 +56,7 @@ export component CanvasPresetPanel inherits VerticalLayout {
             : CanvasPresets.selected == 3 ? "Adaptive Blur (Blurred Fill)"
             : CanvasPresets.selected == 4 ? "Gallery Mat"
             : CanvasPresets.selected == 5 ? "Floating Card"
-            : CanvasPresets.selected == 6 ? "Photo Print"
-            : CanvasPresets.selected == 7 ? "Cinema Frame" : "Editorial Panel";
+            : "Photo Print";
         color: Theme.fg-muted; font-size: Theme.fs-sm;
     }
     VerticalLayout {
@@ -143,8 +143,26 @@ export component CanvasPresetApplyBar inherits VerticalLayout {
         clicked => { CanvasPresets.random-favourites(root.images,root.videos,Keyframes.animation-scope == 1); } }
 }
 
+export component CanvasPresetClearBar inherits VerticalLayout {
+    in property <bool> images: true;
+    in property <bool> videos: true;
+    vertical-stretch: 0;
+    spacing: 6px;
+    padding: 8px;
+    Button {
+        label: "Clear Selected Canvas Presets";
+        enabled: root.images || root.videos;
+        clicked => { CanvasPresets.clear(true, root.images, root.videos); }
+    }
+    Button {
+        label: "Clear All Eligible Canvas Presets";
+        enabled: root.images || root.videos;
+        clicked => { CanvasPresets.clear(false, root.images, root.videos); }
+    }
+}
+
 export component CanvasPresetLibrary inherits VerticalLayout {
-    property <[string]> names: ["Sports Frame", "Orange Frame", "Adaptive Blur (Blurred Fill)", "Gallery Mat", "Floating Card", "Photo Print", "Cinema Frame", "Editorial Panel"];
+    property <[string]> names: ["Sports Frame", "Orange Frame", "Adaptive Blur (Blurred Fill)", "Gallery Mat", "Floating Card", "Photo Print"];
     property <bool> favourites-only: false;
     function inspect(index: int, name: string) {
         CanvasPresets.selected = index + 1;
@@ -160,11 +178,22 @@ export component CanvasPresetLibrary inherits VerticalLayout {
         label: root.favourites-only ? "★ Favorites" : "☆ Favorites";
         clicked => { root.favourites-only = !root.favourites-only; }
     }
+    Button {
+        label: CanvasPresets.selected == 0 ? "✓ None / No Canvas Preset" : "None / No Canvas Preset";
+        clicked => {
+            CanvasPresets.selected = 0;
+            LibraryFocus.page = 8;
+            LibraryFocus.selected-id = "__none_canvas_preset__";
+            LibraryFocus.selected-name = "";
+            LibraryFocus.selected-category = "";
+            LibraryFocus.selected-description = "";
+        }
+    }
     if root.favourites-only
-        && !(CanvasPresets.favourites.length >= 8 &&
+        && !(CanvasPresets.favourites.length >= 6 &&
             (CanvasPresets.favourites[0] || CanvasPresets.favourites[1] || CanvasPresets.favourites[2]
             || CanvasPresets.favourites[3] || CanvasPresets.favourites[4]
-            || CanvasPresets.favourites[5] || CanvasPresets.favourites[6] || CanvasPresets.favourites[7])): Text {
+            || CanvasPresets.favourites[5])): Text {
         text: "No starred Canvas presets. Turn off Favorites to browse all presets.";
         color: Theme.fg-muted;
         font-size: Theme.fs-sm;
@@ -187,14 +216,12 @@ export component CanvasPresetLibrary inherits VerticalLayout {
                 : index == 1 ? #f49a4b
                 : index == 3 ? #e4e0d6
                 : index == 4 ? #152336
-                : index == 5 ? #25303a
-                : index == 6 ? #050505
-                : index == 7 ? #f1e7dc : #596e8f;
+                : index == 5 ? #25303a : #596e8f;
             Rectangle {
-                x: index == 7 ? 21px : index == 6 ? 3px : 8px;
-                y: index == 6 ? 12px : index == 5 ? 5px : 7px;
-                width: index == 7 ? 29px : index == 6 ? 48px : 38px;
-                height: index == 6 ? 22px : index == 5 ? 29px : 32px;
+                x: 8px;
+                y: index == 5 ? 5px : 7px;
+                width: 38px;
+                height: index == 5 ? 29px : 32px;
                 background: #8899ac;
                 border-radius: index == 4 ? 5px : 1px;
                 border-width: index < 2 ? 2px : 0px;
@@ -219,8 +246,7 @@ export component CanvasPresetLibrary inherits VerticalLayout {
                 : index == 2 ? "Same-source blur"
                 : index == 3 ? "Balanced picture mat"
                 : index == 4 ? "Rounded elevated card"
-                : index == 5 ? "Tilted photo mat"
-                : index == 6 ? "Letterbox composition" : "Open editorial space";
+                : "Tilted photo mat";
             color: Theme.fg-muted;
             font-size: Theme.fs-sm;
         }
