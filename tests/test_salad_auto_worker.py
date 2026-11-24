@@ -557,6 +557,23 @@ class LifecycleTests(unittest.TestCase):
         health.assert_called_once_with('GET', '/health/ready')
         self.assertTrue(self.manager.config()['enabled'])
 
+    def test_active_submitted_render_allows_ready_dispatch_during_intake(self):
+        self.job('Rendering')
+        self.job('Retrying Drive', index=2)
+        with self.manager.connection() as con:
+            con.execute("UPDATE production_jobs SET submitted_at=1000 WHERE id=1")
+            self.assertTrue(self.manager.salad_worker.can_dispatch_during_intake(con))
+        self.assertTrue(self.check(1200))
+        self.assertEqual(self.requests, [])
+
+    def test_ready_worker_not_restarted_during_pending_intake(self):
+        self.instance.update(state='running', ready=True)
+        self.assertTrue(self.check())
+        self.job('Retrying Drive')
+        self.group['current_state']['status'] = 'stopped'
+        self.assertFalse(self.check(1005))
+        self.assertEqual(self.posts(), [])
+
     def test_active_render_never_reallocates_or_starts(self):
         self.job('Rendering')
         self.assertTrue(self.check(1200))

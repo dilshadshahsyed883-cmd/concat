@@ -597,13 +597,14 @@ class ProductionQueue:
             row = None
             pending_intake = con.execute("""SELECT 1 FROM production_jobs
                 WHERE state IN ('Queued','Downloading','Verifying ZIP','Retrying Drive') LIMIT 1""").fetchone()
-            if (not manual_pending and not pending_intake and len(active) < limit
+            intake_blocks = bool(pending_intake and not self.media.salad_worker.can_dispatch_during_intake(con))
+            if (not manual_pending and not intake_blocks and len(active) < limit
                     and self.media.get(con, "production_queue") == "running"):
                 ready = con.execute("SELECT 1 FROM production_jobs WHERE state='Ready for GPU' LIMIT 1").fetchone()
                 permitted = not ready or self.media.salad_worker.ensure_ready(con)
             else:
                 permitted = False
-                if pending_intake and self.media.get(con, "auto_start") == "1":
+                if intake_blocks and self.media.get(con, "auto_start") == "1":
                     self.media.put(con, "salad_worker_status", "waiting_for_drive")
             if permitted and len(active) < limit and self.media.get(con, "production_queue") == "running":
                 row = con.execute("SELECT * FROM production_jobs WHERE state='Ready for GPU' ORDER BY id LIMIT 1").fetchone()
@@ -733,7 +734,8 @@ class ProductionQueue:
                 deliveries = sum(r["state"] == "Delivering" for r in active)
                 # At most one extra queued/transfer job beyond render slots.
                 # One preloaded job is sufficient; do not fill GPU storage.
-                if (not pending_intake and len(outstanding) < limit + 1
+                intake_blocks = bool(pending_intake and not self.media.salad_worker.can_dispatch_during_intake(con))
+                if (not intake_blocks and len(outstanding) < limit + 1
                         and not any(r["state"] == "GPU Ready" for r in active)
                         and deliveries < MAX_DELIVERY_BACKLOG):
                     candidate = con.execute("SELECT * FROM production_jobs WHERE state='Ready for GPU' ORDER BY id LIMIT 1").fetchone()

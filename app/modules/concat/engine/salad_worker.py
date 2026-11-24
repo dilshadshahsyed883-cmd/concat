@@ -134,6 +134,17 @@ class SaladAutoWorker:
             if not -10 <= now - timestamp <= 15:
                 raise ValueError('Stale Salad response')
 
+    def can_dispatch_during_intake(self, con):
+        """Only reuse an existing worker; do not start one during Drive intake."""
+        m = self.manager
+        if m.get(con, 'salad_idle_status') in ('stopped', 'stop_requested', 'stop_pending_confirmation'):
+            return False
+        if con.execute("SELECT 1 FROM production_jobs WHERE submitted_at>0 AND state IN ('GPU Ready','Rendering','Delivering') LIMIT 1").fetchone():
+            return True
+        record = self._record(con)
+        return (m.get(con, 'salad_worker_status') == 'ready'
+                and record.get('group') == m.salad_group_path(con))
+
     def ensure_ready(self, con, *, manual=False):
         """Return permission for a *new* dispatch; never touch active renders."""
         m, now = self.manager, time.time()
@@ -143,7 +154,8 @@ class SaladAutoWorker:
         def status(value):
             self._save(con, record, value)
             return False
-        if con.execute("SELECT 1 FROM production_jobs WHERE state IN (?,?,?,?) LIMIT 1", INTAKE).fetchone():
+        pending_intake = con.execute("SELECT 1 FROM production_jobs WHERE state IN (?,?,?,?) LIMIT 1", INTAKE).fetchone()
+        if pending_intake and (manual or not self.can_dispatch_during_intake(con)):
             return status('waiting_for_drive')
         # Recover active work through the established worker job protocol instead.
         if con.execute("SELECT 1 FROM production_jobs WHERE state IN (?,?,?,?,?) LIMIT 1", ACTIVE).fetchone():
@@ -167,6 +179,8 @@ class SaladAutoWorker:
             if group.get('autostart_policy') is not False:
                 return status('disable_salad_autostart')
             if state == 'stopped' and not group.get('pending_change'):
+                if pending_intake:
+                    return status('waiting_for_drive')
                 if record.get('start_requested'):
                     # An accepted/ambiguous start is reconciled by GET, never
                     # repeatedly POSTed while the same stopped state is visible.
@@ -216,6 +230,8 @@ class SaladAutoWorker:
                 m.put(con, 'salad_stop_record', '')
                 self._save(con, record, 'ready')
                 return True
+            if pending_intake:
+                return status('waiting_for_drive')
             if record.get('health_passed'):
                 return status('health_check_passed')
             if stage != 'downloading':
