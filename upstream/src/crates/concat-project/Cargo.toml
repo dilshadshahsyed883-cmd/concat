@@ -12,7 +12,7 @@ concat-core.workspace = true
 # `rc`: timelines and clips sit behind Arc so an undo snapshot shares what
 # a command did not touch; the document still reads and writes them plain.
 serde = { version = "1", features = ["derive", "rc"] }
-serde_json.workspace = true
+serde_json = { workspace = true, features = ["float_roundtrip"] }
 thiserror.workspace = true
 schemars = { workspace = true, optional = true }
 

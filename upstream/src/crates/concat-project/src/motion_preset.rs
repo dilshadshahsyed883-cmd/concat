@@ -724,6 +724,31 @@ mod tests {
     }
 
     #[test]
+    fn parameterized_save_reopen_and_undo_redo_preserve_owned_canvas_motion() {
+        let mut editor = owned_fixture();
+        let mut command = generated_command(&editor, "c1", true, 0.6, 0.1);
+        if let Command::ApplyGeneratedMotion { recipe, .. } = &mut command {
+            *recipe = Some(crate::motion_wire::recipe(FRAME, crate::canvas_motion::CanvasMotionControls::default()));
+        }
+        let settings = DocumentSettings { name: "motion".into(), width: 1920,
+            height: 1080, rate_num: 30, rate_den: 1 };
+        let baseline = editor.to_document(&settings);
+        editor.apply(command).unwrap();
+        let original = editor.project().active().clip("c1").unwrap().clone();
+        let saved = editor.to_document(&settings);
+        assert_eq!(saved["version"], 2);
+        assert!(saved["timelines"][0]["clips"][0].get("keys").is_none());
+        let loaded = reopen(&editor);
+        let restored = loaded.project().active().clip("c1").unwrap();
+        assert_eq!(restored.keys, original.keys);
+        assert!(generated_ownership(restored).is_some());
+        assert!(editor.undo());
+        assert_eq!(editor.to_document(&settings), baseline);
+        assert!(editor.redo());
+        assert_eq!(editor.to_document(&settings), saved);
+    }
+
+    #[test]
     fn canvas_preset_overwrite_round_trips_and_undo_restores_canvas_animation() {
         use crate::canvas_preset::Config;
         let mut editor = owned_fixture();

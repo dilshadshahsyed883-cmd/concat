@@ -23,9 +23,9 @@
 //! degrades to something openable. Nothing short of a document that is not
 //! an object, or that has no timeline in it, fails the load.
 //!
-//! Writing is the derives again, plus a mirror of the active timeline in
-//! the flat `tracks` / `clips` / `video` fields that builds from before
-//! multiple timelines read, so a file saved here still opens there.
+//! Writing preserves the active timeline mirror for legacy native-key
+//! documents. Version 2 stores only exactly reproducible generated motion
+//! as recipes; older builds refuse that version rather than losing motion.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -143,7 +143,7 @@ fn migrate(document: &Value) -> Option<Map<String, Value>> {
     }
     let mut expanded = document.clone();
     crate::motion_wire::expand_document(&mut expanded, true).ok()?;
-    let mut document = expanded.as_object()?.clone();
+    let Value::Object(mut document) = expanded else { return None; };
     for migration in MIGRATIONS {
         (migration.apply)(&mut document);
     }

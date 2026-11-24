@@ -15,7 +15,7 @@ ENV CONCAT_SOURCE_SHA=$SOURCE_SHA
 LABEL org.opencontainers.image.revision=$SOURCE_SHA
 # Native Concat project schema pin; Rust/Slint is compiled ONLY for Windows editor.
 LABEL org.opencontainers.image.concat-upstream-commit="79116bd0f9a103c633d888603ad27890e929dbdc"
-LABEL org.opencontainers.image.concat-project-schema="1"
+LABEL org.opencontainers.image.concat-project-schema="1,2"
 LABEL org.opencontainers.image.concat-renderer="cuda-hybrid-v1"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -52,7 +52,8 @@ RUN ffmpeg -hide_banner -decoders 2>/dev/null | grep -q mjpeg_cuvid \
     && ffmpeg -hide_banner -decoders 2>/dev/null | grep -q h264_cuvid \
     && ffmpeg -hide_banner -filters 2>/dev/null | grep -q scale_cuda \
     && ffmpeg -hide_banner -encoders 2>/dev/null | grep -q h264_nvenc \
-    && command -v ffprobe
+    && command -v ffprobe \
+    && printf '%s' '{"version":2,"timelines":[]}' | concat-motion-expand > /dev/null
 
 ENV PYTHONPATH=/opt/app
 ENV PYTHONUNBUFFERED=1
