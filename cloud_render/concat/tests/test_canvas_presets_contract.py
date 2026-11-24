@@ -49,7 +49,7 @@ class CanvasPresetContracts(unittest.TestCase):
         files=list(Path(directory).glob('canvas-*.json'))
         self.assertEqual({p.name for p in files},
                          {f"canvas-{id}-{portrait}.json"
-                          for id in (1,2,3,4,5,6,7,8,9,12,13,14,15,16,18)
+                          for id in (1,2,3,4,5,6,7,8,9,12,13,14,15,16,18,11,19,20)
                           for portrait in ("true","false")})
         for file in files:
             with self.subTest(file=file.name):
