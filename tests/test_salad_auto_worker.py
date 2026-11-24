@@ -574,6 +574,80 @@ class LifecycleTests(unittest.TestCase):
         self.assertFalse(self.check(1005))
         self.assertEqual(self.posts(), [])
 
+    def test_new_drive_intake_preserves_in_progress_worker_monitoring(self):
+        self.job('Ready for GPU')
+        queue = self.manager.production
+        queue.control('start')
+        with patch('app.modules.concat.engine.salad_worker.time.time', return_value=1000) as clock:
+            queue.tick()
+            self.assertEqual(self.status(), 'checking_download')
+            self.job('Downloading', index=2)
+            self.instance['pulling_progress'] = 1.0
+            clock.return_value = 1021
+            queue.tick()
+            self.assertEqual(self.status(), 'downloading_healthy')
+            self.instance.update(state='creating', update_time=self.stamp(1022))
+            clock.return_value = 1025
+            queue.tick()
+            self.assertEqual(self.status(), 'health_check_passed')
+            self.instance.update(state='running', ready=True, update_time=self.stamp(1026))
+            clock.return_value = 1030
+            with patch.object(queue, 'process_safe', return_value=1) as dispatch:
+                queue.tick()
+                dispatch.assert_called_once()
+            self.worker.request.assert_called_once_with('GET', '/health/ready')
+        self.assertEqual(self.posts(), [])
+        self.assertEqual(queue.snapshot()['items'][0]['state'], 'Waiting for Worker')
+        self.assertEqual(queue.snapshot()['items'][1]['state'], 'Downloading')
+
+    def test_pipeline_monitors_existing_start_during_drive_intake(self):
+        self.job('Ready for GPU')
+        queue = self.manager.production
+        queue.pipeline_enabled = True
+        queue.control('start')
+        self.group['current_state']['status'] = 'stopped'
+        with patch('app.modules.concat.engine.salad_worker.time.time', return_value=1000) as clock:
+            queue.tick()
+            self.assertEqual(len(self.posts()), 1)
+            self.job('Verifying ZIP', index=2)
+            self.group['current_state']['status'] = 'running'
+            self.instance.update(state='running', ready=True)
+            clock.return_value = 1005
+            with patch.object(queue, 'launch_transfer') as launch:
+                queue.tick()
+                launch.assert_called_once()
+            self.worker.request.assert_called_once_with('GET', '/health/ready')
+        self.assertEqual(len(self.posts()), 1)
+
+    def test_existing_slow_pull_during_intake_is_monitored_without_reallocation(self):
+        self.check(1000)
+        self.job('Retrying Drive')
+        self.assertFalse(self.check(1025))
+        self.assertEqual(self.status(), 'checking_download')
+        self.assertEqual(self.posts(), [])
+        with self.manager.connection() as con:
+            con.execute("UPDATE production_jobs SET state='Ready for GPU'")
+        self.assertFalse(self.check(1030))
+        self.assertEqual(len(self.posts()), 1)
+        self.assertTrue(self.posts()[0].endswith('/reallocate'))
+
+    def test_instance_change_is_recorded_without_claiming_restart_cause(self):
+        self.instance['pulling_progress'] = 1.0
+        self.check(1000)
+        self.job('Downloading')
+        self.instance.update(id='cb3a4591-efc3-46c0-b06a-3d820c0ec100',
+                             state='creating', update_time=self.stamp(1003))
+        self.check(1005)
+        with self.manager.connection() as con:
+            import json
+            row = con.execute("SELECT payload FROM metric_samples WHERE kind='instance_change'").fetchone()
+            payload = json.loads(row[0])
+        self.assertTrue(payload['previous_instance'].startswith(ID))
+        self.assertEqual(payload['previous_image_percent'], 100)
+        self.assertEqual(payload['cause'], 'not_reported_by_salad')
+        self.assertFalse(payload['previous_reallocation_requested'])
+        self.assertEqual(self.posts(), [])
+
     def test_active_render_never_reallocates_or_starts(self):
         self.job('Rendering')
         self.assertTrue(self.check(1200))
