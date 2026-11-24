@@ -190,6 +190,44 @@ else:
                 self.assertEqual(self.sync().status_code, 400)
                 fetch.assert_not_called()
 
+        def test_batch_preview_and_single_destination_resolution_without_queue_mutation(self):
+            self.save()
+            channels = [{"id": 7, "channel_id": "UC-TENNIS", "channel_name": "Tennis Frontline"}]
+            rows = [{"video name": "u1", "title": "Sheet title", "description": "Sheet description",
+                     "group": "Tennis", "channel": "Tennis Frontline", "visibility": "unlisted",
+                     "upload start": "2099-12-01 18:00", "timezone": "Asia/Karachi"}]
+            with patch.object(web, "tenant_fetch_sheet_csv", return_value=rows) as fetch, \
+                 patch.object(web.studio_tenants, "current_channel_ids", return_value={7}), \
+                 patch.object(web.studio_tenants, "current_groups", return_value=[{"group_name": "Tennis"}]), \
+                 patch.object(web.db, "get_channel", side_effect=lambda identity: channels[0]), \
+                 patch.object(web.db, "channel_group_names_map", return_value={7: "Tennis"}):
+                result = self.client.post(SYNC, data={"csrf_token": self.csrf},
+                                          headers={"X-Concat-Sheet-Preview": "1"})
+                self.assertEqual(result.status_code, 200, result.text)
+                item = result.json()["items"][0]
+                self.assertEqual(item["video_link"], LINK)
+                self.assertEqual(item["channel_db_id"], "7")
+                self.assertEqual(item["privacy_status"], "unlisted")
+                self.assertEqual(item["app_upload_at"], "2099-12-01T18:00")
+                self.assertEqual(item["errors"], [])
+                self.assertIn("thumbnail", item)
+                self.assertEqual(fetch.call_count, 1)
+                single = self.client.post(SYNC, data={"csrf_token": self.csrf, "concat_video_link": LINK},
+                                          headers={"X-Concat-Sheet-Preview": "1"})
+                self.assertEqual(len(single.json()["items"]), 1)
+                self.assertEqual(self.store.list(), [])
+                rows[0]["channel"] = "Someone else's channel"
+                invalid = self.client.post(SYNC, data={"csrf_token": self.csrf}, headers={"X-Concat-Sheet-Preview": "1"}).json()
+                self.assertEqual(invalid["items"][0]["channel_db_id"], "")
+                self.assertTrue(invalid["items"][0]["errors"])
+                rows.clear()
+                missing = self.client.post(SYNC, data={"csrf_token": self.csrf}, headers={"X-Concat-Sheet-Preview": "1"}).json()
+                self.assertIn("No matching", missing["items"][0]["errors"][0])
+            page = self.client.get("/concat-uploader/app?tab=add_video").text
+            self.assertIn("data-sheet-review", page)
+            self.assertIn("data-concat-add-queue", page)
+            self.assertIn("data-thumbnail-library-open", page)
+
         def test_fetch_error_and_changed_configuration_do_not_return_stale_metadata(self):
             self.save()
             with patch.object(web, "tenant_fetch_sheet_csv", side_effect=OSError("private-path-secret")):

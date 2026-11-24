@@ -76,3 +76,54 @@ def metadata_for_video(rows, video_name: str) -> dict:
     if not row["title"] or len(row["title"]) > 100 or len(row["description"]) > 5000:
         raise ValueError("Title must be 1–100 characters and description at most 5000 characters")
     return {"title": row["title"], "description": row["description"]}
+
+
+def upload_settings_for_video(rows, video_name, channels, groups):
+    """Return an editable draft and errors, resolving names only in owned inventory."""
+    import re
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    from .concat_schedule import concat_upload_at
+    def clean(row):
+        return {re.sub(r"[^a-z0-9]+", "_", str(k).strip().lower()).strip("_"):
+                str(v or "").strip() for k, v in row.items()}
+    def key(value):
+        return re.sub(r"\.mp4$", "", str(value or "").strip(), flags=re.I).casefold()
+    matches = [clean(row) for row in rows if isinstance(row, dict)
+               and key(clean(row).get("video_name")) == key(video_name)]
+    draft = {"title": "", "description": "", "group_name": "", "channel_db_id": "",
+             "channel": "", "privacy_status": "public", "app_upload_at": "",
+             "timezone_name": "Asia/Karachi"}
+    errors = []
+    if len(matches) != 1:
+        return draft, ["No matching video name in sheet" if not matches else
+                       "Duplicate video names in sheet; keep one matching row"]
+    row = matches[0]
+    draft.update(title=row.get("title", ""), description=row.get("description", ""),
+                 group_name=row.get("group", ""), channel=row.get("channel", ""),
+                 privacy_status=row.get("visibility", "").lower() or "public",
+                 app_upload_at=row.get("upload_start", "").replace(" ", "T", 1),
+                 timezone_name=row.get("timezone", "") or "Asia/Karachi")
+    try:
+        metadata_for_video(rows, video_name)
+    except ValueError as exc:
+        errors.append(str(exc))
+    group = next((g for g in groups if g.casefold() == draft["group_name"].casefold()), None)
+    if group is None:
+        errors.append("Select an available group")
+    else:
+        draft["group_name"] = group
+    candidates = [c for c in channels if draft["channel"] and
+                  draft["channel"].casefold() in {str(c[k]).casefold() for k in
+                      ("channel_name", "channel_id", "id")} and group is not None and group.casefold() in {g.casefold() for g in c["groups"]}]
+    if len(candidates) == 1:
+        draft["channel_db_id"] = str(candidates[0]["id"])
+    else:
+        errors.append("Channel missing, ambiguous or outside selected group")
+    if draft["privacy_status"] not in {"public", "unlisted", "private"}:
+        errors.append("Visibility must be public, unlisted or private")
+    try:
+        ZoneInfo(draft["timezone_name"])
+        concat_upload_at(draft["app_upload_at"], draft["timezone_name"])
+    except (ValueError, ZoneInfoNotFoundError) as exc:
+        errors.append(str(exc))
+    return draft, errors

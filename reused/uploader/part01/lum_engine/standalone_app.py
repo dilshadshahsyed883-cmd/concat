@@ -31,7 +31,7 @@ from .thumbnail_library import ThumbnailLibrary
 from .copyright_handoff import available_videos, available_folders, owner_root, owner_folder, safe_relative_folder
 from .concat_source import stage_concat_link
 from .concat_schedule import concat_upload_at
-from .concat_sheet import preview_sheet_videos, metadata_sheet_id, metadata_for_video
+from .concat_sheet import preview_sheet_videos, metadata_sheet_id, metadata_for_video, upload_settings_for_video
 from .concat_source import (parse_concat_link, ConcatSourceError,
                             list_available_concat_media)
 from .copyright_ui import schedule_pkt, grace_deadline
@@ -856,7 +856,7 @@ def concat_metadata_sheet_save(request: Request, csrf_token: str = Form(...), sh
 
 
 @app.post(route("/api/concat/metadata"))
-def concat_metadata_sync(request: Request, csrf_token: str = Form(...), concat_video_link: str = Form(...)):
+def concat_metadata_sync(request: Request, csrf_token: str = Form(...), concat_video_link: str = Form("")):
     user = current_user(request)
     require_csrf(request, csrf_token)
     if os.getenv("LUM_ENGINE_INSTANCE") != "concat":
@@ -867,7 +867,8 @@ def concat_metadata_sync(request: Request, csrf_token: str = Form(...), concat_v
         raise HTTPException(409, "Add a metadata sheet in Sheets Sync first")
     try:
         origin = os.getenv("CONCAT_PUBLIC_ORIGIN", "https://concat.scenebuilder.online")
-        job_id = parse_concat_link(concat_video_link, origin=origin)
+        preview = request.headers.get("X-Concat-Sheet-Preview") == "1"
+        job_id = parse_concat_link(concat_video_link, origin=origin) if concat_video_link or not preview else ""
         cloud_root = os.getenv("CONCAT_CLOUD_RENDER_ROOT", "")
         if not cloud_root:
             raise ConcatSourceError("Concat Media is not configured")
@@ -875,7 +876,7 @@ def concat_metadata_sync(request: Request, csrf_token: str = Form(...), concat_v
         items = list_available_concat_media(owner, cloud_root=Path(cloud_root), origin=origin,
                                            reserved_ids=ids, reserved_sha=fingerprints)
         video = next((item for item in items if item["id"] == job_id), None)
-        if not video:
+        if job_id and not video:
             raise ValueError("Selected video is no longer available in your Concat Media; refresh the list")
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -885,6 +886,31 @@ def concat_metadata_sync(request: Request, csrf_token: str = Form(...), concat_v
         rows = tenant_fetch_sheet_csv(sheet_id, None)
     except Exception as exc:
         raise HTTPException(502, "Unable to read metadata sheet; check sharing and retry Sync Sheet") from exc
+    if preview:
+        if store.concat_metadata_sheet(owner) != sheet_id:
+            raise HTTPException(409, "Metadata sheet changed during sync; try again")
+        groups = [g["group_name"] for g in studio_tenants.current_groups(user)]
+        membership = db.channel_group_names_map()
+        channels = []
+        for identity in sorted(studio_tenants.current_channel_ids(user)):
+            channel = db.get_channel(identity)
+            if not channel:
+                continue
+            channels.append({"id": identity, "channel_id": channel.get("channel_id") or "",
+                             "channel_name": channel.get("channel_name") or "",
+                             "groups": [name.strip() for name in
+                                 str(membership.get(identity) or "").replace(";", ",").replace("|", ",").split(",")
+                                 if name.strip().casefold() in {g.casefold() for g in groups}]})
+        drafts = []
+        for item in ([video] if job_id else items):
+            draft, errors = upload_settings_for_video(rows, item["name"], channels, groups)
+            thumbnail, message = ThumbnailLibrary(store).match(owner, item["name"])
+            if thumbnail:
+                thumbnail["url"] = route(f"/api/concat/thumbnails/{thumbnail['id']}/file")
+            drafts.append({**draft, "video_link": item["link"], "video_name": item["name"],
+                           "errors": errors, "thumbnail": thumbnail, "thumbnail_message": message})
+        return JSONResponse({"ok": True, "items": drafts, "groups": groups, "channels": channels},
+                            headers={"Cache-Control": "no-store, private"})
     try:
         metadata = metadata_for_video(rows, video["name"])
     except ValueError as exc:
@@ -1073,6 +1099,12 @@ async def add_video(
         studio_tenants.require("channel",int(channel_db_id),user)
         if upload_instance == "concat":
             studio_tenants.require_current_channel(int(channel_db_id), user)
+            if not title.strip() or len(title) > 100 or len(description) > 5000:
+                raise ValueError("Title must be 1–100 characters and description at most 5000 characters")
+            if privacy_status not in {"public", "unlisted", "private"}:
+                raise ValueError("Visibility must be public, unlisted or private")
+            # Reject invalid schedules before staging a potentially large video.
+            concat_upload_at(app_upload_at, timezone_name)
         if upload_instance in {"copyright", "concat"}:
             # Group selection is authoritative server-side, never a client-only filter.
             membership = db.channel_group_names_map()

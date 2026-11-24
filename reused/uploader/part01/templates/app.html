@@ -149,9 +149,9 @@
       {% if engine_instance == 'concat' %}
       <div class="concat-metadata-heading">
         <h2>Video Metadata</h2>
-        <button class="lum-button secondary" type="button" data-concat-metadata-sync data-sync-url="{{ base_path }}/api/concat/metadata">Sync Sheet</button>
+        <button class="lum-button secondary" type="button" data-concat-metadata-sync data-sheet-preview data-sync-url="{{ base_path }}/api/concat/metadata">Sync Sheet</button>
       </div>
-      <p class="concat-metadata-status" data-concat-metadata-status role="status" aria-live="polite">Select a Concat Media video, then Sync Sheet to fill only title and description.</p>
+      <p class="concat-metadata-status" data-concat-metadata-status role="status" aria-live="polite">Select a video to sync its data, or leave the dropdown blank to sync all available videos. Review rows below before queueing. Manual upload remains available.</p>
       {% else %}<h2>Video Metadata</h2>{% endif %}
       <label class="lum-field"><span>Title</span><input name="title" maxlength="100" required placeholder="Video title" {% if engine_instance == 'concat' %}value="{{ concat_title_prefill|e }}"{% endif %}></label>
       <label class="lum-field"><span>Description</span><textarea name="description" maxlength="5000" rows="5"></textarea></label>
@@ -164,6 +164,17 @@
       {% if engine_instance == 'concat' %}<p data-concat-queue-status role="status" aria-live="polite"></p>{% endif %}
       <button class="lum-button primary" type="submit" {% if engine_instance == 'concat' %}data-concat-add-queue{% endif %}>+ Add Video to Queue</button>
     </section>
+    {% if engine_instance == 'concat' %}
+    <section class="lum-card lum-span-2 concat-sheet-review" data-sheet-review hidden aria-label="Sheet sync preview">
+      <div class="lum-card-head"><div><h2>Review before queue</h2><p>Edit or remove rows, then add selected valid videos. Manual upload above remains available.</p></div><span data-sheet-summary role="status"></span></div>
+      <div class="concat-sheet-table-wrap" tabindex="0" aria-label="Upload draft rows">
+        <table><thead><tr><th>Select</th><th>Video</th><th>Title / Description</th><th>Group</th><th>Channel</th><th>Visibility</th><th>Upload start / Timezone</th><th>Thumbnail</th><th>Validation</th><th>Actions</th></tr></thead><tbody></tbody></table>
+      </div>
+      <p data-sheet-queue-status role="status" aria-live="polite"></p>
+      <div class="lum-row"><button type="button" class="lum-button secondary" data-sheet-clear>Clear preview</button><button type="button" class="lum-button primary" data-sheet-add disabled>Add videos to Queue</button></div>
+      <p>Queue entries become eligible after five minutes unless paused. Scheduled uploads also wait until their start time.</p>
+    </section>
+    {% endif %}
   </form>
   {# Selector runs from copyright_video_picker.js. This form must not depend on inline scripts. #}
   {% else %}
