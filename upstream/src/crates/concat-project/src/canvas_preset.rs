@@ -1033,6 +1033,88 @@ pub fn apply_with_confirmation(project: &mut Project, mint: &mut IdMint, config:
     })
 }
 
+
+/// Catalogue retirement is an editor policy, not a change to legacy decoding.
+pub const ACTIVE_PRESETS: std::ops::RangeInclusive<u32> = 1..=6;
+
+/// Clear only known Canvas-owned layout data. A customized or protected
+/// companion cannot be silently discarded. The old snapshot is used solely
+/// for channels originally replaced by the layout, never as a full clip.
+pub fn can_clear(project: &Project, clip: &Clip, locked: &[String]) -> bool {
+    if !matches!(clip.kind, ClipKind::Image | ClipKind::Video)
+        || clip.extra.contains_key("canvasOwner")
+        || !crate::motion_preset::has_canvas_preset(clip)
+        || locked.contains(&clip.track_id)
+        || !project.active().tracks.iter().any(|t| t.id == clip.track_id && t.visible)
+        || clip.extra.get("canvasOriginal").cloned()
+            .and_then(|v| serde_json::from_value::<Clip>(v).ok()).is_none()
+    { return false; }
+    !project.active().clips.iter().any(|piece|
+        piece.extra.get("canvasOwner") == Some(&json!(&clip.id))
+            && (locked.contains(&piece.track_id)
+                || !project.active().tracks.iter().any(|t| t.id == piece.track_id && t.visible)
+                || (!untouched_companion(piece) && !unedited_legacy_headline(piece,clip))))
+}
+
+pub fn clear(project: &mut Project, targets: Vec<String>, locked: Vec<String>) -> Result<Outcome, CommandError> {
+    let mut staged = project.clone();
+    let mut changed = false;
+    let mut affected_lanes = std::collections::HashSet::new();
+    for id in targets {
+        let Some(original) = staged.active().clip(&id).cloned() else { continue; };
+        if !can_clear(&staged, &original, &locked) { continue; }
+        let base: Clip = serde_json::from_value(original.extra["canvasOriginal"].clone())
+            .map_err(|_| error("Canvas original snapshot is invalid"))?;
+        // Legacy layouts wrote placement into ordinary transform channels.
+        // Restore only unchanged generated values, and never keyed channels.
+        let legacy = if !original.extra.contains_key(crate::canvas_viewport::KEY) {
+            original.extra.get("canvasPreset").cloned()
+                .and_then(|v| serde_json::from_value::<Config>(v).ok())
+                .and_then(|cfg| {
+                    let media = staged.media_by_id(&original.media_id)?;
+                    let sw = f64::from(media.width?);
+                    let sh = f64::from(media.height?);
+                    let w = f64::from(staged.active().video.width);
+                    let h = f64::from(staged.active().video.height);
+                    if sw <= 0.0 || sh <= 0.0 || w <= 0.0 || h <= 0.0 {return None;}
+                    let fit = (w/sw).min(h/sh);
+                    Some(((cfg.foreground.width*w/(sw*fit)).min(cfg.foreground.height*h/(sh*fit)),
+                        cfg.foreground.x+cfg.foreground.width/2.0-0.5,
+                        cfg.foreground.y+cfg.foreground.height/2.0-0.5, cfg))
+                })
+        } else { None };
+        let restore_mask = original.extra.get(FOREGROUND_MASK)
+            .map_or_else(|| !authored_mask(&staged,&original), |saved| saved == &json!(original.mask));
+        let foreground = staged.active_mut().clip_mut(&id).ok_or(CommandError::MediaGone)?;
+        if foreground.background == Some(Background::None) {
+            foreground.background = base.background.clone();
+        }
+        if restore_mask { foreground.mask = base.mask.clone(); }
+        if let Some((scale,x,y,cfg)) = legacy {
+            use crate::model::KeyProperty;
+            if !foreground.is_keyed(KeyProperty::Scale) && (foreground.scale-scale).abs()<1e-9 {foreground.scale=base.scale;}
+            if !foreground.is_keyed(KeyProperty::OffsetX) && (foreground.offset_x-x).abs()<1e-9 {foreground.offset_x=base.offset_x;}
+            if !foreground.is_keyed(KeyProperty::OffsetY) && (foreground.offset_y-y).abs()<1e-9 {foreground.offset_y=base.offset_y;}
+            if cfg.preset>=4 && !foreground.is_keyed(KeyProperty::Rotation) && (foreground.rotation-cfg.rotation).abs()<1e-9 {foreground.rotation=base.rotation;}
+        }
+        for key in ["canvasPreset", crate::canvas_viewport::KEY, "canvasOriginal", FOREGROUND_MASK] {
+            foreground.extra.remove(key);
+        }
+        staged.active_mut().clips.retain(|piece| {
+            if piece.extra.get("canvasOwner") == Some(&json!(&id)) {
+                affected_lanes.insert(piece.track_id.clone());
+                false
+            } else {true}
+        });
+        changed=true;
+    }
+    let occupied: std::collections::HashSet<_> = staged.active().clips.iter().map(|c| c.track_id.clone()).collect();
+    staged.active_mut().tracks.retain(|t| !affected_lanes.contains(&t.id)
+        || occupied.contains(&t.id) || locked.contains(&t.id) || !t.extra.contains_key("canvasTrack"));
+    if changed { *project=staged; }
+    Ok(Outcome {created_id:None, applied:changed})
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
