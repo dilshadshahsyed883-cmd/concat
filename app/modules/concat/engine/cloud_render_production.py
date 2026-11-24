@@ -21,7 +21,7 @@ from fastapi import HTTPException
 
 LOG = logging.getLogger(__name__)
 MAX_ZIP = 4 * 1024 ** 3  # Concat GPU resumable upload limit
-MAX_MANIFEST = 64 * 1024 ** 2
+MAX_MANIFEST = 128 * 1024 ** 2
 LEGACY_MANIFEST_LIMIT = 2 * 1024 ** 2
 MODE = "cuda-hybrid-v1"
 CHUNK = 8 * 1024 ** 2
@@ -196,7 +196,7 @@ def bundle_manifest(path):
                 raise JobError("Invalid Concat media references.")
             info = members["project/" + project]
             if not 0 < info.file_size <= MAX_MANIFEST:
-                raise JobError("Concat project manifest exceeds the 64 MiB worker limit.")
+                raise JobError(f"Concat project manifest exceeds the {MAX_MANIFEST // (1024 ** 2)} MiB worker limit.")
             manifest = archive.read(info).removeprefix(b"\xef\xbb\xbf")
             media = json.loads(manifest)["media"]
             if not isinstance(media, list):
