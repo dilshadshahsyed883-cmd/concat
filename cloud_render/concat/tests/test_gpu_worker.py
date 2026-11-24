@@ -8,6 +8,8 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
+from types import SimpleNamespace
 import zipfile
 from pathlib import Path
 from cloud_render.concat.project_bundle import pack
@@ -67,6 +69,30 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(len(self.rendered), 1)
         self.assertTrue((self.worker.inputs / "abc/project.zip").exists())
         self.assertTrue((self.worker.outputs / "abc.mp4").is_file())
+
+    def test_hybrid_error_reaches_failed_job_status(self):
+        message = "CUDA hybrid render failed: Unsupported caption styling on clip gpu-caption-c295-1"
+        self.worker.renderer = lambda project, output: self.worker._hybrid_render("abc", project, output)
+
+        def fail(call, **kwargs):
+            self.assertIsNone(kwargs["stderr"])  # Live container progress remains visible.
+            error_file = Path(call[call.index("--error-file") + 1])
+            self.assertFalse(error_file.exists())  # Never reuse an earlier attempt's error.
+            error_file.write_text(message, encoding="utf-8")
+            return SimpleNamespace(returncode=1)
+
+        (self.worker.state / "abc.render.error").write_text("stale error", encoding="utf-8")
+        with patch("cloud_render.concat.gpu.worker.subprocess.run", side_effect=fail):
+            self.add()
+            self.wait()
+        self.assertEqual(self.worker.status("abc")["state"], "failed")
+        self.assertEqual(self.worker.status("abc")["error"], message)
+
+    def test_hybrid_exit_without_error_keeps_generic_fallback(self):
+        with patch("cloud_render.concat.gpu.worker.subprocess.run",
+                   return_value=SimpleNamespace(returncode=1)):
+            with self.assertRaisesRegex(RuntimeError, "exited with code 1"):
+                self.worker._hybrid_render("abc", Path("project"), Path("output"))
 
     def test_refuse_wrong_checksum_duplicate_and_bad_ids(self):
         with self.assertRaises(WorkerError):
