@@ -6,6 +6,7 @@ Unsupported edits fail closed; retained source bundles are never removed.
 """
 from __future__ import annotations
 
+import csv
 import hashlib
 import hmac
 import io
@@ -259,6 +260,35 @@ class RenderWorker:
         self.pool.shutdown(wait=True)
         self.delivery_pool.shutdown(wait=True)
 
+    @staticmethod
+    def hardware_metrics() -> dict:
+        """Read only the local GPU; unavailable readings are omitted."""
+        fields = ("gpu_utilization_percent", "vram_used_mb", "vram_total_mb",
+                  "gpu_temperature_c", "encoder_utilization_percent")
+        try:
+            result = subprocess.run(
+                ["nvidia-smi", "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu,utilization.encoder",
+                 "--format=csv,noheader,nounits"],
+                capture_output=True, text=True, timeout=3, check=True)
+            rows = list(csv.reader(result.stdout.splitlines()))
+            if len(rows) != 1 or len(rows[0]) != 6:
+                return {}
+            name, *values = (value.strip() for value in rows[0])
+            metrics = {}
+            if name and len(name) <= 120 and name.isprintable() and name != "N/A":
+                metrics["gpu_model"] = name
+            for key, raw in zip(fields, values):
+                try:
+                    value = float(raw)
+                except ValueError:
+                    continue
+                limit = 100 if key.endswith("_percent") else 200 if key == "gpu_temperature_c" else 1e9
+                if math.isfinite(value) and 0 <= value <= limit:
+                    metrics[key] = value
+            return metrics
+        except (OSError, subprocess.SubprocessError, ValueError, csv.Error):
+            return {}
+
     def concurrency_status(self) -> dict:
         with self.slots:
             states = [self._read_state(path) for path in self.state.glob("*.json")
@@ -266,6 +296,8 @@ class RenderWorker:
             return {"concurrency": self.concurrency, "max_concurrency": 2,
                     "active_renders": self.active_renders,
                     "pipeline_version": 1,
+                    "hardware_metrics_version": 1,
+                    "source_sha": os.environ.get("CONCAT_SOURCE_SHA", "unknown"),
                     "active_jobs": max(self.active_renders, sum(state in
                         ("queued", "running", "delivering", "cancellation_requested") for state in states)),
                     "queued_renders": states.count("queued"),
@@ -499,7 +531,7 @@ class RenderWorker:
                              **({"caption_state": "rendered"} if caption_result is not None else {}),
                              **self._performance_metrics(report, elapsed))
                 if self.receiver:
-                    self.delivery_pool.submit(self._retry, job, output)
+                    self.delivery_pool.submit(self._retry, job, output, time.monotonic())
         except CaptionCancelled as exc:
             self._change(job, state="cancelled", error=str(exc))
         except GpuSpeechUnavailable as exc:
@@ -597,13 +629,20 @@ class RenderWorker:
             if not target.is_file() or target.is_symlink():
                 raise WorkerError(409, "Output missing")
             self._change(job, state="delivering", error="")
-            self.delivery_pool.submit(self._retry, job, target)
+            self.delivery_pool.submit(self._retry, job, target, time.monotonic())
             return self.status(job)
 
-    def _retry(self, job: str, output: Path):
+    def _retry(self, job: str, output: Path, queued_at=None):
         try:
+            started = time.monotonic()
+            size = output.stat().st_size
             self.deliver(job, output)
-            self._change(job, state="delivered")
+            elapsed = max(time.monotonic() - started, 0.001)
+            metrics = {"delivery_bytes": size, "delivery_seconds": round(elapsed, 3),
+                       "delivery_bytes_per_second": round(size / elapsed, 2)}
+            if queued_at is not None:
+                metrics["delivery_queue_seconds"] = round(max(0, started - queued_at), 3)
+            self._change(job, state="delivered", **metrics)
             output.unlink()
             shutil.rmtree(self.inputs / job, ignore_errors=True)
         except Exception as exc:
@@ -665,6 +704,8 @@ class Handler(BaseHTTPRequestHandler):
                                     "render_contract": {"id": RENDER_CONTRACT_ID, "version": RENDER_CONTRACT_VERSION},
                                     "gpu_captions": {"request_version": 1, **FasterWhisperCuda.capability()},
                                     "max_project_manifest_bytes": MAX_PROJECT_MANIFEST_BYTES})
+        if action == "GET" and path == "/api/metrics/hardware":
+            return self._json(200, self.worker.hardware_metrics())
         if path == "/api/config/concurrency":
             if action == "GET":
                 return self._json(200, self.worker.concurrency_status())
