@@ -34,6 +34,8 @@ pub enum MaskShape {
     Heart,
     /// A five-pointed star, point up.
     Star,
+    /// Rounded-top arch, reserved for the fixed Canvas aperture.
+    Arch,
 }
 
 impl MaskShape {
@@ -56,11 +58,13 @@ impl MaskShape {
             MaskShape::Rectangle => "rectangle",
             MaskShape::Heart => "heart",
             MaskShape::Star => "star",
+            MaskShape::Arch => "arch",
         }
     }
 
     /// The shape a document names, if this build knows it.
     pub fn parse(name: &str) -> Option<MaskShape> {
+        if name.trim() == "arch" { return Some(MaskShape::Arch); }
         MaskShape::ALL
             .into_iter()
             .find(|shape| shape.name() == name.trim())
@@ -76,6 +80,7 @@ impl MaskShape {
             MaskShape::Rectangle => 4.0,
             MaskShape::Heart => 5.0,
             MaskShape::Star => 6.0,
+            MaskShape::Arch => 7.0,
         }
     }
 
@@ -237,6 +242,11 @@ pub fn distance(code: f32, p: [f32; 2], half: [f32; 2], radius: f32) -> f32 {
             heart(q) * (hx / SIDE).min(hy / MID)
         }
         6 => star(p[0] / hx, -p[1] / hy) * hx.min(hy),
+        7 => {
+            let ry = hx.min(hy);
+            let cy = -hy + ry;
+            ellipse([p[0], (p[1] - cy).min(0.0)], [hx, ry]).max(p[1] - hy)
+        }
         _ => -1.0,
     }
 }
@@ -410,6 +420,15 @@ mod tests {
         // The middle of a side is untouched by the rounding.
         assert!(distance(4.0, [0.3, 0.0], half, r).abs() < 1e-6);
         assert!((distance(4.0, [0.0, 0.0], half, r) + 0.2).abs() < 1e-6);
+    }
+
+    #[test]
+    fn architectural_arch_keeps_square_base_and_round_top() {
+        let half = [0.25, 0.4];
+        assert!(distance(7.0, [0.22, -0.36], half, 0.0) > 0.0);
+        assert!(distance(7.0, [0.22, 0.36], half, 0.0) < 0.0);
+        assert!(distance(7.0, [0.0, -0.4], half, 0.0).abs() < 1e-6);
+        assert!(distance(7.0, [0.0, 0.4], half, 0.0).abs() < 1e-6);
     }
 
     #[test]
