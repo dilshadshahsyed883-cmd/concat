@@ -77,6 +77,16 @@ pub struct Config {
     /// resolved exactly once per source by the desktop before committing the edit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub adaptive_palette: Option<[String; 2]>,
+    #[serde(default = "default_pattern_value")]
+    pub pattern_intensity: f64,
+    #[serde(default = "default_pattern_value")]
+    pub pattern_density: f64,
+    #[serde(default = "default_pattern_value")]
+    pub pattern_size: f64,
+    #[serde(default = "default_pattern_value")]
+    pub lighting_spread: f64,
+    #[serde(default = "default_pattern_opacity")]
+    pub pattern_opacity: f64,
     pub blur: f64,
     pub background_color: String,
     pub background_tint: String,
@@ -99,6 +109,8 @@ pub struct Config {
     pub headline: Label,
     pub badge: Label,
 }
+fn default_pattern_value() -> f64 {0.5}
+fn default_pattern_opacity() -> f64 {1.0}
 fn default_shadow_color() -> String { "#000000".into() }
 fn default_mat_color() -> String { "#ffffff".into() }
 fn color(s: &str) -> bool {
@@ -261,6 +273,7 @@ impl Config {
             },
             background: bg.into(),
             adaptive_palette: None,
+            pattern_intensity: 0.5, pattern_density: 0.5, pattern_size: 0.5, lighting_spread: 0.5, pattern_opacity: 1.0,
             blur: if number == 3 { 0.75 } else { 0.0 },
             background_color: "#000000".into(),
             background_tint: "#000000".into(),
@@ -376,13 +389,18 @@ impl Config {
         if !matches!(
             self.background.as_str(),
             "source" | "blur" | "color" | "none" | "adaptive"
-        ) {
+        ) && concat_core::canvas_background::style_id(&self.background).is_none() {
             return Err("Unknown canvas background mode".into());
         }
         for (name, value, max) in [
             ("radius", self.radius, 0.5),
             ("borderWidth", self.border_width, 0.1),
             ("blur", self.blur, 1.0),
+            ("patternIntensity", self.pattern_intensity, 1.0),
+            ("patternDensity", self.pattern_density, 1.0),
+            ("patternSize", self.pattern_size, 1.0),
+            ("lightingSpread", self.lighting_spread, 1.0),
+            ("patternOpacity", self.pattern_opacity, 1.0),
             ("tintOpacity", self.tint_opacity, 1.0),
             ("shadowOpacity", self.shadow_opacity, 1.0),
             ("shadowOffset", self.shadow_offset, 0.08),
@@ -952,7 +970,13 @@ pub fn apply_with_confirmation(project: &mut Project, mint: &mut IdMint, config:
             mask.feather = 0.0;
             mask.invert = true;
             bg.mask = Some(mask);
-            bg.background = Some(if config.background == "adaptive" {
+            bg.background = Some(if concat_core::canvas_background::style_id(&config.background).is_some() {
+                Background::Procedural { pattern: crate::model::ProceduralBackground {
+                    style: config.background.clone(), color: config.background_color.clone(), accent: config.background_tint.clone(),
+                    intensity: config.pattern_intensity, density: config.pattern_density, softness: config.blur,
+                    opacity: config.pattern_opacity, spread: config.lighting_spread, size: config.pattern_size,
+                }}
+            } else if config.background == "adaptive" {
                 Background::Color { color: config.adaptive_palette.as_ref().expect("validated adaptive palette")[0].clone() }
             } else if config.background == "color" {
                 Background::Color {
@@ -970,7 +994,7 @@ pub fn apply_with_confirmation(project: &mut Project, mint: &mut IdMint, config:
             bg.extra.clear();
             layers.push(tagged(bg, &id, "backdrop"));
         }
-        if config.tint_opacity > 0.0 {
+        if config.tint_opacity > 0.0 && concat_core::canvas_background::style_id(&config.background).is_none() {
             let tint_lane = track(&mut staged, mint, &original.track_id, "tint", true);
             layers.push(rectangle(
                 mint,
@@ -2150,6 +2174,23 @@ mod tests {
         }
         assert!(!ACTIVE_PRESETS.contains(&7) && !ACTIVE_PRESETS.contains(&8));
         assert!(Config::preset(7).is_some() && Config::preset(8).is_some());
+    }
+
+    #[test]
+    fn advanced_backgrounds_persist_as_real_owned_patterns() {
+        for style in concat_core::canvas_background::STYLES {
+            let (mut p,mut mint)=fixture();
+            let mut cfg=Config::preset(3).unwrap();
+            cfg.background=style.into();
+            apply(&mut p,&mut mint,cfg.clone(),vec!["c1".into()],vec![]).unwrap();
+            let backing=p.active().clips.iter().find(|clip| clip.extra.get("canvasRole")==Some(&json!("backdrop"))).unwrap();
+            let Some(Background::Procedural{pattern})=&backing.background else {panic!("missing native pattern")};
+            assert_eq!(pattern.style,style);
+            assert!(pattern.pattern().is_some());
+            assert_eq!(p.media.len(),1);
+            clear(&mut p,vec!["c1".into()],vec![]).unwrap();
+            assert!(p.active().clips.iter().all(|clip|!clip.extra.contains_key("canvasOwner")));
+        }
     }
 
     #[test]

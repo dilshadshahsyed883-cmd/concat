@@ -271,6 +271,11 @@ pub enum ExportBackdrop {
         /// Its channels.
         rgb: [u8; 3],
     },
+    /// Procedural Canvas texture resolved from its persisted controls.
+    Procedural {
+        /// The saved pattern.
+        pattern: concat_project::model::ProceduralBackground,
+    },
     /// A still, enlarged to cover the frame.
     Image {
         /// The file.
@@ -1431,6 +1436,7 @@ fn backdrop_of(
             sigma: ExportBackdrop::sigma(*amount, width, height),
         }),
         ExportBackdrop::Colour { rgb } => Some(concat_render::Backdrop::Colour(*rgb)),
+        ExportBackdrop::Procedural { pattern } => pattern.pattern().map(concat_render::Backdrop::Procedural),
         ExportBackdrop::Image {
             path,
             width: still_width,

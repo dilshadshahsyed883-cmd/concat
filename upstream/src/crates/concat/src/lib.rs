@@ -139,13 +139,19 @@ fn canvas_publish(app: &App, config: &concat_project::canvas_preset::Config) {
     panel.set_border_width(config.border_width as f32);
     panel.set_radius(config.radius as f32);
     panel.set_blur(config.blur as f32);
+    panel.set_pattern_intensity(config.pattern_intensity as f32);
+    panel.set_pattern_density(config.pattern_density as f32);
+    panel.set_pattern_size(config.pattern_size as f32);
+    panel.set_lighting_spread(config.lighting_spread as f32);
+    panel.set_pattern_opacity(config.pattern_opacity as f32);
     panel.set_tint_opacity(config.tint_opacity as f32);
     panel.set_shadow_opacity(config.shadow_opacity as f32);
     panel.set_shadow_offset(config.shadow_offset as f32);
     panel.set_mat_bottom(config.mat_bottom as f32);
     panel.set_rotation(config.rotation as f32);
     panel.set_background_mode(match config.background.as_str() {
-        "blur" => 1, "color" => 2, "none" => 3, "adaptive" => 4, _ => 0,
+        "blur" => 1, "color" => 2, "none" => 3, "adaptive" => 4,
+        style => concat_core::canvas_background::style_id(style).map_or(0,|id|id as i32+5),
     });
     panel.set_border_color(canvas_picker_color(&config.border_color));
     panel.set_background_color(canvas_picker_color(&config.background_color));
@@ -919,6 +925,11 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                     "borderWidth" => config.border_width = value,
                     "radius" => config.radius = value,
                     "blur" => config.blur = value,
+                    "patternIntensity" => config.pattern_intensity = value,
+                    "patternDensity" => config.pattern_density = value,
+                    "patternSize" => config.pattern_size = value,
+                    "lightingSpread" => config.lighting_spread = value,
+                    "patternOpacity" => config.pattern_opacity = value,
                     "tintOpacity" => config.tint_opacity = value,
                     "shadowOpacity" => config.shadow_opacity = value,
                     "shadowOffset" => config.shadow_offset = value,
@@ -948,9 +959,20 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         Shell::with(|_, app| {
             canvas_modify(&app, |config| {
                 config.background = match mode {
-                    1 => "blur", 2 => "color", 3 => "none", 4 => "adaptive", _ => "source",
+                    1 => "blur", 2 => "color", 3 => "none", 4 => "adaptive",
+                    5..=16 => concat_core::canvas_background::STYLES[(mode-5) as usize], _ => "source",
                 }.into();
                 config.adaptive_palette = None;
+                if mode >= 5 && mode <= 16 {
+                    let colors = [
+                        ("#17233b","#b48bd4"),("#25354d","#e1f0ff"),("#080f1d","#637eb0"),
+                        ("#122342","#dc4862"),("#121d34","#5595ff"),("#0a0a0a","#bdbdbd"),
+                        ("#152f39","#78c9b6"),("#10141c","#606b76"),("#262142","#c792e8"),
+                        ("#11182b","#e8b778"),("#c4a988","#f1e5ce"),("#0b172b","#567bff")
+                    ];
+                    let (base,accent)=colors[(mode-5) as usize];
+                    config.background_color=base.into();config.background_tint=accent.into();config.blur=0.5;
+                }
             });
         });
     });

@@ -183,6 +183,7 @@ fn backdrop_of(project: &Project, background: &Background) -> Option<ExportBackd
         Background::None => None,
         Background::Blur { amount } => Some(ExportBackdrop::Blur { amount: *amount }),
         Background::Color { .. } => background.rgb().map(|rgb| ExportBackdrop::Colour { rgb }),
+        Background::Procedural { pattern } => Some(ExportBackdrop::Procedural { pattern: pattern.clone() }),
         Background::Image { media_id } => project
             .media_by_id(media_id)
             .filter(|item| item.kind == MediaKind::Image)

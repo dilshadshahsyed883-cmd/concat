@@ -24,6 +24,11 @@ export global CanvasPresets {
     in property <float> border-width: 0.006;
     in property <float> radius: 0;
     in property <float> blur: 0;
+    in property <float> pattern-intensity: 0.5;
+    in property <float> pattern-density: 0.5;
+    in property <float> pattern-size: 0.5;
+    in property <float> lighting-spread: 0.5;
+    in property <float> pattern-opacity: 1;
     in property <float> tint-opacity: 0;
     in property <float> shadow-opacity: 0;
     in property <float> shadow-offset: 0;
@@ -82,7 +87,7 @@ export component CanvasPresetPanel inherits VerticalLayout {
         Param { label: "Corner radius"; value: CanvasPresets.radius; minimum: 0; maximum: 0.5; step: 0.005; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("radius", v); } }
         Text { text: "Background"; color: Theme.fg-muted; font-size: Theme.fs-sm; }
         Select {
-            options: ["Source", "Blurred source", "Solid color", "None", "Adaptive Colors"];
+            options: ["Source", "Blurred source", "Solid color", "None", "Adaptive Colors", "Ambient Color Clouds", "Frosted Glass Panels", "Radial Spotlight", "Halftone Arena", "Diagonal Light Streaks", "Monochrome Backdrop", "Topographic Waves", "Carbon Fiber", "Prism Refraction", "Cinematic Bokeh", "Textured Paper", "Light Tunnel"];
             current: CanvasPresets.background-mode;
             changed(index) => { CanvasPresets.edit-mode(index); }
         }
@@ -94,12 +99,22 @@ export component CanvasPresetPanel inherits VerticalLayout {
             text: "Extract dominant colors from the original media once. Video colors stay stable during playback.";
             color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
         }
-        if CanvasPresets.background-mode == 2: ColourField {
+        if CanvasPresets.background-mode == 2 || CanvasPresets.background-mode >= 5: ColourField {
             label: "Background color"; value: CanvasPresets.background-color;
             changed(c) => { CanvasPresets.edit-colour("backgroundColor", c); }
         }
-        ColourField { label: "Background tint"; value: CanvasPresets.tint-color; changed(c) => { CanvasPresets.edit-colour("backgroundTint", c); } }
-        Param { label: "Tint opacity"; value: CanvasPresets.tint-opacity; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("tintOpacity", v); } }
+        if CanvasPresets.background-mode >= 5: VerticalLayout {
+            spacing: 5px;
+            if CanvasPresets.background-mode != 10: ColourField { label: "Accent color"; value: CanvasPresets.tint-color; changed(c) => { CanvasPresets.edit-colour("backgroundTint", c); } }
+            Param { label: "Intensity"; value: CanvasPresets.pattern-intensity; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("patternIntensity", v); } }
+            Param { label: "Opacity"; value: CanvasPresets.pattern-opacity; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("patternOpacity", v); } }
+            if CanvasPresets.background-mode == 8 || CanvasPresets.background-mode == 9 || CanvasPresets.background-mode >= 11: Param { label: "Texture density"; value: CanvasPresets.pattern-density; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("patternDensity", v); } }
+            if CanvasPresets.background-mode == 8 || CanvasPresets.background-mode == 9 || CanvasPresets.background-mode >= 11: Param { label: "Pattern size"; value: CanvasPresets.pattern-size; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("patternSize", v); } }
+            if CanvasPresets.background-mode == 5 || CanvasPresets.background-mode == 7 || CanvasPresets.background-mode == 9 || CanvasPresets.background-mode == 14 || CanvasPresets.background-mode == 16: Param { label: "Lighting spread"; value: CanvasPresets.lighting-spread; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("lightingSpread", v); } }
+            if CanvasPresets.background-mode == 6 || CanvasPresets.background-mode == 8 || CanvasPresets.background-mode == 11 || CanvasPresets.background-mode == 14 || CanvasPresets.background-mode == 16: Param { label: "Blur softness"; value: CanvasPresets.blur; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("blur", v); } }
+        }
+        if CanvasPresets.background-mode < 5: ColourField { label: "Background tint"; value: CanvasPresets.tint-color; changed(c) => { CanvasPresets.edit-colour("backgroundTint", c); } }
+        if CanvasPresets.background-mode < 5: Param { label: "Tint opacity"; value: CanvasPresets.tint-opacity; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("tintOpacity", v); } }
         Param { label: "Shadow opacity"; value: CanvasPresets.shadow-opacity; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("shadowOpacity", v); } }
         if CanvasPresets.shadow-opacity > 0: VerticalLayout {
             spacing: 4px;
