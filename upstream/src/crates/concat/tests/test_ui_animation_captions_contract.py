@@ -160,7 +160,11 @@ class DesktopUiContractTests(unittest.TestCase):
         self.assertIn('transition-scope', config)
         self.assertIn('inspect-only: true;', MEDIA)
         self.assertNotIn('root.apply-transition(id);', MEDIA)
-        self.assertIn('label: "Remove " + entry.name;', config)
+        # None effects use explicit scoped bulk clear actions, not individual remove labels.
+        self.assertIn('label: "Clear Selected Effects"', config)
+        self.assertIn('label: "Clear All Effects"', config)
+        self.assertIn('Editor.library-clear-effects(true, Keyframes.animation-images, Keyframes.animation-videos)', config)
+        self.assertIn('Editor.library-clear-effects(false, Keyframes.animation-images, Keyframes.animation-videos)', config)
         self.assertIn('root.chain-remove(false, index);', config)
         self.assertIn('LibraryFocus.selected-id != "__none_effect__"', config)
         # No None selection may be forwarded through the normal Apply IDs.
