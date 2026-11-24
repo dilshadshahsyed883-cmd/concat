@@ -22,7 +22,7 @@ PROJECT_NAMES = ("concat.json", "wolfcut.json")
 SAFE_MEDIA = re.compile(r"media/[a-f0-9]{32}(?:\.[a-z0-9]{1,12})?")
 LIMIT = 500 * 1024 ** 3
 # A bounded JSON budget permits large timelines without unbounded ZIP expansion.
-MAX_PROJECT_MANIFEST_BYTES = 64 * 1024 * 1024
+MAX_PROJECT_MANIFEST_BYTES = 128 * 1024 * 1024
 
 
 class TransferError(ValueError):
