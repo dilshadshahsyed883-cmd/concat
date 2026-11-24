@@ -151,6 +151,26 @@ class TelemetryTests(unittest.TestCase):
                 self.metrics.collect()
             self.assertEqual(get.call_count, 2)
 
+    def test_hardware_metrics_are_optional_and_source_separated(self):
+        self.job(1)
+        self.manager.save({'salad_key': 'SECRET_API', 'salad_organization': 'org-one',
+            'salad_project': 'project-one', 'salad_container_group': 'group-one'})
+        worker = Mock(timeout=60, request=Mock(side_effect=[
+            {'concurrency': 2, 'active_renders': 1, 'pipeline_version': 1,
+             'hardware_metrics_version': 1, 'source_sha': 'a' * 40},
+            {'gpu_model': 'NVIDIA RTX 3090', 'gpu_utilization_percent': 70,
+             'vram_used_mb': 1200, 'gpu_temperature_c': 60, 'token': 'SECRET'}]))
+        self.manager.production_worker = Mock(return_value=worker)
+        response = Mock(status_code=200, headers={}, json=lambda: {'instances': [
+            {'state': 'running', 'ready': True, 'cpu_percent': 12}]})
+        with patch('app.modules.concat.engine.telemetry.requests.get', return_value=response):
+            self.metrics.collect()
+        report = self.metrics.report(24)
+        self.assertIn('GPU model: NVIDIA RTX 3090', report)
+        self.assertIn('Latest worker capability: pipeline', report)
+        self.assertIn('gpu_utilization_percent: sample mean=70.00', report)
+        self.assertNotIn('SECRET', report)
+
     def test_http_failure_reports_sanitized_status_without_response_body(self):
         self.job(1)
         self.manager.save({'salad_key': 'SECRET_API', 'salad_organization': 'org-one',

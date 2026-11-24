@@ -614,6 +614,12 @@ class ProductionQueue:
             if row is None and active:
                 row = active[self.observation_cursor % len(active)]
                 self.observation_cursor += 1
+            if con.execute("SELECT 1 FROM production_jobs WHERE state='Ready for GPU' LIMIT 1").fetchone():
+                reason = ('drive_intake' if intake_blocks else 'manual_action' if manual_pending else
+                          'render_capacity' if len(active) >= limit else
+                          'queue_paused' if self.media.get(con, 'production_queue') != 'running' else
+                          'worker_not_ready' if row is None else 'dispatch_or_observe')
+                self.media.metrics.dispatch_reason(con, reason, pipeline=False)
         if row is None:
             # Delete only completed private copies, never Drive originals.
             for path in self.spool.glob("*.zip"):
@@ -743,6 +749,14 @@ class ProductionQueue:
                         row = candidate
                         con.execute("UPDATE production_jobs SET state='Waiting for Worker' WHERE id=?", (row["id"],))
                         self.media.metrics.state(con, row["id"], "Waiting for Worker")
+                ready_exists = con.execute("SELECT 1 FROM production_jobs WHERE state='Ready for GPU' LIMIT 1").fetchone()
+                if ready_exists:
+                    reason = ('drive_intake' if intake_blocks else
+                              'delivery_backlog' if deliveries >= MAX_DELIVERY_BACKLOG else
+                              'preload_reserved' if any(r["state"] == "GPU Ready" for r in active) else
+                              'render_capacity' if len(outstanding) >= limit + 1 else
+                              'worker_not_ready' if row is None else 'dispatching')
+                    self.media.metrics.dispatch_reason(con, reason, pipeline=True)
         if row is not None:
             self.launch_transfer("upload", row, require_pipeline=True)
         elif not active and not self.transfers:
@@ -959,6 +973,7 @@ class ProductionQueue:
             raise JobError("Insufficient VPS disk reserve for the rendered MP4.")
         digest, md5 = hashlib.sha256(), hashlib.md5(usedforsecurity=False)
         length = 0
+        transfer_started = time.monotonic()
         try:
             response = worker.request("GET", "/api/jobs/" + remote_id + "/output", stream=True, missing=True)
             if response is None:
@@ -984,8 +999,15 @@ class ProductionQueue:
         with path.open("rb") as stream:
             if stream.read(12)[4:8] != b"ftyp":
                 raise JobError("Worker output does not have a valid MP4 signature.")
+        elapsed = max(time.monotonic() - transfer_started, 0.001)
         self.media.publish_production(remote_id, Path(row["name"]).stem[:135] + ".mp4",
                                       path, size, sha, md5.hexdigest())
+        try:
+            self.media.metrics.event('delivery', {'source': 'VPS pull', 'delivery_bytes': size,
+                'delivery_seconds': round(elapsed, 3),
+                'delivery_bytes_per_second': round(size / elapsed, 2)}, job=job)
+        except Exception:
+            LOG.exception("Could not record verified delivery metrics")
 
     def finish(self, job):
         with self.media.lock, self.media.connection() as con:

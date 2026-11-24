@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import fcntl
 import json
 import math
+import re
 import threading
 import time
 import uuid
@@ -20,10 +21,15 @@ TERMINAL = {'Completed', 'Failed', 'Cancelled'}
 JOB_FIELDS = {'progress_percent': 100, 'fps': 1000000, 'average_fps': 1000000,
               'speed_multiplier': 1000000, 'rendered_frames': 1e12,
               'total_frames': 1e12, 'render_time_seconds': 1e9,
-              'video_duration_seconds': 1e9}
+              'video_duration_seconds': 1e9, 'delivery_bytes': 1e12,
+              'delivery_seconds': 1e9, 'delivery_queue_seconds': 1e9,
+              'delivery_bytes_per_second': 1e12}
 RESOURCE_FIELDS = {'cpu_percent': 100000, 'memory_usage_mb': 1e9,
                    'memory_usage_percent': 100, 'gpu_utilization_percent': 100,
                    'vram_used_mb': 1e9, 'vram_total_mb': 1e9}
+HARDWARE_FIELDS = {'gpu_utilization_percent': 100, 'vram_used_mb': 1e9,
+                   'vram_total_mb': 1e9, 'gpu_temperature_c': 200,
+                   'encoder_utilization_percent': 100}
 
 
 def numbers(data, fields):
@@ -58,6 +64,8 @@ class Telemetry:
         self.request_lock = threading.Lock()
         self.last_resource_poll = 0
         self.resource_failures = 0
+        self.last_dispatch_reason = None
+        self.last_dispatch_sample = 0
         self.worker_ready_at = 0
         with manager.connection() as con:
             con.execute('''CREATE TABLE IF NOT EXISTS metric_samples(
@@ -135,6 +143,14 @@ class Telemetry:
         self.event('state', {**self.context(con), 'state': state, 'previous': old['state'] if old else None,
                              'origin': 'transition' if old else 'first_observed'}, job, con)
 
+    def dispatch_reason(self, con, reason, *, pipeline):
+        now = time.time()
+        key = (reason, pipeline)
+        if key != self.last_dispatch_reason or now - self.last_dispatch_sample >= 20:
+            self.event('dispatch', {**self.context(con), 'reason': reason,
+                                   'pipeline_mode': 'pipeline' if pipeline else 'legacy_or_unknown'}, con=con)
+            self.last_dispatch_reason, self.last_dispatch_sample = key, now
+
     def observe(self, job, status):
         if not isinstance(status, dict):
             return
@@ -143,6 +159,8 @@ class Telemetry:
         if status.get('state') in ('rendered', 'delivered', 'delivering', 'delivery_failed'):
             metrics['progress_percent'] = 100
             metrics['summary'] = True
+            if status.get('state') == 'delivering':
+                metrics['delivery_pending'] = True
         with self.manager.connection() as con:
             row = con.execute('SELECT state FROM production_jobs WHERE id=?', (job,)).fetchone()
             if row is None:
@@ -174,7 +192,7 @@ class Telemetry:
         if not self.worker_ready_at or now - self.worker_ready_at > 30:
             return
         with self.manager.connection() as con:
-            if self.manager.get(con, 'salad_idle_status') in ('stopped', 'stop_requested', 'stop_pending_confirmation'):
+            if not self.resource_poll_allowed(con, True):
                 return
             rows = con.execute('''SELECT p.*,m.metrics,m.sampled FROM production_jobs p
                 JOIN metric_jobs m ON m.job=p.id WHERE p.state='Completed'
@@ -182,15 +200,19 @@ class Telemetry:
                 AND EXISTS(SELECT 1 FROM metric_samples s WHERE s.job=p.id
                     AND s.kind='state' AND s.ts>?
                     AND json_extract(s.payload,'$.state')='Completed')
-                AND json_extract(m.metrics,'$.summary') IS NOT 1
+                AND (json_extract(m.metrics,'$.summary') IS NOT 1
+                     OR json_extract(m.metrics,'$.delivery_pending') IS 1)
                 AND m.sampled<? ORDER BY m.sampled LIMIT 2''',
                 (now - 3600, now - 300, now - 20)).fetchall()
         for row in rows:
             if self.stop.is_set():
                 return
-            if json.loads(row['metrics']).get('summary'):
+            saved = json.loads(row['metrics'])
+            if saved.get('summary') and not saved.get('delivery_pending'):
                 continue
             with self.manager.connection() as con:
+                if not self.resource_poll_allowed(con, True):
+                    return
                 con.execute('UPDATE metric_jobs SET sampled=? WHERE job=?', (now, row['id']))
             try:
                 worker = self.manager.production_worker(row['endpoint'], require_enabled=False)
@@ -297,6 +319,10 @@ class Telemetry:
                 self.worker_ready_at = time.time()
                 try:
                     from .cloud_render_production import JobError
+                    with m.connection() as con:
+                        if not self.resource_poll_allowed(con, True):
+                            self.worker_ready_at = 0
+                            return
                     worker = m.production_worker('')
                     worker.timeout = min(worker.timeout, 5)
                     activity = worker.request('GET', '/api/config/concurrency')
@@ -304,7 +330,23 @@ class Telemetry:
                                                 'pipeline_version': 1, 'queued_renders': 10000,
                                                 'delivering': 10000, 'active_jobs': 10000})
                     if actual:
+                        actual['pipeline_mode'] = 'pipeline' if activity.get('pipeline_version') == 1 else 'legacy'
+                        sha = activity.get('source_sha')
+                        if isinstance(sha, str) and re.fullmatch(r'[0-9a-f]{7,64}', sha):
+                            actual['source_sha'] = sha
                         self.event('worker_activity', {**context, **actual})
+                    if activity.get('hardware_metrics_version') == 1:
+                        with m.connection() as con:
+                            if not self.resource_poll_allowed(con, True):
+                                self.worker_ready_at = 0
+                                return
+                        hardware = worker.request('GET', '/api/metrics/hardware')
+                        fields = numbers(hardware, HARDWARE_FIELDS)
+                        name = hardware.get('gpu_model')
+                        if isinstance(name, str) and re.fullmatch(r'[A-Za-z0-9 ._()+/-]{1,120}', name):
+                            fields['gpu_model'] = name
+                        self.event('gpu_resources', {**context, **fields, 'source': 'CUDA worker',
+                                   'collection_status': 'available' if fields else 'unavailable'})
                 except (JobError, AttributeError, TypeError):
                     pass
         except (requests.RequestException, ValueError, TypeError, AttributeError, KeyError) as exc:
@@ -375,6 +417,27 @@ class Telemetry:
             values = [p[key] for p in successes if key in p]
             if values:
                 lines.append(f'{key}: sample mean={sum(values)/len(values):.2f}; peak={max(values):.2f}; n={len(values)}')
+        hardware = [p for r, p in parsed if r['kind'] == 'gpu_resources' and p.get('collection_status') == 'available']
+        lines += ['', 'CUDA worker hardware readings:']
+        if not hardware:
+            lines.append('No validated worker hardware readings in this range.')
+        for name in sorted({p['gpu_model'] for p in hardware if 'gpu_model' in p}):
+            lines.append(f'GPU model: {name}')
+        for key in HARDWARE_FIELDS:
+            values = [p[key] for p in hardware if key in p]
+            if values:
+                lines.append(f'{key}: sample mean={sum(values)/len(values):.2f}; peak={max(values):.2f}; n={len(values)}')
+        activity = [p for r, p in parsed if r['kind'] == 'worker_activity']
+        if activity:
+            last = activity[-1]
+            lines += ['', 'Latest worker capability: ' + str(last.get('pipeline_mode', 'unknown')) +
+                      '; source SHA=' + str(last.get('source_sha', 'unknown'))]
+        dispatch = [p for r, p in parsed if r['kind'] == 'dispatch']
+        if dispatch:
+            lines += ['', 'Latest dispatch reason: ' + str(dispatch[-1].get('reason', 'unknown'))]
+        for row, payload in parsed:
+            if row['kind'] == 'delivery':
+                lines.append(f"Job {row['job']}: VPS pull bytes={payload.get('delivery_bytes')}; seconds={payload.get('delivery_seconds')}; bytes/sec={payload.get('delivery_bytes_per_second')}")
         summaries = {}
         for row, payload in parsed:
             if row['kind'] == 'job':

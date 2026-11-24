@@ -35,7 +35,12 @@ GPU/VRAM fields; worker active_renders/concurrency; and worker job frame counts,
 render duration, video duration, average_fps and speed_multiplier. The current
 worker supplies FPS/speed summaries after rendering; these are labelled summary
 metrics and are not presented as live per-job FPS. Missing fields are omitted.
-No log parsing or GPU image changes are included.
+New worker images can additionally expose authenticated read-only GPU/VRAM,
+temperature, encoder utilization and model readings, stored separately from
+Salad resource samples. Legacy workers continue without these fields. The
+report records observed pipeline capability, worker source SHA, scheduler
+dispatch reasons and measured successful delivery transfer metrics when supplied.
+No log parsing is included.
 
 If verified push delivery beats status polling, the background collector attempts a
 bounded read of that exact worker job's final summary, verifying its saved hash
