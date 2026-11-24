@@ -217,6 +217,56 @@ class IndependentDriveIntakeTests(unittest.TestCase):
         self.assertEqual(self.state()["state"], "Rendering")
         self.assertEqual(self.queue.snapshot()["active"], 1)
 
+    def check_pipeline_prefetch(self, concurrency):
+        self.queue.pipeline_enabled = True
+        self.worker.configure_concurrency = lambda value: {"concurrency": value, "pipeline_version": 1}
+        self.queue.control("start")
+        with self.media.connection() as con:
+            self.media.put(con, "render_concurrency", str(concurrency))
+        # Seed a delivery and the requested number of actual renders.
+        for i in range(2, concurrency + 4):
+            self.add_job("pipeline-" + str(i))
+        digest = hashlib.sha256(self.fixture.read_bytes()).hexdigest()
+        with self.media.connection() as con:
+            con.execute("UPDATE production_jobs SET state='Delivering',digest=?,endpoint=?,submitted_at=1 WHERE id=1",
+                        (digest, self.worker.endpoint))
+            for i in range(2, concurrency + 2):
+                con.execute("UPDATE production_jobs SET state='Rendering',digest=?,endpoint=?,submitted_at=1 WHERE id=?",
+                            (digest, self.worker.endpoint, i))
+        for i in (concurrency + 2, concurrency + 3):
+            self.queue.archive(i).write_bytes(self.fixture.read_bytes())
+            self.queue.update(i, state="Ready for GPU", digest=digest)
+        def request(method, path, **kwargs):
+            remote = path.rsplit("/", 1)[-1]
+            with self.media.connection() as con:
+                row = con.execute("SELECT state FROM production_jobs WHERE remote_id=?", (remote,)).fetchone()
+            states = {"Rendering": "running", "Delivering": "delivering", "GPU Ready": "queued"}
+            return {"state": states[row["state"]], "sha256": digest, "render_mode": "cuda-hybrid-v1"}
+        self.worker.request = request
+        self.queue.tick()
+        self.assertEqual(len(self.worker.uploads), 1)
+        snap = self.queue.snapshot()
+        self.assertEqual(snap["rendering"], concurrency)
+        self.assertEqual(snap["gpu_ready"], 1)
+        self.assertEqual(snap["delivering"], 1)
+        self.assertEqual(snap["active"], concurrency + 2)
+        # A second preloaded ZIP would exceed the bounded lookahead.
+        for _ in range(4):
+            self.queue.tick()
+        self.assertEqual(len(self.worker.uploads), 1)
+        # Once a render releases its slot and the prefetched job starts,
+        # the next ZIP can upload even while the older MP4 is delivering.
+        self.queue.update(2, state="Completed")
+        self.queue.update(concurrency + 2, state="Rendering")
+        self.queue.tick()
+        self.assertEqual(len(self.worker.uploads), 2)
+
+    def test_pipeline_prefetch_while_serial_render_and_delivery_active(self):
+        self.check_pipeline_prefetch(1)
+
+    def test_pipeline_prefetch_while_parallel_renders_and_delivery_active(self):
+        self.check_pipeline_prefetch(2)
+
     def test_worker_unavailable_keeps_zip_and_no_redownload(self):
         self.queue.tick_intake()
         self.queue.control("start")

@@ -142,9 +142,12 @@
     if (request !== queueRequest) return;
     $("cr-queue-state").textContent =
       ({stopped:"Stopped", running:"Running", paused:"Paused"}[data.state] || data.state)
-      + " · GPU " + data.active + "/" + data.concurrency + " active"
+      + " · Rendering " + (data.rendering ?? data.active) + "/" + data.concurrency
+      + " · Uploading " + (data.uploading || 0)
+      + " · GPU Ready " + (data.gpu_ready || 0)
+      + " · Delivering " + (data.delivering || 0)
       + " · Drive " + (data.intake_active || 0) + " downloading/verifying"
-      + " · " + (data.ready_for_gpu || 0) + " ready";
+      + " · VPS Ready " + (data.ready_for_gpu || 0);
     const worker=data.worker||{};
     $("cr-auto-worker-status").textContent=(worker.auto_start?"Automatic · ":"Manual · ")+workerLabel(worker)
       +" · shutdown "+(worker.salad_idle_status||"waiting").replaceAll("_"," ");

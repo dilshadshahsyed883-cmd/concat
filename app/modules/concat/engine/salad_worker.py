@@ -19,7 +19,7 @@ from .salad_idle import SALAD_API
 from .cloud_render_production import WorkerWait, JobError
 
 INTAKE = ('Queued', 'Downloading', 'Verifying ZIP', 'Retrying Drive')
-ACTIVE = ('Waiting for Worker', 'Uploading to GPU', 'Rendering', 'Delivering')
+ACTIVE = ('Waiting for Worker', 'Uploading to GPU', 'GPU Ready', 'Rendering', 'Delivering')
 DEFAULTS = {'auto_start': '0', 'image_pull_threshold': '8', 'image_pull_seconds': '20',
             'salad_max_reallocations': '3', 'salad_reallocate_cooldown': '30'}
 LIMITS = {'image_pull_threshold': (1, 100), 'image_pull_seconds': (5, 600),
@@ -50,7 +50,7 @@ class SaladAutoWorker:
     def retry(self):
         from fastapi import HTTPException
         with self.manager.lock, self.manager.connection() as con:
-            if con.execute("SELECT 1 FROM production_jobs WHERE state IN (?,?,?,?) LIMIT 1", ACTIVE).fetchone():
+            if con.execute("SELECT 1 FROM production_jobs WHERE state IN (?,?,?,?,?) LIMIT 1", ACTIVE).fetchone():
                 raise HTTPException(409, "Wait for active GPU jobs to finish before retrying auto worker")
             self._save(con, {}, 'retry_requested')
             self.manager.put(con, 'salad_stop_record', '')
@@ -146,7 +146,7 @@ class SaladAutoWorker:
         if con.execute("SELECT 1 FROM production_jobs WHERE state IN (?,?,?,?) LIMIT 1", INTAKE).fetchone():
             return status('waiting_for_drive')
         # Recover active work through the established worker job protocol instead.
-        if con.execute("SELECT 1 FROM production_jobs WHERE state IN (?,?,?,?) LIMIT 1", ACTIVE).fetchone():
+        if con.execute("SELECT 1 FROM production_jobs WHERE state IN (?,?,?,?,?) LIMIT 1", ACTIVE).fetchone():
             return True
         if con.execute("SELECT 1 FROM production_jobs WHERE state='Failed' AND submitted_at>0 AND rerender=0 AND output_sha='' LIMIT 1").fetchone():
             return status('unverified_output_pending')

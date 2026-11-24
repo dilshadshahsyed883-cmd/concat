@@ -87,7 +87,7 @@ class SaladIdleStop:
     def request_stop(self, con, now, *, manual=False):
         """Shared manual/idle stop path; called only by the single dispatcher."""
         active = con.execute("""SELECT 1 FROM production_jobs WHERE state IN
-            ('Waiting for Worker','Uploading to GPU','Rendering','Delivering')
+            ('Waiting for Worker','Uploading to GPU','GPU Ready','Rendering','Delivering')
             OR (state='Failed' AND submitted_at>0 AND rerender=0 AND output_sha='') LIMIT 1""").fetchone()
         transferring = con.execute("SELECT 1 FROM files WHERE state IN ('receiving','queued','uploading') LIMIT 1").fetchone()
         if active or transferring:
@@ -120,7 +120,9 @@ class SaladIdleStop:
             worker = self.manager.production_worker("", require_enabled=not manual)
             worker.timeout = min(worker.timeout, 7)
             data = worker.request("GET", "/api/config/concurrency")
-            if type(data.get("active_renders")) is not int or data["active_renders"] != 0:
+            active_jobs = data.get("active_jobs") if data.get("pipeline_version") == 1 else data.get("active_renders")
+            if (type(data.get("active_renders")) is not int or data["active_renders"] != 0
+                    or type(active_jobs) is not int or active_jobs != 0):
                 self._set(con, "worker_busy", idle=0)
                 return
         except Exception:
