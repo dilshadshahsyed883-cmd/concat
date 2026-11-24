@@ -1,0 +1,3 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {sceneAt,duration,clock} from '../src/bridge.js';
+test('Timeline picks scene at exact boundary without changing duration',()=>{const p={scenes:[{id:'SCENE_001',duration:1.25},{id:'SCENE_002',duration:3.75}]};assert.equal(duration(p),5);assert.equal(sceneAt(p,1.249).scene.id,'SCENE_001');assert.equal(sceneAt(p,1.25).scene.id,'SCENE_002');assert.equal(sceneAt(p,4.9).start,1.25)});
+test('Clock shows hundredths and handles empty timeline',()=>{assert.equal(clock(61.5),'01:01.50');assert.equal(sceneAt({scenes:[]},0),null)});

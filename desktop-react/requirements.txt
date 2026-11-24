@@ -1,0 +1,5 @@
+pywebview==6.0
+pyinstaller==6.12.0
+setuptools==75.8.0
+Pillow==12.0.0
+pytest==8.3.5

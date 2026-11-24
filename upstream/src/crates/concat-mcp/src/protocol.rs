@@ -363,6 +363,10 @@ impl Server {
                 reply["result"]["resultType"] = json!("complete");
                 reply
             }
+            method if method.starts_with("desktop/") => match backend.desktop(method, params.clone()) {
+                Ok(value) => success(id, value, params),
+                Err(error) => failure(id.clone(), -32000, &error.message, None),
+            },
             "tools/list" => success(id, json!({ "tools": self.toolbox.list() }), params),
             "tools/call" => self.call(id, params, backend, cancelled),
             _ => failure(

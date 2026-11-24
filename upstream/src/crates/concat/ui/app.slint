@@ -64,7 +64,7 @@ import {
 import { KeyEditor, KeyMarkData, KeyRowData } from "workspace/keyframes-pane.slint";
 
 export {
-    CaptionPresetPreview, CaptionPreviewCard, CBuilderKeywordData, TransitionControls, ParticleBulk, CanvasPresets, Curves, Fmt, Focus, Payload, Theme, Bezier, Editor, I18n, CloudGpu, GpuQueueDialog, GpuQueueRow, GpuCompatibility,
+    RelinkData,    MissingMediaItem,    ConfirmData,    AvatarData,    CaptionPresetPreview, CaptionPreviewCard, CBuilderKeywordData, TransitionControls, ParticleBulk, CanvasPresets, Curves, Fmt, Focus, Payload, Theme, Bezier, Editor, I18n, CloudGpu, GpuQueueDialog, GpuQueueRow, GpuCompatibility,
     AppliedEntryData, AppliedParamData, CatalogueEntryData, Library, LibraryViewData, ParamFormat,
     DockDivider, DockSide, PaneKind, SeatBox,
     EffectData, FontSearch, Meters, MediaFilter, MediaItemData, MediaKind, SourcePreview, TextPresetData,
@@ -1069,3 +1069,13 @@ export component App inherits Window {
         data: root.toast;
     }
 }
+
+export { ColourKnobData } from "inspector/clip-inspector.slint";
+export { CurveData } from "inspector/grading.slint";
+export { CurveGroupData } from "inspector/grading.slint";
+export { CurvePointData } from "inspector/grading.slint";
+export { Glyph } from "icons.slint";
+export { ShortcutData } from "dialogs/settings.slint";
+export { StripData } from "timeline/model.slint";
+export { WheelData } from "inspector/grading.slint";
+export { WheelGroupData } from "inspector/grading.slint";

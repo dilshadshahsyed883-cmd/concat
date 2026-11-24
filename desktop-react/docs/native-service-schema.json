@@ -1,0 +1,5702 @@
+{
+  "version": 1,
+  "targets": {
+    "App": {
+      "properties": {
+        "on-start": "bool",
+        "c-builder-home": "bool",
+        "cb-generating": "bool",
+        "cb-used-pending": "bool",
+        "cb-generated-project": "string",
+        "cb-output-folder": "string",
+        "start": "StartData",
+        "start-aspects": "[ChipOption]",
+        "start-sizes": "[ChipOption]",
+        "start-rates": "[ChipOption]",
+        "recents": "[RecentProjectData]",
+        "recents-total": "int",
+        "app-version": "string",
+        "can-drop": "bool",
+        "project-name": "string",
+        "project-status": "string",
+        "macos": "bool",
+        "phone": "bool",
+        "open-menu": "int",
+        "app-menu-items": "[MenuItemData]",
+        "app-menu-height": "length",
+        "app-menu-token": "int",
+        "own-window-buttons": "bool",
+        "window-maximized": "bool",
+        "export": "ExportData",
+        "settings": "SettingsData",
+        "transcribers": "[ModelData]",
+        "voices": "[ModelData]",
+        "versions": "[string]",
+        "version-details": "[string]",
+        "languages": "[string]",
+        "system-facts": "[SystemFactData]",
+        "system-report": "string",
+        "project-sheet": "ProjectSheetData",
+        "captions": "CaptionsSheetData",
+        "caption-models": "[string]",
+        "speech": "SpeechSheetData",
+        "speech-models": "[string]",
+        "speech-model-details": "[string]",
+        "speech-voices": "[string]",
+        "speech-voice-details": "[string]",
+        "speech-voice-avatars": "[AvatarData]",
+        "speech-samples": "[string]",
+        "speech-sample-waves": "[string]",
+        "speech-sample-details": "[string]",
+        "voiceover": "VoiceoverData",
+        "voiceover-devices": "[string]",
+        "toast": "ToastData",
+        "meter-watched": "bool",
+        "muted": "bool",
+        "relink": "RelinkData",
+        "confirm": "ConfirmData"
+      },
+      "callbacks": [
+        {
+          "name": "c-builder-cancel-generation",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "c-builder-retry-used",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "start-c-builder",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "c-builder-return-home",
+          "arguments": [
+            {
+              "name": "profile",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "c-builder-open-generated",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "c-builder-choose-output",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "start-compose",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "start-dismiss",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "start-name-edited",
+          "arguments": [
+            {
+              "name": "name",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "start-location-edited",
+          "arguments": [
+            {
+              "name": "path",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "start-browse",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "start-aspect-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "start-size-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "start-rate-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "start-custom-width-edited",
+          "arguments": [
+            {
+              "name": "width",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "start-custom-height-edited",
+          "arguments": [
+            {
+              "name": "height",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "start-custom-fps-edited",
+          "arguments": [
+            {
+              "name": "fps",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "start-create",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "start-open",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "start-open-recent",
+          "arguments": [
+            {
+              "name": "path",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "start-forget-recent",
+          "arguments": [
+            {
+              "name": "path",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "start-reveal-recent",
+          "arguments": [
+            {
+              "name": "path",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "start-rename-recent",
+          "arguments": [
+            {
+              "name": "path",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "start-delete-recent",
+          "arguments": [
+            {
+              "name": "path",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "start-rename-edited",
+          "arguments": [
+            {
+              "name": "name",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "start-apply-rename",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "start-dismiss-rename",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "start-search-edited",
+          "arguments": [
+            {
+              "name": "query",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "start-sort-changed",
+          "arguments": [
+            {
+              "name": "sort",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "start-link",
+          "arguments": [
+            {
+              "name": "name",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "start-dismiss-error",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "menu-opened",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "app-menu-selected",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "titlebar-begin-drag",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "titlebar-toggle-maximize",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "titlebar-minimize",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "titlebar-close",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "window-resized",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "export-closed",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "export-name-edited",
+          "arguments": [
+            {
+              "name": "name",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "export-browse",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "export-rate-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "export-codec-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "export-ten-bit-changed",
+          "arguments": [
+            {
+              "name": "on",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "export-hdr-changed",
+          "arguments": [
+            {
+              "name": "on",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "export-bitrate-changed",
+          "arguments": [
+            {
+              "name": "mbps",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "export-start",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "export-cancel",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "export-reveal",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "export-again",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "settings-closed",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "settings-page-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "settings-show-log",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "settings-language-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "settings-log-level-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "settings-theme-changed",
+          "arguments": [
+            {
+              "name": "dark",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "settings-accent-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "settings-accent-custom-changed",
+          "arguments": [
+            {
+              "name": "colour",
+              "type": "color"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "settings-playhead-changed",
+          "arguments": [
+            {
+              "name": "colour",
+              "type": "color"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "settings-playhead-reset",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "settings-scale-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "settings-playhead-stops-changed",
+          "arguments": [
+            {
+              "name": "on",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "settings-proxies-changed",
+          "arguments": [
+            {
+              "name": "on",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "settings-gpu-changed",
+          "arguments": [
+            {
+              "name": "on",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "settings-magnetic-changed",
+          "arguments": [
+            {
+              "name": "on",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "settings-download-source-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "settings-download-base-edited",
+          "arguments": [
+            {
+              "name": "text",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "settings-server-enabled-changed",
+          "arguments": [
+            {
+              "name": "on",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "settings-server-host-edited",
+          "arguments": [
+            {
+              "name": "text",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "settings-server-port-edited",
+          "arguments": [
+            {
+              "name": "port",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "settings-server-token-edited",
+          "arguments": [
+            {
+              "name": "text",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "settings-server-token-generated",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "settings-check-updates",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "settings-version-chosen",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "settings-install-version",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "settings-install-cancel",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "settings-shortcut-capture",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "settings-shortcut-reset",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "settings-shortcut-reset-all",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "model-activated",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "model-download",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "model-cancel",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "model-remove",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "open-settings",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "export-clicked",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "project-closed",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "project-name-edited",
+          "arguments": [
+            {
+              "name": "name",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "project-size-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "project-rate-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "project-custom-width-edited",
+          "arguments": [
+            {
+              "name": "width",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "project-custom-height-edited",
+          "arguments": [
+            {
+              "name": "height",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "project-custom-fps-edited",
+          "arguments": [
+            {
+              "name": "fps",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "project-color-space-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "project-apply",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "captions-closed",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "captions-voice-toggled",
+          "arguments": [
+            {
+              "name": "on",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "captions-source-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "captions-text-edited",
+          "arguments": [
+            {
+              "name": "text",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "captions-model-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "captions-karaoke-toggled",
+          "arguments": [
+            {
+              "name": "on",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "captions-gpu-toggled",
+          "arguments": [
+            {
+              "name": "on",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "captions-gpu-render-toggled",
+          "arguments": [
+            {
+              "name": "on",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "captions-preset-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "captions-import-gpu-json",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "captions-placement-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "captions-size-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "captions-begin",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "captions-cancel",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "captions-import-srt",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "captions-export-srt",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "speech-closed",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "speech-text-edited",
+          "arguments": [
+            {
+              "name": "text",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "speech-voice-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "speech-model-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "speech-speed-changed",
+          "arguments": [
+            {
+              "name": "value",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "speech-quality-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "speech-pauses-changed",
+          "arguments": [
+            {
+              "name": "value",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "speech-reference-start-changed",
+          "arguments": [
+            {
+              "name": "seconds",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "speech-use-sample-changed",
+          "arguments": [
+            {
+              "name": "on",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "speech-sample-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "speech-insert-tag",
+          "arguments": [
+            {
+              "name": "text",
+              "type": "string"
+            },
+            {
+              "name": "tag",
+              "type": "string"
+            },
+            {
+              "name": "at",
+              "type": "int"
+            }
+          ],
+          "result": "string"
+        },
+        {
+          "name": "speech-begin",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "speech-cancel",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "speech-save-name-edited",
+          "arguments": [
+            {
+              "name": "name",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "speech-pick-picture",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "speech-save-voice",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "speech-clear-style",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "voiceover-closed",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "voiceover-action",
+          "arguments": [
+            {
+              "name": "verb",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "voiceover-device-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "voiceover-countdown-changed",
+          "arguments": [
+            {
+              "name": "on",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "voiceover-mute-changed",
+          "arguments": [
+            {
+              "name": "on",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "voiceover-gain-changed",
+          "arguments": [
+            {
+              "name": "db",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "voiceover-prompt-edited",
+          "arguments": [
+            {
+              "name": "text",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "voiceover-prompt-speed-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "meter-watched-changed",
+          "arguments": [
+            {
+              "name": "watched",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "relink-all",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "relink-dismiss",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "confirm-accepted",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "confirm-dismissed",
+          "arguments": [],
+          "result": "void"
+        }
+      ]
+    },
+    "CloudGpu": {
+      "properties": {
+        "available": "bool",
+        "configured": "bool",
+        "busy": "bool",
+        "domain": "string",
+        "salad-key": "string",
+        "renderer-token": "string",
+        "connection-note": "string",
+        "metrics-note": "string",
+        "connection-error": "bool",
+        "queue-available": "bool",
+        "queue-started": "bool",
+        "queue-note": "string",
+        "zip-open": "bool",
+        "zip-busy": "bool",
+        "zip-error": "bool",
+        "zip-progress": "int",
+        "zip-note": "string",
+        "zip-path": "string",
+        "confirm-delete-id": "string",
+        "queue-open": "bool",
+        "jobs": "[GpuQueueRow]"
+      },
+      "callbacks": [
+        {
+          "name": "queue-add",
+          "arguments": [
+            {
+              "name": "path",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "queue-action",
+          "arguments": [
+            {
+              "name": "action",
+              "type": "string"
+            },
+            {
+              "name": "id",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "save",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "test",
+          "arguments": [],
+          "result": "void"
+        }
+      ]
+    },
+    "Editor": {
+      "properties": {
+        "seats": "[SeatBox]",
+        "dividers": "[DockDivider]",
+        "media": "[MediaItemData]",
+        "media-count-all": "int",
+        "media-count-video": "int",
+        "media-count-audio": "int",
+        "media-count-images": "int",
+        "media-count-speech": "int",
+        "media-count-processed": "int",
+        "media-selected-count": "int",
+        "importing": "bool",
+        "media-filter": "MediaFilter",
+        "media-jump-token": "int",
+        "cb-media-folder": "string",
+        "cb-narration": "string",
+        "cb-duration": "float",
+        "cb-status": "string",
+        "cb-keywords": "string",
+        "cb-image-count": "int",
+        "cb-video-count": "int",
+        "cb-probed": "int",
+        "cb-reused": "int",
+        "cb-scan-done": "int",
+        "cb-scan-total": "int",
+        "cb-busy": "bool",
+        "cb-project-name": "string",
+        "cb-name-overridden": "bool",
+        "cb-name-preview": "string",
+        "cb-profile": "string",
+        "cb-profile-names": "[string]",
+        "cb-image-keywords": "[CBuilderKeywordData]",
+        "cb-video-keywords": "[CBuilderKeywordData]",
+        "cb-videos-enabled": "bool",
+        "cb-image-selection-summary": "string",
+        "cb-video-selection-summary": "string",
+        "cb-plan-name": "string",
+        "cb-plan-opening": "string",
+        "cb-plan-closing": "string",
+        "cb-plan-image-min": "string",
+        "cb-plan-image-max": "string",
+        "cb-plan-video-min": "string",
+        "cb-plan-video-max": "string",
+        "cb-plan-max-videos": "string",
+        "cb-plan-max-images": "string",
+        "cb-plan-cooldown": "string",
+        "cb-plan-seed": "string",
+        "cb-preview": "string",
+        "text-presets": "[TextPresetData]",
+        "style-presets": "[TextPresetData]",
+        "language-presets": "[TextPresetData]",
+        "library-audition": "string",
+        "selected-clip": "SelectedClipData",
+        "selected-transition": "SelectedTransitionData",
+        "audio-tracks": "[string]",
+        "font-families": "[string]",
+        "catalogue-effects": "[CatalogueEntryData]",
+        "catalogue-filters": "[CatalogueEntryData]",
+        "catalogue-luts": "[CatalogueEntryData]",
+        "adjustment-art": "image",
+        "catalogue-audio": "[CatalogueEntryData]",
+        "catalogue-transitions": "[CatalogueEntryData]",
+        "effect-groups": "[string]",
+        "filter-groups": "[string]",
+        "audio-groups": "[string]",
+        "transition-groups": "[string]",
+        "applied-visual": "[AppliedEntryData]",
+        "applied-audio": "[AppliedEntryData]",
+        "visual-params": "[AppliedParamData]",
+        "audio-params": "[AppliedParamData]",
+        "adjust-params": "[AppliedParamData]",
+        "adjust-wheels": "[WheelData]",
+        "adjust-curves": "[CurveData]",
+        "visual-wheels": "[WheelGroupData]",
+        "visual-curves": "[CurveGroupData]",
+        "visual-colours": "[ColourKnobData]",
+        "inspector-jump-token": "int",
+        "inspector-jump-tab": "string",
+        "inspector-jump-section": "string",
+        "video-effects": "[EffectData]",
+        "audio-effects": "[EffectData]",
+        "level": "float",
+        "peak": "float",
+        "output-width": "int",
+        "output-height": "int",
+        "ratio-index": "int",
+        "quality-index": "int",
+        "playing": "bool",
+        "has-picture": "bool",
+        "preview-clip-name": "string",
+        "preview-duration": "float",
+        "playhead-free": "bool",
+        "preview-frame": "image",
+        "stage-items": "[StageItemData]",
+        "stage-guides": "[StageGuideData]",
+        "brush-tool": "int",
+        "brush-size": "float",
+        "painting": "bool",
+        "stroke-path": "string",
+        "stroke-width": "float",
+        "stroke-erase": "bool",
+        "transition-images": "bool",
+        "transition-videos": "bool",
+        "transition-scope": "int",
+        "transition-draft-duration": "float",
+        "transition-draft-intensity": "float",
+        "timeline-tabs": "[TimelineTabData]",
+        "timeline-current-tab": "int",
+        "tracks": "[TrackData]",
+        "clips": "[ClipData]",
+        "tool": "TimelineTool",
+        "snap": "bool",
+        "magnetic": "bool",
+        "pan-mode": "bool",
+        "trim-follow": "bool",
+        "meters-shown": "bool",
+        "preview-axis": "bool",
+        "preview-axis-audio": "bool",
+        "selected-count": "int",
+        "can-undo": "bool",
+        "can-redo": "bool",
+        "merge-blocked-because": "string",
+        "merge-label": "string",
+        "sound-selected": "bool",
+        "title-selected": "bool",
+        "picture-selected": "bool",
+        "freezable": "bool",
+        "reversible": "bool",
+        "playhead": "float",
+        "key-marks": "[float]",
+        "frame-rate": "float",
+        "scroll-left": "float",
+        "seconds-per-pixel": "float",
+        "duration-seconds": "float",
+        "recording": "bool",
+        "captions-open": "bool",
+        "speech-open": "bool",
+        "voiceover-open": "bool",
+        "record-level": "float",
+        "record-rms": "float",
+        "record-clipped": "bool",
+        "record-seconds": "float",
+        "record-silent": "bool",
+        "menu-items": "[MenuItemData]",
+        "menu-height": "length",
+        "menu-token": "int",
+        "drop": "DropData",
+        "project-name": "string",
+        "project-folder": "string",
+        "timeline-name": "string",
+        "project-output": "string",
+        "project-rate": "string",
+        "project-duration": "string",
+        "count-media": "int",
+        "count-tracks": "int",
+        "count-clips": "int",
+        "keys-undo": "string",
+        "keys-redo": "string",
+        "keys-split": "string",
+        "keys-split-tool": "string",
+        "keys-delete-left": "string",
+        "keys-delete-right": "string",
+        "keys-pan": "string",
+        "keys-preview-axis": "string"
+      },
+      "callbacks": [
+        {
+          "name": "workspace-resized",
+          "arguments": [
+            {
+              "name": "width",
+              "type": "length"
+            },
+            {
+              "name": "height",
+              "type": "length"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "dock-set",
+          "arguments": [
+            {
+              "name": "seat",
+              "type": "int"
+            },
+            {
+              "name": "kind",
+              "type": "PaneKind"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "dock-add",
+          "arguments": [
+            {
+              "name": "kind",
+              "type": "PaneKind"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "dock-remove",
+          "arguments": [
+            {
+              "name": "seat",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "dock-dropped",
+          "arguments": [
+            {
+              "name": "from",
+              "type": "int"
+            },
+            {
+              "name": "onto",
+              "type": "int"
+            },
+            {
+              "name": "side",
+              "type": "DockSide"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "divider-pressed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "divider-dragged",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            },
+            {
+              "name": "delta",
+              "type": "length"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "cb-project-name-edited",
+          "arguments": [
+            {
+              "name": "name",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "cb-reset-project-name",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "cb-tune-profile",
+          "arguments": [
+            {
+              "name": "json",
+              "type": "string"
+            },
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "opening",
+              "type": "string"
+            },
+            {
+              "name": "closing",
+              "type": "string"
+            },
+            {
+              "name": "image-min",
+              "type": "string"
+            },
+            {
+              "name": "image-max",
+              "type": "string"
+            },
+            {
+              "name": "video-min",
+              "type": "string"
+            },
+            {
+              "name": "video-max",
+              "type": "string"
+            },
+            {
+              "name": "max-videos",
+              "type": "string"
+            },
+            {
+              "name": "max-images",
+              "type": "string"
+            },
+            {
+              "name": "cooldown",
+              "type": "string"
+            },
+            {
+              "name": "seed",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "cb-equalize-keywords",
+          "arguments": [
+            {
+              "name": "json",
+              "type": "string"
+            },
+            {
+              "name": "video",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "cb-keyword-changed",
+          "arguments": [
+            {
+              "name": "json",
+              "type": "string"
+            },
+            {
+              "name": "video",
+              "type": "bool"
+            },
+            {
+              "name": "keyword",
+              "type": "string"
+            },
+            {
+              "name": "selected",
+              "type": "bool"
+            },
+            {
+              "name": "weight",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "cb-videos-toggled",
+          "arguments": [
+            {
+              "name": "json",
+              "type": "string"
+            },
+            {
+              "name": "on",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "cb-plan-profile",
+          "arguments": [
+            {
+              "name": "json",
+              "type": "string"
+            },
+            {
+              "name": "images",
+              "type": "string"
+            },
+            {
+              "name": "videos",
+              "type": "string"
+            },
+            {
+              "name": "action",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "cb-import-folder",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "cb-refresh-folder",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "cb-choose-narration",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "cb-generate-project",
+          "arguments": [
+            {
+              "name": "name",
+              "type": "string"
+            },
+            {
+              "name": "images",
+              "type": "string"
+            },
+            {
+              "name": "videos",
+              "type": "string"
+            },
+            {
+              "name": "coverage",
+              "type": "int"
+            },
+            {
+              "name": "profile",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "import-media",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "media-filter-changed",
+          "arguments": [
+            {
+              "name": "filter",
+              "type": "MediaFilter"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "media-sort-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "media-select",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "int"
+            },
+            {
+              "name": "additive",
+              "type": "bool"
+            },
+            {
+              "name": "range",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "media-select-all",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "media-add-selected",
+          "arguments": [
+            {
+              "name": "at-playhead",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "media-band-selected",
+          "arguments": [
+            {
+              "name": "columns",
+              "type": "int"
+            },
+            {
+              "name": "from-col",
+              "type": "int"
+            },
+            {
+              "name": "to-col",
+              "type": "int"
+            },
+            {
+              "name": "from-row",
+              "type": "int"
+            },
+            {
+              "name": "to-row",
+              "type": "int"
+            },
+            {
+              "name": "additive",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "media-remove",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "media-remove-selected",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "media-activate",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "media-context",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "library-add-text",
+          "arguments": [
+            {
+              "name": "preset",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "library-apply-caption-preset",
+          "arguments": [
+            {
+              "name": "preset",
+              "type": "string"
+            },
+            {
+              "name": "all",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "library-add-shape",
+          "arguments": [
+            {
+              "name": "shape",
+              "type": "string"
+            },
+            {
+              "name": "label",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "library-apply-effect",
+          "arguments": [
+            {
+              "name": "effect-id",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "library-apply-transition",
+          "arguments": [
+            {
+              "name": "transition-id",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "library-apply-transition-scoped",
+          "arguments": [
+            {
+              "name": "transition-id",
+              "type": "string"
+            },
+            {
+              "name": "images",
+              "type": "bool"
+            },
+            {
+              "name": "videos",
+              "type": "bool"
+            },
+            {
+              "name": "selected-only",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "library-apply-random-transitions",
+          "arguments": [
+            {
+              "name": "mode",
+              "type": "int"
+            },
+            {
+              "name": "images",
+              "type": "bool"
+            },
+            {
+              "name": "videos",
+              "type": "bool"
+            },
+            {
+              "name": "selected-only",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "library-apply-random-effects",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "library-clear-effects",
+          "arguments": [
+            {
+              "name": "selected-only",
+              "type": "bool"
+            },
+            {
+              "name": "images",
+              "type": "bool"
+            },
+            {
+              "name": "videos",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "library-apply-filter",
+          "arguments": [
+            {
+              "name": "filter-id",
+              "type": "string"
+            },
+            {
+              "name": "label",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "library-audition-filter",
+          "arguments": [
+            {
+              "name": "filter-id",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "library-apply-audio",
+          "arguments": [
+            {
+              "name": "effect-id",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "library-save-template",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "library-import-lut",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "library-add-adjustment",
+          "arguments": [
+            {
+              "name": "label",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "library-apply-lut",
+          "arguments": [
+            {
+              "name": "lut-id",
+              "type": "string"
+            },
+            {
+              "name": "label",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "library-reload-packages",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "clip-set",
+          "arguments": [
+            {
+              "name": "field",
+              "type": "ClipField"
+            },
+            {
+              "name": "value",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "clip-set-text",
+          "arguments": [
+            {
+              "name": "field",
+              "type": "ClipTextField"
+            },
+            {
+              "name": "value",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "clip-set-colour",
+          "arguments": [
+            {
+              "name": "field",
+              "type": "ClipTextField"
+            },
+            {
+              "name": "value",
+              "type": "color"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "clip-commit",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "import-font",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "text-style-default",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "adjust-set",
+          "arguments": [
+            {
+              "name": "key",
+              "type": "string"
+            },
+            {
+              "name": "value",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "chain-set-colour",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            },
+            {
+              "name": "key",
+              "type": "string"
+            },
+            {
+              "name": "value",
+              "type": "color"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "curve-point",
+          "arguments": [
+            {
+              "name": "entry",
+              "type": "int"
+            },
+            {
+              "name": "key",
+              "type": "string"
+            },
+            {
+              "name": "point",
+              "type": "int"
+            },
+            {
+              "name": "x",
+              "type": "float"
+            },
+            {
+              "name": "y",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "curve-remove",
+          "arguments": [
+            {
+              "name": "entry",
+              "type": "int"
+            },
+            {
+              "name": "key",
+              "type": "string"
+            },
+            {
+              "name": "point",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "chain-add",
+          "arguments": [
+            {
+              "name": "audio",
+              "type": "bool"
+            },
+            {
+              "name": "id",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "chain-toggle",
+          "arguments": [
+            {
+              "name": "audio",
+              "type": "bool"
+            },
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "chain-move-by",
+          "arguments": [
+            {
+              "name": "audio",
+              "type": "bool"
+            },
+            {
+              "name": "index",
+              "type": "int"
+            },
+            {
+              "name": "delta",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "chain-remove",
+          "arguments": [
+            {
+              "name": "audio",
+              "type": "bool"
+            },
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "chain-set-param",
+          "arguments": [
+            {
+              "name": "audio",
+              "type": "bool"
+            },
+            {
+              "name": "index",
+              "type": "int"
+            },
+            {
+              "name": "key",
+              "type": "string"
+            },
+            {
+              "name": "value",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "add-effect",
+          "arguments": [
+            {
+              "name": "audio",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "remove-effect",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "play-toggled",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "seek",
+          "arguments": [
+            {
+              "name": "seconds",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "step-frames",
+          "arguments": [
+            {
+              "name": "frames",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "ratio-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "quality-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "stage-pressed",
+          "arguments": [
+            {
+              "name": "x",
+              "type": "float"
+            },
+            {
+              "name": "y",
+              "type": "float"
+            },
+            {
+              "name": "additive",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "stage-grip-pressed",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "string"
+            },
+            {
+              "name": "grip",
+              "type": "int"
+            },
+            {
+              "name": "x",
+              "type": "float"
+            },
+            {
+              "name": "y",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "stage-dragged",
+          "arguments": [
+            {
+              "name": "x",
+              "type": "float"
+            },
+            {
+              "name": "y",
+              "type": "float"
+            },
+            {
+              "name": "snap",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "stage-released",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "cutout-mode",
+          "arguments": [
+            {
+              "name": "mode",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "cutout-tool",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "cutout-size",
+          "arguments": [
+            {
+              "name": "size",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "cutout-painting",
+          "arguments": [
+            {
+              "name": "on",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "cutout-subject",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "cutout-clear",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "clip-enhance-set",
+          "arguments": [
+            {
+              "name": "on",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "clip-enhance-size",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "clip-enhance-strength",
+          "arguments": [
+            {
+              "name": "strength",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "clip-enhance-preview",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "clip-enhance-run",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "transition-remove",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "transition-clear",
+          "arguments": [
+            {
+              "name": "selected-only",
+              "type": "bool"
+            },
+            {
+              "name": "images",
+              "type": "bool"
+            },
+            {
+              "name": "videos",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "transition-duration-set",
+          "arguments": [
+            {
+              "name": "seconds",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "transition-duration-all",
+          "arguments": [
+            {
+              "name": "seconds",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "transition-intensity-set",
+          "arguments": [
+            {
+              "name": "amount",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "transition-default-save",
+          "arguments": [
+            {
+              "name": "seconds",
+              "type": "float"
+            },
+            {
+              "name": "intensity",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "transition-default-reset",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "transition-draft-duration-set",
+          "arguments": [
+            {
+              "name": "seconds",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "transition-draft-intensity-set",
+          "arguments": [
+            {
+              "name": "amount",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "tab-selected",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "tab-renamed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            },
+            {
+              "name": "name",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "tab-close-requested",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "tab-added",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "tool-changed",
+          "arguments": [
+            {
+              "name": "tool",
+              "type": "TimelineTool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "snap-changed",
+          "arguments": [
+            {
+              "name": "snap",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "magnetic-changed",
+          "arguments": [
+            {
+              "name": "on",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "pan-changed",
+          "arguments": [
+            {
+              "name": "on",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "trim-follow-changed",
+          "arguments": [
+            {
+              "name": "on",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "meters-shown-changed",
+          "arguments": [
+            {
+              "name": "on",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "preview-axis-changed",
+          "arguments": [
+            {
+              "name": "on",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "preview-axis-audio-changed",
+          "arguments": [
+            {
+              "name": "on",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "hovered",
+          "arguments": [
+            {
+              "name": "seconds",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "hover-ended",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "undo",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "redo",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "split",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "merge",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "delete-selected",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "captions",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "speak",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "record-voiceover",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "add-track",
+          "arguments": [
+            {
+              "name": "bottom",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "zoom-to-fit",
+          "arguments": [
+            {
+              "name": "width",
+              "type": "length"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "zoom",
+          "arguments": [
+            {
+              "name": "factor",
+              "type": "float"
+            },
+            {
+              "name": "anchor-seconds",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "lanes-resized",
+          "arguments": [
+            {
+              "name": "width",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "scrubbed",
+          "arguments": [
+            {
+              "name": "seconds",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "finger-held",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "finger-lifted",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "key-mark-moved",
+          "arguments": [
+            {
+              "name": "from",
+              "type": "float"
+            },
+            {
+              "name": "to",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "clip-pressed",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "string"
+            },
+            {
+              "name": "additive",
+              "type": "bool"
+            },
+            {
+              "name": "edge",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "save-frame",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "clip-split",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "string"
+            },
+            {
+              "name": "seconds",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "clip-volume",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "string"
+            },
+            {
+              "name": "gain",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "clip-dragged",
+          "arguments": [
+            {
+              "name": "seconds",
+              "type": "float"
+            },
+            {
+              "name": "pixels",
+              "type": "length"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "clip-released",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "clip-cancelled",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "clip-context",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "menu-selected",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "band-selected",
+          "arguments": [
+            {
+              "name": "from-seconds",
+              "type": "float"
+            },
+            {
+              "name": "to-seconds",
+              "type": "float"
+            },
+            {
+              "name": "from-y",
+              "type": "length"
+            },
+            {
+              "name": "to-y",
+              "type": "length"
+            },
+            {
+              "name": "additive",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "scrolled",
+          "arguments": [
+            {
+              "name": "seconds",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "drag-hovered",
+          "arguments": [
+            {
+              "name": "payload",
+              "type": "string"
+            },
+            {
+              "name": "seconds",
+              "type": "float"
+            },
+            {
+              "name": "y",
+              "type": "length"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "dropped",
+          "arguments": [
+            {
+              "name": "payload",
+              "type": "string"
+            },
+            {
+              "name": "seconds",
+              "type": "float"
+            },
+            {
+              "name": "y",
+              "type": "length"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "track-flag-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            },
+            {
+              "name": "visible",
+              "type": "bool"
+            },
+            {
+              "name": "muted",
+              "type": "bool"
+            },
+            {
+              "name": "locked",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "track-sized",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            },
+            {
+              "name": "size",
+              "type": "TrackSize"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "track-removed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "tab-moved",
+          "arguments": [
+            {
+              "name": "from",
+              "type": "int"
+            },
+            {
+              "name": "to",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "modify-project",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "blur",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "shortcut",
+          "arguments": [
+            {
+              "name": "action",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "key-chord",
+          "arguments": [
+            {
+              "name": "text",
+              "type": "string"
+            },
+            {
+              "name": "shift",
+              "type": "bool"
+            },
+            {
+              "name": "alt",
+              "type": "bool"
+            },
+            {
+              "name": "control",
+              "type": "bool"
+            },
+            {
+              "name": "meta",
+              "type": "bool"
+            },
+            {
+              "name": "on-start",
+              "type": "bool"
+            }
+          ],
+          "result": "bool"
+        }
+      ]
+    },
+    "Library": {
+      "properties": {
+        "views": "[LibraryViewData]"
+      },
+      "callbacks": [
+        {
+          "name": "query-changed",
+          "arguments": [
+            {
+              "name": "shelf",
+              "type": "int"
+            },
+            {
+              "name": "text",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "group-changed",
+          "arguments": [
+            {
+              "name": "shelf",
+              "type": "int"
+            },
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "favourites-changed",
+          "arguments": [
+            {
+              "name": "shelf",
+              "type": "int"
+            },
+            {
+              "name": "on",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "category-changed",
+          "arguments": [
+            {
+              "name": "shelf",
+              "type": "int"
+            },
+            {
+              "name": "category",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "favourite",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "string"
+            },
+            {
+              "name": "on",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        }
+      ]
+    },
+    "TransitionControls": {
+      "properties": {
+        "params": "string"
+      },
+      "callbacks": [
+        {
+          "name": "apply",
+          "arguments": [
+            {
+              "name": "params",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        }
+      ]
+    },
+    "FontSearch": {
+      "properties": {
+        "matches": "[string]"
+      },
+      "callbacks": [
+        {
+          "name": "query-changed",
+          "arguments": [
+            {
+              "name": "text",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        }
+      ]
+    },
+    "TimelineDrag": {
+      "properties": {
+        "feedback": "DragFeedbackData",
+        "ripple": "bool",
+        "duplicate": "bool",
+        "copy-modifier": "bool"
+      },
+      "callbacks": [
+        {
+          "name": "modes-changed",
+          "arguments": [
+            {
+              "name": "ripple",
+              "type": "bool"
+            },
+            {
+              "name": "duplicate",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        }
+      ]
+    },
+    "Keyframes": {
+      "properties": {
+        "layout-clip": "LayoutSelectionData",
+        "rows": "[ClipKeyData]",
+        "available": "bool",
+        "animation-browser": "bool",
+        "animation-favourites-browser": "bool",
+        "favourite-pool": "[bool]",
+        "animation-timing": "string",
+        "has-favourite-pool": "bool",
+        "animation-saved": "AnimationInspectorData",
+        "animation-has-override": "bool",
+        "animation-dirty": "bool",
+        "animation-selected": "int",
+        "animation-images": "bool",
+        "animation-videos": "bool",
+        "animation-scope": "int",
+        "physics-strength": "float",
+        "physics-duration": "float",
+        "physics-speed": "float",
+        "physics-intensity": "float",
+        "physics-favourites": "[bool]",
+        "canvas-motion": "CanvasMotionData"
+      },
+      "callbacks": [
+        {
+          "name": "layout-set",
+          "arguments": [
+            {
+              "name": "field",
+              "type": "ClipField"
+            },
+            {
+              "name": "value",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "layout-frame",
+          "arguments": [
+            {
+              "name": "fill",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "toggle",
+          "arguments": [
+            {
+              "name": "field",
+              "type": "ClipField"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "step",
+          "arguments": [
+            {
+              "name": "field",
+              "type": "ClipField"
+            },
+            {
+              "name": "delta",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "clear",
+          "arguments": [
+            {
+              "name": "field",
+              "type": "ClipField"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "apply-motion-preset",
+          "arguments": [
+            {
+              "name": "field",
+              "type": "ClipField"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "apply-random-motion",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "remember-animation",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            },
+            {
+              "name": "strength",
+              "type": "float"
+            },
+            {
+              "name": "duration",
+              "type": "float"
+            },
+            {
+              "name": "speed",
+              "type": "float"
+            },
+            {
+              "name": "intensity",
+              "type": "float"
+            },
+            {
+              "name": "canvas",
+              "type": "CanvasMotionData"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "reset-animation",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "has-animation-default",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "bool"
+        },
+        {
+          "name": "load-animation",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "AnimationInspectorData"
+        },
+        {
+          "name": "clear-generated-motion",
+          "arguments": [
+            {
+              "name": "images",
+              "type": "bool"
+            },
+            {
+              "name": "videos",
+              "type": "bool"
+            },
+            {
+              "name": "selected-only",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "apply-animation-favourites",
+          "arguments": [
+            {
+              "name": "pool",
+              "type": "[bool]"
+            },
+            {
+              "name": "images",
+              "type": "bool"
+            },
+            {
+              "name": "videos",
+              "type": "bool"
+            },
+            {
+              "name": "selected",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "apply-canvas-motion",
+          "arguments": [
+            {
+              "name": "preset",
+              "type": "int"
+            },
+            {
+              "name": "mode",
+              "type": "int"
+            },
+            {
+              "name": "images",
+              "type": "bool"
+            },
+            {
+              "name": "videos",
+              "type": "bool"
+            },
+            {
+              "name": "selected-only",
+              "type": "bool"
+            },
+            {
+              "name": "settings",
+              "type": "CanvasMotionData"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "apply-physics-motion",
+          "arguments": [
+            {
+              "name": "preset",
+              "type": "int"
+            },
+            {
+              "name": "strength",
+              "type": "float"
+            },
+            {
+              "name": "duration",
+              "type": "float"
+            },
+            {
+              "name": "speed",
+              "type": "float"
+            },
+            {
+              "name": "intensity",
+              "type": "float"
+            },
+            {
+              "name": "auto-fit",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "toggle-physics-favourite",
+          "arguments": [
+            {
+              "name": "preset",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "apply-random-favourite-motion",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "apply-physics-bulk",
+          "arguments": [
+            {
+              "name": "preset",
+              "type": "int"
+            },
+            {
+              "name": "mode",
+              "type": "int"
+            },
+            {
+              "name": "images",
+              "type": "bool"
+            },
+            {
+              "name": "videos",
+              "type": "bool"
+            },
+            {
+              "name": "selected-only",
+              "type": "bool"
+            },
+            {
+              "name": "strength",
+              "type": "float"
+            },
+            {
+              "name": "duration",
+              "type": "float"
+            },
+            {
+              "name": "speed",
+              "type": "float"
+            },
+            {
+              "name": "intensity",
+              "type": "float"
+            },
+            {
+              "name": "auto-fit",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "apply-bulk-motion",
+          "arguments": [
+            {
+              "name": "mode",
+              "type": "int"
+            },
+            {
+              "name": "images",
+              "type": "bool"
+            },
+            {
+              "name": "video-clips",
+              "type": "bool"
+            },
+            {
+              "name": "selected-only",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "apply-bulk-motion-preset",
+          "arguments": [
+            {
+              "name": "mode",
+              "type": "int"
+            },
+            {
+              "name": "preset",
+              "type": "int"
+            },
+            {
+              "name": "images",
+              "type": "bool"
+            },
+            {
+              "name": "video-clips",
+              "type": "bool"
+            },
+            {
+              "name": "selected-only",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "apply-adjustment",
+          "arguments": [
+            {
+              "name": "page",
+              "type": "int"
+            },
+            {
+              "name": "images",
+              "type": "bool"
+            },
+            {
+              "name": "videos",
+              "type": "bool"
+            },
+            {
+              "name": "selected",
+              "type": "bool"
+            },
+            {
+              "name": "scale",
+              "type": "float"
+            },
+            {
+              "name": "x",
+              "type": "float"
+            },
+            {
+              "name": "y",
+              "type": "float"
+            },
+            {
+              "name": "rotation",
+              "type": "float"
+            },
+            {
+              "name": "opacity",
+              "type": "float"
+            },
+            {
+              "name": "flip-h",
+              "type": "bool"
+            },
+            {
+              "name": "flip-v",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "apply-bulk-transform",
+          "arguments": [
+            {
+              "name": "mode",
+              "type": "int"
+            },
+            {
+              "name": "images",
+              "type": "bool"
+            },
+            {
+              "name": "video-clips",
+              "type": "bool"
+            },
+            {
+              "name": "selected-only",
+              "type": "bool"
+            },
+            {
+              "name": "scale",
+              "type": "float"
+            },
+            {
+              "name": "position-x",
+              "type": "float"
+            },
+            {
+              "name": "position-y",
+              "type": "float"
+            },
+            {
+              "name": "rotation",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "toggle-param",
+          "arguments": [
+            {
+              "name": "key",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "step-param",
+          "arguments": [
+            {
+              "name": "key",
+              "type": "string"
+            },
+            {
+              "name": "delta",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "clear-param",
+          "arguments": [
+            {
+              "name": "key",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        }
+      ]
+    },
+    "Backdrop": {
+      "properties": {
+        "timeline": "BackdropData",
+        "clip": "BackdropData",
+        "clip-has": "bool",
+        "can-frame": "bool",
+        "stills": "[string]"
+      },
+      "callbacks": [
+        {
+          "name": "set-mode",
+          "arguments": [
+            {
+              "name": "clip",
+              "type": "bool"
+            },
+            {
+              "name": "mode",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "set-amount",
+          "arguments": [
+            {
+              "name": "clip",
+              "type": "bool"
+            },
+            {
+              "name": "amount",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "set-colour",
+          "arguments": [
+            {
+              "name": "clip",
+              "type": "bool"
+            },
+            {
+              "name": "colour",
+              "type": "color"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "set-still",
+          "arguments": [
+            {
+              "name": "clip",
+              "type": "bool"
+            },
+            {
+              "name": "row",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "apply-to-all",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "apply-bulk",
+          "arguments": [
+            {
+              "name": "mode",
+              "type": "int"
+            },
+            {
+              "name": "amount",
+              "type": "float"
+            },
+            {
+              "name": "colour",
+              "type": "color"
+            },
+            {
+              "name": "images",
+              "type": "bool"
+            },
+            {
+              "name": "videos",
+              "type": "bool"
+            },
+            {
+              "name": "selected-only",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "frame",
+          "arguments": [
+            {
+              "name": "fill",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        }
+      ]
+    },
+    "Meters": {
+      "properties": {
+        "left": "float",
+        "right": "float",
+        "hold-left": "float",
+        "hold-right": "float",
+        "clipped": "bool"
+      },
+      "callbacks": [
+        {
+          "name": "clip-cleared",
+          "arguments": [],
+          "result": "void"
+        }
+      ]
+    },
+    "Sounds": {
+      "properties": {
+        "voices-saved": "[VoiceCardData]",
+        "voices-builtin": "[VoiceCardData]",
+        "styles": "[VoiceCardData]",
+        "voices-ready": "bool",
+        "mine": "[SoundCardData]",
+        "importing": "bool",
+        "concat": "[SoundCardData]",
+        "concat-state": "int",
+        "concat-category": "int"
+      },
+      "callbacks": [
+        {
+          "name": "voice-open",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "voice-remove",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "load-concat",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "concat-category-changed",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "import",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "preview",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "add",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "remove",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "shown",
+          "arguments": [
+            {
+              "name": "on",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        }
+      ]
+    },
+    "CanvasPresets": {
+      "properties": {
+        "selected": "int",
+        "favourites": "[bool]",
+        "foreground-x": "float",
+        "foreground-y": "float",
+        "foreground-width": "float",
+        "foreground-height": "float",
+        "foreground-size": "float",
+        "border-width": "float",
+        "radius": "float",
+        "blur": "float",
+        "pattern-intensity": "float",
+        "pattern-density": "float",
+        "pattern-size": "float",
+        "lighting-spread": "float",
+        "pattern-opacity": "float",
+        "tint-opacity": "float",
+        "shadow-opacity": "float",
+        "shadow-offset": "float",
+        "mat-bottom": "float",
+        "rotation": "float",
+        "derivative-opacity": "float",
+        "bleed-edge": "int",
+        "background-mode": "int",
+        "border-color": "color",
+        "background-color": "color",
+        "tint-color": "color",
+        "shadow-color": "color",
+        "mat-color": "color",
+        "profile": "string",
+        "default-status": "string"
+      },
+      "callbacks": [
+        {
+          "name": "edit-number",
+          "arguments": [
+            {
+              "name": "field",
+              "type": "string"
+            },
+            {
+              "name": "value",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "edit-colour",
+          "arguments": [
+            {
+              "name": "field",
+              "type": "string"
+            },
+            {
+              "name": "value",
+              "type": "color"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "edit-mode",
+          "arguments": [
+            {
+              "name": "mode",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "sync-profile",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "toggle-favourite",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "choose",
+          "arguments": [
+            {
+              "name": "preset",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "apply",
+          "arguments": [
+            {
+              "name": "profile",
+              "type": "string"
+            },
+            {
+              "name": "all",
+              "type": "bool"
+            },
+            {
+              "name": "images",
+              "type": "bool"
+            },
+            {
+              "name": "videos",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "random-favourites",
+          "arguments": [
+            {
+              "name": "images",
+              "type": "bool"
+            },
+            {
+              "name": "videos",
+              "type": "bool"
+            },
+            {
+              "name": "selected",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "clear",
+          "arguments": [
+            {
+              "name": "selected",
+              "type": "bool"
+            },
+            {
+              "name": "images",
+              "type": "bool"
+            },
+            {
+              "name": "videos",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "save-default",
+          "arguments": [
+            {
+              "name": "profile",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "reset-default",
+          "arguments": [],
+          "result": "void"
+        }
+      ]
+    },
+    "CaptionPresetPreview": {
+      "properties": {
+        "cards": "[CaptionPreviewCard]",
+        "favourites": "[bool]",
+        "favourites-only": "bool",
+        "chosen": "string",
+        "applied": "string",
+        "status": "string",
+        "previewing": "bool",
+        "font-index": "int",
+        "text-hex": "string",
+        "background-hex": "string",
+        "sample": "bool",
+        "demo-playing": "bool",
+        "can-apply-selected": "bool",
+        "can-apply-all": "bool"
+      },
+      "callbacks": [
+        {
+          "name": "toggle-favourite",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "filter-favourites",
+          "arguments": [
+            {
+              "name": "on",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "stage",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "cancel",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "apply",
+          "arguments": [
+            {
+              "name": "all",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "demo-toggle",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "scope",
+          "arguments": [
+            {
+              "name": "active",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "style-font",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "style-color",
+          "arguments": [
+            {
+              "name": "field",
+              "type": "string"
+            },
+            {
+              "name": "hex",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        }
+      ]
+    },
+    "KeyEditor": {
+      "properties": {
+        "rows": "[KeyRowData]",
+        "at": "float"
+      },
+      "callbacks": [
+        {
+          "name": "jump",
+          "arguments": [
+            {
+              "name": "at",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "move-key",
+          "arguments": [
+            {
+              "name": "field",
+              "type": "ClipField"
+            },
+            {
+              "name": "param",
+              "type": "string"
+            },
+            {
+              "name": "from",
+              "type": "float"
+            },
+            {
+              "name": "to",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "drag-key",
+          "arguments": [
+            {
+              "name": "field",
+              "type": "ClipField"
+            },
+            {
+              "name": "param",
+              "type": "string"
+            },
+            {
+              "name": "from",
+              "type": "float"
+            },
+            {
+              "name": "to",
+              "type": "float"
+            },
+            {
+              "name": "value",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "set-ease",
+          "arguments": [
+            {
+              "name": "field",
+              "type": "ClipField"
+            },
+            {
+              "name": "param",
+              "type": "string"
+            },
+            {
+              "name": "at",
+              "type": "float"
+            },
+            {
+              "name": "x1",
+              "type": "float"
+            },
+            {
+              "name": "y1",
+              "type": "float"
+            },
+            {
+              "name": "x2",
+              "type": "float"
+            },
+            {
+              "name": "y2",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "step-all",
+          "arguments": [
+            {
+              "name": "delta",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "clear-all",
+          "arguments": [],
+          "result": "void"
+        }
+      ]
+    },
+    "ParticleBulk": {
+      "properties": {
+        "favourites": "[bool]",
+        "preset": "int",
+        "draft-id": "string",
+        "draft-params": "[AppliedParamData]",
+        "draft-colours": "[ColourKnobData]"
+      },
+      "callbacks": [
+        {
+          "name": "apply",
+          "arguments": [
+            {
+              "name": "preset",
+              "type": "int"
+            },
+            {
+              "name": "mode",
+              "type": "int"
+            },
+            {
+              "name": "selected-only",
+              "type": "bool"
+            },
+            {
+              "name": "images",
+              "type": "bool"
+            },
+            {
+              "name": "videos",
+              "type": "bool"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "toggle-favourite",
+          "arguments": [
+            {
+              "name": "index",
+              "type": "int"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "select-effect",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "change-param",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "string"
+            },
+            {
+              "name": "key",
+              "type": "string"
+            },
+            {
+              "name": "value",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "change-colour",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "string"
+            },
+            {
+              "name": "key",
+              "type": "string"
+            },
+            {
+              "name": "value",
+              "type": "color"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "save-default",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "reset-default",
+          "arguments": [
+            {
+              "name": "id",
+              "type": "string"
+            }
+          ],
+          "result": "void"
+        },
+        {
+          "name": "clear-preview",
+          "arguments": [],
+          "result": "void"
+        }
+      ]
+    },
+    "SourcePreview": {
+      "properties": {
+        "open": "bool",
+        "name": "string",
+        "row": "int",
+        "card": "string",
+        "time": "float",
+        "duration": "float",
+        "progress": "float",
+        "playing": "bool"
+      },
+      "callbacks": [
+        {
+          "name": "closed",
+          "arguments": [],
+          "result": "void"
+        },
+        {
+          "name": "seek",
+          "arguments": [
+            {
+              "name": "seconds",
+              "type": "float"
+            }
+          ],
+          "result": "void"
+        }
+      ]
+    }
+  },
+  "types": {
+    "AnimationInspectorData": {
+      "kind": "struct",
+      "fields": {
+        "strength": "float",
+        "duration": "float",
+        "speed": "float",
+        "intensity": "float",
+        "canvas": "CanvasMotionData"
+      }
+    },
+    "AppliedEntryData": {
+      "kind": "struct",
+      "fields": {
+        "id": "string",
+        "name": "string",
+        "on": "bool",
+        "known": "bool"
+      }
+    },
+    "AppliedParamData": {
+      "kind": "struct",
+      "fields": {
+        "entry": "int",
+        "key": "string",
+        "label": "string",
+        "group": "string",
+        "unit": "string",
+        "min": "float",
+        "max": "float",
+        "step": "float",
+        "default-value": "float",
+        "value": "float",
+        "fmt": "ParamFormat",
+        "keyable": "bool",
+        "keyed": "bool",
+        "here": "bool",
+        "prev": "bool",
+        "next": "bool"
+      }
+    },
+    "AvatarData": {
+      "kind": "struct",
+      "fields": {
+        "letter": "string",
+        "hue": "int",
+        "picture": "image",
+        "pictured": "bool"
+      }
+    },
+    "BackdropData": {
+      "kind": "struct",
+      "fields": {
+        "mode": "int",
+        "amount": "float",
+        "colour": "color",
+        "still": "int"
+      }
+    },
+    "CBuilderKeywordData": {
+      "kind": "struct",
+      "fields": {
+        "keyword": "string",
+        "available": "int",
+        "selected": "bool",
+        "weight": "float"
+      }
+    },
+    "CanvasMotionData": {
+      "kind": "struct",
+      "fields": {
+        "start-scale": "float",
+        "middle-scale": "float",
+        "end-scale": "float",
+        "peak-time": "float",
+        "auto-fit": "bool",
+        "duration": "float",
+        "delay": "float",
+        "entry-seconds": "float",
+        "hold-seconds": "float",
+        "exit-seconds": "float",
+        "focus-middle-x": "float",
+        "focus-middle-y": "float",
+        "focus-hold": "float",
+        "speed": "float",
+        "strength": "float",
+        "intensity": "float",
+        "blur": "float",
+        "reverse": "bool",
+        "custom-anchors": "bool",
+        "start-x": "float",
+        "start-y": "float",
+        "end-x": "float",
+        "end-y": "float",
+        "easing": "int",
+        "seed": "int",
+        "corner-radius": "float"
+      }
+    },
+    "CaptionPreviewCard": {
+      "kind": "struct",
+      "fields": {
+        "id": "string",
+        "name": "string",
+        "thumbnail": "image"
+      }
+    },
+    "CaptionsSheetData": {
+      "kind": "struct",
+      "fields": {
+        "open": "bool",
+        "from-voice": "bool",
+        "sources": "[string]",
+        "source": "int",
+        "text": "string",
+        "model": "int",
+        "karaoke": "bool",
+        "gpu": "bool",
+        "render-after": "bool",
+        "preset": "int",
+        "placement": "int",
+        "size": "int",
+        "running": "bool",
+        "progress": "float",
+        "ceiling": "float",
+        "step": "float",
+        "left": "float",
+        "stage": "string",
+        "ready": "bool",
+        "message": "string"
+      }
+    },
+    "CatalogueEntryData": {
+      "kind": "struct",
+      "fields": {
+        "id": "string",
+        "name": "string",
+        "favourite": "bool",
+        "category": "string",
+        "group": "int",
+        "description": "string",
+        "art": "image"
+      }
+    },
+    "ChipOption": {
+      "kind": "struct",
+      "fields": {
+        "label": "string",
+        "ratio": "float"
+      }
+    },
+    "ClipData": {
+      "kind": "struct",
+      "fields": {
+        "id": "string",
+        "name": "string",
+        "kind": "ClipKind",
+        "row": "int",
+        "start": "float",
+        "duration": "float",
+        "selected": "bool",
+        "transition-selected": "bool",
+        "fx": "bool",
+        "transition-duration": "float",
+        "fade-in": "float",
+        "fade-out": "float",
+        "volume": "float",
+        "text-body": "string",
+        "wave": "string",
+        "wave-from": "float",
+        "wave-span": "float",
+        "has-audio": "bool",
+        "strip": "StripData"
+      }
+    },
+    "ClipField": {
+      "kind": "enum",
+      "values": [
+        "scale",
+        "offset-x",
+        "offset-y",
+        "rotation",
+        "stretch-x",
+        "stretch-y",
+        "opacity",
+        "volume",
+        "speed",
+        "preserve-pitch",
+        "fade-in",
+        "fade-out",
+        "flip-h",
+        "flip-v",
+        "blend",
+        "crop-left",
+        "crop-top",
+        "crop-right",
+        "crop-bottom",
+        "font-size",
+        "font-weight",
+        "italic",
+        "text-opacity",
+        "align",
+        "stroke-width",
+        "shadow",
+        "line-height",
+        "tracking",
+        "text-width",
+        "text-height",
+        "stroke-opacity",
+        "background-opacity",
+        "background-radius",
+        "background-padding-x",
+        "background-padding-y",
+        "cutout-feather",
+        "stabilize",
+        "stabilize-smoothness",
+        "stabilize-max-zoom",
+        "stabilize-tripod",
+        "audio-track",
+        "mask-shape",
+        "mask-invert",
+        "mask-x",
+        "mask-y",
+        "mask-width",
+        "mask-height",
+        "mask-rotation",
+        "mask-roundness",
+        "mask-feather"
+      ]
+    },
+    "ClipKeyData": {
+      "kind": "struct",
+      "fields": {
+        "field": "ClipField",
+        "keyed": "bool",
+        "here": "bool",
+        "prev": "bool",
+        "next": "bool"
+      }
+    },
+    "ClipKind": {
+      "kind": "enum",
+      "values": [
+        "video",
+        "audio",
+        "image",
+        "text",
+        "filter",
+        "shape"
+      ]
+    },
+    "ClipTextField": {
+      "kind": "enum",
+      "values": [
+        "content",
+        "font-family",
+        "color",
+        "stroke-color",
+        "background"
+      ]
+    },
+    "ColourKnobData": {
+      "kind": "struct",
+      "fields": {
+        "entry": "int",
+        "key": "string",
+        "label": "string",
+        "value": "color"
+      }
+    },
+    "ConfirmData": {
+      "kind": "struct",
+      "fields": {
+        "open": "bool",
+        "title": "string",
+        "message": "string",
+        "action": "string",
+        "required-name": "string"
+      }
+    },
+    "CurveData": {
+      "kind": "struct",
+      "fields": {
+        "entry": "int",
+        "key": "string",
+        "label": "string",
+        "group": "string",
+        "points": "[CurvePointData]",
+        "path": "string"
+      }
+    },
+    "CurveGroupData": {
+      "kind": "struct",
+      "fields": {
+        "entry": "int",
+        "curves": "[CurveData]"
+      }
+    },
+    "CurvePointData": {
+      "kind": "struct",
+      "fields": {
+        "index": "int",
+        "x": "float",
+        "y": "float"
+      }
+    },
+    "DockDivider": {
+      "kind": "struct",
+      "fields": {
+        "index": "int",
+        "columns": "bool",
+        "x": "length",
+        "y": "length",
+        "width": "length",
+        "height": "length"
+      }
+    },
+    "DockSide": {
+      "kind": "enum",
+      "values": [
+        "centre",
+        "left",
+        "right",
+        "top",
+        "bottom"
+      ]
+    },
+    "DragFeedbackData": {
+      "kind": "struct",
+      "fields": {
+        "active": "bool",
+        "valid": "bool",
+        "start": "float",
+        "duration": "float",
+        "row": "int",
+        "label": "string"
+      }
+    },
+    "DropData": {
+      "kind": "struct",
+      "fields": {
+        "active": "bool",
+        "kind": "ClipKind",
+        "label": "string",
+        "start": "float",
+        "duration": "float",
+        "row": "int"
+      }
+    },
+    "EffectData": {
+      "kind": "struct",
+      "fields": {
+        "id": "int",
+        "name": "string",
+        "audio": "bool"
+      }
+    },
+    "ExportData": {
+      "kind": "struct",
+      "fields": {
+        "open": "bool",
+        "name": "string",
+        "path": "string",
+        "format": "string",
+        "duration": "string",
+        "contents": "string",
+        "resolution": "int",
+        "resolutions": "[string]",
+        "rate": "int",
+        "rates": "[string]",
+        "rate-details": "[string]",
+        "codec": "int",
+        "h264-encodable": "bool",
+        "hevc-encodable": "bool",
+        "av1-encodable": "bool",
+        "ten-bit": "bool",
+        "hdr-timeline": "bool",
+        "hdr": "bool",
+        "deep-available": "bool",
+        "hdr-label": "string",
+        "target": "float",
+        "encoding": "string",
+        "size-chosen": "string",
+        "phase": "ExportPhase",
+        "progress": "float",
+        "stage": "string",
+        "eta": "string",
+        "message": "string",
+        "done-size": "string",
+        "empty": "bool"
+      }
+    },
+    "ExportPhase": {
+      "kind": "enum",
+      "values": [
+        "idle",
+        "running",
+        "done",
+        "failed"
+      ]
+    },
+    "Glyph": {
+      "kind": "enum",
+      "values": [
+        "none",
+        "plus",
+        "minus",
+        "close",
+        "more",
+        "check",
+        "chevron-down",
+        "chevron-left",
+        "sticker",
+        "shapes",
+        "mask-linear",
+        "mask-mirror",
+        "mask-circle",
+        "mask-rectangle",
+        "mask-heart",
+        "mask-star",
+        "chevron-right",
+        "sparkle",
+        "eye",
+        "lock",
+        "frame",
+        "copy",
+        "flip-h",
+        "flip-v",
+        "mirror-rotate",
+        "rotate",
+        "reverse",
+        "keyframe",
+        "dopesheet",
+        "curves",
+        "reset",
+        "hand",
+        "maximize",
+        "angle",
+        "align-left",
+        "align-center-x",
+        "align-right",
+        "align-top",
+        "align-center-y",
+        "align-bottom",
+        "distribute",
+        "fit",
+        "rows",
+        "film",
+        "music",
+        "image",
+        "import",
+        "transition",
+        "slot",
+        "settings",
+        "keyboard",
+        "sun",
+        "moon",
+        "export",
+        "chevron-up",
+        "search",
+        "clock",
+        "tag",
+        "undo",
+        "redo",
+        "pointer",
+        "razor",
+        "split",
+        "delete-left",
+        "delete-right",
+        "merge",
+        "trash",
+        "magnet",
+        "fold",
+        "axis",
+        "trim-follow",
+        "waveform",
+        "filter",
+        "eye-off",
+        "meter",
+        "mic",
+        "stop",
+        "volume",
+        "volume-off",
+        "unlock",
+        "play",
+        "pause",
+        "step-back",
+        "step-forward",
+        "skip-back",
+        "skip-forward",
+        "text-mark",
+        "info",
+        "help",
+        "folder",
+        "book",
+        "circle-play",
+        "bug",
+        "arrow-up-right",
+        "github",
+        "discord",
+        "brush",
+        "eraser"
+      ]
+    },
+    "GpuQueueRow": {
+      "kind": "struct",
+      "fields": {
+        "id": "string",
+        "title": "string",
+        "state": "string",
+        "detail": "string",
+        "metrics": "string",
+        "bytes": "string",
+        "output": "string",
+        "progress": "int",
+        "retry": "bool",
+        "cancel": "bool",
+        "delete": "bool",
+        "up": "bool",
+        "down": "bool"
+      }
+    },
+    "KeyMarkData": {
+      "kind": "struct",
+      "fields": {
+        "at": "float",
+        "here": "bool",
+        "value": "float",
+        "ease-x1": "float",
+        "ease-y1": "float",
+        "ease-x2": "float",
+        "ease-y2": "float",
+        "eased": "bool"
+      }
+    },
+    "KeyRowData": {
+      "kind": "struct",
+      "fields": {
+        "field": "ClipField",
+        "param": "string",
+        "label": "string",
+        "keys": "[KeyMarkData]",
+        "state": "ClipKeyData",
+        "value": "float",
+        "minimum": "float",
+        "maximum": "float",
+        "step": "float",
+        "default-value": "float",
+        "fmt": "ParamFormat",
+        "unit": "string",
+        "unit-scale": "float",
+        "curve": "string",
+        "ease-index": "int"
+      }
+    },
+    "LayoutSelectionData": {
+      "kind": "struct",
+      "fields": {
+        "present": "bool",
+        "editable": "bool",
+        "count": "int",
+        "kind": "ClipKind",
+        "scale": "float",
+        "offset-x": "float",
+        "offset-y": "float",
+        "rotation": "float",
+        "opacity": "float",
+        "flip-h": "bool",
+        "flip-v": "bool"
+      }
+    },
+    "LibraryViewData": {
+      "kind": "struct",
+      "fields": {
+        "query": "string",
+        "group": "int",
+        "favourites": "bool",
+        "category": "string"
+      }
+    },
+    "MediaFilter": {
+      "kind": "enum",
+      "values": [
+        "all",
+        "video",
+        "audio",
+        "images",
+        "speech",
+        "processed"
+      ]
+    },
+    "MediaItemData": {
+      "kind": "struct",
+      "fields": {
+        "id": "int",
+        "name": "string",
+        "kind": "MediaKind",
+        "duration": "float",
+        "format": "string",
+        "thumbnail": "image",
+        "wave": "string",
+        "selected": "bool"
+      }
+    },
+    "MediaKind": {
+      "kind": "enum",
+      "values": [
+        "video",
+        "audio",
+        "image"
+      ]
+    },
+    "MenuItemData": {
+      "kind": "struct",
+      "fields": {
+        "id": "string",
+        "label": "string",
+        "kind": "MenuRow",
+        "glyph": "Glyph",
+        "shortcut": "string",
+        "enabled": "bool",
+        "danger": "bool",
+        "checkable": "bool",
+        "checked": "bool"
+      }
+    },
+    "MenuRow": {
+      "kind": "enum",
+      "values": [
+        "action",
+        "label",
+        "separator"
+      ]
+    },
+    "MissingMediaItem": {
+      "kind": "struct",
+      "fields": {
+        "id": "string",
+        "name": "string",
+        "path": "string"
+      }
+    },
+    "ModelData": {
+      "kind": "struct",
+      "fields": {
+        "id": "string",
+        "name": "string",
+        "note": "string",
+        "size": "string",
+        "accuracy": "int",
+        "installed": "bool",
+        "active": "bool",
+        "downloading": "bool",
+        "progress": "float",
+        "transferred": "string",
+        "eta": "string"
+      }
+    },
+    "PaneKind": {
+      "kind": "enum",
+      "values": [
+        "media",
+        "preview",
+        "inspector",
+        "timeline",
+        "keyframes"
+      ]
+    },
+    "ParamFormat": {
+      "kind": "enum",
+      "values": [
+        "percent",
+        "pitch",
+        "seconds",
+        "millis",
+        "hertz",
+        "decibels",
+        "ratio",
+        "rate-hz",
+        "steps",
+        "rate",
+        "fade",
+        "fraction",
+        "centred",
+        "degrees",
+        "gain",
+        "height",
+        "outline",
+        "seconds2",
+        "plain",
+        "kelvin",
+        "stops"
+      ]
+    },
+    "ProjectSheetData": {
+      "kind": "struct",
+      "fields": {
+        "open": "bool",
+        "name": "string",
+        "folder": "string",
+        "timeline": "string",
+        "size": "int",
+        "rate": "int",
+        "custom-width": "float",
+        "custom-height": "float",
+        "custom-fps": "float",
+        "rate-readout": "string",
+        "color-space": "int"
+      }
+    },
+    "RecentProjectData": {
+      "kind": "struct",
+      "fields": {
+        "path": "string",
+        "name": "string",
+        "detail": "string",
+        "when": "string",
+        "length": "string",
+        "ratio": "float",
+        "missing": "bool",
+        "poster": "image"
+      }
+    },
+    "RelinkData": {
+      "kind": "struct",
+      "fields": {
+        "open": "bool",
+        "items": "[MissingMediaItem]"
+      }
+    },
+    "SeatBox": {
+      "kind": "struct",
+      "fields": {
+        "index": "int",
+        "kind": "PaneKind",
+        "x": "length",
+        "y": "length",
+        "width": "length",
+        "height": "length"
+      }
+    },
+    "SelectedClipData": {
+      "kind": "struct",
+      "fields": {
+        "present": "bool",
+        "batch": "int",
+        "batch-volume": "bool",
+        "id": "string",
+        "frame-width": "int",
+        "frame-height": "int",
+        "name": "string",
+        "kind": "ClipKind",
+        "duration": "float",
+        "transition-id": "string",
+        "transition-name": "string",
+        "transition-duration": "float",
+        "scale": "float",
+        "offset-x": "float",
+        "offset-y": "float",
+        "rotation": "float",
+        "stretch-x": "float",
+        "stretch-y": "float",
+        "opacity": "float",
+        "volume": "float",
+        "audio-track": "int",
+        "speed": "float",
+        "preserve-pitch": "bool",
+        "flip-h": "bool",
+        "flip-v": "bool",
+        "blend": "int",
+        "crop-left": "float",
+        "crop-top": "float",
+        "crop-right": "float",
+        "crop-bottom": "float",
+        "mask": "int",
+        "mask-invert": "bool",
+        "mask-x": "float",
+        "mask-y": "float",
+        "mask-width": "float",
+        "mask-height": "float",
+        "mask-rotation": "float",
+        "mask-roundness": "float",
+        "mask-feather": "float",
+        "fade-in": "float",
+        "fade-out": "float",
+        "cutout": "int",
+        "cutout-subject": "int",
+        "cutout-feather": "float",
+        "cutout-strokes": "int",
+        "cutout-progress": "float",
+        "cutout-fetching": "bool",
+        "cutout-empty": "bool",
+        "stabilize": "bool",
+        "stabilize-smoothness": "float",
+        "stabilize-max-zoom": "float",
+        "stabilize-tripod": "bool",
+        "stabilize-progress": "float",
+        "stabilize-zoom": "float",
+        "stabilize-needed": "float",
+        "enhance-progress": "float",
+        "enhance-fetching": "bool",
+        "enhance-linked": "bool",
+        "enhance-on": "bool",
+        "enhance-busy": "bool",
+        "enhance-size": "int",
+        "enhance-auto": "int",
+        "enhance-fits-2x": "bool",
+        "enhance-fits-4x": "bool",
+        "enhance-size-note": "string",
+        "enhance-strength": "float",
+        "enhance-previewing": "bool",
+        "enhance-preview-fetch": "float",
+        "enhance-preview": "bool",
+        "enhance-before": "image",
+        "enhance-after": "image",
+        "enhance-estimate": "string",
+        "reverse-progress": "float",
+        "content": "string",
+        "font-family": "string",
+        "family-row": "int",
+        "font-missing": "bool",
+        "font-size": "float",
+        "font-weight": "float",
+        "italic": "bool",
+        "fill": "color",
+        "fill-hex": "string",
+        "align": "TextAlignment",
+        "text-opacity": "float",
+        "stroke-width": "float",
+        "stroke": "color",
+        "stroke-hex": "string",
+        "stroke-opacity": "float",
+        "shadow": "bool",
+        "plate": "color",
+        "plate-hex": "string",
+        "plated": "bool",
+        "plate-opacity": "float",
+        "plate-radius": "float",
+        "plate-padding-x": "float",
+        "plate-padding-y": "float",
+        "line-height": "float",
+        "tracking": "float",
+        "text-width": "float",
+        "text-height": "float"
+      }
+    },
+    "SelectedTransitionData": {
+      "kind": "struct",
+      "fields": {
+        "present": "bool",
+        "id": "string",
+        "name": "string",
+        "duration": "float",
+        "intensity": "float",
+        "intensity-supported": "bool",
+        "into": "string"
+      }
+    },
+    "SettingsData": {
+      "kind": "struct",
+      "fields": {
+        "open": "bool",
+        "tab": "int",
+        "language": "int",
+        "log-level": "int",
+        "playhead-stops": "bool",
+        "proxies": "bool",
+        "gpu": "bool",
+        "gpu-switchable": "bool",
+        "magnetic": "bool",
+        "download-source": "int",
+        "download-base": "string",
+        "server-enabled": "bool",
+        "server-host": "string",
+        "server-port": "int",
+        "server-token": "string",
+        "server-status": "string",
+        "server-state": "int",
+        "server-local": "bool",
+        "disk": "string",
+        "version": "string",
+        "update-status": "string",
+        "checking": "bool",
+        "version-choice": "int",
+        "installing": "bool",
+        "install-progress": "float",
+        "install-transferred": "string",
+        "can-install": "bool",
+        "install-note": "string",
+        "shortcuts": "[ShortcutData]",
+        "capturing": "string"
+      }
+    },
+    "ShortcutData": {
+      "kind": "struct",
+      "fields": {
+        "id": "string",
+        "label": "string",
+        "keys": "string",
+        "custom": "bool"
+      }
+    },
+    "SoundCardData": {
+      "kind": "struct",
+      "fields": {
+        "id": "string",
+        "name": "string",
+        "duration": "float",
+        "wave": "string",
+        "detail": "string",
+        "removable": "bool",
+        "ready": "bool",
+        "progress": "float"
+      }
+    },
+    "SpeechSheetData": {
+      "kind": "struct",
+      "fields": {
+        "open": "bool",
+        "text": "string",
+        "voice": "int",
+        "voice-count": "int",
+        "model": "int",
+        "family": "int",
+        "speed": "float",
+        "quality": "int",
+        "pauses": "float",
+        "samples-offered": "bool",
+        "use-sample": "bool",
+        "sample": "int",
+        "sample-name": "string",
+        "reference-length": "float",
+        "reference-start": "float",
+        "running": "bool",
+        "progress": "float",
+        "ceiling": "float",
+        "step": "float",
+        "left": "float",
+        "stage": "string",
+        "ready": "bool",
+        "estimate": "string",
+        "message": "string",
+        "style": "string",
+        "save-name": "string",
+        "save-picture": "string",
+        "saving": "bool"
+      }
+    },
+    "StageGuideData": {
+      "kind": "struct",
+      "fields": {
+        "vertical": "bool",
+        "at": "float"
+      }
+    },
+    "StageItemData": {
+      "kind": "struct",
+      "fields": {
+        "id": "string",
+        "kind": "ClipKind",
+        "selected": "bool",
+        "cx": "float",
+        "cy": "float",
+        "w": "float",
+        "h": "float",
+        "rotation": "float",
+        "scale": "float",
+        "mask": "int",
+        "mask-path": "string",
+        "mask-cx": "float",
+        "mask-cy": "float",
+        "mask-wx": "float",
+        "mask-wy": "float",
+        "mask-hx": "float",
+        "mask-hy": "float",
+        "mask-kx": "float",
+        "mask-ky": "float",
+        "mask-rx": "float",
+        "mask-ry": "float",
+        "mask-fx": "float",
+        "mask-fy": "float"
+      }
+    },
+    "StartData": {
+      "kind": "struct",
+      "fields": {
+        "composing": "bool",
+        "name": "string",
+        "location": "string",
+        "aspect": "int",
+        "size": "int",
+        "rate": "int",
+        "rate-options": "[string]",
+        "size-readout": "string",
+        "custom-width": "float",
+        "custom-height": "float",
+        "custom-fps": "float",
+        "frame-aspect": "float",
+        "rate-readout": "string",
+        "busy": "bool",
+        "error": "string",
+        "dropped": "int",
+        "query": "string",
+        "sort": "int",
+        "renaming": "bool",
+        "rename-path": "string",
+        "rename-name": "string"
+      }
+    },
+    "StripData": {
+      "kind": "struct",
+      "fields": {
+        "image": "image",
+        "frames": "int",
+        "frame-width": "int",
+        "height": "int",
+        "start": "float",
+        "span": "float"
+      }
+    },
+    "SystemFactData": {
+      "kind": "struct",
+      "fields": {
+        "label": "string",
+        "value": "string"
+      }
+    },
+    "TextAlignment": {
+      "kind": "enum",
+      "values": [
+        "left",
+        "center",
+        "right"
+      ]
+    },
+    "TextPresetData": {
+      "kind": "struct",
+      "fields": {
+        "id": "string",
+        "name": "string",
+        "language": "string",
+        "sample": "string",
+        "family": "string",
+        "weight": "int",
+        "italic": "bool",
+        "fill": "color",
+        "plate": "color",
+        "plated": "bool",
+        "stroke": "color",
+        "stroke-width": "float",
+        "align": "TextAlignment"
+      }
+    },
+    "TimelineTabData": {
+      "kind": "struct",
+      "fields": {
+        "id": "string",
+        "name": "string"
+      }
+    },
+    "TimelineTool": {
+      "kind": "enum",
+      "values": [
+        "select",
+        "split"
+      ]
+    },
+    "ToastData": {
+      "kind": "struct",
+      "fields": {
+        "token": "int",
+        "message": "string",
+        "failed": "bool"
+      }
+    },
+    "TrackData": {
+      "kind": "struct",
+      "fields": {
+        "id": "string",
+        "visible": "bool",
+        "muted": "bool",
+        "size": "TrackSize",
+        "height": "length",
+        "top": "length",
+        "locked": "bool"
+      }
+    },
+    "TrackSize": {
+      "kind": "enum",
+      "values": [
+        "auto",
+        "small",
+        "medium",
+        "large"
+      ]
+    },
+    "VoiceCardData": {
+      "kind": "struct",
+      "fields": {
+        "id": "string",
+        "name": "string",
+        "detail": "string",
+        "avatar": "AvatarData",
+        "removable": "bool"
+      }
+    },
+    "VoiceoverData": {
+      "kind": "struct",
+      "fields": {
+        "open": "bool",
+        "phase": "int",
+        "count": "int",
+        "waiting": "bool",
+        "ready": "bool",
+        "device": "int",
+        "countdown": "bool",
+        "mute": "bool",
+        "gain": "float",
+        "error": "string",
+        "can-retake": "bool",
+        "prompt": "string",
+        "prompt-speed": "int"
+      }
+    },
+    "WheelData": {
+      "kind": "struct",
+      "fields": {
+        "entry": "int",
+        "key": "string",
+        "label": "string",
+        "group": "string",
+        "x": "float",
+        "y": "float",
+        "master": "float",
+        "min": "float",
+        "max": "float",
+        "default-value": "float",
+        "keyable": "bool",
+        "keyed": "bool",
+        "here": "bool",
+        "prev": "bool",
+        "next": "bool"
+      }
+    },
+    "WheelGroupData": {
+      "kind": "struct",
+      "fields": {
+        "entry": "int",
+        "wheels": "[WheelData]"
+      }
+    }
+  },
+  "locations": {
+    "AnimationInspectorData": "timeline/model.slint",
+    "AppliedEntryData": "inspector/clip-inspector.slint",
+    "AppliedParamData": "inspector/clip-inspector.slint",
+    "AvatarData": "primitives/avatar.slint",
+    "BackdropData": "timeline/model.slint",
+    "CBuilderKeywordData": "workspace/c-builder-selection.slint",
+    "CanvasMotionData": "timeline/model.slint",
+    "CaptionPreviewCard": "workspace/caption-preset-preview.slint",
+    "CaptionsSheetData": "dialogs/captions.slint",
+    "CatalogueEntryData": "inspector/clip-inspector.slint",
+    "ChipOption": "start.slint",
+    "ClipData": "timeline/model.slint",
+    "ClipField": "timeline/model.slint",
+    "ClipKeyData": "timeline/model.slint",
+    "ClipKind": "timeline/model.slint",
+    "ClipTextField": "timeline/model.slint",
+    "ColourKnobData": "inspector/clip-inspector.slint",
+    "ConfirmData": "dialogs/confirm.slint",
+    "CurveData": "inspector/grading.slint",
+    "CurveGroupData": "inspector/grading.slint",
+    "CurvePointData": "inspector/grading.slint",
+    "DockDivider": "dock.slint",
+    "DockSide": "dock.slint",
+    "DragFeedbackData": "timeline/model.slint",
+    "DropData": "timeline/model.slint",
+    "EffectData": "demo/effects-panel.slint",
+    "ExportData": "dialogs/export.slint",
+    "ExportPhase": "dialogs/export.slint",
+    "Glyph": "icons.slint",
+    "GpuQueueRow": "dialogs/cloud-gpu.slint",
+    "KeyMarkData": "workspace/keyframes-pane.slint",
+    "KeyRowData": "workspace/keyframes-pane.slint",
+    "LayoutSelectionData": "timeline/model.slint",
+    "LibraryViewData": "inspector/clip-inspector.slint",
+    "MediaFilter": "workspace/media-pane.slint",
+    "MediaItemData": "workspace/media-pane.slint",
+    "MediaKind": "workspace/media-pane.slint",
+    "MenuItemData": "primitives/context-menu.slint",
+    "MenuRow": "primitives/context-menu.slint",
+    "MissingMediaItem": "dialogs/relink.slint",
+    "ModelData": "dialogs/settings.slint",
+    "PaneKind": "workspace/pane-switcher.slint",
+    "ParamFormat": "inspector/controls.slint",
+    "ProjectSheetData": "dialogs/project.slint",
+    "RecentProjectData": "start.slint",
+    "RelinkData": "dialogs/relink.slint",
+    "SeatBox": "dock.slint",
+    "SelectedClipData": "timeline/model.slint",
+    "SelectedTransitionData": "timeline/model.slint",
+    "SettingsData": "dialogs/settings.slint",
+    "ShortcutData": "dialogs/settings.slint",
+    "SoundCardData": "workspace/audio-page.slint",
+    "SpeechSheetData": "dialogs/speech.slint",
+    "StageGuideData": "timeline/model.slint",
+    "StageItemData": "timeline/model.slint",
+    "StartData": "start.slint",
+    "StripData": "timeline/model.slint",
+    "SystemFactData": "dialogs/settings.slint",
+    "TextAlignment": "timeline/model.slint",
+    "TextPresetData": "workspace/media-pane.slint",
+    "TimelineTabData": "timeline/model.slint",
+    "TimelineTool": "timeline/model.slint",
+    "ToastData": "primitives/toast.slint",
+    "TrackData": "timeline/model.slint",
+    "TrackSize": "timeline/model.slint",
+    "VoiceCardData": "workspace/audio-page.slint",
+    "VoiceoverData": "dialogs/voiceover.slint",
+    "WheelData": "inspector/grading.slint",
+    "WheelGroupData": "inspector/grading.slint"
+  }
+}

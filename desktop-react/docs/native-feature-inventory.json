@@ -1,0 +1,1126 @@
+[
+  {
+    "global": "Fmt",
+    "file": "ui/util.slint",
+    "callbacks": [
+      {
+        "name": "hex-of",
+        "arguments": "value: color, with-alpha: bool"
+      },
+      {
+        "name": "hex-digits",
+        "arguments": "value: color"
+      },
+      {
+        "name": "color-of",
+        "arguments": "text: string, fallback: color"
+      },
+      {
+        "name": "parse-timecode",
+        "arguments": "text: string"
+      },
+      {
+        "name": "tick-interval",
+        "arguments": "seconds-per-pixel: float"
+      },
+      {
+        "name": "parse-frames",
+        "arguments": "text: string, rate: float"
+      }
+    ]
+  },
+  {
+    "global": "Curves",
+    "file": "ui/util.slint",
+    "callbacks": [
+      {
+        "name": "ease",
+        "arguments": "x1: float, y1: float, x2: float, y2: float, at: float"
+      },
+      {
+        "name": "parse",
+        "arguments": "text: string, fallback: Bezier"
+      }
+    ]
+  },
+  {
+    "global": "Payload",
+    "file": "ui/util.slint",
+    "callbacks": [
+      {
+        "name": "of",
+        "arguments": "text: string"
+      },
+      {
+        "name": "text",
+        "arguments": "payload: data-transfer"
+      },
+      {
+        "name": "preview",
+        "arguments": "text: string"
+      },
+      {
+        "name": "pane-seat",
+        "arguments": "text: string"
+      },
+      {
+        "name": "tab-index",
+        "arguments": "text: string"
+      }
+    ]
+  },
+  {
+    "global": "Focus",
+    "file": "ui/util.slint",
+    "callbacks": [
+      {
+        "name": "release",
+        "arguments": ""
+      }
+    ]
+  },
+  {
+    "global": "I18n",
+    "file": "ui/i18n.slint",
+    "callbacks": [
+      {
+        "name": "lookup",
+        "arguments": "lang: string, key: string"
+      },
+      {
+        "name": "lookup1",
+        "arguments": "lang: string, key: string, a: string"
+      },
+      {
+        "name": "lookup2",
+        "arguments": "lang: string, key: string, a: string, b: string"
+      },
+      {
+        "name": "lookup-upper",
+        "arguments": "lang: string, key: string"
+      }
+    ]
+  },
+  {
+    "global": "Editor",
+    "file": "ui/editor.slint",
+    "callbacks": [
+      {
+        "name": "workspace-resized",
+        "arguments": "width: length, height: length"
+      },
+      {
+        "name": "dock-set",
+        "arguments": "seat: int, kind: PaneKind"
+      },
+      {
+        "name": "dock-add",
+        "arguments": "kind: PaneKind"
+      },
+      {
+        "name": "dock-remove",
+        "arguments": "seat: int"
+      },
+      {
+        "name": "dock-dropped",
+        "arguments": "from: int, onto: int, side: DockSide"
+      },
+      {
+        "name": "divider-pressed",
+        "arguments": "index: int"
+      },
+      {
+        "name": "divider-dragged",
+        "arguments": "index: int, delta: length"
+      },
+      {
+        "name": "cb-project-name-edited",
+        "arguments": "name:string"
+      },
+      {
+        "name": "cb-reset-project-name",
+        "arguments": ""
+      },
+      {
+        "name": "cb-tune-profile",
+        "arguments": "json:string, name:string, opening:string, closing:string,\n        image-min:string, image-max:string, video-min:string, video-max:string,\n        max-videos:string, max-images:string, cooldown:string, seed:string"
+      },
+      {
+        "name": "cb-equalize-keywords",
+        "arguments": "json:string, video:bool"
+      },
+      {
+        "name": "cb-keyword-changed",
+        "arguments": "json: string, video: bool, keyword: string, selected: bool, weight: int"
+      },
+      {
+        "name": "cb-videos-toggled",
+        "arguments": "json: string, on: bool"
+      },
+      {
+        "name": "cb-plan-profile",
+        "arguments": "json: string, images: string, videos: string, action: string"
+      },
+      {
+        "name": "cb-import-folder",
+        "arguments": ""
+      },
+      {
+        "name": "cb-refresh-folder",
+        "arguments": ""
+      },
+      {
+        "name": "cb-choose-narration",
+        "arguments": ""
+      },
+      {
+        "name": "cb-generate-project",
+        "arguments": "name: string, images: string, videos: string, coverage: int, profile: string"
+      },
+      {
+        "name": "import-media",
+        "arguments": ""
+      },
+      {
+        "name": "media-filter-changed",
+        "arguments": "filter: MediaFilter"
+      },
+      {
+        "name": "media-sort-changed",
+        "arguments": "index: int"
+      },
+      {
+        "name": "media-select",
+        "arguments": "id: int, additive: bool, range: bool"
+      },
+      {
+        "name": "media-select-all",
+        "arguments": ""
+      },
+      {
+        "name": "media-add-selected",
+        "arguments": "at-playhead: bool"
+      },
+      {
+        "name": "media-band-selected",
+        "arguments": "columns: int, from-col: int, to-col: int,\n        from-row: int, to-row: int, additive: bool"
+      },
+      {
+        "name": "media-remove",
+        "arguments": "id: int"
+      },
+      {
+        "name": "media-remove-selected",
+        "arguments": ""
+      },
+      {
+        "name": "media-activate",
+        "arguments": "id: int"
+      },
+      {
+        "name": "media-context",
+        "arguments": "id: int"
+      },
+      {
+        "name": "library-add-text",
+        "arguments": "preset: string"
+      },
+      {
+        "name": "library-apply-caption-preset",
+        "arguments": "preset: string, all: bool"
+      },
+      {
+        "name": "library-add-shape",
+        "arguments": "shape: string, label: string"
+      },
+      {
+        "name": "library-apply-effect",
+        "arguments": "effect-id: string"
+      },
+      {
+        "name": "library-apply-transition",
+        "arguments": "transition-id: string"
+      },
+      {
+        "name": "library-apply-transition-scoped",
+        "arguments": "transition-id: string, images: bool, videos: bool, selected-only: bool"
+      },
+      {
+        "name": "library-apply-random-transitions",
+        "arguments": "mode: int, images: bool, videos: bool, selected-only: bool"
+      },
+      {
+        "name": "library-apply-random-effects",
+        "arguments": ""
+      },
+      {
+        "name": "library-clear-effects",
+        "arguments": "selected-only: bool, images: bool, videos: bool"
+      },
+      {
+        "name": "library-apply-filter",
+        "arguments": "filter-id: string, label: string"
+      },
+      {
+        "name": "library-audition-filter",
+        "arguments": "filter-id: string"
+      },
+      {
+        "name": "library-apply-audio",
+        "arguments": "effect-id: string"
+      },
+      {
+        "name": "library-save-template",
+        "arguments": ""
+      },
+      {
+        "name": "library-import-lut",
+        "arguments": ""
+      },
+      {
+        "name": "library-add-adjustment",
+        "arguments": "label: string"
+      },
+      {
+        "name": "library-apply-lut",
+        "arguments": "lut-id: string, label: string"
+      },
+      {
+        "name": "library-reload-packages",
+        "arguments": ""
+      },
+      {
+        "name": "clip-set",
+        "arguments": "field: ClipField, value: float"
+      },
+      {
+        "name": "clip-set-text",
+        "arguments": "field: ClipTextField, value: string"
+      },
+      {
+        "name": "clip-set-colour",
+        "arguments": "field: ClipTextField, value: color"
+      },
+      {
+        "name": "clip-commit",
+        "arguments": ""
+      },
+      {
+        "name": "import-font",
+        "arguments": ""
+      },
+      {
+        "name": "text-style-default",
+        "arguments": ""
+      },
+      {
+        "name": "adjust-set",
+        "arguments": "key: string, value: float"
+      },
+      {
+        "name": "chain-set-colour",
+        "arguments": "index: int, key: string, value: color"
+      },
+      {
+        "name": "curve-point",
+        "arguments": "entry: int, key: string, point: int, x: float, y: float"
+      },
+      {
+        "name": "curve-remove",
+        "arguments": "entry: int, key: string, point: int"
+      },
+      {
+        "name": "chain-add",
+        "arguments": "audio: bool, id: string"
+      },
+      {
+        "name": "chain-toggle",
+        "arguments": "audio: bool, index: int"
+      },
+      {
+        "name": "chain-move-by",
+        "arguments": "audio: bool, index: int, delta: int"
+      },
+      {
+        "name": "chain-remove",
+        "arguments": "audio: bool, index: int"
+      },
+      {
+        "name": "chain-set-param",
+        "arguments": "audio: bool, index: int, key: string, value: float"
+      },
+      {
+        "name": "add-effect",
+        "arguments": "audio: bool"
+      },
+      {
+        "name": "remove-effect",
+        "arguments": "id: int"
+      },
+      {
+        "name": "play-toggled",
+        "arguments": ""
+      },
+      {
+        "name": "seek",
+        "arguments": "seconds: float"
+      },
+      {
+        "name": "step-frames",
+        "arguments": "frames: float"
+      },
+      {
+        "name": "ratio-changed",
+        "arguments": "index: int"
+      },
+      {
+        "name": "quality-changed",
+        "arguments": "index: int"
+      },
+      {
+        "name": "stage-pressed",
+        "arguments": "x: float, y: float, additive: bool"
+      },
+      {
+        "name": "stage-grip-pressed",
+        "arguments": "id: string, grip: int, x: float, y: float"
+      },
+      {
+        "name": "stage-dragged",
+        "arguments": "x: float, y: float, snap: bool"
+      },
+      {
+        "name": "stage-released",
+        "arguments": ""
+      },
+      {
+        "name": "cutout-mode",
+        "arguments": "mode: int"
+      },
+      {
+        "name": "cutout-tool",
+        "arguments": "index: int"
+      },
+      {
+        "name": "cutout-size",
+        "arguments": "size: float"
+      },
+      {
+        "name": "cutout-painting",
+        "arguments": "on: bool"
+      },
+      {
+        "name": "cutout-subject",
+        "arguments": "index: int"
+      },
+      {
+        "name": "cutout-clear",
+        "arguments": ""
+      },
+      {
+        "name": "clip-enhance-set",
+        "arguments": "on: bool"
+      },
+      {
+        "name": "clip-enhance-size",
+        "arguments": "index: int"
+      },
+      {
+        "name": "clip-enhance-strength",
+        "arguments": "strength: float"
+      },
+      {
+        "name": "clip-enhance-preview",
+        "arguments": ""
+      },
+      {
+        "name": "clip-enhance-run",
+        "arguments": ""
+      },
+      {
+        "name": "transition-remove",
+        "arguments": ""
+      },
+      {
+        "name": "transition-clear",
+        "arguments": "selected-only: bool, images: bool, videos: bool"
+      },
+      {
+        "name": "transition-duration-set",
+        "arguments": "seconds: float"
+      },
+      {
+        "name": "transition-duration-all",
+        "arguments": "seconds: float"
+      },
+      {
+        "name": "transition-intensity-set",
+        "arguments": "amount: float"
+      },
+      {
+        "name": "transition-default-save",
+        "arguments": "seconds: float, intensity: float"
+      },
+      {
+        "name": "transition-default-reset",
+        "arguments": ""
+      },
+      {
+        "name": "transition-draft-duration-set",
+        "arguments": "seconds: float"
+      },
+      {
+        "name": "transition-draft-intensity-set",
+        "arguments": "amount: float"
+      },
+      {
+        "name": "tab-selected",
+        "arguments": "index: int"
+      },
+      {
+        "name": "tab-renamed",
+        "arguments": "index: int, name: string"
+      },
+      {
+        "name": "tab-close-requested",
+        "arguments": "index: int"
+      },
+      {
+        "name": "tab-added",
+        "arguments": ""
+      },
+      {
+        "name": "tool-changed",
+        "arguments": "tool: TimelineTool"
+      },
+      {
+        "name": "snap-changed",
+        "arguments": "snap: bool"
+      },
+      {
+        "name": "magnetic-changed",
+        "arguments": "on: bool"
+      },
+      {
+        "name": "pan-changed",
+        "arguments": "on: bool"
+      },
+      {
+        "name": "trim-follow-changed",
+        "arguments": "on: bool"
+      },
+      {
+        "name": "meters-shown-changed",
+        "arguments": "on: bool"
+      },
+      {
+        "name": "preview-axis-changed",
+        "arguments": "on: bool"
+      },
+      {
+        "name": "preview-axis-audio-changed",
+        "arguments": "on: bool"
+      },
+      {
+        "name": "hovered",
+        "arguments": "seconds: float"
+      },
+      {
+        "name": "hover-ended",
+        "arguments": ""
+      },
+      {
+        "name": "undo",
+        "arguments": ""
+      },
+      {
+        "name": "redo",
+        "arguments": ""
+      },
+      {
+        "name": "split",
+        "arguments": ""
+      },
+      {
+        "name": "merge",
+        "arguments": ""
+      },
+      {
+        "name": "delete-selected",
+        "arguments": ""
+      },
+      {
+        "name": "captions",
+        "arguments": ""
+      },
+      {
+        "name": "speak",
+        "arguments": ""
+      },
+      {
+        "name": "record-voiceover",
+        "arguments": ""
+      },
+      {
+        "name": "add-track",
+        "arguments": "bottom: bool"
+      },
+      {
+        "name": "zoom-to-fit",
+        "arguments": "width: length"
+      },
+      {
+        "name": "zoom",
+        "arguments": "factor: float, anchor-seconds: float"
+      },
+      {
+        "name": "lanes-resized",
+        "arguments": "width: float"
+      },
+      {
+        "name": "scrubbed",
+        "arguments": "seconds: float"
+      },
+      {
+        "name": "finger-held",
+        "arguments": ""
+      },
+      {
+        "name": "finger-lifted",
+        "arguments": ""
+      },
+      {
+        "name": "key-mark-moved",
+        "arguments": "from: float, to: float"
+      },
+      {
+        "name": "clip-pressed",
+        "arguments": "id: string, additive: bool, edge: int"
+      },
+      {
+        "name": "save-frame",
+        "arguments": ""
+      },
+      {
+        "name": "clip-split",
+        "arguments": "id: string, seconds: float"
+      },
+      {
+        "name": "clip-volume",
+        "arguments": "id: string, gain: float"
+      },
+      {
+        "name": "clip-dragged",
+        "arguments": "seconds: float, pixels: length"
+      },
+      {
+        "name": "clip-released",
+        "arguments": ""
+      },
+      {
+        "name": "clip-cancelled",
+        "arguments": ""
+      },
+      {
+        "name": "clip-context",
+        "arguments": "id: string"
+      },
+      {
+        "name": "menu-selected",
+        "arguments": "id: string"
+      },
+      {
+        "name": "band-selected",
+        "arguments": "from-seconds: float, to-seconds: float,\n        from-y: length, to-y: length, additive: bool"
+      },
+      {
+        "name": "scrolled",
+        "arguments": "seconds: float"
+      },
+      {
+        "name": "drag-hovered",
+        "arguments": "payload: string, seconds: float, y: length"
+      },
+      {
+        "name": "dropped",
+        "arguments": "payload: string, seconds: float, y: length"
+      },
+      {
+        "name": "track-flag-changed",
+        "arguments": "index: int, visible: bool, muted: bool, locked: bool"
+      },
+      {
+        "name": "track-sized",
+        "arguments": "index: int, size: TrackSize"
+      },
+      {
+        "name": "track-removed",
+        "arguments": "index: int"
+      },
+      {
+        "name": "tab-moved",
+        "arguments": "from: int, to: int"
+      },
+      {
+        "name": "modify-project",
+        "arguments": ""
+      },
+      {
+        "name": "blur",
+        "arguments": ""
+      },
+      {
+        "name": "shortcut",
+        "arguments": "action: string"
+      },
+      {
+        "name": "key-chord",
+        "arguments": "text: string, shift: bool, alt: bool, control: bool, meta: bool, on-start: bool"
+      }
+    ]
+  },
+  {
+    "global": "Sounds",
+    "file": "ui/workspace/audio-page.slint",
+    "callbacks": [
+      {
+        "name": "voice-open",
+        "arguments": "id: string"
+      },
+      {
+        "name": "voice-remove",
+        "arguments": "id: string"
+      },
+      {
+        "name": "load-concat",
+        "arguments": ""
+      },
+      {
+        "name": "concat-category-changed",
+        "arguments": "index: int"
+      },
+      {
+        "name": "import",
+        "arguments": ""
+      },
+      {
+        "name": "preview",
+        "arguments": "id: string"
+      },
+      {
+        "name": "add",
+        "arguments": "id: string"
+      },
+      {
+        "name": "remove",
+        "arguments": "id: string"
+      },
+      {
+        "name": "shown",
+        "arguments": "on: bool"
+      }
+    ]
+  },
+  {
+    "global": "CaptionPresetPreview",
+    "file": "ui/workspace/caption-preset-preview.slint",
+    "callbacks": [
+      {
+        "name": "toggle-favourite",
+        "arguments": "id: string"
+      },
+      {
+        "name": "filter-favourites",
+        "arguments": "on: bool"
+      },
+      {
+        "name": "stage",
+        "arguments": "id: string"
+      },
+      {
+        "name": "cancel",
+        "arguments": ""
+      },
+      {
+        "name": "apply",
+        "arguments": "all: bool"
+      },
+      {
+        "name": "demo-toggle",
+        "arguments": ""
+      },
+      {
+        "name": "scope",
+        "arguments": "active: bool"
+      },
+      {
+        "name": "style-font",
+        "arguments": "index: int"
+      },
+      {
+        "name": "style-color",
+        "arguments": "field: string, hex: string"
+      }
+    ]
+  },
+  {
+    "global": "CanvasPresets",
+    "file": "ui/workspace/canvas-presets.slint",
+    "callbacks": [
+      {
+        "name": "edit-number",
+        "arguments": "field: string, value: float"
+      },
+      {
+        "name": "edit-colour",
+        "arguments": "field: string, value: color"
+      },
+      {
+        "name": "edit-mode",
+        "arguments": "mode: int"
+      },
+      {
+        "name": "sync-profile",
+        "arguments": ""
+      },
+      {
+        "name": "toggle-favourite",
+        "arguments": "index: int"
+      },
+      {
+        "name": "choose",
+        "arguments": "preset: int"
+      },
+      {
+        "name": "apply",
+        "arguments": "profile: string, all: bool, images: bool, videos: bool"
+      },
+      {
+        "name": "random-favourites",
+        "arguments": "images: bool, videos: bool, selected: bool"
+      },
+      {
+        "name": "clear",
+        "arguments": "selected: bool, images: bool, videos: bool"
+      },
+      {
+        "name": "save-default",
+        "arguments": "profile: string"
+      },
+      {
+        "name": "reset-default",
+        "arguments": ""
+      }
+    ]
+  },
+  {
+    "global": "ParticleBulk",
+    "file": "ui/workspace/particle-effects.slint",
+    "callbacks": [
+      {
+        "name": "apply",
+        "arguments": "preset: int, mode: int, selected-only: bool, images: bool, videos: bool"
+      },
+      {
+        "name": "toggle-favourite",
+        "arguments": "index: int"
+      },
+      {
+        "name": "select-effect",
+        "arguments": "id: string"
+      },
+      {
+        "name": "change-param",
+        "arguments": "id: string, key: string, value: float"
+      },
+      {
+        "name": "change-colour",
+        "arguments": "id: string, key: string, value: color"
+      },
+      {
+        "name": "save-default",
+        "arguments": "id: string"
+      },
+      {
+        "name": "reset-default",
+        "arguments": "id: string"
+      },
+      {
+        "name": "clear-preview",
+        "arguments": ""
+      }
+    ]
+  },
+  {
+    "global": "SourcePreview",
+    "file": "ui/workspace/source-preview.slint",
+    "callbacks": [
+      {
+        "name": "closed",
+        "arguments": ""
+      },
+      {
+        "name": "seek",
+        "arguments": "seconds: float"
+      }
+    ]
+  },
+  {
+    "global": "KeyEditor",
+    "file": "ui/workspace/keyframes-pane.slint",
+    "callbacks": [
+      {
+        "name": "jump",
+        "arguments": "at: float"
+      },
+      {
+        "name": "move-key",
+        "arguments": "field: ClipField, param: string, from: float, to: float"
+      },
+      {
+        "name": "drag-key",
+        "arguments": "field: ClipField, param: string, from: float, to: float, value: float"
+      },
+      {
+        "name": "set-ease",
+        "arguments": "field: ClipField, param: string, at: float, x1: float, y1: float, x2: float, y2: float"
+      },
+      {
+        "name": "step-all",
+        "arguments": "delta: int"
+      },
+      {
+        "name": "clear-all",
+        "arguments": ""
+      }
+    ]
+  },
+  {
+    "global": "CloudGpu",
+    "file": "ui/dialogs/cloud-gpu.slint",
+    "callbacks": [
+      {
+        "name": "queue-add",
+        "arguments": "path: string"
+      },
+      {
+        "name": "queue-action",
+        "arguments": "action: string, id: string"
+      },
+      {
+        "name": "save",
+        "arguments": ""
+      },
+      {
+        "name": "test",
+        "arguments": ""
+      }
+    ]
+  },
+  {
+    "global": "TransitionControls",
+    "file": "ui/inspector/creative-transition-controls.slint",
+    "callbacks": [
+      {
+        "name": "apply",
+        "arguments": "params: string"
+      }
+    ]
+  },
+  {
+    "global": "FontSearch",
+    "file": "ui/inspector/font-picker.slint",
+    "callbacks": [
+      {
+        "name": "query-changed",
+        "arguments": "text: string"
+      }
+    ]
+  },
+  {
+    "global": "Library",
+    "file": "ui/inspector/clip-inspector.slint",
+    "callbacks": [
+      {
+        "name": "query-changed",
+        "arguments": "shelf: int, text: string"
+      },
+      {
+        "name": "group-changed",
+        "arguments": "shelf: int, index: int"
+      },
+      {
+        "name": "favourites-changed",
+        "arguments": "shelf: int, on: bool"
+      },
+      {
+        "name": "category-changed",
+        "arguments": "shelf: int, category: string"
+      },
+      {
+        "name": "favourite",
+        "arguments": "id: string, on: bool"
+      }
+    ]
+  },
+  {
+    "global": "Meters",
+    "file": "ui/timeline/vu-meter.slint",
+    "callbacks": [
+      {
+        "name": "clip-cleared",
+        "arguments": ""
+      }
+    ]
+  },
+  {
+    "global": "TimelineDrag",
+    "file": "ui/timeline/model.slint",
+    "callbacks": [
+      {
+        "name": "modes-changed",
+        "arguments": "ripple: bool, duplicate: bool"
+      }
+    ]
+  },
+  {
+    "global": "Keyframes",
+    "file": "ui/timeline/model.slint",
+    "callbacks": [
+      {
+        "name": "layout-set",
+        "arguments": "field: ClipField, value: float"
+      },
+      {
+        "name": "layout-frame",
+        "arguments": "fill: bool"
+      },
+      {
+        "name": "toggle",
+        "arguments": "field: ClipField"
+      },
+      {
+        "name": "step",
+        "arguments": "field: ClipField, delta: int"
+      },
+      {
+        "name": "clear",
+        "arguments": "field: ClipField"
+      },
+      {
+        "name": "apply-motion-preset",
+        "arguments": "field: ClipField"
+      },
+      {
+        "name": "apply-random-motion",
+        "arguments": ""
+      },
+      {
+        "name": "remember-animation",
+        "arguments": "index:int,strength:float,duration:float,speed:float,intensity:float,canvas:CanvasMotionData"
+      },
+      {
+        "name": "reset-animation",
+        "arguments": "index:int"
+      },
+      {
+        "name": "has-animation-default",
+        "arguments": "index:int"
+      },
+      {
+        "name": "load-animation",
+        "arguments": "index:int"
+      },
+      {
+        "name": "clear-generated-motion",
+        "arguments": "images: bool, videos: bool, selected-only: bool"
+      },
+      {
+        "name": "apply-animation-favourites",
+        "arguments": "pool:[bool],images:bool,videos:bool,selected:bool"
+      },
+      {
+        "name": "apply-canvas-motion",
+        "arguments": "preset: int, mode: int, images: bool, videos: bool,\n        selected-only: bool, settings: CanvasMotionData"
+      },
+      {
+        "name": "apply-physics-motion",
+        "arguments": "preset: int, strength: float, duration: float, speed: float, intensity: float, auto-fit: bool"
+      },
+      {
+        "name": "toggle-physics-favourite",
+        "arguments": "preset: int"
+      },
+      {
+        "name": "apply-random-favourite-motion",
+        "arguments": ""
+      },
+      {
+        "name": "apply-physics-bulk",
+        "arguments": "preset: int, mode: int, images: bool, videos: bool,\n        selected-only: bool, strength: float, duration: float, speed: float, intensity: float, auto-fit: bool"
+      },
+      {
+        "name": "apply-bulk-motion",
+        "arguments": "mode: int, images: bool, video-clips: bool, selected-only: bool"
+      },
+      {
+        "name": "apply-bulk-motion-preset",
+        "arguments": "mode: int, preset: int, images: bool,\n        video-clips: bool, selected-only: bool"
+      },
+      {
+        "name": "apply-adjustment",
+        "arguments": "page: int, images: bool, videos: bool, selected: bool,\n        scale: float, x: float, y: float, rotation: float, opacity: float, flip-h: bool, flip-v: bool"
+      },
+      {
+        "name": "apply-bulk-transform",
+        "arguments": "mode: int, images: bool, video-clips: bool,\n        selected-only: bool, scale: float, position-x: float, position-y: float, rotation: float"
+      },
+      {
+        "name": "toggle-param",
+        "arguments": "key: string"
+      },
+      {
+        "name": "step-param",
+        "arguments": "key: string, delta: int"
+      },
+      {
+        "name": "clear-param",
+        "arguments": "key: string"
+      }
+    ]
+  },
+  {
+    "global": "Backdrop",
+    "file": "ui/timeline/model.slint",
+    "callbacks": [
+      {
+        "name": "set-mode",
+        "arguments": "clip: bool, mode: int"
+      },
+      {
+        "name": "set-amount",
+        "arguments": "clip: bool, amount: float"
+      },
+      {
+        "name": "set-colour",
+        "arguments": "clip: bool, colour: color"
+      },
+      {
+        "name": "set-still",
+        "arguments": "clip: bool, row: int"
+      },
+      {
+        "name": "apply-to-all",
+        "arguments": ""
+      },
+      {
+        "name": "apply-bulk",
+        "arguments": "mode: int, amount: float, colour: color, images: bool, videos: bool, selected-only: bool"
+      },
+      {
+        "name": "frame",
+        "arguments": "fill: bool"
+      }
+    ]
+  }
+]

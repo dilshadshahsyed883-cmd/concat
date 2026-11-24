@@ -429,6 +429,21 @@ impl Api {
         self.run(request).into()
     }
 
+    /// Borrow the window's one authoritative session for one API request.
+    /// Lifecycle requests are refused: the window must retain its project lock.
+    pub fn dispatch_live(&mut self, session: Session, request: Request) -> (Session, Response) {
+        if matches!(request, Request::ProjectCreate { .. } | Request::ProjectOpen { .. }
+            | Request::ProjectClose { .. } | Request::TemplateInstantiate { .. }) {
+            return (session, Response::Error(ApiError::failed("Use the desktop project lifecycle")));
+        }
+        let key = key_of(session.path());
+        assert!(self.sessions.is_empty(), "live API cannot own independent sessions");
+        self.sessions.insert(key.clone(), session);
+        let reply = self.dispatch(request);
+        let session = self.sessions.remove(&key).expect("live session retained");
+        (session, reply)
+    }
+
     fn run(&mut self, request: Request) -> Result<Reply, ApiError> {
         let view = |view: EditorView| Ok(Reply::View(Box::new(view)));
         match request {

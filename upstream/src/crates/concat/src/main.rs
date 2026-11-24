@@ -68,6 +68,7 @@ fn main() -> Result<(), slint::PlatformError> {
         .map_err(slint::PlatformError::Other)
         .inspect_err(concat::report_startup_failure)?;
     match launch {
+        Launch::ReactBridge => concat::run_react_bridge().inspect_err(concat::report_startup_failure),
         Launch::Normal(project) => {
             concat::run_with_project(project).inspect_err(concat::report_startup_failure)
         }

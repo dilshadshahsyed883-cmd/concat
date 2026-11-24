@@ -45,6 +45,11 @@ pub trait Backend: Send {
 
     /// The session is over: stop what is running, and wait for it.
     fn finish(&mut self) {}
+
+    /// Local desktop controller extension. Only the React stdio backend implements it.
+    fn desktop(&mut self, _method: &str, _params: Value) -> Result<Value, ApiError> {
+        Err(ApiError::failed("Desktop controllers require --react-bridge"))
+    }
 }
 
 /// Which backend `concat --mcp` uses.

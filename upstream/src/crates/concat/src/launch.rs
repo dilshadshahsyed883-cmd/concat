@@ -23,6 +23,7 @@ pub enum Launch {
     /// run that gets this far has proved the executable and every library
     /// it links were found and loaded, which on Windows fails before `main`.
     Version,
+    ReactBridge,
     /// Start the way a desktop launch does, through the first publish of
     /// the window's models, and exit instead of entering the event loop.
     /// For CI, which has no one to close a window.
@@ -45,6 +46,8 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Launch, String>
     };
     let launch = if option == "--version" {
         Launch::Version
+    } else if option == "--react-bridge" {
+        Launch::ReactBridge
     } else if option == "--smoke" {
         Launch::Smoke
     } else if option == "--whisper-cpu" {

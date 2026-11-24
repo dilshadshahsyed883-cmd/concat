@@ -12,6 +12,8 @@
 //! desktop and on iOS, and the `concat-android` activity on Android. Each
 //! one calls [`run`].
 
+#![recursion_limit = "512"]
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -218,7 +220,7 @@ pub fn run() -> Result<(), slint::PlatformError> {
 /// unreadable project leaves the launch screen open with the usual error notice.
 /// Each invocation creates its own window; this does not control another instance.
 pub fn run_with_project(project: Option<std::path::PathBuf>) -> Result<(), slint::PlatformError> {
-    start(project, false)
+    start(project, false, false)
 }
 
 /// Starts the way [`run`] does, as far as the window's first publish, and
@@ -232,7 +234,7 @@ pub fn run_with_project(project: Option<std::path::PathBuf>) -> Result<(), slint
 /// No project is opened, so the recents list is not touched; the
 /// preferences are read, and a log file written, as on any launch.
 pub fn smoke() -> Result<(), slint::PlatformError> {
-    start(None, true)
+    start(None, true, false)
 }
 
 /// Runs one way out of the open project, in the order that keeps the work
@@ -257,7 +259,10 @@ pub(crate) fn close_window(
 }
 
 /// [`run_with_project`], or [`smoke`] when `smoke` is set.
-fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::PlatformError> {
+pub fn run_react_bridge() -> Result<(), slint::PlatformError> { start(None, false, true) }
+mod react_bridge;
+
+fn start(project: Option<std::path::PathBuf>, smoke: bool, react: bool) -> Result<(), slint::PlatformError> {
     // What Import and a finished export reach on an iPhone. Android's own
     // crate installs its; iOS runs this crate's binary, so it is here.
     // https://github.com/jub0t/Concat/issues/332
@@ -3184,7 +3189,10 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         Shell::with(|_, app| platform::apply_ui_scale(app.window()));
     });
 
-    let result = app.run();
+    let result = if react {
+        react_bridge::start()?;
+        slint::run_event_loop_until_quit()
+    } else { app.run() };
     drop(reader_sweep);
     log::info!("close: event loop exited (ok={})", result.is_ok());
     // The loop failing is the window never having run at all - on a phone
