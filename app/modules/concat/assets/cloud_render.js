@@ -198,11 +198,7 @@
         actions.append(button("Retry", () => mutate("retry", "Project queued"), "primary"));
       }
       if (terminal || item.state === "Queued") {
-        actions.append(button("Delete", () => {
-          if (window.confirm("Delete this Production queue entry? The original Drive ZIP and any delivered MP4 are kept.")) {
-            mutate("delete", "Queue entry deleted");
-          }
-        }, "danger"));
+        actions.append(button("Delete", () => mutate("delete", "Queue entry deleted"), "danger"));
       }
       card.append(actions);
       list.append(card);
