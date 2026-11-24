@@ -473,8 +473,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("project", type=Path)
     parser.add_argument("output", type=Path)
+    parser.add_argument("--error-file", type=Path)
     args = parser.parse_args()
     try:
         print(json.dumps(render_project(args.project, args.output)))
-    except (ValueError, RuntimeError, OSError, KeyError, subprocess.SubprocessError) as error:
-        parser.exit(1, f"CUDA hybrid render failed: {error}\n")
+    except Exception as error:
+        message = f"CUDA hybrid render failed: {error}"
+        if args.error_file is not None:
+            try:
+                args.error_file.write_text(message, encoding="utf-8")
+            except OSError as write_error:
+                print(f"Could not persist renderer error: {write_error}", file=sys.stderr, flush=True)
+        if isinstance(error, (ValueError, RuntimeError, OSError, KeyError, subprocess.SubprocessError)):
+            parser.exit(1, message + "\n")
+        raise

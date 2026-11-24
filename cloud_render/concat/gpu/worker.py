@@ -501,13 +501,23 @@ class RenderWorker:
                          error=str(exc)[:500])
 
     def _hybrid_render(self, job: str, project: Path, output: Path):
-        call = [sys.executable, "-m", "cloud_render.concat.hybrid.render", str(project), str(output)]
-        # Stream progress and skipped effects to container logs while rendering.
-        log_file = self.state / f"{check_id(job)}.render.log"
+        job_id = check_id(job)
+        error_file = self.state / f"{job_id}.render.error"
+        error_file.unlink(missing_ok=True)
+        call = [sys.executable, "-m", "cloud_render.concat.hybrid.render", str(project), str(output),
+                "--error-file", str(error_file)]
+        # Keep progress on container stderr and the JSON report on stdout.
+        log_file = self.state / f"{job_id}.render.log"
         with log_file.open("w", encoding="utf-8") as log:
             outcome = subprocess.run(call, stdout=log, stderr=None,
                                      timeout=int(os.getenv("CONCAT_RENDER_TIMEOUT", "7200")))
         if outcome.returncode:
+            try:
+                detail = error_file.read_text(encoding="utf-8").strip()
+            except OSError:
+                detail = ""
+            if detail:
+                raise RuntimeError(detail)
             raise RuntimeError(f"CUDA hybrid renderer exited with code {outcome.returncode}. Check the Salad worker logs.")
         report = log_file.read_text(encoding="utf-8").strip()
         if report:

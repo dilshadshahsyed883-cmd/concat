@@ -50,7 +50,7 @@ export component CaptionPresetPreviewPanel inherits VerticalLayout {
         spacing: 6px;
         Text { text: "Font"; color: Theme.fg-muted; font-size: Theme.fs-sm; }
         Select {
-            options: ["Hanken Grotesk SemiBold", "Hanken Grotesk Bold", "Inter Black", "Inter Bold", "Montserrat ExtraBold", "Archivo Black", "Anton"];
+            options: ["Hanken Grotesk SemiBold", "Hanken Grotesk Bold", "Inter Black", "Inter Bold", "Montserrat ExtraBold", "Archivo Black", "Anton", "Hanken Grotesk Regular", "Hanken Grotesk Medium", "Inter Regular", "Inter SemiBold", "Montserrat Regular", "Montserrat Bold", "Montserrat Black"];
             current: CaptionPresetPreview.font-index;
             changed(index) => { CaptionPresetPreview.style-font(index); }
         }
