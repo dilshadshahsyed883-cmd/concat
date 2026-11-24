@@ -18,10 +18,11 @@ CORE = UPLOADER / "desktop_core/modules"
 
 
 class ConcatOwnerQueueContracts(unittest.TestCase):
-    def test_durable_manual_start_dedup_and_owner_isolation(self):
+    def test_auto_grace_dedup_and_owner_isolation(self):
         script = r'''
 import hashlib
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from lum_engine.config import DATA_ROOT, STAGING_ROOT
 from lum_engine.project_store import ProjectStore
@@ -56,9 +57,13 @@ def project(owner, channel):
 a = store.create_project(project("owner1", 11))
 b = store.create_project(project("owner2", 22))
 assert a != b
-assert store.owner_queue_paused("owner1") is True
-assert store.owner_queue_paused("owner2") is True
-assert store.claim_next_eligible() is None, "Queued work must never auto-start"
+assert store.owner_queue_paused("owner1") is False
+assert store.owner_queue_paused("owner2") is False
+assert store.claim_next_eligible() is None, "New work must wait five minutes"
+assert store.next_eligible() is None
+store.set_owner_queue_paused("owner2", True)
+with store.connect() as con:
+    con.execute("UPDATE projects SET created_at=?", ((datetime.now(timezone.utc) - timedelta(minutes=6)).isoformat(),))
 assert [x["id"] for x in store.list(owner="owner1")] == [a]
 assert [x["id"] for x in store.list(owner="owner2")] == [b]
 try:
@@ -68,15 +73,22 @@ except ValueError as exc:
 else:
     raise AssertionError("Duplicate queued source admitted")
 restarted = ProjectStore(DATA_ROOT / "projects.sqlite3")
-assert restarted.owner_queue_paused("owner1") is True
+assert restarted.owner_queue_paused("owner1") is False
 assert restarted.owner_queue_paused("owner2") is True
-restarted.set_owner_queue_paused("owner1", False)
 claimed = restarted.claim_next_eligible()
 assert claimed["id"] == a, claimed
 assert restarted.claim_next_eligible() is None, "Owner2 is still paused"
 restarted.recover_wrapper_states()
 assert restarted.owner_queue_paused("owner2") is True
 assert restarted.get(a)["status"] == "QUEUED"
+# Admission does not re-pause a running owner or clear an explicit pause.
+extra = project("owner2", 44)
+extra["concat_job_id"] = "video-paused"
+extra["source_fingerprint"] = "d" * 64
+extra_id = restarted.create_project(extra)
+assert restarted.owner_queue_paused("owner2") is True
+assert restarted.cancel_waiting(extra_id, "owner2")
+assert restarted.get(extra_id)["status"] == "CANCELLED"
 
 scheduled = project("owner1", 33)
 scheduled["concat_job_id"] = "video-two"

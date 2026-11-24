@@ -29,6 +29,24 @@
     search?.addEventListener('input', filter);
     status?.addEventListener('change', filter);
     filter();
+    const grace = Array.from(document.querySelectorAll('[data-upload-grace-until]'));
+    function updateGrace() {
+      let pending = false;
+      grace.forEach(node => {
+        const deadline = Date.parse(node.dataset.uploadGraceUntil);
+        if (!Number.isFinite(deadline)) return;
+        const seconds = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+        node.hidden = seconds === 0;
+        if (seconds > 0) {
+          pending = true;
+          node.textContent = 'Cancel window: ' + Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
+        }
+      });
+      return pending;
+    }
+    if (updateGrace()) {
+      const timer = setInterval(() => { if (!updateGrace()) clearInterval(timer); }, 1000);
+    }
     document.querySelectorAll('[data-copyright-confirm]').forEach(form => {
       form.addEventListener('submit', event => {
         if (!window.confirm(form.dataset.copyrightConfirm)) event.preventDefault();

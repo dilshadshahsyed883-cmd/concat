@@ -34,7 +34,7 @@ from .concat_schedule import concat_upload_at
 from .concat_sheet import preview_sheet_videos, metadata_sheet_id, metadata_for_video
 from .concat_source import (parse_concat_link, ConcatSourceError,
                             list_available_concat_media)
-from .copyright_ui import schedule_pkt
+from .copyright_ui import schedule_pkt, grace_deadline
 from .copyright_vault import owner_vault_inventory, import_client as import_owner_client, import_token as import_owner_token
 from .four_modes import registry as four_mode_registry, validate_mode as validate_auto_mode
 from .mode_gateway import forward as forward_engine_request, MODE_PORTS as ENGINE_PORTS
@@ -117,6 +117,7 @@ app.mount(route("/static"), StaticFiles(directory=str(STATIC_ROOT)), name="stati
 templates = Jinja2Templates(directory=str(TEMPLATE_ROOT))
 templates.env.globals["base_path"] = BASE_PATH
 templates.env.filters["schedule_pkt"] = schedule_pkt
+templates.env.filters["grace_deadline"] = grace_deadline
 
 COPYRIGHT_MEDIA_ROOT = Path(os.environ.get("COPYRIGHT_MEDIA_ROOT", str(DATA_ROOT / "copyright_handoff")))
 COPYRIGHT_MAX_VIDEO = 12 * 1024 * 1024 * 1024
@@ -1192,7 +1193,8 @@ async def add_video(
         next_tab = "queue"
         queue_message = (f"Project #{project_id} scheduled for automatic YouTube upload start"
                          if upload_instance == "concat" and app_upload_at_utc else
-                         f"Project #{project_id} added to VPS queue")
+                         f"Project #{project_id} added to VPS queue; eligible for automatic upload after five minutes"
+                         if upload_instance == "concat" else f"Project #{project_id} added to VPS queue")
         if upload_instance == "concat" and "application/json" in request.headers.get("accept", ""):
             return JSONResponse({"ok": True, "project_id": project_id, "queue_url": route("/app?tab=queue"), "message": queue_message})
         return redirect(f"/app?tab={next_tab}", message=queue_message)
@@ -1348,7 +1350,7 @@ def copyright_start_my_queue(request: Request, csrf_token: str = Form(...),
     if store.setting("engine_enabled", "1") != "1":
         return redirect("/app?tab=queue", error="Shared worker is paused; your queue cannot be started until it is available.")
     store.set_owner_queue_paused(str(user["username"]), False)
-    return redirect("/app?tab=queue", message="Your waiting queue is enabled (manual jobs only).")
+    return redirect("/app?tab=queue", message="Your waiting queue resumed. New entries become eligible after five minutes." if os.getenv("LUM_ENGINE_INSTANCE") == "concat" else "Your waiting queue is enabled (manual jobs only).")
 
 
 @app.post(route("/actions/copyright/metadata/{project_id}"))
