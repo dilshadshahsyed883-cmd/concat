@@ -102,7 +102,7 @@ fn color(s: &str) -> bool {
 }
 impl Config {
     pub fn preset(number: u32) -> Option<Self> {
-        if !(1..=8).contains(&number) {
+        if !DECODABLE_PRESETS.contains(&number) {
             return None;
         }
         let (border, bg, fg, text, bar, weight, size) = match number {
@@ -277,12 +277,68 @@ impl Config {
                 config.background = "color".into();
                 config.background_color = "#f1e7dc".into();
             }
+            9 => { // Broadcast Edge: asymmetric native graphic panels.
+                config.foreground = Rect { x: 0.19, y: 0.10, width: 0.76, height: 0.79 };
+                config.background = "color".into();
+                config.background_color = "#0b182b".into();
+                config.border_color = "#e8edf5".into();
+                config.border_width = 0.006;
+            }
+            12 => { // Focus Island: sharp source over a dark same-source fill.
+                config.foreground = Rect { x: 0.12, y: 0.12, width: 0.76, height: 0.76 };
+                config.background = "source".into();
+                config.background_tint = "#07101c".into();
+                config.tint_opacity = 0.68;
+                config.radius = 0.018;
+                config.shadow_opacity = 0.3;
+                config.shadow_offset = 0.012;
+            }
+            13 => { // Diagonal Cut: angled background graphic edges.
+                config.foreground = Rect { x: 0.12, y: 0.10, width: 0.76, height: 0.80 };
+                config.background = "color".into();
+                config.background_color = "#111827".into();
+                config.border_color = "#f1f5f9".into();
+                config.border_width = 0.004;
+            }
+            14 => { // Projector Slide: a mounted photographic transparency.
+                config.foreground = Rect { x: 0.18, y: 0.18, width: 0.64, height: 0.64 };
+                config.background = "color".into();
+                config.background_color = "#2c2923".into();
+                config.mat_color = "#ddd2b9".into();
+                config.border_color = "#514638".into();
+                config.border_width = 0.006;
+            }
+            15 => { // Browser Window: a picture under a native window header.
+                config.foreground = Rect { x: 0.10, y: 0.22, width: 0.80, height: 0.66 };
+                config.background = "color".into();
+                config.background_color = "#182437".into();
+                config.radius = 0.008;
+                config.border_color = "#cbd5e1".into();
+                config.border_width = 0.004;
+            }
+            16 => { // Taped Memory: an inset photo with decorative tape overlays.
+                config.foreground = Rect { x: 0.15, y: 0.13, width: 0.70, height: 0.68 };
+                config.background = "color".into();
+                config.background_color = "#d6c5aa".into();
+                config.border_color = "#fff9ed".into();
+                config.border_width = 0.014;
+                config.shadow_opacity = 0.22;
+                config.shadow_offset = 0.012;
+                config.rotation = -3.0;
+            }
+            18 => { // Broken Grid: uninterrupted foreground over staggered blocks.
+                config.foreground = Rect { x: 0.13, y: 0.13, width: 0.74, height: 0.74 };
+                config.background = "color".into();
+                config.background_color = "#18232b".into();
+                config.border_color = "#d8e3dc".into();
+                config.border_width = 0.004;
+            }
             _ => {}
         }
         Some(config)
     }
     pub fn validate(&self) -> Result<(), String> {
-        if self.version != 1 || !(1..=8).contains(&self.preset) || !self.foreground.validate() {
+        if self.version != 1 || !DECODABLE_PRESETS.contains(&self.preset) || !self.foreground.validate() {
             return Err("Unsupported canvas version/preset or unsafe foreground bounds".into());
         }
         if !matches!(
@@ -892,6 +948,92 @@ pub fn apply_with_confirmation(project: &mut Project, mint: &mut IdMint, config:
                 config.tint_opacity,
             ));
         }
+        // Each composition owns its own decorative native shape lanes. The
+        // foreground remains one uninterrupted original source. Background
+        // decoration is independent of editable content transforms.
+        // Clip geometry to the canvas so extreme user aperture edits do not
+        // manufacture invalid or zero-sized shape layers.
+        let mut decorate = |role: &str, before: bool, rect: Rect, fill: &str,
+                            radius: f64, opacity: f64, rotation: f64| {
+            let x = rect.x.max(0.0);
+            let y = rect.y.max(0.0);
+            let right = (rect.x + rect.width).min(1.0);
+            let bottom = (rect.y + rect.height).min(1.0);
+            if right - x < 0.005 || bottom - y < 0.005 { return; }
+            let lane = track(&mut staged, mint, &original.track_id, role, before);
+            let mut piece = rectangle(mint, &original, &lane, role,
+                Rect { x, y, width: right - x, height: bottom - y },
+                fill, radius, opacity);
+            Arc::make_mut(&mut piece).rotation = rotation;
+            layers.push(piece);
+        };
+        let rect = |x, y, width, height| Rect { x, y, width, height };
+        match config.preset {
+            9 => {
+                decorate("broadcastSide", true, rect(0.0, 0.0, 0.18, 1.0), "#19395b", 0.0, 1.0, 0.0);
+                decorate("broadcastAccent", true, rect(0.025, 0.09, 0.018, 0.66), "#f33748", 0.0, 1.0, 0.0);
+                decorate("broadcastFoot", true, rect(0.05, 0.92, 0.88, 0.045), "#315d87", 0.0, 1.0, 0.0);
+                decorate("broadcastTop", true, rect(0.60, 0.025, 0.36, 0.035), "#f33748", 0.0, 1.0, 0.0);
+            }
+            13 => {
+                decorate("diagonalLeft", true, rect(0.0, 0.0, 0.32, 1.0), "#263d66", 0.0, 1.0, 18.0);
+                decorate("diagonalRight", true, rect(0.74, 0.0, 0.26, 1.0), "#943c56", 0.0, 1.0, 18.0);
+                decorate("diagonalHighlight", true, rect(0.09, 0.0, 0.025, 1.0), "#efb454", 0.0, 1.0, 18.0);
+            }
+            14 => {
+                decorate("projectorMount", true,
+                    rect(actual.x - 0.075, actual.y - 0.075, actual.width + 0.15, actual.height + 0.15),
+                    &config.mat_color, 0.012, 1.0, config.rotation);
+                decorate("projectorRail", true,
+                    rect(actual.x - 0.055, actual.y + actual.height + 0.035, actual.width + 0.11, 0.012),
+                    "#8e8068", 0.002, 1.0, 0.0);
+            }
+            15 => {
+                let header = actual.y.min(0.075);
+                decorate("browserShell", true,
+                    rect(actual.x - 0.018, actual.y - header, actual.width + 0.036, actual.height + header + 0.018),
+                    "#d9e2ee", 0.012, 1.0, 0.0);
+                decorate("browserHeader", true,
+                    rect(actual.x - 0.018, actual.y - header, actual.width + 0.036, header),
+                    "#34465e", 0.007, 1.0, 0.0);
+                let dot_h = (header * 0.24).min(0.018);
+                let dot_w = dot_h * h / w;
+                if dot_h >= 0.005 {
+                    for (i, (role, fill)) in [("browserDotRed", "#f87171"), ("browserDotAmber", "#fbbf24"), ("browserDotGreen", "#4ade80")].into_iter().enumerate() {
+                        decorate(role, true, rect(actual.x + i as f64 * dot_w * 1.8, actual.y - header * 0.62, dot_w, dot_h),
+                            fill, dot_h, 1.0, 0.0);
+                    }
+                }
+            }
+            16 => {
+                let tape_w = (actual.width * 0.32).min(0.18);
+                let tape_h = (actual.height * 0.13).min(0.065);
+                // Tape sits over the print corners and is part of the same
+                // owned composition, not a second media source.
+                let (cx, cy) = actual.center();
+                let angle = config.rotation.to_radians();
+                let tape_center = |x: f64, y: f64| {
+                    let dx = (x - 0.5 - cx) * w / h;
+                    let dy = y - 0.5 - cy;
+                    (0.5 + cx + (dx * angle.cos() - dy * angle.sin()) * h / w,
+                     0.5 + cy + dx * angle.sin() + dy * angle.cos())
+                };
+                let (lx, ly) = tape_center(actual.x + tape_w * 0.30, actual.y + tape_h * 0.14);
+                let (rx, ry) = tape_center(actual.x + actual.width - tape_w * 0.30, actual.y + tape_h * 0.14);
+                decorate("tapeLeft", false, rect(lx - tape_w / 2.0, ly - tape_h / 2.0, tape_w, tape_h),
+                    "#f4e1ad", 0.002, 0.88, config.rotation - 16.0);
+                decorate("tapeRight", false, rect(rx - tape_w / 2.0, ry - tape_h / 2.0, tape_w, tape_h),
+                    "#f4e1ad", 0.002, 0.88, config.rotation + 16.0);
+            }
+            18 => {
+                decorate("gridUpper", true, rect(0.025, 0.025, 0.56, 0.22), "#355f61", 0.0, 1.0, 0.0);
+                decorate("gridRight", true, rect(0.72, 0.035, 0.25, 0.55), "#c67c51", 0.0, 1.0, 0.0);
+                decorate("gridLower", true, rect(0.35, 0.75, 0.62, 0.22), "#546e89", 0.0, 1.0, 0.0);
+                decorate("gridLeft", true, rect(0.035, 0.44, 0.24, 0.52), "#a5a77b", 0.0, 1.0, 0.0);
+            }
+            _ => {}
+        }
+        drop(decorate);
         // Native decorative shapes stay tied to this same source and are
         // replaced atomically on reapply. No separate media slot is created.
         if config.shadow_opacity > 0.0 {
@@ -1035,7 +1177,9 @@ pub fn apply_with_confirmation(project: &mut Project, mint: &mut IdMint, config:
 
 
 /// Catalogue retirement is an editor policy, not a change to legacy decoding.
-pub const ACTIVE_PRESETS: std::ops::RangeInclusive<u32> = 1..=6;
+pub const ACTIVE_PRESETS: [u32; 13] = [1, 2, 3, 4, 5, 6, 9, 12, 13, 14, 15, 16, 18];
+/// Retired IDs 7 and 8 remain decodable. Unimplemented IDs are reserved.
+const DECODABLE_PRESETS: [u32; 15] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 15, 16, 18];
 
 /// Clear only known Canvas-owned layout data. A customized or protected
 /// companion cannot be silently discarded. The old snapshot is used solely
@@ -1330,7 +1474,7 @@ mod tests {
 
     #[test]
     fn independent_presets_validate_and_round_trip() {
-        for n in 1..=8 {
+        for n in DECODABLE_PRESETS {
             let p = Config::preset(n).unwrap();
             p.validate().unwrap();
             assert_eq!(
@@ -1356,7 +1500,8 @@ mod tests {
         assert!(print.mat_bottom > 0.0 && print.rotation != 0.0);
         assert!(cinema.foreground.height < 0.75);
         assert!(editorial.foreground.x > 0.3);
-        assert!(Config::preset(9).is_none());
+        assert!(Config::preset(10).is_none());
+        assert!(Config::preset(21).is_none());
         // Old JSON omits the new optional fields, and must still be loadable.
         let mut old = serde_json::to_value(Config::preset(1).unwrap()).unwrap();
         for key in ["shadowOpacity", "shadowOffset", "shadowColor", "matBottom", "matColor", "rotation"] {
@@ -1691,7 +1836,7 @@ mod tests {
 
     #[test]
     fn generated_canvas_documents_reopen_with_editable_layers() {
-        for number in 1..=8 {
+        for number in DECODABLE_PRESETS {
             for portrait in [true, false] {
                 let (mut p, mut mint) = fixture();
                 p.media[0].path = "source.mp4".into();
@@ -1914,7 +2059,7 @@ mod tests {
 
     #[test]
     fn picture_size_is_relative_to_each_preset_and_preserves_center_and_aspect() {
-        for id in 1..=8 {
+        for id in DECODABLE_PRESETS {
             let mut config = Config::preset(id).unwrap();
             let before = config.foreground;
             assert!((config.picture_size_percent() - 100.0).abs() < 1e-7);
@@ -1926,6 +2071,40 @@ mod tests {
             assert!((after.y + after.height / 2.0 - before.y - before.height / 2.0).abs() < 1e-8);
             assert!((config.picture_size_percent() - 75.0).abs() < 1e-7);
         }
+    }
+
+    #[test]
+    fn expanded_native_compositions_own_real_layers_and_clear_safely() {
+        for (id, roles) in [
+            (9, &["broadcastSide", "broadcastAccent", "broadcastFoot", "broadcastTop"][..]),
+            (12, &["backdrop", "tint", "shadow"][..]),
+            (13, &["diagonalLeft", "diagonalRight", "diagonalHighlight"][..]),
+            (14, &["projectorMount", "projectorRail"][..]),
+            (15, &["browserShell", "browserHeader", "browserDotRed", "browserDotAmber", "browserDotGreen"][..]),
+            (16, &["tapeLeft", "tapeRight"][..]),
+            (18, &["gridUpper", "gridRight", "gridLower", "gridLeft"][..]),
+        ] {
+            for landscape in [false, true] {
+                let (mut p, mut mint) = fixture();
+                if landscape { p.media[0].width = Some(1920); p.media[0].height = Some(1080); }
+                let before = p.active().clip("c1").unwrap().clone();
+                let config = Config::preset(id).unwrap();
+                apply(&mut p, &mut mint, config, vec!["c1".into()], vec![]).unwrap();
+                let pieces: Vec<_> = p.active().clips.iter().filter(|c| c.extra.get("canvasOwner") == Some(&json!("c1"))).collect();
+                for role in roles {
+                    assert!(pieces.iter().any(|c| c.extra.get("canvasRole").and_then(Value::as_str) == Some(*role)), "preset {id}: {role}");
+                }
+                assert_eq!(p.media.len(), 1);
+                assert_no_canvas_headline(&p);
+                clear(&mut p, vec!["c1".into()], vec![]).unwrap();
+                assert!(p.active().clips.iter().all(|c| !c.extra.contains_key("canvasOwner")));
+                let owner = p.active().clip("c1").unwrap();
+                assert_eq!(owner.media_id, before.media_id);
+                assert_eq!(owner.keys, before.keys);
+            }
+        }
+        assert!(!ACTIVE_PRESETS.contains(&7) && !ACTIVE_PRESETS.contains(&8));
+        assert!(Config::preset(7).is_some() && Config::preset(8).is_some());
     }
 
     #[test]

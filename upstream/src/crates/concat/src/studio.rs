@@ -4118,7 +4118,7 @@ impl Studio {
 
     pub fn apply_canvas_favourites_randomly(&mut self, images:bool,videos:bool,selected_only:bool) {
         if !images && !videos {self.notify("Choose Images or Video Clips first.",true);return;}
-        let pool:Vec<_>=concat_project::canvas_preset::ACTIVE_PRESETS.filter(|preset|self.prefs.canvas_preset_favourites.contains(&format!("canvas:{preset}")))
+        let pool:Vec<_>=concat_project::canvas_preset::ACTIVE_PRESETS.into_iter().filter(|preset|self.prefs.canvas_preset_favourites.contains(&format!("canvas:{preset}")))
             .filter_map(concat_project::canvas_preset::Config::preset).collect();
         if pool.is_empty() {self.notify("Star at least one Canvas preset first.",true);return;}
         let mut draw=bulk_presets::fresh_draw();
@@ -9412,6 +9412,7 @@ impl Studio {
         };
         let editor = app.global::<Editor>();
         let canvas_stars = concat_project::canvas_preset::ACTIVE_PRESETS
+            .into_iter()
             .map(|id| format!("canvas:{id}"))
             .map(|id| self.prefs.canvas_preset_favourites.iter().any(|held| held == &id))
             .collect::<Vec<_>>();
@@ -10945,7 +10946,7 @@ impl Studio {
 
     /// Toggle a stable Canvas preset preference, never a project edit.
     pub fn toggle_canvas_preset_favourite(&mut self, preset: i32) {
-        if !(1..=6).contains(&preset) { return; }
+        if !concat_project::canvas_preset::ACTIVE_PRESETS.contains(&(preset as u32)) { return; }
         let id = format!("canvas:{preset}");
         if self.prefs.canvas_preset_favourites.iter().any(|key| key == &id) {
             self.prefs.canvas_preset_favourites.retain(|key| key != &id);
