@@ -705,7 +705,18 @@ class ProductionQueue:
         if "upload" in self.transfers or self.stop.is_set():
             return 1
         with self.media.lock, self.media.connection() as con:
-            if manual_pending or self.media.get(con, "production_queue") != "running":
+            running = not manual_pending and self.media.get(con, "production_queue") == "running"
+            active = con.execute("""SELECT * FROM production_jobs WHERE state IN
+                ('Waiting for Worker','Uploading to GPU','GPU Ready','Rendering','Delivering')
+                ORDER BY id""").fetchall()
+        if not running:
+            if not active and not self.transfers:
+                self.media.salad_idle.check()
+                return 3
+            return 1
+        with self.media.lock, self.media.connection() as con:
+            # Pause/stop can race with the observer; recheck before reservation.
+            if self.media.get(con, "production_queue") != "running":
                 return 1
             active = con.execute("""SELECT * FROM production_jobs WHERE state IN
                 ('Waiting for Worker','Uploading to GPU','GPU Ready','Rendering','Delivering')
