@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from app.modules.concat.engine.cloud_render import CloudRender
-from app.modules.concat.engine.cloud_render_production import bundle_manifest, JobError
+from app.modules.concat.engine.cloud_render_production import bundle_manifest, JobError, MAX_MANIFEST
 
 
 class FakeWorker:
@@ -43,6 +43,33 @@ def bundle(target, *, bad_media=False):
         archive.writestr("project/concat.json", json.dumps({"media": [{"path": "voice.wav"}]}))
         archive.writestr(ref["member"], payload)
     return target
+
+
+class ManifestSizeTests(unittest.TestCase):
+    def test_manifest_above_old_limit(self):
+        self.assertEqual(MAX_MANIFEST, 128 * 1024 ** 2)
+        with tempfile.TemporaryDirectory() as tmp:
+            archive_path = Path(tmp) / "large.zip"
+            body = b'{"media":[]}'
+            body += b" " * (65 * 1024 ** 2 - len(body))
+            with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                archive.writestr("bundle.json", json.dumps({
+                    "version": 1, "project_file": "concat.json", "references": []}))
+                archive.writestr("project/concat.json", body)
+            self.assertEqual(len(bundle_manifest(archive_path)), len(body))
+
+    def test_manifest_above_new_limit_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            archive_path = Path(tmp) / "oversized.zip"
+            with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                archive.writestr("bundle.json", json.dumps({
+                    "version": 1, "project_file": "concat.json", "references": []}))
+                with archive.open("project/concat.json", "w") as member:
+                    for _ in range(128):
+                        member.write(b" " * (1024 ** 2))
+                    member.write(b" ")
+            with self.assertRaisesRegex(JobError, "128 MiB"):
+                bundle_manifest(archive_path)
 
 
 class IndependentDriveIntakeTests(unittest.TestCase):
