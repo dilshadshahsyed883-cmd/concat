@@ -126,3 +126,21 @@ single request commit; the resulting GITHUB_SHA is the shared provenance for
 both artifacts. Retain all existing compatibility and validation gates.
 Publish only a matched verified prerelease and immutable image; do not deploy
 or change live Salad, VPS, Nginx, Drive, existing images, or previous releases.
+
+REBUILD REQUEST — 2026-11-24 Issue #132 Canvas compositions and backgrounds
+User explicitly authorized both candidate builds from main containing PR #139
+(parent 27cef42e3a5e90fd85f277050748744a1af0846d). Trigger the existing Windows portable EXE and Salad
+CUDA candidate image workflows from this single request commit; use its exact
+same GITHUB_SHA in both artifacts. Source changes include 18 active Canvas
+presets, 12 procedural backgrounds, adaptive palette and legacy ID decoding.
+Preserve every existing saved-project, queue, PNG/JPEG alpha, ASR small,
+nine caption presets and concat-cuda-hybrid-v1 version 2 compatibility gate.
+Require native catalogue preflight, Rust/Slint compilation, Windows DLL and
+startup smoke, project persistence, image import and authenticated capabilities,
+exact source SHA, SHA-256 and immutable image digest match before publishing.
+Source-only checks are not all clear: native Canvas, offline ZIP and GPU source
+compatibility passed; full native typecheck is pending and planned/Linux source
+verification was cancelled. Do not claim these passed or claim hardware parity.
+Candidate build only: no live Salad/VPS/Nginx/Drive Bridge or queue changes;
+preserve previous verified images and releases. Real NVIDIA rendering and
+Windows manual DPI/preview parity remain NOT VERIFIED.
