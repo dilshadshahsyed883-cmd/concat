@@ -164,6 +164,26 @@ export component CanvasPresetClearBar inherits VerticalLayout {
 export component CanvasPresetLibrary inherits VerticalLayout {
     property <[string]> names: ["Sports Frame", "Orange Frame", "Adaptive Blur (Blurred Fill)", "Gallery Mat", "Floating Card", "Photo Print"];
     property <bool> favourites-only: false;
+    // Dense positions in the Favorites view, following AnimationFavoriteCards.
+    pure function is-starred(index: int) -> bool {
+        return index < CanvasPresets.favourites.length && CanvasPresets.favourites[index];
+    }
+    pure function count-eight(start: int, before: int) -> int {
+        return (start + 0 < before && root.is-starred(start + 0) ? 1 : 0)
+            + (start + 1 < before && root.is-starred(start + 1) ? 1 : 0)
+            + (start + 2 < before && root.is-starred(start + 2) ? 1 : 0)
+            + (start + 3 < before && root.is-starred(start + 3) ? 1 : 0)
+            + (start + 4 < before && root.is-starred(start + 4) ? 1 : 0)
+            + (start + 5 < before && root.is-starred(start + 5) ? 1 : 0)
+            + (start + 6 < before && root.is-starred(start + 6) ? 1 : 0)
+            + (start + 7 < before && root.is-starred(start + 7) ? 1 : 0);
+    }
+    pure function favourite-rank(before: int) -> int {
+        return root.count-eight(0, before)
+            + root.count-eight(8, before)
+            + root.count-eight(16, before);
+    }
+    property <int> visible-count: root.favourites-only ? root.favourite-rank(root.names.length) : root.names.length;
     function inspect(index: int, name: string) {
         CanvasPresets.selected = index + 1;
         CanvasPresets.choose(index + 1);
@@ -189,89 +209,102 @@ export component CanvasPresetLibrary inherits VerticalLayout {
             LibraryFocus.selected-description = "";
         }
     }
-    if root.favourites-only
-        && !(CanvasPresets.favourites.length >= 6 &&
-            (CanvasPresets.favourites[0] || CanvasPresets.favourites[1] || CanvasPresets.favourites[2]
-            || CanvasPresets.favourites[3] || CanvasPresets.favourites[4]
-            || CanvasPresets.favourites[5])): Text {
+    if root.favourites-only && root.visible-count == 0: Text {
         text: "No starred Canvas presets. Turn off Favorites to browse all presets.";
         color: Theme.fg-muted;
         font-size: Theme.fs-sm;
         wrap: word-wrap;
     }
-    for name[index] in root.names: Rectangle {
-        property <bool> show-item: !root.favourites-only
-            || (CanvasPresets.favourites.length > index && CanvasPresets.favourites[index]);
-        visible: self.show-item;
-        height: self.show-item ? 62px : 0px;
-        border-width: CanvasPresets.selected == index + 1 ? 2px : 1px;
-        border-color: CanvasPresets.selected == index + 1 ? Theme.accent : Theme.line;
-        border-radius: Theme.r;
-        background: Theme.field;
-        // Schematic previews show composition, never a second media source.
-        Rectangle {
-            x: 7px; y: 8px; width: 54px; height: 46px;
+    grid := Rectangle {
+        property <length> gap: 8px;
+        property <length> min-card: 260px;
+        property <length> card-h: 62px;
+        property <int> cols: Math.max(1, Math.floor((self.width + self.gap) / (self.min-card + self.gap)));
+        property <length> card-w: (self.width - (self.cols - 1) * self.gap) / self.cols;
+        property <int> rows: Math.ceil(root.visible-count / self.cols);
+        visible: root.visible-count > 0;
+        height: self.rows > 0 ? self.rows * (self.card-h + self.gap) - self.gap : 0px;
+        vertical-stretch: 0;
+        clip: true;
+        for name[index] in root.names: Rectangle {
+            property <int> compact-index: root.favourites-only ? root.favourite-rank(index) : index;
+            visible: !root.favourites-only || root.is-starred(index);
+            x: Math.mod(self.compact-index, grid.cols) * (grid.card-w + grid.gap);
+            y: Math.floor(self.compact-index / grid.cols) * (grid.card-h + grid.gap);
+            width: grid.card-w;
+            height: grid.card-h;
+            clip: true;
+            border-width: CanvasPresets.selected == index + 1 ? 2px : 1px;
+            border-color: CanvasPresets.selected == index + 1 ? Theme.accent : Theme.line;
             border-radius: Theme.r;
-            background: index == 0 ? #b51c3e
-                : index == 1 ? #f49a4b
-                : index == 3 ? #e4e0d6
-                : index == 4 ? #152336
-                : index == 5 ? #25303a : #596e8f;
+            background: Theme.field;
+            // Schematic previews show composition, never a second media source.
             Rectangle {
-                x: 8px;
-                y: index == 5 ? 5px : 7px;
-                width: 38px;
-                height: index == 5 ? 29px : 32px;
-                background: #8899ac;
-                border-radius: index == 4 ? 5px : 1px;
-                border-width: index < 2 ? 2px : 0px;
-                border-color: index == 0 ? #ff153a : #ff914d;
+                x: 7px; y: 8px; width: 54px; height: 46px;
+                border-radius: Theme.r;
+                background: index == 0 ? #b51c3e
+                    : index == 1 ? #f49a4b
+                    : index == 3 ? #e4e0d6
+                    : index == 4 ? #152336
+                    : index == 5 ? #25303a : #596e8f;
+                Rectangle {
+                    x: 8px;
+                    y: index == 5 ? 5px : 7px;
+                    width: 38px;
+                    height: index == 5 ? 29px : 32px;
+                    background: #8899ac;
+                    border-radius: index == 4 ? 5px : 1px;
+                    border-width: index < 2 ? 2px : 0px;
+                    border-color: index == 0 ? #ff153a : #ff914d;
+                }
             }
-        }
-        Text {
-            x: 70px;
-            y: 8px;
-            width: parent.width - 112px;
-            text: name;
-            color: Theme.fg;
-            font-size: Theme.fs;
-            font-weight: Theme.weight-title;
-        }
-        Text {
-            x: 70px;
-            y: 33px;
-            width: parent.width - 112px;
-            text: index == 0 ? "Legacy sports style"
-                : index == 1 ? "Legacy orange style"
-                : index == 2 ? "Same-source blur"
-                : index == 3 ? "Balanced picture mat"
-                : index == 4 ? "Rounded elevated card"
-                : "Tilted photo mat";
-            color: Theme.fg-muted;
-            font-size: Theme.fs-sm;
-        }
-        TouchArea {
-            x: 0;
-            y: 0;
-            width: parent.width - 38px;
-            height: parent.height;
-            mouse-cursor: pointer;
-            clicked => { root.inspect(index, name); }
-        }
-        IconButton {
-            x: parent.width - self.width - 5px;
-            y: 35px;
-            glyph: Glyph.info;
-            label: "Inspect " + name + " without applying";
-            clicked => { root.inspect(index, name); }
-        }
-        IconButton {
-            x: parent.width - self.width - 5px;
-            y: 8px;
-            glyph: Glyph.mask-star;
-            checked: CanvasPresets.favourites.length > index && CanvasPresets.favourites[index];
-            label: "Toggle favorite for " + name;
-            clicked => { CanvasPresets.toggle-favourite(index + 1); }
+            Text {
+                x: 70px;
+                y: 8px;
+                width: Math.max(0px, parent.width - 112px);
+                overflow: elide;
+                text: name;
+                color: Theme.fg;
+                font-size: Theme.fs;
+                font-weight: Theme.weight-title;
+            }
+            Text {
+                x: 70px;
+                y: 33px;
+                width: Math.max(0px, parent.width - 112px);
+                overflow: elide;
+                text: index == 0 ? "Legacy sports style"
+                    : index == 1 ? "Legacy orange style"
+                    : index == 2 ? "Same-source blur"
+                    : index == 3 ? "Balanced picture mat"
+                    : index == 4 ? "Rounded elevated card"
+                    : "Tilted photo mat";
+                color: Theme.fg-muted;
+                font-size: Theme.fs-sm;
+            }
+            TouchArea {
+                x: 0;
+                y: 0;
+                width: Math.max(0px, parent.width - 38px);
+                height: parent.height;
+                mouse-cursor: pointer;
+                clicked => { root.inspect(index, name); }
+            }
+            IconButton {
+                x: parent.width - self.width - 5px;
+                y: 35px;
+                glyph: Glyph.info;
+                label: "Inspect " + name + " without applying";
+                clicked => { root.inspect(index, name); }
+            }
+            IconButton {
+                x: parent.width - self.width - 5px;
+                y: 8px;
+                glyph: Glyph.mask-star;
+                checked: CanvasPresets.favourites.length > index && CanvasPresets.favourites[index];
+                label: "Toggle favorite for " + name;
+                clicked => { CanvasPresets.toggle-favourite(index + 1); }
+            }
         }
     }
 }
