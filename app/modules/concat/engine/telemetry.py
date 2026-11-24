@@ -14,7 +14,7 @@ from .salad_idle import SALAD_API
 RETENTION = 7 * 86400
 MAX_SAMPLES = 20000
 STATES = {'Queued', 'Downloading', 'Verifying ZIP', 'Retrying Drive', 'Ready for GPU',
-          'Waiting for Worker', 'Uploading to GPU', 'Rendering', 'Delivering',
+          'Waiting for Worker', 'Uploading to GPU', 'GPU Ready', 'Rendering', 'Delivering',
           'Completed', 'Failed', 'Cancelled'}
 TERMINAL = {'Completed', 'Failed', 'Cancelled'}
 JOB_FIELDS = {'progress_percent': 100, 'fps': 1000000, 'average_fps': 1000000,
@@ -163,7 +163,7 @@ class Telemetry:
         return {'concurrency': int(self.manager.get(con, 'render_concurrency') or '1'),
                 'rendering_jobs': [r['id'] for r in rows if r['state'] == 'Rendering'],
                 'active_jobs': [r['id'] for r in rows if r['state'] in
-                                ('Waiting for Worker', 'Uploading to GPU', 'Rendering', 'Delivering')],
+                                ('Waiting for Worker', 'Uploading to GPU', 'GPU Ready', 'Rendering', 'Delivering')],
                 'instance': identity}
 
     def collect_summaries(self):

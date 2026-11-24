@@ -38,7 +38,7 @@ const context={
    if(options.method==='POST'){saved=JSON.parse(options.body); config={...config,...saved};}
    data=config;
   }else if(url.endsWith('/media'))data={items:[]};
-  else if(url.endsWith('/production'))data={state:'running',active:0,concurrency:1,items:[],worker:{...config,salad_worker_status:'checking_download',salad_worker_progress:5,salad_reallocations:0,salad_idle_status:'busy'}};
+  else if(url.endsWith('/production'))data={state:'running',active:4,concurrency:1,rendering:1,uploading:1,gpu_ready:1,delivering:1,items:[],worker:{...config,salad_worker_status:'checking_download',salad_worker_progress:5,salad_reallocations:0,salad_idle_status:'busy'}};
   else if(url.endsWith('/auto-retry'))retryCalls++;
   else if(url.includes('/gpu/worker/'))data={ok:true};
   else if(url.endsWith('/production/drive-source')) {
@@ -95,6 +95,7 @@ const flush=()=>new Promise(resolve=>setImmediate(resolve));
  tabs[0].events.click();
  await flush();
  assert.match(dom['cr-auto-worker-status'].textContent,/checking download.*image 5%.*reallocations 0\/3/);
+ assert.match(dom['cr-queue-state'].textContent,/Rendering 1\/1.*Uploading 1.*GPU Ready 1.*Delivering 1/);
  dom['cr-auto-start'].value='manual';
  dom['cr-auto-start'].events.change();
  assert.equal(dom['cr-manual-start'].disabled,false);

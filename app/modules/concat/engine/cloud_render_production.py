@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import fcntl
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import logging
@@ -28,6 +29,9 @@ CHUNK = 8 * 1024 ** 2
 DRIVE_ID = re.compile(r"[A-Za-z0-9_-]{1,200}")
 SHA256 = re.compile(r"[0-9a-f]{64}")
 TERMINAL = ("Completed", "Failed", "Cancelled")
+GPU_ACTIVE = ("Waiting for Worker", "Uploading to GPU", "GPU Ready", "Rendering", "Delivering")
+# Bound pending output storage without coupling delivery to render concurrency.
+MAX_DELIVERY_BACKLOG = 2
 INTAKE_RETRIES = 5
 INTAKE_RETRY_DELAY = 20
 
@@ -273,6 +277,7 @@ class Worker:
             raise WorkerWait("Worker image does not support render concurrency 2; deploy the updated Concat worker.") from None
         if response.get("concurrency") != value:
             raise WorkerWait("Worker did not confirm the requested render concurrency.")
+        return response
 
     def upload(self, job, path, size, digest, manifest, checkpoint, uploading, submit):
         checkpoint()
@@ -336,6 +341,9 @@ class ProductionQueue:
         self.thread = None
         self.intake_thread = None
         self.observation_cursor = 0
+        self.pipeline_enabled = False
+        self.transfer_pools = {}
+        self.transfers = {}
         self.source_sync_lock = threading.Lock()
         with manager.connection() as con:
             con.execute("""CREATE TABLE IF NOT EXISTS production_jobs(
@@ -387,14 +395,26 @@ class ProductionQueue:
                     break
                 except BlockingIOError:
                     self.stop.wait(2)
-            while not self.stop.is_set():
+            # Keep the dispatcher flock until both transfer lanes have stopped.
+            # No second process may resume the same upload or output pull.
+            with ThreadPoolExecutor(max_workers=1, thread_name_prefix="concat-upload") as upload, \
+                 ThreadPoolExecutor(max_workers=1, thread_name_prefix="concat-pull") as delivery:
+                self.transfer_pools = {"upload": upload, "delivery": delivery}
                 try:
-                    delay = self.tick()
-                except Exception:
-                    LOG.exception("Cloud Render Production scheduler failed")
-                    delay = 8
-                self.wake.wait(delay)
-                self.wake.clear()
+                    while not self.stop.is_set():
+                        try:
+                            delay = self.tick()
+                        except Exception:
+                            LOG.exception("Cloud Render Production scheduler failed")
+                            delay = 8
+                        self.wake.wait(delay)
+                        self.wake.clear()
+                finally:
+                    # Upload tasks never enqueue delivery work themselves.
+                    upload.shutdown(wait=True)
+                    delivery.shutdown(wait=True)
+                    self.transfers.clear()
+                    self.transfer_pools = {}
 
     def run_intake(self):
         # Separate lock/thread: a slow rclone download never consumes a GPU
@@ -483,13 +503,17 @@ class ProductionQueue:
             items = [dict(row) for row in con.execute(
                 "SELECT id,name,state,error,cancel_requested,intake_retries,intake_retry_at FROM production_jobs ORDER BY id")]
             concurrency = int(self.media.get(con, "render_concurrency") or "1")
-            active = sum(item["state"] in ("Waiting for Worker", "Uploading to GPU", "Rendering", "Delivering") for item in items)
+            active = sum(item["state"] in GPU_ACTIVE for item in items)
+            counts = {state: sum(item["state"] == state for item in items) for state in GPU_ACTIVE}
             intake = sum(item["state"] in ("Downloading", "Verifying ZIP") for item in items)
             ready = sum(item["state"] == "Ready for GPU" for item in items)
             return {"state": self.media.get(con, "production_queue"),
                     "concurrency": concurrency, "active": active,
                     "worker": self.media.salad_worker.snapshot(con),
-                    "intake_active": intake, "ready_for_gpu": ready, "items": items}
+                    "intake_active": intake, "ready_for_gpu": ready,
+                    "rendering": counts["Rendering"], "gpu_ready": counts["GPU Ready"],
+                    "uploading": counts["Uploading to GPU"] + counts["Waiting for Worker"],
+                    "delivering": counts["Delivering"], "items": items}
 
     def control(self, action):
         state = {"start": "running", "pause": "paused", "resume": "running"}.get(action)
@@ -555,6 +579,8 @@ class ProductionQueue:
             shutil.rmtree(directory)
 
     def tick(self):
+        if self.pipeline_enabled or self.transfers:
+            return self.tick_pipeline()
         with self.media.lock, self.media.connection() as con:
             manual_pending = self.media.salad_worker.tick_manual(con)
             # A cancellation must not power on an otherwise unused GPU.
@@ -563,7 +589,7 @@ class ProductionQueue:
                   AND state IN ('Ready for GPU','Waiting for Worker')""")
             # GPU slots count only dispatched/waiting jobs, never Drive intake.
             active = con.execute("""SELECT * FROM production_jobs
-                WHERE state IN ('Waiting for Worker','Uploading to GPU','Rendering','Delivering')
+                WHERE state IN ('Waiting for Worker','Uploading to GPU','GPU Ready','Rendering','Delivering')
                 ORDER BY id""").fetchall()
             limit = int(self.media.get(con, "render_concurrency") or "1")
             if con.execute("SELECT 1 FROM production_jobs WHERE state NOT IN ('Completed','Failed','Cancelled') LIMIT 1").fetchone():
@@ -598,9 +624,23 @@ class ProductionQueue:
                         self.clean_input(int(path.stem))
             self.media.salad_idle.check()
             return 3
+        return self.process_safe(row)
+
+    def process_safe(self, row, *, observe_only=False, require_pipeline=False, delivery=None):
         try:
-            self.process(row)
+            if delivery is not None:
+                worker, status = delivery
+                self.pull(row, worker, status)
+                self.finish(row["id"])
+            else:
+                self.process(row, observe_only=observe_only, require_pipeline=require_pipeline)
         except Checkpoint:
+            if require_pipeline:
+                with self.media.connection() as con:
+                    saved = con.execute("SELECT submitted_at,cancel_requested FROM production_jobs WHERE id=?",
+                                        (row["id"],)).fetchone()
+                if saved and not saved["submitted_at"]:
+                    self.update(row["id"], state="Cancelled" if saved["cancel_requested"] else "Ready for GPU")
             return 2
         except WorkerWait as exc:
             # An offline GPU must not hold a render slot before submission.
@@ -608,8 +648,10 @@ class ProductionQueue:
             with self.media.connection() as con:
                 saved = con.execute("SELECT submitted_at FROM production_jobs WHERE id=?", (row["id"],)).fetchone()
             pending = bool(saved and saved["submitted_at"])
-            self.update(row["id"], state="Waiting for Worker" if pending else "Ready for GPU",
-                        error=str(exc)[:350])
+            # Unknown remote state must keep its capacity reservation.
+            state = ("Delivering" if delivery is not None else row["state"] if observe_only
+                     else "Waiting for Worker" if pending else "Ready for GPU")
+            self.update(row["id"], state=state, error=str(exc)[:350])
         except (JobError, RuntimeError, HTTPException) as exc:
             self.update(row["id"], state="Failed", error=str(getattr(exc, "detail", str(exc)))[:350])
             return 0
@@ -618,6 +660,82 @@ class ProductionQueue:
             self.update(row["id"], state="Failed", error="VPS file operation failed. Check storage and retry.")
             return 0
         return 5
+
+    def launch_transfer(self, lane, row, **kwargs):
+        if lane in self.transfers:
+            return False
+        pool = self.transfer_pools.get(lane)
+        if pool is None:
+            # Deterministic offline scheduler tests do not start background threads.
+            self.process_safe(row, **kwargs)
+        else:
+            future = pool.submit(self.process_safe, row, **kwargs)
+            self.transfers[lane] = (row["id"], future)
+            future.add_done_callback(lambda _: self.wake.set())
+        return True
+
+    def tick_pipeline(self):
+        for lane, (_, future) in list(self.transfers.items()):
+            if future.done():
+                del self.transfers[lane]
+                future.result()
+        if not self.pipeline_enabled:
+            return 1 if self.transfers else self.tick()
+        in_flight = {job for job, _ in self.transfers.values()}
+        with self.media.lock, self.media.connection() as con:
+            manual_pending = self.media.salad_worker.tick_manual(con)
+            # Do not publish cancellation while a transfer may still be writing.
+            for row in con.execute("""SELECT id FROM production_jobs WHERE cancel_requested=1
+                AND submitted_at=0 AND state IN ('Ready for GPU','Waiting for Worker','Uploading to GPU')"""):
+                if row["id"] not in in_flight:
+                    con.execute("UPDATE production_jobs SET state='Cancelled',error='' WHERE id=?", (row["id"],))
+                    self.media.metrics.state(con, row["id"], "Cancelled")
+            active = con.execute("""SELECT * FROM production_jobs WHERE state IN
+                ('Waiting for Worker','Uploading to GPU','GPU Ready','Rendering','Delivering')
+                ORDER BY id""").fetchall()
+            if con.execute("SELECT 1 FROM production_jobs WHERE state NOT IN ('Completed','Failed','Cancelled') LIMIT 1").fetchone():
+                self.media.put(con, "salad_idle_since", 0)
+        # A slow upload or output pull never owns the status polling loop.
+        # Poll already-submitted recovery rows too, including while paused.
+        observed = [r for r in active if r["id"] not in in_flight and r["submitted_at"]]
+        if observed:
+            row = observed[self.observation_cursor % len(observed)]
+            self.observation_cursor += 1
+            self.process_safe(row, observe_only=True)
+        if "upload" in self.transfers or self.stop.is_set():
+            return 1
+        with self.media.lock, self.media.connection() as con:
+            if manual_pending or self.media.get(con, "production_queue") != "running":
+                return 1
+            active = con.execute("""SELECT * FROM production_jobs WHERE state IN
+                ('Waiting for Worker','Uploading to GPU','GPU Ready','Rendering','Delivering')
+                ORDER BY id""").fetchall()
+            limit = int(self.media.get(con, "render_concurrency") or "1")
+            # Recover a reserved upload before admitting another. A newly
+            # uploaded ZIP counts as GPU Ready until remote running is observed.
+            row = next((r for r in active if r["state"] in ("Waiting for Worker", "Uploading to GPU")
+                        and r["id"] not in {job for job, _ in self.transfers.values()}), None)
+            if row is None:
+                pending_intake = con.execute("""SELECT 1 FROM production_jobs WHERE state IN
+                    ('Queued','Downloading','Verifying ZIP','Retrying Drive') LIMIT 1""").fetchone()
+                outstanding = [r for r in active if r["state"] != "Delivering"]
+                deliveries = sum(r["state"] == "Delivering" for r in active)
+                # At most one extra queued/transfer job beyond render slots.
+                # One preloaded job is sufficient; do not fill GPU storage.
+                if (not pending_intake and len(outstanding) < limit + 1
+                        and not any(r["state"] == "GPU Ready" for r in active)
+                        and deliveries < MAX_DELIVERY_BACKLOG):
+                    candidate = con.execute("SELECT * FROM production_jobs WHERE state='Ready for GPU' ORDER BY id LIMIT 1").fetchone()
+                    if candidate is not None and self.media.salad_worker.ensure_ready(con):
+                        row = candidate
+                        con.execute("UPDATE production_jobs SET state='Waiting for Worker' WHERE id=?", (row["id"],))
+                        self.media.metrics.state(con, row["id"], "Waiting for Worker")
+        if row is not None:
+            self.launch_transfer("upload", row, require_pipeline=True)
+        elif not active and not self.transfers:
+            self.media.salad_idle.check()
+            return 3
+        return 1
 
     def tick_intake(self):
         from .drive_socket import RetryableDriveError
@@ -729,7 +847,7 @@ class ProductionQueue:
             if submit:
                 con.execute("UPDATE production_jobs SET submitted_at=? WHERE id=?", (int(time.time()), job))
 
-    def process(self, row):
+    def process(self, row, *, observe_only=False, require_pipeline=False):
         job, remote_id = row["id"], row["remote_id"]
         if row["cancel_requested"] and not row["submitted_at"]:
             self.update(job, state="Cancelled")
@@ -743,7 +861,11 @@ class ProductionQueue:
         worker = self.worker_factory(row["endpoint"])
         with self.media.connection() as con:
             concurrency = int(self.media.get(con, "render_concurrency") or "1")
-        worker.configure_concurrency(concurrency)
+        if observe_only:
+            worker.timeout = min(worker.timeout, 7)
+        else:
+            response = worker.configure_concurrency(concurrency)
+            self.pipeline_enabled = isinstance(response, dict) and response.get("pipeline_version") == 1
         # Check before uploading or re-uploading. The same worker ID and
         # content checksum survive web restarts and ambiguous POST responses.
         if row["endpoint"]:
@@ -751,13 +873,19 @@ class ProductionQueue:
             if status is not None:
                 if status.get("sha256") != row["digest"] or status.get("render_mode") != MODE:
                     raise JobError("Worker job identity does not match the saved Concat ZIP.")
-                self.observe(row, worker, status)
+                self.observe(row, worker, status, schedule_delivery=observe_only)
                 return
         if row["cancel_requested"]:
             if time.time() - row["submitted_at"] >= max(30, worker.timeout):
                 self.update(job, state="Cancelled")
             return
 
+        if observe_only:
+            # Reserve the existing job for the upload lane to reconcile later.
+            self.update(job, state="Waiting for Worker")
+            return
+        if require_pipeline and not self.pipeline_enabled:
+            raise WorkerWait("Worker image uses legacy scheduling. Retrying with its original concurrency limit.")
         # Drive intake already downloaded and SHA-verified this archive.
         # Never contact Drive or occupy a GPU slot to perform a download.
         self.checkpoint(job)
@@ -776,14 +904,16 @@ class ProductionQueue:
                       lambda: self.checkpoint(job),
                       lambda: self.update(job, state="Uploading to GPU", endpoint=worker.endpoint),
                       lambda: self.checkpoint(job, submit=True))
-        self.update(job, state="Rendering")
+        self.update(job, state="GPU Ready" if self.pipeline_enabled else "Rendering")
 
-    def observe(self, row, worker, status):
+    def observe(self, row, worker, status, *, schedule_delivery=False):
         job, remote_id = row["id"], row["remote_id"]
         self.media.metrics.observe(job, status)
         state = status.get("state")
         if state in ("queued", "running", "delivering"):
-            self.update(job, state="Delivering" if state == "delivering" else "Rendering")
+            visible = "Delivering" if state == "delivering" else (
+                "GPU Ready" if state == "queued" and self.pipeline_enabled else "Rendering")
+            self.update(job, state=visible)
             return
         if row["cancel_requested"]:
             self.update(job, state="Cancelled")
@@ -793,8 +923,12 @@ class ProductionQueue:
             self.update(job, state="Failed", error=error[:350], rerender=1)
         elif state in ("rendered", "delivery_failed"):
             self.update(job, state="Delivering")
-            self.pull(row, worker, status)
-            self.finish(job)
+            if self.pipeline_enabled:
+                if schedule_delivery:
+                    self.launch_transfer("delivery", row, delivery=(worker, status))
+            else:
+                self.pull(row, worker, status)
+                self.finish(job)
         elif state == "delivered":
             if not self.media.production_received(remote_id):
                 raise JobError("Worker reports delivery, but the verified MP4 is missing from Cloud Render Media.")
