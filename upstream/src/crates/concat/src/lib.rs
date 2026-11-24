@@ -975,7 +975,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     app.global::<CanvasPresets>().on_toggle_favourite(move |preset| {
         Shell::with(|shell, app| {
             shell.studio.borrow_mut().toggle_canvas_preset_favourite(preset);
-            let stars = concat_project::canvas_preset::ACTIVE_PRESETS.map(|index|
+            let stars = concat_project::canvas_preset::ACTIVE_PRESETS.into_iter().map(|index|
                 shell.studio.borrow().prefs.canvas_preset_favourites
                     .iter().any(|held| held == &format!("canvas:{index}"))
             ).collect::<Vec<_>>();
@@ -1025,6 +1025,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             .unwrap_or_else(|| concat_project::canvas_preset::Config::preset(1)
                 .expect("sports canvas default"));
         let stars = concat_project::canvas_preset::ACTIVE_PRESETS
+            .into_iter()
             .map(|index| shell.studio.borrow().prefs.canvas_preset_favourites
                 .iter().any(|held| held == &format!("canvas:{index}")))
             .collect::<Vec<_>>();

@@ -47,7 +47,10 @@ class CanvasPresetContracts(unittest.TestCase):
         directory=os.environ.get('CONCAT_CANVAS_FIXTURE_DIR')
         if not directory:self.skipTest('Run Rust canvas fixture tests with CONCAT_CANVAS_FIXTURE_DIR to validate cross-language serialization')
         files=list(Path(directory).glob('canvas-*.json'))
-        self.assertEqual(len(files),16)
+        self.assertEqual({p.name for p in files},
+                         {f"canvas-{id}-{portrait}.json"
+                          for id in (1,2,3,4,5,6,7,8,9,12,13,14,15,16,18)
+                          for portrait in ("true","false")})
         for file in files:
             with self.subTest(file=file.name):
                 document = json.loads(file.read_text())
