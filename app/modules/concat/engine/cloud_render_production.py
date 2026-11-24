@@ -33,7 +33,7 @@ GPU_ACTIVE = ("Waiting for Worker", "Uploading to GPU", "GPU Ready", "Rendering"
 # Bound pending output storage without coupling delivery to render concurrency.
 MAX_DELIVERY_BACKLOG = 2
 INTAKE_RETRIES = 5
-INTAKE_RETRY_DELAY = 20
+INTAKE_RETRY_DELAY = 40
 
 
 class JobError(RuntimeError):
