@@ -45,7 +45,7 @@
   const groupFields = {salad_organization:"cr-salad-organization", salad_project:"cr-salad-project", salad_container_group:"cr-salad-container-group"};
   const updateAutomation=()=>{
     const threshold=$("cr-pull-threshold"), seconds=$("cr-pull-seconds");
-    $("cr-health-rule").textContent="Keep the instance if Docker image download reaches "+threshold.value+"% within "+seconds.value+" seconds; otherwise reallocate, up to 3 attempts.";
+    $("cr-health-rule").textContent="Keep the instance if Docker image download reaches "+threshold.value+"% within "+seconds.value+" seconds; otherwise reallocate, up to 3 attempts per cycle. If all fail, wait 5 minutes and retry automatically.";
     for(const [input,minus,plus] of [[threshold,"cr-threshold-minus","cr-threshold-plus"],[seconds,"cr-timer-minus","cr-timer-plus"]]){
       $(minus).disabled=Number(input.value)<=Number(input.min);
       $(plus).disabled=Number(input.value)>=Number(input.max);

@@ -102,7 +102,7 @@
           <div class="cr-stepper"><button class="cr-btn secondary" id="cr-timer-minus" type="button" aria-label="Decrease health-check timer">−</button><input id="cr-pull-seconds" type="number" min="5" max="600" step="1" value="20" inputmode="numeric"><button class="cr-btn secondary" id="cr-timer-plus" type="button" aria-label="Increase health-check timer">+</button></div>
         </div>
       </div>
-      <p class="cr-note" id="cr-health-rule" role="status">Keep the instance if Docker image download reaches 8% within 20 seconds; otherwise reallocate, up to 3 attempts.</p>
+      <p class="cr-note" id="cr-health-rule" role="status">Keep the instance if Docker image download reaches 8% within 20 seconds; otherwise reallocate, up to 3 attempts per cycle. If all fail, wait 5 minutes and retry automatically.</p>
       <p id="cr-idle-status">Automatic shutdown: 1 minute after the queue and deliveries finish (Automatic mode only).</p>
       <div class="cr-actions">
         <button class="cr-btn primary" id="cr-save-automation" type="button">Save Automation Settings</button>

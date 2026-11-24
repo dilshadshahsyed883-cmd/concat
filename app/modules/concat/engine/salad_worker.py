@@ -25,6 +25,7 @@ DEFAULTS = {'auto_start': '0', 'image_pull_threshold': '8', 'image_pull_seconds'
 LIMITS = {'image_pull_threshold': (1, 100), 'image_pull_seconds': (5, 600),
           'salad_max_reallocations': (0, 3), 'salad_reallocate_cooldown': (5, 600)}
 GROUP_KEYS = ('salad_organization', 'salad_project', 'salad_container_group')
+RETRY_CYCLE_COOLDOWN = 300
 
 
 def image_pull_percent(value):
@@ -211,6 +212,7 @@ class SaladAutoWorker:
                 worker.request('GET', worker.health)
                 # Reset the reallocation budget only after genuine readiness.
                 record.update(attempts=0, start_requested=False)
+                record.pop('retry_cycle_after', None)
                 m.put(con, 'salad_stop_record', '')
                 self._save(con, record, 'ready')
                 return True
@@ -257,8 +259,19 @@ class SaladAutoWorker:
                 return status('waiting_for_reallocation')
             if now < record.get('cooldown_until', 0):
                 return status('reallocation_cooldown')
-            if record.get('attempts', 0) >= min(3, int(m.get(con, 'salad_max_reallocations') or '0')):
+            max_attempts = min(3, int(m.get(con, 'salad_max_reallocations') or '0'))
+            if max_attempts == 0:
                 return status('reallocation_limit')
+            if record.get('attempts', 0) >= max_attempts:
+                # The replacement is still slow after exhausting this cycle.
+                # Persist the deadline so process restarts cannot shorten it.
+                retry_after = record.setdefault('retry_cycle_after', now + RETRY_CYCLE_COOLDOWN)
+                if now < retry_after:
+                    return status('reallocation_limit')
+                # Reset only the budget, not the instance/transition journal.
+                # The same unconfirmed POST must never be repeated.
+                record.update(attempts=0)
+                record.pop('retry_cycle_after', None)
             # Re-fetch this exact instance immediately before mutation. A list
             # snapshot can race readiness or replacement on Salad's side.
             fresh = self._request(con, 'GET', path + '/instances/' + instance_id)
