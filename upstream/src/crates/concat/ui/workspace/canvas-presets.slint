@@ -24,6 +24,11 @@ export global CanvasPresets {
     in property <float> border-width: 0.006;
     in property <float> radius: 0;
     in property <float> blur: 0;
+    in property <float> background-intensity: 0.75;
+    in property <float> background-density: 0.5;
+    in property <float> background-opacity: 1;
+    in property <float> background-spread: 0.5;
+    in property <float> background-pattern-size: 0.5;
     in property <float> tint-opacity: 0;
     in property <float> shadow-opacity: 0;
     in property <float> shadow-offset: 0;
@@ -89,18 +94,23 @@ export component CanvasPresetPanel inherits VerticalLayout {
         if CanvasPresets.selected != 10 && CanvasPresets.selected != 17: Param { label: "Corner radius"; value: CanvasPresets.radius; minimum: 0; maximum: 0.5; step: 0.005; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("radius", v); } }
         Text { text: "Background"; color: Theme.fg-muted; font-size: Theme.fs-sm; }
         Select {
-            options: ["Source", "Blurred source", "Solid color", "None"];
+            options: ["Source","Blurred source","Solid color","None","Ambient Color Clouds","Frosted Glass Panels","Radial Spotlight","Halftone Arena","Diagonal Light Streaks","Monochrome Backdrop","Topographic Waves","Carbon Fiber","Prism Refraction","Cinematic Bokeh","Textured Paper","Light Tunnel","Adaptive Background Colors"];
             current: CanvasPresets.background-mode;
             changed(index) => { CanvasPresets.edit-mode(index); }
         }
-        if CanvasPresets.background-mode == 1: Param {
+        if CanvasPresets.background-mode == 1 || CanvasPresets.background-mode == 5: Param {
             label: "Blur softness"; value: CanvasPresets.blur; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction;
             changed(v) => { CanvasPresets.edit-number("blur", v); }
         }
-        if CanvasPresets.background-mode == 2: ColourField {
+        if CanvasPresets.background-mode == 2 || (CanvasPresets.background-mode >= 4 && CanvasPresets.background-mode != 16 && CanvasPresets.background-mode != 9): ColourField {
             label: "Background color"; value: CanvasPresets.background-color;
             changed(c) => { CanvasPresets.edit-colour("backgroundColor", c); }
         }
+        if CanvasPresets.background-mode >= 4: Param { label: "Intensity"; value: CanvasPresets.background-intensity; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("backgroundIntensity", v); } }
+        if CanvasPresets.background-mode >= 7 && CanvasPresets.background-mode != 9 && CanvasPresets.background-mode != 16: Param { label: "Texture density"; value: CanvasPresets.background-density; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("backgroundDensity", v); } }
+        if CanvasPresets.background-mode >= 4: Param { label: "Style opacity"; value: CanvasPresets.background-opacity; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("backgroundOpacity", v); } }
+        if CanvasPresets.background-mode == 4 || CanvasPresets.background-mode == 6 || CanvasPresets.background-mode == 8 || CanvasPresets.background-mode == 13 || CanvasPresets.background-mode == 15 || CanvasPresets.background-mode == 16: Param { label: "Lighting spread"; value: CanvasPresets.background-spread; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("backgroundSpread", v); } }
+        if CanvasPresets.background-mode >= 7 && CanvasPresets.background-mode != 9 && CanvasPresets.background-mode != 16: Param { label: "Pattern size"; value: CanvasPresets.background-pattern-size; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("backgroundPatternSize", v); } }
         ColourField { label: "Background tint"; value: CanvasPresets.tint-color; changed(c) => { CanvasPresets.edit-colour("backgroundTint", c); } }
         Param { label: "Tint opacity"; value: CanvasPresets.tint-opacity; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("tintOpacity", v); } }
         Param { label: "Shadow opacity"; value: CanvasPresets.shadow-opacity; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("shadowOpacity", v); } }

@@ -72,8 +72,10 @@ pub struct Config {
     pub radius: f64,
     pub border_color: String,
     pub border_width: f64,
-    /// `source`, `blur`, `color`, or `none`.
+    /// Independent background mode, including procedural and source-derived styles.
     pub background: String,
+    #[serde(default)]
+    pub background_controls: crate::canvas_style::Controls,
     pub blur: f64,
     pub background_color: String,
     pub background_tint: String,
@@ -238,6 +240,7 @@ impl Config {
                 0.0
             },
             background: bg.into(),
+            background_controls: Default::default(),
             blur: if number == 3 { 0.75 } else { 0.0 },
             background_color: "#000000".into(),
             background_tint: "#000000".into(),
@@ -386,10 +389,7 @@ impl Config {
         if self.version != 1 || !DECODABLE_PRESETS.contains(&self.preset) || !self.foreground.validate() {
             return Err("Unsupported canvas version/preset or unsafe foreground bounds".into());
         }
-        if !matches!(
-            self.background.as_str(),
-            "source" | "blur" | "color" | "none"
-        ) {
+        if !crate::canvas_style::MODES.contains(&self.background.as_str()) || !self.background_controls.valid() {
             return Err("Unknown canvas background mode".into());
         }
         for (name, value, max) in [
@@ -1047,6 +1047,17 @@ pub fn apply_with_confirmation(project: &mut Project, mint: &mut IdMint, config:
                 }
             });
             bg.extra.clear();
+            if crate::canvas_style::is_styled(&config.background) {
+                let style = crate::canvas_style::Style {
+                    version: 1,
+                    mode: config.background.clone(),
+                    color: config.background_color.clone(),
+                    softness: config.blur,
+                    controls: config.background_controls.clone(),
+                };
+                bg.background = Some(Background::Color { color: config.background_color.clone() });
+                bg.extra.insert("canvasBackdropV1".into(), json!(style));
+            }
             layers.push(tagged(bg, &id, "backdrop"));
         }
         if config.tint_opacity > 0.0 {

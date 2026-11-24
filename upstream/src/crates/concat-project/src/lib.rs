@@ -36,6 +36,7 @@ pub mod gpu_captions;
 pub mod canvas_motion;
 pub mod animation_settings;
 pub mod canvas_preset;
+pub mod canvas_style;
 pub mod canvas_viewport;
 pub mod speed;
 pub mod srt;

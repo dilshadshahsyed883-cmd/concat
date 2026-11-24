@@ -148,9 +148,12 @@ fn canvas_publish(app: &App, config: &concat_project::canvas_preset::Config) {
     panel.set_bleed_edge(match config.bleed_edge.as_str() {
         "right" => 1, "top" => 2, "bottom" => 3, _ => 0,
     });
-    panel.set_background_mode(match config.background.as_str() {
-        "blur" => 1, "color" => 2, "none" => 3, _ => 0,
-    });
+    panel.set_background_mode(concat_project::canvas_style::MODES.iter().position(|m| *m == config.background.as_str()).unwrap_or(0) as i32);
+    panel.set_background_intensity(config.background_controls.intensity as f32);
+    panel.set_background_density(config.background_controls.density as f32);
+    panel.set_background_opacity(config.background_controls.opacity as f32);
+    panel.set_background_spread(config.background_controls.spread as f32);
+    panel.set_background_pattern_size(config.background_controls.pattern_size as f32);
     panel.set_border_color(canvas_picker_color(&config.border_color));
     panel.set_background_color(canvas_picker_color(&config.background_color));
     panel.set_tint_color(canvas_picker_color(&config.background_tint));
@@ -923,6 +926,11 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                     "borderWidth" => config.border_width = value,
                     "radius" => config.radius = value,
                     "blur" => config.blur = value,
+                    "backgroundIntensity" => config.background_controls.intensity = value,
+                    "backgroundDensity" => config.background_controls.density = value,
+                    "backgroundOpacity" => config.background_controls.opacity = value,
+                    "backgroundSpread" => config.background_controls.spread = value,
+                    "backgroundPatternSize" => config.background_controls.pattern_size = value,
                     "tintOpacity" => config.tint_opacity = value,
                     "shadowOpacity" => config.shadow_opacity = value,
                     "shadowOffset" => config.shadow_offset = value,
@@ -957,9 +965,9 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     app.global::<CanvasPresets>().on_edit_mode(move |mode| {
         Shell::with(|_, app| {
             canvas_modify(&app, |config| {
-                config.background = match mode {
-                    1 => "blur", 2 => "color", 3 => "none", _ => "source",
-                }.into();
+                if let Some(mode) = concat_project::canvas_style::MODES.get(mode as usize) {
+                    config.background = (*mode).into();
+                }
             });
         });
     });
