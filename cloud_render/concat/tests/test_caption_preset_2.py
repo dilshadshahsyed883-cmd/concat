@@ -3,7 +3,6 @@ from pathlib import Path
 import tomllib
 import unittest
 import re
-from pathlib import Path
 from cloud_render.concat.hybrid.captions import _glyph_texture
 from cloud_render.concat.hybrid.fonts import FACES, resolve_font
 from cloud_render.concat.tests.test_gpu_compat_validation import minimal_project, native_caption, load_fixture
