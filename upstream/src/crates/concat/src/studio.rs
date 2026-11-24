@@ -2917,6 +2917,14 @@ impl Studio {
 
     /// The bookkeeping every change to the edit needs: the caches that
     /// follow the document, the autosave, the monitor and the mix.
+    pub(crate) fn react_revision(&self) -> (u64, bool) { (self.revision, self.dirty) }
+
+    pub(crate) fn react_saved(&mut self) {
+        self.autosave.stop();
+        self.dirty = false;
+        if let Some(session) = &self.session { self.project_name = session.settings().name; }
+    }
+
     pub(crate) fn after_change(&mut self) {
         self.dirty = true;
         self.revision += 1;

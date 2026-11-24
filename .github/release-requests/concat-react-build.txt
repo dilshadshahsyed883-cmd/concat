@@ -1,1 +1,1 @@
-Build the existing CUDA worker for React desktop candidate; no Salad deployment.
+Build candidate revision 2: read-only adapter fix, native playback, task-specific service panels. Existing CUDA worker; no Salad deployment.

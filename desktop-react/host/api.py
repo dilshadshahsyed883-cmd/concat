@@ -32,7 +32,7 @@ class Api:
         except (OSError,ValueError):self.prefs={}
         self.prefs.setdefault('favorites',{});self.prefs.setdefault('defaults',{});self.prefs.setdefault('lockedTracks',[])
     def _discover(self):
-        base=Path(sys.executable).parent if getattr(sys,'frozen',False) else Path(__file__).resolve().parents[1]
+        base=Path(getattr(sys,'_MEIPASS',Path(__file__).resolve().parents[1]))
         path=os.environ.get('CONCAT_NATIVE_EXE') or self.prefs.get('engine')
         if path:self.engine_path=Path(path).resolve()
         else:self.engine_path=next((p for p in (base/'native').rglob('concat.exe')),None)
@@ -60,7 +60,7 @@ class Api:
     def _active(self):
         if not self.view:raise EngineError('Open a project first.')
         p=self.view['project'];return next((x for x in p['timelines'] if x['id']==p['activeTimelineId']),p['timelines'][0])
-    def _state(self):return {'path':self.path,'view':self.view,'dirty':self.dirty,'revision':self.revision,'preferences':self.prefs,'nativeOpen':bool(self.native and self.native.poll() is None)}
+    def _state(self):return {'path':self.path,'view':self.view,'dirty':self.dirty,'revision':self.revision,'preferences':self.prefs,'nativeOpen':bool(self.native and self.native.poll() is None),'appearance':getattr(self,'appearance',{})}
     def _refresh(self,changed=False):
         if self.path:self.view=self._call('project_get',{'path':self.path})
         if changed:self.dirty=True
@@ -70,7 +70,7 @@ class Api:
         self._call('edit_apply',{'path':self.path,'command':command});return self._refresh(True)
     @rpc
     def boot(self):
-        self._discover();return {**self._state(),'version':self._call('concat_version'),'recents':self._call('project_list'),'catalogue':self._call('effects_list'),'motion':self._helper({'operation':'catalogue'}),'tools':[{'name':v['name'],'title':v.get('title',v['name']),'description':v.get('description',''),'inputSchema':v.get('inputSchema',{})} for v in self.engine.tools.values()]}
+        self._discover();self.native_state();return {**self._state(),'version':self._call('concat_version'),'recents':self._call('project_list'),'catalogue':self._call('effects_list'),'motion':self._helper({'operation':'catalogue'}),'tools':[{'name':v['name'],'title':v.get('title',v['name']),'description':v.get('description',''),'inputSchema':v.get('inputSchema',{})} for v in self.engine.tools.values()]}
     @rpc
     def state(self):return self._state()
     @rpc
@@ -89,7 +89,7 @@ class Api:
             if not paths:return None
             location=paths[0]
         if self.path:self._save_close()
-        result=self._call('project_create',{'location':location,'name':name});self.path=str(Path(location)/name);self.dirty=False;return self._refresh()
+        self._call('project_create',{'location':location,'name':name});native=self.engine.request('desktop/state',{});self.path=native['path'];self.view=native['view'];self.dirty=False;return self._refresh()
     def _save_close(self):
         if self.path:
             self._call('project_close',{'path':self.path,'save':True});self.path='';self.view=None;self.dirty=False
@@ -178,11 +178,34 @@ class Api:
         if self.engine is None:self._discover()
         value=self.engine.request('desktop/state',{})
         self.path=value.get('path') or '';self.view=value.get('view')
+        self.appearance=value.get('appearance',{})
         return {**value,'state':self._state()}
+    @rpc
+    def poll(self):
+        events=self.engine.request('desktop/events',{})
+        self.dirty=events.get('dirty',self.dirty)
+        key=(events.get('path'),events.get('revision'))
+        if key!=getattr(self,'_native_revision',None):
+            self._native_revision=key
+            self.revision+=1;self.thumb_cache.clear()
+            events['state']=self.native_state()['data']['state']
+        return events
     @rpc
     def native_schema(self):
         if self.engine is None:self._discover()
         return self.engine.request('desktop/schema',{})
+    @rpc
+    def native_image(self,key):return self.engine.request('desktop/image',{'key':key})
+    @rpc
+    def playback_toggle(self):
+        self.engine.request('desktop/invoke',{'target':'Editor','callback':'play-toggled','arguments':[]})
+        return self.engine.request('desktop/playback',{})
+    @rpc
+    def playback_status(self):return self.engine.request('desktop/playback',{})
+    @rpc
+    def seek(self,time):
+        self.engine.request('desktop/invoke',{'target':'Editor','callback':'seek','arguments':[float(time)]})
+        return True
     @rpc
     def native_invoke(self,target,callback,arguments=None,properties=None):
         if self.engine is None:self._discover()
@@ -195,6 +218,13 @@ class Api:
         for i,ident in enumerate(ids):
             self.engine.request('desktop/invoke',{'target':'Editor','callback':'clip-pressed','arguments':[ident,i>0,0]})
         return True
+    @rpc
+    def queue_add_files(self):
+        if self.engine is None:self._discover()
+        paths=self._dialog(multiple=True,types=('GPU project ZIP (*.zip)',))
+        for path in paths:
+            self.engine.request('desktop/invoke',{'target':'CloudGpu','callback':'queue-add','arguments':[path]})
+        return self.native_state()['data']
     @rpc
     def choose_engine(self):
         if self.path:raise ValueError('Close the current project before changing its engine.')

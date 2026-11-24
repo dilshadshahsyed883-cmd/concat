@@ -43,8 +43,9 @@ def parse(root):
                 if name in types and types[name]!=definition:continue # Private widget names are outside the public type closure.
                 types[name]=definition;locations[name]=path.relative_to(root).as_posix()
             elif kind=='global' and export and name in exported and name not in EXCLUDED or kind=='component' and name=='App':
-                props=re.findall(r'\b(?:in-out|in|out)\s+property\s*<\s*([^>]+)\s*>\s*([\w-]+)',body)
-                props={field:typ.strip() for typ,field in props}
+                raw_props=re.findall(r'\b(in-out|in|out)\s+property\s*<\s*([^>]+)\s*>\s*([\w-]+)',body)
+                props={field:typ.strip() for direction,typ,field in raw_props}
+                writable=[field for direction,typ,field in raw_props if direction!='out']
                 callbacks=[]
                 for callback,args,result in re.findall(r'\bcallback\s+([\w-]+)\s*\(([^)]*)\)\s*(?:->\s*([\w-]+))?\s*;',body,re.S):
                     arguments=[]
@@ -53,7 +54,7 @@ def parse(root):
                             n,t=arg.split(':',1);arguments.append({'name':n.strip(),'type':t.strip()})
                     if any(a['type']=='data-transfer' for a in arguments):continue
                     callbacks.append({'name':callback,'arguments':arguments,'result':result or 'void'})
-                targets[name]={'properties':props,'callbacks':callbacks}
+                targets[name]={'properties':props,'writable':writable,'callbacks':callbacks}
     required=set()
     def visit(typ):
         if typ.startswith('['):return visit(typ[1:-1].strip())
@@ -94,7 +95,9 @@ def generate(schema):
     for target,spec in schema['targets'].items():
         owner='app' if target=='App' else 'app.global::<crate::ui::'+target+'>()'
         lines.append(json.dumps(target)+'=>{for (name,value) in props {match name.as_str(){')
-        for name,t in spec['properties'].items():lines.append(f'{json.dumps(name)}=>{owner}.set_{ident(name)}(<{rust_type(t)} as Wire>::read(value)?),')
+        for name,t in spec['properties'].items():
+            if name not in spec['writable']:continue
+            lines.append(f'{json.dumps(name)}=>{owner}.set_{ident(name)}(<{rust_type(t)} as Wire>::read(value)?),')
         lines.append('_=>return Err(format!("Unknown property: {name}")),}}match callback{')
         lines.append('""=>Ok(Value::Null),')
         for c in spec['callbacks']:

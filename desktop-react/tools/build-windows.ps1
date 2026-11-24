@@ -15,6 +15,7 @@ try {
   New-Item -ItemType Directory -Force native | Out-Null
   Copy-Item ../dist/Concat-0.2.8-GPU-Windows-x64/* native/ -Recurse -Force
   Copy-Item ../upstream/src/target/x86_64-pc-windows-msvc/quick/concat-ui-presets.exe native/
+  $env:CONCAT_GPU = 'software'
   python tools/engine-smoke.py --engine native/concat.exe --presets native/concat-ui-presets.exe --report dist/engine-smoke.json
   if ($LASTEXITCODE) { throw 'Real native bridge integration test failed' }
   python -m pytest tests -q

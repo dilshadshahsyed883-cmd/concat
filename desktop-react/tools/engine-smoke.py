@@ -15,7 +15,7 @@ def main():
             pic=Path(folder)/'source.png';im=Image.new('RGB',(640,360),'#eaf2ff');d=ImageDraw.Draw(im);d.rectangle((80,60,560,300),fill='#3979ef');d.text((160,160),'Concat native rendering',fill='white');im.save(pic)
             engine=check('native bridge initialize',lambda:McpEngine(a.engine.resolve(),timeout=180))
             schema=check('native service schema',lambda:engine.request('desktop/schema',{}));assert sum(len(t['callbacks']) for t in schema['targets'].values())>=350
-            for target,name,args in [('App','open-settings',[]),('App','settings-closed',[]),('Editor','captions',[]),('App','captions-closed',[])]:
+            for target,name,args in [('App','open-settings',[]),('App','settings-closed',[])]:
                 check(target+'.'+name,lambda:engine.request('desktop/invoke',{'target':target,'callback':name,'arguments':args}))
             engine.call('project_create',{'location':folder,'name':'React integration'})
             state=engine.request('desktop/state',{});path=state['path'];assert state['view']['project']['timelines']
@@ -24,12 +24,15 @@ def main():
             engine.call('edit_apply',{'path':path,'command':{'op':'addClipsInSequence','mediaIds':[mid],'start':0,'trackId':None,'ripple':False}})
             def current():
                 v=engine.call('project_get',{'path':path});p=v['project'];t=next(t for t in p['timelines'] if t['id']==p['activeTimelineId']);return v,t['clips'][0]
+            check('open native captions on live project',lambda:engine.request('desktop/invoke',{'target':'Editor','callback':'captions','arguments':[]}));engine.request('desktop/invoke',{'target':'App','callback':'captions-closed','arguments':[]})
             view,clip=current();frame=view['settings']['rateDen']/view['settings']['rateNum'];catalogue=helper({'operation':'catalogue'})
             for preset in catalogue['presets']:
                 if preset['category']=='adjustment':continue
                 view,clip=current();command=helper({'clip':clip,'frame':frame,'preset':preset['id'],'controls':{}})
                 check('native preset '+preset['id'],lambda:engine.call('edit_apply',{'path':path,'command':command}))
-            check('real rendered PNG preview',lambda:engine.call('preview_frame',{'path':path,'time':.25,'width':320,'height':180},raw=True))
+            picture=check('real rendered PNG preview',lambda:engine.call('preview_frame',{'path':path,'time':.25,'width':320,'height':180},raw=True))
+            import base64,io
+            pixels=Image.open(io.BytesIO(base64.b64decode(next(b['data'] for b in picture['content'] if b['type']=='image'))));assert pixels.size==(320,180)
             check('undo',lambda:engine.call('edit_undo',{'path':path}));check('redo',lambda:engine.call('edit_redo',{'path':path}))
             check('save',lambda:engine.call('project_save',{'path':path}));before=current()[0]['project'];engine.call('project_close',{'path':path,'save':True});engine.call('project_open',{'path':path});assert current()[0]['project']==before;checks.append({'name':'save close reopen preserves project','status':'passed'})
             output=Path(folder)/'render.mp4';job=engine.call('export_start',{'path':path,'output':str(output),'width':320,'height':180})
@@ -40,6 +43,13 @@ def main():
                 if time.monotonic()>deadline:raise TimeoutError('Real render timed out')
                 time.sleep(.25)
             assert status['state']=='done',status;assert output.stat().st_size>100;checks.append({'name':'real local MP4 export','status':'passed'})
+            cancel=engine.call('export_start',{'path':path,'output':str(Path(folder)/'cancelled.mp4'),'width':1920,'height':1080});engine.call('export_cancel',{'job':cancel['job']})
+            deadline=time.monotonic()+40
+            while True:
+                status=engine.call('export_status',{'job':cancel['job']})
+                if status['state']!='running':break
+                assert time.monotonic()<deadline,'Cancellation timed out';time.sleep(.1)
+            assert status['state']=='cancelled',status;checks.append({'name':'real render cancellation','status':'passed'})
     except Exception as e:
         checks.append({'name':'integration','status':'failed','error':str(e)});traceback.print_exc();raise
     finally:

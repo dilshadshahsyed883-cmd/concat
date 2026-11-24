@@ -44,6 +44,12 @@ impl Wire for slint::Image {
 }
 mod generated { include!("react_wire.rs"); }
 
+fn base64(bytes:&[u8])->String{
+    const TABLE:&[u8]=b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out=String::with_capacity(bytes.len().div_ceil(3)*4);
+    for chunk in bytes.chunks(3){let n=((chunk[0] as u32)<<16)|((chunk.get(1).copied().unwrap_or(0) as u32)<<8)|(chunk.get(2).copied().unwrap_or(0) as u32);out.push(TABLE[((n>>18)&63) as usize] as char);out.push(TABLE[((n>>12)&63) as usize] as char);out.push(if chunk.len()>1{TABLE[((n>>6)&63) as usize] as char}else{'='});out.push(if chunk.len()>2{TABLE[(n&63) as usize] as char}else{'='});}out
+}
+
 fn on_ui<T:Send+'static>(f:impl FnOnce()->Result<T,ApiError>+Send+'static)->Result<T,ApiError>{
     let(tx,rx)=mpsc::sync_channel(1);
     slint::invoke_from_event_loop(move||{let _=tx.send(f());}).map_err(|e|ApiError::failed(e.to_string()))?;
@@ -63,6 +69,12 @@ fn engine(request:Request)->Result<Value,ApiError>{
             Request::ProjectOpen{path}=>{
                 if studio.session.as_ref().is_some_and(|s|s.path()==path){result=serde_json::to_value(studio.session.as_ref().unwrap().view()).map_err(|e|ApiError::failed(e.to_string()));return;}
                 Some(concat_host::projects::open(path))
+            },
+            Request::TemplateInstantiate{template,location,name,fills}=>{
+                Some((||{
+                    let fills=fills.iter().map(|fill|Ok(concat_host::templates::SlotFill{media_id:fill.media_id.clone(),item:concat_host::media::probe(&fill.file)?.to_new_media()})).collect::<Result<Vec<_>,String>>()?;
+                    concat_host::templates::instantiate(template,location,name,fills)
+                })())
             },_=>None,
         };
         if let Some(info)=lifecycle {
@@ -71,6 +83,7 @@ fn engine(request:Request)->Result<Value,ApiError>{
             result=if studio.session.as_ref().is_some_and(|s|s.path()==path){studio.close_project().map(|_|json!({})).map_err(ApiError::failed)}else{Err(ApiError::failed("Project is not open"))};
         } else {
             let changed=matches!(&request,Request::EditApply{..}|Request::EditUndo{..}|Request::EditRedo{..}|Request::MediaImport{..}|Request::ProjectSetVideo{..});
+            let saved=matches!(&request,Request::ProjectSave{..});
             API.with(|slot|{
                 let mut slot=slot.borrow_mut();let api=slot.as_mut().unwrap();
                 let response=if let Some(session)=studio.session.take(){
@@ -81,6 +94,7 @@ fn engine(request:Request)->Result<Value,ApiError>{
                 result=match response{Response::Result(reply)=>serde_json::to_value(reply).map_err(|e|ApiError::failed(e.to_string())),Response::Error(error)=>Err(error)};
             });
             if changed && result.is_ok(){studio.after_change();}
+            if saved && result.is_ok(){studio.react_saved();}
         }
         studio.publish(&app,&shell.models);
     });result
@@ -94,7 +108,23 @@ impl concat_mcp::Backend for Desktop {
             if method=="desktop/schema"{return serde_json::from_str(include_str!("react_schema.json")).map_err(|e|ApiError::failed(e.to_string()));}
             let mut result=Err(ApiError::failed("Desktop not ready"));
             Shell::with(|shell,app|{result=(||{match method.as_str(){
-                "desktop/state"=>Ok(json!({"services":generated::state(&app),"view":shell.studio.borrow().session.as_ref().map(|s|s.view()),"path":shell.studio.borrow().session.as_ref().map(|s|s.path().to_owned())})),
+                "desktop/events"=>{
+                    let studio=shell.studio.borrow();let(revision,dirty)=studio.react_revision();
+                    let editor=app.global::<crate::ui::Editor>();
+                    Ok(json!({"path":studio.session.as_ref().map(|s|s.path()),"revision":revision,"dirty":dirty,"toast":app.get_toast().wire("toast"),"playing":editor.get_playing(),"time":editor.get_playhead()}))
+                },
+                "desktop/playback"=>{let editor=app.global::<crate::ui::Editor>();Ok(json!({"time":editor.get_playhead(),"playing":editor.get_playing()}))},
+                "desktop/image"=>{
+                    let key=params["key"].as_str().ok_or("Image key required")?;
+                    let image=IMAGES.with(|images|images.borrow().get(key).cloned()).ok_or("Image expired; refresh state")?;
+                    let pixels=image.to_rgba8().ok_or("This native image is GPU resident; use the program monitor")?;
+                    if pixels.width()==0||pixels.height()==0{return Ok(Value::Null);}
+                    let mut png=std::io::Cursor::new(Vec::new());
+                    let rgba=image::RgbaImage::from_raw(pixels.width(),pixels.height(),pixels.as_bytes().to_vec()).ok_or("Invalid native image")?;
+                    image::DynamicImage::ImageRgba8(rgba).write_to(&mut png,image::ImageFormat::Png).map_err(|e|e.to_string())?;
+                    Ok(json!(format!("data:image/png;base64,{}",base64(png.get_ref()))))
+                },
+                "desktop/state"=>Ok(json!({"services":generated::state(&app),"appearance":{"dark":app.global::<crate::ui::Theme>().get_dark(),"scale":app.global::<crate::ui::Theme>().get_ui_scale()},"view":shell.studio.borrow().session.as_ref().map(|s|s.view()),"path":shell.studio.borrow().session.as_ref().map(|s|s.path().to_owned())})),
                 "desktop/invoke"=>{
                     let target=params["target"].as_str().ok_or("Target required")?;
                     let callback=params["callback"].as_str().unwrap_or("");
@@ -102,7 +132,10 @@ impl concat_mcp::Backend for Desktop {
                     if target=="App" && ["window-close","window-minimize","window-maximize","quit","titlebar-close","titlebar-minimize","titlebar-toggle-maximize","titlebar-begin-drag"].contains(&callback){return Err("Use the React window controls".into());}
                     let args=params["arguments"].as_array().cloned().unwrap_or_default();
                     let properties: BTreeMap<String,Value>=serde_json::from_value(params.get("properties").cloned().unwrap_or(json!({}))).map_err(|e|e.to_string())?;
+                    let before=app.get_toast().token;
                     let value=generated::invoke(&app,target,callback,&args,&properties)?;
+                    let notice=app.get_toast();
+                    if notice.token!=before && notice.failed{return Err(notice.message.to_string());}
                     Ok(json!({"value":value}))
                 },
                 _=>Err("Unknown desktop operation".to_owned()),

@@ -56,6 +56,58 @@
         "relink": "RelinkData",
         "confirm": "ConfirmData"
       },
+      "writable": [
+        "on-start",
+        "c-builder-home",
+        "cb-generating",
+        "cb-used-pending",
+        "cb-generated-project",
+        "cb-output-folder",
+        "start",
+        "start-aspects",
+        "start-sizes",
+        "start-rates",
+        "recents",
+        "recents-total",
+        "app-version",
+        "can-drop",
+        "project-name",
+        "project-status",
+        "macos",
+        "phone",
+        "open-menu",
+        "app-menu-items",
+        "app-menu-height",
+        "app-menu-token",
+        "own-window-buttons",
+        "window-maximized",
+        "export",
+        "settings",
+        "transcribers",
+        "voices",
+        "versions",
+        "version-details",
+        "languages",
+        "system-facts",
+        "system-report",
+        "project-sheet",
+        "captions",
+        "caption-models",
+        "speech",
+        "speech-models",
+        "speech-model-details",
+        "speech-voices",
+        "speech-voice-details",
+        "speech-voice-avatars",
+        "speech-samples",
+        "speech-sample-waves",
+        "speech-sample-details",
+        "voiceover",
+        "voiceover-devices",
+        "toast",
+        "relink",
+        "confirm"
+      ],
       "callbacks": [
         {
           "name": "c-builder-cancel-generation",
@@ -1226,6 +1278,29 @@
         "queue-open": "bool",
         "jobs": "[GpuQueueRow]"
       },
+      "writable": [
+        "available",
+        "configured",
+        "busy",
+        "domain",
+        "salad-key",
+        "renderer-token",
+        "connection-note",
+        "metrics-note",
+        "connection-error",
+        "queue-available",
+        "queue-started",
+        "queue-note",
+        "zip-open",
+        "zip-busy",
+        "zip-error",
+        "zip-progress",
+        "zip-note",
+        "zip-path",
+        "confirm-delete-id",
+        "queue-open",
+        "jobs"
+      ],
       "callbacks": [
         {
           "name": "queue-add",
@@ -1429,6 +1504,171 @@
         "keys-pan": "string",
         "keys-preview-axis": "string"
       },
+      "writable": [
+        "seats",
+        "dividers",
+        "media",
+        "media-count-all",
+        "media-count-video",
+        "media-count-audio",
+        "media-count-images",
+        "media-count-speech",
+        "media-count-processed",
+        "media-selected-count",
+        "importing",
+        "media-filter",
+        "media-jump-token",
+        "cb-media-folder",
+        "cb-narration",
+        "cb-duration",
+        "cb-status",
+        "cb-keywords",
+        "cb-image-count",
+        "cb-video-count",
+        "cb-probed",
+        "cb-reused",
+        "cb-scan-done",
+        "cb-scan-total",
+        "cb-busy",
+        "cb-project-name",
+        "cb-name-overridden",
+        "cb-name-preview",
+        "cb-profile",
+        "cb-profile-names",
+        "cb-image-keywords",
+        "cb-video-keywords",
+        "cb-videos-enabled",
+        "cb-image-selection-summary",
+        "cb-video-selection-summary",
+        "cb-plan-name",
+        "cb-plan-opening",
+        "cb-plan-closing",
+        "cb-plan-image-min",
+        "cb-plan-image-max",
+        "cb-plan-video-min",
+        "cb-plan-video-max",
+        "cb-plan-max-videos",
+        "cb-plan-max-images",
+        "cb-plan-cooldown",
+        "cb-plan-seed",
+        "cb-preview",
+        "text-presets",
+        "style-presets",
+        "language-presets",
+        "library-audition",
+        "selected-clip",
+        "selected-transition",
+        "audio-tracks",
+        "font-families",
+        "catalogue-effects",
+        "catalogue-filters",
+        "catalogue-luts",
+        "adjustment-art",
+        "catalogue-audio",
+        "catalogue-transitions",
+        "effect-groups",
+        "filter-groups",
+        "audio-groups",
+        "transition-groups",
+        "applied-visual",
+        "applied-audio",
+        "visual-params",
+        "audio-params",
+        "adjust-params",
+        "adjust-wheels",
+        "adjust-curves",
+        "visual-wheels",
+        "visual-curves",
+        "visual-colours",
+        "inspector-jump-token",
+        "inspector-jump-tab",
+        "inspector-jump-section",
+        "video-effects",
+        "audio-effects",
+        "level",
+        "peak",
+        "output-width",
+        "output-height",
+        "ratio-index",
+        "quality-index",
+        "playing",
+        "has-picture",
+        "preview-clip-name",
+        "preview-duration",
+        "playhead-free",
+        "preview-frame",
+        "stage-items",
+        "stage-guides",
+        "brush-tool",
+        "brush-size",
+        "painting",
+        "stroke-path",
+        "stroke-width",
+        "stroke-erase",
+        "transition-images",
+        "transition-videos",
+        "transition-scope",
+        "transition-draft-duration",
+        "transition-draft-intensity",
+        "timeline-tabs",
+        "timeline-current-tab",
+        "tracks",
+        "clips",
+        "tool",
+        "snap",
+        "magnetic",
+        "pan-mode",
+        "trim-follow",
+        "meters-shown",
+        "preview-axis",
+        "preview-axis-audio",
+        "selected-count",
+        "can-undo",
+        "can-redo",
+        "merge-blocked-because",
+        "merge-label",
+        "sound-selected",
+        "title-selected",
+        "picture-selected",
+        "freezable",
+        "reversible",
+        "playhead",
+        "key-marks",
+        "frame-rate",
+        "scroll-left",
+        "seconds-per-pixel",
+        "duration-seconds",
+        "recording",
+        "captions-open",
+        "speech-open",
+        "voiceover-open",
+        "record-level",
+        "record-rms",
+        "record-clipped",
+        "record-seconds",
+        "record-silent",
+        "menu-items",
+        "menu-height",
+        "menu-token",
+        "drop",
+        "project-name",
+        "project-folder",
+        "timeline-name",
+        "project-output",
+        "project-rate",
+        "project-duration",
+        "count-media",
+        "count-tracks",
+        "count-clips",
+        "keys-undo",
+        "keys-redo",
+        "keys-split",
+        "keys-split-tool",
+        "keys-delete-left",
+        "keys-delete-right",
+        "keys-pan",
+        "keys-preview-axis"
+      ],
       "callbacks": [
         {
           "name": "workspace-resized",
@@ -3092,6 +3332,9 @@
       "properties": {
         "views": "[LibraryViewData]"
       },
+      "writable": [
+        "views"
+      ],
       "callbacks": [
         {
           "name": "query-changed",
@@ -3169,6 +3412,9 @@
       "properties": {
         "params": "string"
       },
+      "writable": [
+        "params"
+      ],
       "callbacks": [
         {
           "name": "apply",
@@ -3186,6 +3432,9 @@
       "properties": {
         "matches": "[string]"
       },
+      "writable": [
+        "matches"
+      ],
       "callbacks": [
         {
           "name": "query-changed",
@@ -3206,6 +3455,12 @@
         "duplicate": "bool",
         "copy-modifier": "bool"
       },
+      "writable": [
+        "feedback",
+        "ripple",
+        "duplicate",
+        "copy-modifier"
+      ],
       "callbacks": [
         {
           "name": "modes-changed",
@@ -3247,6 +3502,27 @@
         "physics-favourites": "[bool]",
         "canvas-motion": "CanvasMotionData"
       },
+      "writable": [
+        "layout-clip",
+        "rows",
+        "available",
+        "animation-browser",
+        "animation-favourites-browser",
+        "favourite-pool",
+        "animation-timing",
+        "animation-saved",
+        "animation-has-override",
+        "animation-selected",
+        "animation-images",
+        "animation-videos",
+        "animation-scope",
+        "physics-strength",
+        "physics-duration",
+        "physics-speed",
+        "physics-intensity",
+        "physics-favourites",
+        "canvas-motion"
+      ],
       "callbacks": [
         {
           "name": "layout-set",
@@ -3722,6 +3998,13 @@
         "can-frame": "bool",
         "stills": "[string]"
       },
+      "writable": [
+        "timeline",
+        "clip",
+        "clip-has",
+        "can-frame",
+        "stills"
+      ],
       "callbacks": [
         {
           "name": "set-mode",
@@ -3834,6 +4117,13 @@
         "hold-right": "float",
         "clipped": "bool"
       },
+      "writable": [
+        "left",
+        "right",
+        "hold-left",
+        "hold-right",
+        "clipped"
+      ],
       "callbacks": [
         {
           "name": "clip-cleared",
@@ -3854,6 +4144,17 @@
         "concat-state": "int",
         "concat-category": "int"
       },
+      "writable": [
+        "voices-saved",
+        "voices-builtin",
+        "styles",
+        "voices-ready",
+        "mine",
+        "importing",
+        "concat",
+        "concat-state",
+        "concat-category"
+      ],
       "callbacks": [
         {
           "name": "voice-open",
@@ -3970,6 +4271,38 @@
         "profile": "string",
         "default-status": "string"
       },
+      "writable": [
+        "selected",
+        "favourites",
+        "foreground-x",
+        "foreground-y",
+        "foreground-width",
+        "foreground-height",
+        "foreground-size",
+        "border-width",
+        "radius",
+        "blur",
+        "pattern-intensity",
+        "pattern-density",
+        "pattern-size",
+        "lighting-spread",
+        "pattern-opacity",
+        "tint-opacity",
+        "shadow-opacity",
+        "shadow-offset",
+        "mat-bottom",
+        "rotation",
+        "derivative-opacity",
+        "bleed-edge",
+        "background-mode",
+        "border-color",
+        "background-color",
+        "tint-color",
+        "shadow-color",
+        "mat-color",
+        "profile",
+        "default-status"
+      ],
       "callbacks": [
         {
           "name": "edit-number",
@@ -4126,6 +4459,22 @@
         "can-apply-selected": "bool",
         "can-apply-all": "bool"
       },
+      "writable": [
+        "cards",
+        "favourites",
+        "favourites-only",
+        "chosen",
+        "applied",
+        "status",
+        "previewing",
+        "font-index",
+        "text-hex",
+        "background-hex",
+        "sample",
+        "demo-playing",
+        "can-apply-selected",
+        "can-apply-all"
+      ],
       "callbacks": [
         {
           "name": "toggle-favourite",
@@ -4218,6 +4567,10 @@
         "rows": "[KeyRowData]",
         "at": "float"
       },
+      "writable": [
+        "rows",
+        "at"
+      ],
       "callbacks": [
         {
           "name": "jump",
@@ -4336,6 +4689,13 @@
         "draft-params": "[AppliedParamData]",
         "draft-colours": "[ColourKnobData]"
       },
+      "writable": [
+        "favourites",
+        "preset",
+        "draft-id",
+        "draft-params",
+        "draft-colours"
+      ],
       "callbacks": [
         {
           "name": "apply",
@@ -4457,6 +4817,16 @@
         "progress": "float",
         "playing": "bool"
       },
+      "writable": [
+        "open",
+        "name",
+        "row",
+        "card",
+        "time",
+        "duration",
+        "progress",
+        "playing"
+      ],
       "callbacks": [
         {
           "name": "closed",
