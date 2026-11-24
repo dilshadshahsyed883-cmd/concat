@@ -26,6 +26,7 @@ pub mod doc;
 pub mod editor;
 pub mod model;
 pub mod motion_preset;
+pub mod motion_wire;
 pub mod physics_motion;
 pub mod placement;
 pub mod planning;

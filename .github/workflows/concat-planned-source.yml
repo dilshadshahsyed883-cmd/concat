@@ -54,7 +54,12 @@ jobs:
             rustfmt --edition 2024 --emit stdout "$module" > /dev/null
           done
           rustfmt --edition 2024 --emit stdout upstream/src/crates/concat/src/studio/caption_preview.rs > /dev/null
+      - name: Build shared animation generator for CUDA manifest parity
+        working-directory: upstream/src
+        run: cargo build --locked -p concat-project --bin concat-motion-expand
       - name: Worker and desktop source regressions
+        env:
+          CONCAT_MOTION_EXPAND: ${{ github.workspace }}/upstream/src/target/debug/concat-motion-expand
         run: |
           python -m compileall -q cloud_render/concat
           python -m unittest discover -v -s cloud_render/concat/tests

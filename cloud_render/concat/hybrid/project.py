@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import subprocess
 from bisect import bisect_right
 from dataclasses import dataclass, field, replace
 from math import floor, isfinite
@@ -32,8 +35,44 @@ TRANSITIONS = {"cross-fade": ("dissolve", "left"), "fade-black": ("fade", "left"
                "wipe-left": ("wipe", "left"), "wipe-right": ("wipe", "right")}
 
 
+def _expand_parameterized_motion(document):
+    """Expand v2 using the same Rust motion generator as the desktop editor.
+
+    Only the active timeline is rendered. Do not multiply memory by expanding
+    the editor's redundant flat mirror or inactive timeline snapshots.
+    """
+    if not isinstance(document, dict) or document.get("version", 1) != 2:
+        return document
+    timelines = document.get("timelines")
+    if (not isinstance(timelines, list) or not 1 <= len(timelines) <= 128
+            or not all(isinstance(item, dict) for item in timelines)):
+        raise ValueError("Invalid parameterized Concat timelines")
+    active = next((item for item in timelines
+                   if item.get("id") == document.get("activeTimelineId")), timelines[0])
+    clips = active.get("clips")
+    if not isinstance(clips, list) or len(clips) > 50000:
+        raise ValueError("Invalid parameterized Concat clip count")
+    binary = os.environ.get("CONCAT_MOTION_EXPAND") or shutil.which("concat-motion-expand")
+    if not binary:
+        raise ValueError("Worker lacks the parameterized motion generator; update the GPU image")
+    payload = dict(document, timelines=[active])
+    payload.pop("clips", None)
+    try:
+        result = subprocess.run(
+            [binary], input=json.dumps(payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode(),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60, check=True,
+        )
+        expanded = json.loads(result.stdout)
+        if not isinstance(expanded, dict) or expanded.get("version") != 1:
+            raise ValueError("Invalid expanded animation document")
+        return expanded
+    except (OSError, subprocess.SubprocessError, ValueError, RecursionError) as exc:
+        raise ValueError("Invalid or unsupported parameterized animation; project not rendered") from exc
+
+
 def validate_gpu_manifest(document):
     """Run the render planner without reading media from the desktop's paths."""
+    document = _expand_parameterized_motion(document)
     timeline = _validated_timeline(document)
     _plan_project(document, timeline, _media_path)
     return timeline
@@ -118,6 +157,9 @@ def _validated_timeline(document):
             raise ValueError(f"Unsupported GPU stretch on clip {ident}")
         if clip.get("filters"):
             raise ValueError(f"Unsupported GPU audio/legacy filters on clip {ident}")
+        owner = clip.get("generatedMotionV1")
+        if isinstance(owner, dict) and "parameterOnly" in owner:
+            raise ValueError(f"Unexpanded parameterized motion on clip {ident}")
         keys = clip.get("keys") or []
         if not isinstance(keys, list):
             raise ValueError(f"Invalid GPU keyframes on clip {ident}")
@@ -556,7 +598,7 @@ def load_project(root: Path, warn) -> Project:
                      if (root / name).is_file()), None)
     if manifest is None:
         raise ValueError("Missing native Concat project")
-    document = json.loads(manifest.read_text(encoding="utf-8-sig"))
+    document = _expand_parameterized_motion(json.loads(manifest.read_text(encoding="utf-8-sig")))
     timeline = _validated_timeline(document)
     return _plan_project(document, timeline, lambda item: safe_media(root, item))
 

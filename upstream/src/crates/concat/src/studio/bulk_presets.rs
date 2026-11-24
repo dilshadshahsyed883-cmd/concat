@@ -7,6 +7,7 @@ use std::path::Path;
 use concat_project::model::{ClipKey, ClipKind, KeyProperty, VideoSettings};
 use concat_project::physics_motion::{PhysicsControls, PhysicsPreset};
 use concat_project::canvas_motion::{CanvasMotionControls, CanvasMotionPreset};
+use concat_project::motion_wire::recipe;
 
 use super::{
     AppliedFilter, Catalogue, Clip, ClipPatch, Command, MotionPreset, PackageKind, Studio, Transition,
@@ -125,10 +126,16 @@ const MOTION_PRESETS: [MotionKind; 24] = [
     MotionKind::Basic(MotionPreset::OpacityPulse),
 ];
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 struct GeneratedMotion {
     preset: MotionKind,
     keys: Vec<ClipKey>,
+    recipe: serde_json::Value,
+}
+impl PartialEq for GeneratedMotion {
+    fn eq(&self, other: &Self) -> bool {
+        self.preset == other.preset && self.keys == other.keys
+    }
 }
 
 fn generated_motion_command(clip: &Clip, generated: &GeneratedMotion,
@@ -136,6 +143,7 @@ fn generated_motion_command(clip: &Clip, generated: &GeneratedMotion,
     Command::ApplyGeneratedMotion {
         clip_id: clip.id.clone(), expected_keys: clip.keys.clone(), keys: generated.keys.clone(),
         preset: motion_id(generated.preset).into(), canvas_style,
+        recipe: Some(generated.recipe.clone()),
     }
 }
 
@@ -401,26 +409,24 @@ fn motion_choices_with_controls(
         .into_iter()
         .filter(|preset| permitted.contains(preset))
         .filter_map(|preset| {
-            let (keys, _) = match preset {
+            let (keys, recipe) = match preset {
                 MotionKind::Basic(basic) => {
-                    let c = controls.unwrap_or_default();
-                    let (keys, preview) = basic.keys_with(&base, frame,
-                        c.strength, if auto_fit {1.0}else{c.duration},
-                        if auto_fit {1.0}else{c.speed}).ok()?;
-                    (keys.to_vec(), preview)
+                    let mut c = controls.unwrap_or_default();
+                    if auto_fit { c.duration=1.0; c.speed=1.0; }
+                    (basic.keys_with(&base, frame, c.strength, c.duration, c.speed).ok()?.0, recipe(frame, c))
                 }
-                // Vary physics per clip, with stable parameters so a reroll
-                // recognizes exactly the keys that the previous bulk action owns.
-                MotionKind::Physics(physics) => physics.keys_with(
-                    &base, frame, {
-                        let mut c = controls.unwrap_or_else(|| motion_controls(&clip.id));
-                        if auto_fit {c.duration=1.0;}
-                        c
-                    },
-                ).ok()?,
-                MotionKind::Canvas(preset) => (preset.keys(&base, frame, CanvasMotionControls::default()).ok()?, base.start + base.duration/2.0),
+                // Persist the actual per-clip controls, not the global settings.
+                MotionKind::Physics(physics) => {
+                    let mut c = controls.unwrap_or_else(|| motion_controls(&clip.id));
+                    if auto_fit {c.duration=1.0;}
+                    (physics.keys_with(&base, frame, c).ok()?.0, recipe(frame, c))
+                }
+                MotionKind::Canvas(preset) => {
+                    let c = CanvasMotionControls::default();
+                    (preset.keys(&base, frame, c).ok()?, recipe(frame, c))
+                }
             };
-            Some(GeneratedMotion { preset, keys })
+            Some(GeneratedMotion { preset, keys, recipe })
         })
         .collect();
     let current =
@@ -994,22 +1000,22 @@ impl Studio {
             }
             let Some(base)=concat_project::motion_preset::preset_base(clip,std::iter::empty()) else {continue;};
             let choices:Vec<_>=permitted.iter().filter(|(preset,_)| animation_allowed(clip,*preset)).filter_map(|(preset,settings)|{
-                let (keys,style)=match preset {
+                let (keys,style,recipe)=match preset {
                     MotionKind::Basic(p)=>{let mut c=settings.physics;
                         if settings.canvas.auto_fit { c.duration=1.0; c.speed=1.0; }
-                        (p.keys_with(&base,frame,c.strength,c.duration,c.speed).ok()?.0.to_vec(),None)}
+                        (p.keys_with(&base,frame,c.strength,c.duration,c.speed).ok()?.0.to_vec(),None,recipe(frame,c))}
                     MotionKind::Physics(p)=>{let mut c=settings.physics;
                         if settings.canvas.auto_fit { c.duration=1.0; }
-                        (p.keys_with(&base,frame,c).ok()?.0,None)},
+                        (p.keys_with(&base,frame,c).ok()?.0,None,recipe(frame,c))},
                     MotionKind::Canvas(p)=>{
                         let mut controls=settings.canvas;
                         controls.seed=clip.id.bytes().fold(controls.seed,|h,b|h.wrapping_mul(31).wrapping_add(u64::from(b)));
                         let mask=if settings.corners>0.0 {self.project().media_by_id(&clip.media_id).and_then(|m|Some((m.width?,m.height?)))
                             .and_then(|(w,h)|concat_project::canvas_motion::rounded_mask(w,h,settings.corners))}else{None};
-                        (p.keys(&base,frame,controls).ok()?,Some((controls.blur,mask)))
+                        (p.keys(&base,frame,controls).ok()?,Some((controls.blur,mask)),recipe(frame,controls))
                     }
                 };
-                Some((GeneratedMotion {preset:*preset,keys},style))
+                Some((GeneratedMotion {preset:*preset,keys,recipe},style))
             }).collect();
             if !choices.is_empty() {plans.push((clip,choices));}
         }
@@ -1220,7 +1226,7 @@ impl Studio {
             per_clip.seed = clip.id.bytes().fold(controls.seed.wrapping_add(0xcbf29ce484222325), |h,b| (h ^ u64::from(b)).wrapping_mul(0x100000001b3));
             let choices: Vec<_> = permitted.iter().filter_map(|preset|
                 preset.keys(&base, frame, per_clip).ok().map(|keys|
-                    GeneratedMotion { preset: MotionKind::Canvas(*preset), keys })).collect();
+                    GeneratedMotion { preset: MotionKind::Canvas(*preset), keys, recipe: recipe(frame,per_clip) })).collect();
             if choices.is_empty() { continue; }
             let old = previous.and_then(|old| choices.iter().position(|candidate| candidate == old));
             plans.push((clip, target, choices, old));

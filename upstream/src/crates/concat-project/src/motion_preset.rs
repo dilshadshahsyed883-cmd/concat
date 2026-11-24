@@ -40,6 +40,9 @@ pub struct GeneratedOwnership {
     pub preset: String,
     /// Canonical keys last produced by this feature.
     pub keys: Vec<ClipKey>,
+    /// Exact authoring inputs for lossless parameterized storage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recipe: Option<serde_json::Value>,
     /// Style ownership, separate from key ownership.
     pub style: Option<GeneratedStyle>,
 }
@@ -127,6 +130,18 @@ pub fn replace_generated(
     preset: String,
     canvas_style: Option<(f64, Option<crate::model::ClipMask>)>,
 ) -> Result<bool, crate::CommandError> {
+    replace_generated_with_recipe(clip, expected_keys, keys, preset, canvas_style, None)
+}
+
+/// Install native editable keys with an optional versioned authoring recipe.
+pub fn replace_generated_with_recipe(
+    clip: &mut Clip,
+    expected_keys: &[ClipKey],
+    keys: Vec<ClipKey>,
+    preset: String,
+    canvas_style: Option<(f64, Option<crate::model::ClipMask>)>,
+    recipe: Option<serde_json::Value>,
+) -> Result<bool, crate::CommandError> {
     use crate::model::Background;
     if (is_canvas_animation(&preset) || canvas_style.is_some())
         && (has_canvas_preset(clip) || clip.extra.contains_key("canvasOwner"))
@@ -204,6 +219,7 @@ pub fn replace_generated(
         version: 1,
         preset,
         keys: clip.keys.clone(),
+        recipe,
         style,
     };
     let value = serde_json::to_value(saved).map_err(|e| crate::CommandError::UnsafeEdit {
@@ -690,6 +706,7 @@ mod tests {
             keys,
             preset: preset.into(),
             canvas_style,
+            recipe: None,
         }
     }
 
@@ -704,6 +721,31 @@ mod tests {
         // Include JSON text IO, rather than only cloning in-memory Values.
         let text = serde_json::to_string(&to_document(&settings, editor.project())).unwrap();
         Editor::from_document(&serde_json::from_str(&text).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn parameterized_save_reopen_and_undo_redo_preserve_owned_canvas_motion() {
+        let mut editor = owned_fixture();
+        let mut command = generated_command(&editor, "c1", true, 0.6, 0.1);
+        if let Command::ApplyGeneratedMotion { recipe, .. } = &mut command {
+            *recipe = Some(crate::motion_wire::recipe(FRAME, crate::canvas_motion::CanvasMotionControls::default()));
+        }
+        let settings = DocumentSettings { name: "motion".into(), width: 1920,
+            height: 1080, rate_num: 30, rate_den: 1 };
+        let baseline = editor.to_document(&settings);
+        editor.apply(command).unwrap();
+        let original = editor.project().active().clip("c1").unwrap().clone();
+        let saved = editor.to_document(&settings);
+        assert_eq!(saved["version"], 2);
+        assert!(saved["timelines"][0]["clips"][0].get("keys").is_none());
+        let loaded = reopen(&editor);
+        let restored = loaded.project().active().clip("c1").unwrap();
+        assert_eq!(restored.keys, original.keys);
+        assert!(generated_ownership(restored).is_some());
+        assert!(editor.undo());
+        assert_eq!(editor.to_document(&settings), baseline);
+        assert!(editor.redo());
+        assert_eq!(editor.to_document(&settings), saved);
     }
 
     #[test]
@@ -1013,6 +1055,7 @@ mod tests {
                 keys,
                 preset: CanvasMotionPreset::ALL[0].id().into(),
                 canvas_style: None,
+                recipe: None,
             })
             .unwrap();
         assert_eq!(
@@ -1060,7 +1103,8 @@ mod tests {
                     expected_keys: keys.clone(),
                     keys,
                     preset: "motion.push-in".into(),
-                    canvas_style: None
+                    canvas_style: None,
+                    recipe: None
                 })
                 .is_err()
         );

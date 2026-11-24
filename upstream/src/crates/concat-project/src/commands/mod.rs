@@ -446,6 +446,9 @@ pub enum Command {
         preset: String,
         /// Canvas blur and generated mask; None restores unchanged preset-owned styling.
         canvas_style: Option<(f64, Option<ClipMask>)>,
+        /// Versioned exact authoring inputs, optional for legacy callers.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        recipe: Option<serde_json::Value>,
     },
     /// Explicit None action. Clears exactly owned generated motion and no manual keys.
     ClearGeneratedMotion {
