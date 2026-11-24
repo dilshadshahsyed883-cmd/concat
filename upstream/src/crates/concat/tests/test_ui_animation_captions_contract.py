@@ -167,6 +167,21 @@ class DesktopUiContractTests(unittest.TestCase):
         self.assertNotIn('root.apply-transition("__none_transition__")', MEDIA)
         self.assertNotIn('root.apply-effect("__none_effect__")', MEDIA)
 
+    def test_transition_apply_footer_is_compact_and_non_growing(self):
+        config = (ROOT / "ui/workspace/config-pane.slint").read_text()
+        actions = config.split("component TransitionRandomActions inherits VerticalLayout {", 1)[1]
+        actions = actions.split("component TransitionTimingControls", 1)[0]
+        self.assertIn("vertical-stretch: 0;", actions)
+        self.assertIn('if !root.preset-footer: Text { text: "Random transitions"', actions)
+        labels = ['label: "Apply Transition"', 'label: "Apply Randomly"', 'label: "Apply Favorites Randomly"']
+        self.assertEqual([actions.index(label) for label in labels],
+                         sorted(actions.index(label) for label in labels))
+        self.assertIn('LibraryFocus.selected-id != "__none_transition__": TransitionRandomActions {\n                preset-footer: true;', config)
+        self.assertIn('Editor.library-apply-transition-scoped(LibraryFocus.selected-id, Editor.transition-images, Editor.transition-videos, Editor.transition-scope == 1);', actions)
+        for mode in (0, 1):
+            self.assertIn(f'Editor.library-apply-random-transitions({mode}, Editor.transition-images, Editor.transition-videos, Editor.transition-scope == 1);', actions)
+        self.assertIn('PaneScroll {\n                vertical-stretch: 1;', config)
+
     def test_generate_captions_reuses_existing_sheet(self):
         self.assertIn('label: "Generate Captions";', MEDIA)
         self.assertIn("root.generate-captions();", MEDIA)
