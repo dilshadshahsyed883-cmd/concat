@@ -336,6 +336,14 @@ fn chosen_media_type(clip: &Clip, images: bool, videos: bool) -> bool {
     }
 }
 
+/// Clear only the visual chain of eligible picture media.
+fn visual_effect_clear_patch(clip: &Clip, images: bool, videos: bool) -> Option<ClipPatch> {
+    if !chosen_media_type(clip, images, videos) || clip.video_effects.is_empty() {
+        return None;
+    }
+    Some(ClipPatch { video_effects: Some(Vec::new()), ..ClipPatch::default() })
+}
+
 /// Return at most one transform edit per clip. A manually animated property
 /// is skipped independently; applying scale never overwrites animated X/Y.
 fn bulk_transform_command(
@@ -750,6 +758,44 @@ impl Studio {
         if self.revision != revision {
             for (target, transition) in generated { self.bulk_transitions.0.insert(target, transition); }
             self.notify(&format!("Random transitions: {count} applied, {skipped} skipped, {unchanged} unchanged."), false);
+        }
+    }
+
+    /// Explicit None actions clear manual and generated visual effects in one Undo.
+    /// The button selects scope; the shared Apply scope dropdown is not consulted.
+    pub fn clear_visual_effects_scoped(&mut self, selected_only: bool, images: bool, videos: bool) {
+        if !images && !videos {
+            self.notify("Choose Images or Video Clips first.", true);
+            return;
+        }
+        if selected_only && self.selection.is_empty() {
+            self.notify("Select timeline media before clearing effects.", true);
+            return;
+        }
+        self.flush_commit();
+        let selected: HashSet<_> = self.selection.iter().cloned().collect();
+        let timeline = self.timeline();
+        let timeline_id = timeline.id.clone();
+        let tracks: HashSet<_> = timeline.tracks.iter()
+            .filter(|track| track.visible && !self.locked(&track.id))
+            .map(|track| track.id.as_str()).collect();
+        let changes: Vec<_> = timeline.clips.iter()
+            .filter(|clip| tracks.contains(clip.track_id.as_str())
+                && (!selected_only || selected.contains(&clip.id)))
+            .filter_map(|clip| visual_effect_clear_patch(clip, images, videos)
+                .map(|patch| (clip.id.clone(), patch)))
+            .collect();
+        if changes.is_empty() {
+            self.notify("No eligible visual effects to clear.", false);
+            return;
+        }
+        let ids: Vec<_> = changes.iter().map(|(id, _)| id.clone()).collect();
+        let commands = changes.into_iter().map(|(clip_id, patch)| Command::UpdateClip { clip_id, patch }).collect();
+        let before = self.revision;
+        self.apply(Command::Batch { commands });
+        if self.revision != before {
+            for id in &ids { self.bulk_effects.0.remove(&(timeline_id.clone(), id.clone())); }
+            self.notify(&format!("Cleared visual effects from {} clip(s).", ids.len()), false);
         }
     }
 
@@ -1485,6 +1531,24 @@ mod tests {
         );
     }
 
+
+    #[test]
+    fn clear_visual_effect_patch_respects_media_type_and_only_clears_visual_chain() {
+        let mut clip = Clip::blank("c1", "t1", ClipKind::Video, "picture", 0.0, 2.0);
+        assert!(visual_effect_clear_patch(&clip, true, true).is_none());
+        clip.video_effects.push(gpu_effect_preset("concat.exposure").unwrap());
+        clip.video_effects.push(gpu_effect_preset("concat.contrast").unwrap());
+        assert!(visual_effect_clear_patch(&clip, true, false).is_none());
+        let patch = visual_effect_clear_patch(&clip, false, true).unwrap();
+        assert_eq!(patch.video_effects, Some(Vec::new()));
+        assert!(patch.filters.is_none());
+        assert!(patch.transition_in.is_none());
+        clip.kind = ClipKind::Image;
+        assert!(visual_effect_clear_patch(&clip, false, true).is_none());
+        assert!(visual_effect_clear_patch(&clip, true, false).is_some());
+        clip.kind = ClipKind::Audio;
+        assert!(visual_effect_clear_patch(&clip, true, true).is_none());
+    }
 
     #[test]
     fn video_effect_rerolls_preserve_authored_chain_and_do_not_stack() {

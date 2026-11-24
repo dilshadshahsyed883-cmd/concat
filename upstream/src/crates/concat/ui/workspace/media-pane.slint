@@ -3132,7 +3132,8 @@ export component MediaPane inherits Rectangle {
                                 LibraryFocus.selected-id = "__none_effect__";
                                 LibraryFocus.selected-name = "None / No Effect";
                                 LibraryFocus.selected-category = "Video Effects";
-                                LibraryFocus.selected-description = "Pick exactly one applied visual effect in Details to remove. Other effects, audio and motion stay unchanged.";
+                                LibraryFocus.selected-description = "Selecting None does not change the timeline. Use a Clear button to remove visual effects. Audio, motion and transitions stay unchanged.";
+                                ParticleBulk.clear-preview();
                             }
                         }
                     }
