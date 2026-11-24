@@ -260,6 +260,15 @@ pub struct ExportClip {
     rename_all_fields = "camelCase"
 )]
 pub enum ExportBackdrop {
+    /// Procedural or source-derived Canvas-owned background.
+    Styled {
+        /// Versioned style settings.
+        style: concat_project::canvas_style::Style,
+        /// Original source used for stable adaptive palette sampling.
+        path: String,
+        /// Still rather than moving source.
+        still: bool,
+    },
     /// The clip's own picture, enlarged to cover the frame and blurred.
     Blur {
         /// How soft, `0..=1`: a Gaussian of a twelfth of the frame's
@@ -1410,7 +1419,7 @@ fn with_backdrops(
         let drawn = backdrops
             .get(&layer.clip)
             .filter(|_| !layer.covers(width, height, opaque(layer.clip)))
-            .and_then(|backdrop| backdrop_of(backdrop, pool, (width, height)))
+            .and_then(|backdrop| backdrop_of(backdrop, pool, (width, height), layer.source.as_deref()))
             .and_then(|backdrop| layer.backdrop(&backdrop, width, height, blur_pass));
         out.extend(drawn);
         out.push(layer);
@@ -1421,12 +1430,42 @@ fn with_backdrops(
 /// A clip's background as the frame plan draws it, at a `width` by
 /// `height` frame: the blur's spread in that frame's pixels, a still read
 /// through the pool at a size that covers it.
+fn styled_backdrop(
+    style: &concat_project::canvas_style::Style, path: &str, still: bool,
+    pool: &concat_media::ReaderPool, width: u32, height: u32, source: Option<&Frame>,
+) -> Option<Arc<Frame>> {
+    use concat_project::canvas_style::{palette, texture};
+    type Entry = (concat_project::canvas_style::Style, String, u32, u32, Option<std::time::SystemTime>, Arc<Frame>);
+    thread_local! { static CACHE: std::cell::RefCell<Vec<Entry>> = const { std::cell::RefCell::new(Vec::new()) }; }
+    if style.dynamic() && !still {
+        return texture(style,width,height,source,None).map(Arc::new);
+    }
+    let source_key = if style.dynamic() || style.mode == "adaptiveColors" { path } else { "" };
+    let modified = if source_key.is_empty() { None } else { std::fs::metadata(path).ok().and_then(|m|m.modified().ok()) };
+    if let Some(found) = CACHE.with(|cache| cache.borrow().iter().find(|(s,p,w,h,m,_)|
+        s==style && p==source_key && *w==width && *h==height && *m==modified).map(|entry|Arc::clone(&entry.5))) { return Some(found); }
+    // Sample time zero, not the playhead or trimmed clip start. The palette is
+    // stable even on seeking, frame changes and random-access export.
+    let colors = if style.mode == "adaptiveColors" {
+        let request = concat_media::FrameRequest::new(path, Rational::ZERO, 128, 128).as_still(still).at_any_size(true);
+        Some(palette(pool.frame(&request).ok()?.as_ref()))
+    } else { None };
+    let result = Arc::new(texture(style,width,height,source,colors)?);
+    CACHE.with(|cache| { let mut cache=cache.borrow_mut();if cache.len()>=8{cache.remove(0);}cache.push((style.clone(),source_key.into(),width,height,modified,Arc::clone(&result))); });
+    Some(result)
+}
+
 fn backdrop_of(
     backdrop: &ExportBackdrop,
     pool: &concat_media::ReaderPool,
     (width, height): (u32, u32),
+    source: Option<&Frame>,
 ) -> Option<concat_render::Backdrop> {
     match backdrop {
+        ExportBackdrop::Styled { style, path, still } => {
+            styled_backdrop(style, path, *still, pool, width, height, source)
+                .map(concat_render::Backdrop::Image)
+        }
         ExportBackdrop::Blur { amount } => Some(concat_render::Backdrop::Blur {
             sigma: ExportBackdrop::sigma(*amount, width, height),
         }),

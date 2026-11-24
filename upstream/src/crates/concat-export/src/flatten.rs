@@ -143,9 +143,12 @@ pub fn flatten_timeline_in(
                 media_height: media.height,
                 media_duration: media.duration,
                 has_audio: Some(media.has_audio),
-                backdrop: timeline
-                    .background_on(clip, lane)
-                    .and_then(|background| backdrop_of(project, background)),
+                backdrop: concat_project::canvas_style::Style::of(clip)
+                    .map(|style| ExportBackdrop::Styled {
+                        style, path: media.path.clone(), still: kind == ClipKind::Image,
+                    })
+                    .or_else(|| timeline.background_on(clip, lane)
+                        .and_then(|background| backdrop_of(project, background))),
                 cutout: clip.cutout.clone(),
                 // Pictures only: a mask on a clip that is all sound would
                 // keep part of nothing.

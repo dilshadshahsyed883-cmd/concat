@@ -74,6 +74,7 @@ pub struct Config {
     pub border_width: f64,
     /// Independent background mode, including procedural and source-derived styles.
     pub background: String,
+    /// Independent procedural background settings.
     #[serde(default)]
     pub background_controls: crate::canvas_style::Controls,
     pub blur: f64,
@@ -1956,6 +1957,19 @@ mod tests {
         }
     }
 
+    #[test]
+    fn styled_background_metadata_is_owned_and_clearable() {
+        for mode in &crate::canvas_style::MODES[4..] {
+            let (mut p,mut mint)=fixture();
+            let mut config=Config::preset(4).unwrap();config.background=(*mode).into();
+            apply(&mut p,&mut mint,config,vec!["c1".into()],vec![]).unwrap();
+            let bg=p.active().clips.iter().find(|c|c.extra.get("canvasRole")==Some(&json!("backdrop"))).unwrap();
+            let style=crate::canvas_style::Style::of(bg).unwrap();assert_eq!(style.mode,*mode);
+            assert_eq!(p.media.len(),1);
+            clear(&mut p,vec!["c1".into()],vec![]).unwrap();
+            assert!(p.active().clips.iter().all(|c|!c.extra.contains_key("canvasBackdropV1")));
+        }
+    }
     #[test]
     fn invalid_or_locked_targets_leave_project_untouched() {
         let (mut p, mut m) = fixture();
