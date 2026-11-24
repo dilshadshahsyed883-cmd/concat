@@ -214,9 +214,9 @@ export component CanvasPresetClearBar inherits VerticalLayout {
 }
 
 export component CanvasPresetLibrary inherits VerticalLayout {
-    property <[string]> names: ["Sports Frame", "Orange Frame", "Adaptive Blur (Blurred Fill)", "Gallery Mat", "Floating Card", "Photo Print", "Broadcast Edge", "Focus Island", "Diagonal Cut", "Projector Slide", "Browser Window", "Taped Memory", "Broken Grid", "Mirror Stage", "Image Echo", "Edge Bleed", "Arch Window", "Orbital Frame"];
-    // Catalogue position is NOT the persistent ID. Retired 7/8 stay retired.
-    property <[int]> ids: [1, 2, 3, 4, 5, 6, 9, 12, 13, 14, 15, 16, 18, 11, 19, 20, 10, 17];
+    property <[string]> names: ["Sports Frame", "Adaptive Blur (Blurred Fill)", "Gallery Mat", "Floating Card", "Photo Print", "Diagonal Cut", "Browser Window", "Taped Memory", "Broken Grid", "Arch Window", "Orbital Frame"];
+    // Catalogue position is NOT the persistent ID. Retired IDs are never listed.
+    property <[int]> ids: [1, 3, 4, 5, 6, 13, 15, 16, 18, 10, 17];
     property <bool> favourites-only: false;
     // Dense positions in the Favorites view, following AnimationFavoriteCards.
     pure function is-starred(index: int) -> bool {
@@ -296,48 +296,48 @@ export component CanvasPresetLibrary inherits VerticalLayout {
             Rectangle {
                 x: 7px; y: 8px; width: 54px; height: 46px;
                 border-radius: Theme.r;
-                background: index == 0 ? #b51c3e
-                    : index == 1 ? #f49a4b
-                    : index == 3 ? #e4e0d6
-                    : index == 4 ? #152336
-                    : index == 5 ? #25303a
-                    : index == 6 ? #19395b
-                    : index == 7 ? #172337
-                    : index == 8 ? #943c56
-                    : index == 9 ? #ddd2b9
-                    : index == 10 ? #34465e
-                    : index == 11 ? #d6c5aa
-                    : index == 12 ? #355f61
-                    : index == 13 ? #111923
-                    : index == 14 ? #142135
-                    : index == 15 ? #192a3e
-                    : index == 16 ? #d4c3a7
-                    : index == 17 ? #101e35 : #596e8f;
-                if index == 17: Rectangle { x: 7px; y: 3px; width: 40px; height: 40px; border-radius: 20px; background: #466c9b; }
-                if index == 17: Rectangle { x: 10px; y: 6px; width: 34px; height: 34px; border-radius: 17px; background: #101e35; }
-                if index == 16: Rectangle { x: 13px; y: 4px; width: 28px; height: 28px; border-radius: 14px; background: #8899ac; }
-                if index == 16: Rectangle { x: 13px; y: 18px; width: 28px; height: 24px; background: #8899ac; }
-                if index == 13: Rectangle { x: 9px; y: 33px; width: 36px; height: 8px; background: #465466; }
-                if index == 14: Rectangle { x: 3px; y: 4px; width: 41px; height: 38px; background: #506785; }
-                if index == 14: Rectangle { x: 12px; y: 5px; width: 40px; height: 35px; background: #415774; }
-                if index == 6: Rectangle { x: 2px; y: 4px; width: 4px; height: 36px; background: #f33748; }
-                if index == 8: Rectangle { x: 3px; y: 0px; width: 12px; height: 46px; background: #263d66; }
-                if index == 9: Rectangle { x: 4px; y: 3px; width: 46px; height: 40px; background: #ddd2b9; border-width: 2px; border-color: #514638; }
-                if index == 10: Rectangle { x: 6px; y: 3px; width: 42px; height: 7px; background: #d9e2ee; }
-                if index == 12: Rectangle { x: 35px; y: 28px; width: 17px; height: 16px; background: #c67c51; }
+                background: root.ids[index] == 1 ? #b51c3e
+                    : root.ids[index] == 2 ? #f49a4b
+                    : root.ids[index] == 4 ? #e4e0d6
+                    : root.ids[index] == 5 ? #152336
+                    : root.ids[index] == 6 ? #25303a
+                    : root.ids[index] == 9 ? #19395b
+                    : root.ids[index] == 12 ? #172337
+                    : root.ids[index] == 13 ? #943c56
+                    : root.ids[index] == 14 ? #ddd2b9
+                    : root.ids[index] == 15 ? #34465e
+                    : root.ids[index] == 16 ? #d6c5aa
+                    : root.ids[index] == 18 ? #355f61
+                    : root.ids[index] == 11 ? #111923
+                    : root.ids[index] == 19 ? #142135
+                    : root.ids[index] == 20 ? #192a3e
+                    : root.ids[index] == 10 ? #d4c3a7
+                    : root.ids[index] == 17 ? #101e35 : #596e8f;
+                if root.ids[index] == 17: Rectangle { x: 7px; y: 3px; width: 40px; height: 40px; border-radius: 20px; background: #466c9b; }
+                if root.ids[index] == 17: Rectangle { x: 10px; y: 6px; width: 34px; height: 34px; border-radius: 17px; background: #101e35; }
+                if root.ids[index] == 10: Rectangle { x: 13px; y: 4px; width: 28px; height: 28px; border-radius: 14px; background: #8899ac; }
+                if root.ids[index] == 10: Rectangle { x: 13px; y: 18px; width: 28px; height: 24px; background: #8899ac; }
+                if root.ids[index] == 11: Rectangle { x: 9px; y: 33px; width: 36px; height: 8px; background: #465466; }
+                if root.ids[index] == 19: Rectangle { x: 3px; y: 4px; width: 41px; height: 38px; background: #506785; }
+                if root.ids[index] == 19: Rectangle { x: 12px; y: 5px; width: 40px; height: 35px; background: #415774; }
+                if root.ids[index] == 9: Rectangle { x: 2px; y: 4px; width: 4px; height: 36px; background: #f33748; }
+                if root.ids[index] == 13: Rectangle { x: 3px; y: 0px; width: 12px; height: 46px; background: #263d66; }
+                if root.ids[index] == 14: Rectangle { x: 4px; y: 3px; width: 46px; height: 40px; background: #ddd2b9; border-width: 2px; border-color: #514638; }
+                if root.ids[index] == 15: Rectangle { x: 6px; y: 3px; width: 42px; height: 7px; background: #d9e2ee; }
+                if root.ids[index] == 18: Rectangle { x: 35px; y: 28px; width: 17px; height: 16px; background: #c67c51; }
                 Rectangle {
-                    visible: index != 16;
-                    x: index == 15 ? 0px : index == 17 ? 13px : 8px;
-                    y: index == 5 ? 5px : index == 10 ? 11px : index == 13 ? 4px : index == 17 ? 9px : 7px;
-                    width: index == 17 ? 28px : 38px;
-                    height: index == 17 ? 28px : index == 13 ? 27px : index == 5 || index == 10 ? 29px : 32px;
+                    visible: root.ids[index] != 10;
+                    x: root.ids[index] == 20 ? 0px : root.ids[index] == 17 ? 13px : 8px;
+                    y: root.ids[index] == 6 ? 5px : root.ids[index] == 15 ? 11px : root.ids[index] == 11 ? 4px : root.ids[index] == 17 ? 9px : 7px;
+                    width: root.ids[index] == 17 ? 28px : 38px;
+                    height: root.ids[index] == 17 ? 28px : root.ids[index] == 11 ? 27px : root.ids[index] == 6 || root.ids[index] == 15 ? 29px : 32px;
                     background: #8899ac;
-                    border-radius: index == 17 ? 14px : index == 4 || index == 7 ? 5px : 1px;
-                    border-width: index < 2 || index == 11 ? 2px : 0px;
-                    border-color: index == 0 ? #ff153a : index == 11 ? #fff9ed : #ff914d;
+                    border-radius: root.ids[index] == 17 ? 14px : root.ids[index] == 5 || root.ids[index] == 12 ? 5px : 1px;
+                    border-width: root.ids[index] == 1 || root.ids[index] == 2 || root.ids[index] == 16 ? 2px : 0px;
+                    border-color: root.ids[index] == 1 ? #ff153a : root.ids[index] == 16 ? #fff9ed : #ff914d;
                 }
-                if index == 11: Rectangle { x: 7px; y: 5px; width: 15px; height: 5px; background: #f4e1ad; }
-                if index == 11: Rectangle { x: 32px; y: 5px; width: 15px; height: 5px; background: #f4e1ad; }
+                if root.ids[index] == 16: Rectangle { x: 7px; y: 5px; width: 15px; height: 5px; background: #f4e1ad; }
+                if root.ids[index] == 16: Rectangle { x: 32px; y: 5px; width: 15px; height: 5px; background: #f4e1ad; }
             }
             Text {
                 x: 70px;
@@ -354,23 +354,23 @@ export component CanvasPresetLibrary inherits VerticalLayout {
                 y: 33px;
                 width: Math.max(0px, parent.width - 112px);
                 overflow: elide;
-                text: index == 0 ? "Legacy sports style"
-                    : index == 1 ? "Legacy orange style"
-                    : index == 2 ? "Same-source blur"
-                    : index == 3 ? "Balanced picture mat"
-                    : index == 4 ? "Rounded elevated card"
-                    : index == 5 ? "Tilted photo mat"
-                    : index == 6 ? "Asymmetric broadcast panels"
-                    : index == 7 ? "Dark same-source backdrop"
-                    : index == 8 ? "Angled graphic edges"
-                    : index == 9 ? "Mounted transparency"
-                    : index == 10 ? "Digital window frame"
-                    : index == 11 ? "Decorative photo tape"
-                    : index == 12 ? "Staggered background blocks"
-                    : index == 13 ? "Same-source floor reflection"
-                    : index == 14 ? "Enlarged source echoes"
-                    : index == 15 ? "Edge-aligned picture"
-                    : index == 16 ? "Rounded-top arch opening"
+                text: root.ids[index] == 1 ? "Legacy sports style"
+                    : root.ids[index] == 2 ? "Legacy orange style"
+                    : root.ids[index] == 3 ? "Same-source blur"
+                    : root.ids[index] == 4 ? "Balanced picture mat"
+                    : root.ids[index] == 5 ? "Rounded elevated card"
+                    : root.ids[index] == 6 ? "Tilted photo mat"
+                    : root.ids[index] == 9 ? "Asymmetric broadcast panels"
+                    : root.ids[index] == 12 ? "Dark same-source backdrop"
+                    : root.ids[index] == 13 ? "Angled graphic edges"
+                    : root.ids[index] == 14 ? "Mounted transparency"
+                    : root.ids[index] == 15 ? "Digital window frame"
+                    : root.ids[index] == 16 ? "Decorative photo tape"
+                    : root.ids[index] == 18 ? "Staggered background blocks"
+                    : root.ids[index] == 11 ? "Same-source floor reflection"
+                    : root.ids[index] == 19 ? "Enlarged source echoes"
+                    : root.ids[index] == 20 ? "Edge-aligned picture"
+                    : root.ids[index] == 10 ? "Rounded-top arch opening"
                     : "Circular opening and rings";
                 color: Theme.fg-muted;
                 font-size: Theme.fs-sm;

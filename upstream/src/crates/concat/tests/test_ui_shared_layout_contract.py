@@ -108,22 +108,26 @@ class SharedLayoutContractTests(unittest.TestCase):
         self.assertNotIn('label: I18n.t("mediaPane.templates");', self.media)
 
     def test_canvas_presets_retain_legacy_ids_and_distinct_single_media_families(self):
-        for name in ("Sports Frame", "Orange Frame", "Adaptive Blur (Blurred Fill)",
-                     "Gallery Mat", "Floating Card", "Photo Print"):
-            self.assertIn(name, self.canvas)
-        for retired in ("Cinema Frame", "Editorial Panel"):
-            self.assertNotIn(retired, self.canvas)
+        library = self.canvas.split("export component CanvasPresetLibrary", 1)[1]
+        names = library.split("property <[string]> names: [", 1)[1].split("];", 1)[0]
+        self.assertEqual(names, '"Sports Frame", "Adaptive Blur (Blurred Fill)", "Gallery Mat", "Floating Card", "Photo Print", "Diagonal Cut", "Browser Window", "Taped Memory", "Broken Grid", "Arch Window", "Orbital Frame"')
+        for retired in ("Cinema Frame", "Editorial Panel", "Orange Frame",
+                        "Broadcast Edge", "Focus Island", "Projector Slide",
+                        "Mirror Stage", "Image Echo", "Edge Bleed"):
+            self.assertNotIn(retired, names)
         model = source(ROOT.parent / "concat-project/src/canvas_preset.rs")
-        self.assertIn("pub const ACTIVE_PRESETS: [u32; 18] = [1, 2, 3, 4, 5, 6, 9, 12, 13, 14, 15, 16, 18, 11, 19, 20, 10, 17];", model)
+        self.assertIn("pub const ACTIVE_PRESETS: [u32; 11] = [1, 3, 4, 5, 6, 13, 15, 16, 18, 10, 17];", model)
+        self.assertIn("const DECODABLE_PRESETS: [u32; 20] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 15, 16, 18, 11, 19, 20, 10, 17];", model)
         self.assertIn("7 => { // Cinema Frame", model)
         self.assertIn("8 => { // Editorial Panel", model)
-        self.assertIn('property <[string]> names:', self.canvas)
-        self.assertIn('property <[int]> ids: [1, 2, 3, 4, 5, 6, 9, 12, 13, 14, 15, 16, 18, 11, 19, 20, 10, 17];', self.canvas)
-        self.assertIn('CanvasPresets.toggle-favourite(root.ids[index]);', self.canvas)
-        for name in ("Broadcast Edge", "Focus Island", "Diagonal Cut", "Projector Slide",
-                     "Browser Window", "Taped Memory", "Broken Grid", "Mirror Stage",
-                     "Image Echo", "Edge Bleed", "Arch Window", "Orbital Frame"):
-            self.assertIn(name, self.canvas)
+        self.assertIn('property <[int]> ids: [1, 3, 4, 5, 6, 13, 15, 16, 18, 10, 17];', library)
+        self.assertIn('CanvasPresets.toggle-favourite(root.ids[index]);', library)
+        self.assertIn('root.ids[index] == 13 ? "Angled graphic edges"', library)
+        self.assertIn('root.ids[index] == 15 ? "Digital window frame"', library)
+        self.assertIn('root.ids[index] == 10 ? "Rounded-top arch opening"', library)
+        studio = source(SRC / "studio.rs")
+        self.assertIn("ACTIVE_PRESETS.into_iter().filter(|preset|self.prefs.canvas_preset_favourites", studio)
+        self.assertIn("ACTIVE_PRESETS.contains(&config.preset)", studio)
         self.assertIn('CanvasPresets.edit-number("borderWidth", v);', self.canvas)
         self.assertIn('CanvasPresets.edit-colour("borderColor", c);', self.canvas)
         self.assertIn('CanvasPresets.edit-number("rotation", v);', self.canvas)

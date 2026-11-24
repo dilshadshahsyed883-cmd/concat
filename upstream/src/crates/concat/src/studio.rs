@@ -4123,7 +4123,7 @@ impl Studio {
             Ok(config) => config, Err(e) => { self.notify(&e, true); return; }
         };
         if !concat_project::canvas_preset::ACTIVE_PRESETS.contains(&config.preset) {
-            self.notify("This Canvas preset is retired. Choose one of the six available presets.",true);
+            self.notify("This Canvas preset is retired. Choose an available preset.",true);
             return;
         }
         let targets: Vec<String> = self.timeline().clips.iter().filter(|c|

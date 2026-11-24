@@ -1449,8 +1449,8 @@ pub fn apply_with_confirmation(project: &mut Project, mint: &mut IdMint, config:
 
 
 /// Catalogue retirement is an editor policy, not a change to legacy decoding.
-pub const ACTIVE_PRESETS: [u32; 18] = [1, 2, 3, 4, 5, 6, 9, 12, 13, 14, 15, 16, 18, 11, 19, 20, 10, 17];
-/// Retired IDs 7 and 8 remain decodable. Unimplemented IDs are reserved.
+pub const ACTIVE_PRESETS: [u32; 11] = [1, 3, 4, 5, 6, 13, 15, 16, 18, 10, 17];
+/// Retired IDs 2, 7, 8, 9, 11, 12, 14, 19 and 20 remain decodable.
 const DECODABLE_PRESETS: [u32; 20] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 15, 16, 18, 11, 19, 20, 10, 17];
 
 /// Clear only known Canvas-owned layout data. A customized or protected
@@ -2375,8 +2375,11 @@ mod tests {
                 assert_eq!(owner.keys, before.keys);
             }
         }
-        assert!(!ACTIVE_PRESETS.contains(&7) && !ACTIVE_PRESETS.contains(&8));
-        assert!(Config::preset(7).is_some() && Config::preset(8).is_some());
+        for id in [2, 7, 8, 9, 11, 12, 14, 19, 20] {
+            assert!(!ACTIVE_PRESETS.contains(&id), "retired preset {id}");
+            assert!(Config::preset(id).is_some(), "legacy preset {id}");
+        }
+        assert_eq!(ACTIVE_PRESETS, [1, 3, 4, 5, 6, 13, 15, 16, 18, 10, 17]);
     }
 
     #[test]
