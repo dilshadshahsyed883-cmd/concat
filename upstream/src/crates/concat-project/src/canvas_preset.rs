@@ -10,6 +10,7 @@ use crate::model::{
     Background, Clip, ClipKind, ClipMask, MaskShape, Project, ShapeKind, ShapeStyle, TextStyle,
     Track,
 };
+use crate::canvas_viewport::ApertureShape;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -363,6 +364,20 @@ impl Config {
                 config.background_color = "#192a3e".into();
                 config.border_width = 0.0;
             }
+            10 => { // Arch Window: a true rounded-top output aperture.
+                config.foreground = Rect { x: 0.16, y: 0.09, width: 0.68, height: 0.80 };
+                config.background = "color".into();
+                config.background_color = "#d4c3a7".into();
+                config.border_color = "#f4e8d2".into();
+                config.border_width = 0.018;
+            }
+            17 => { // Orbital Frame: a true circular aperture and concentric rings.
+                config.foreground = Rect { x: 0.18, y: 0.18, width: 0.64, height: 0.64 };
+                config.background = "color".into();
+                config.background_color = "#101e35".into();
+                config.border_color = "#b2d5ff".into();
+                config.border_width = 0.006;
+            }
             _ => {}
         }
         Some(config)
@@ -595,6 +610,39 @@ fn rectangle(
         ..ShapeStyle::default()
     });
     tagged(c, &owner.id, role)
+}
+// An arch is the union of a circular top and straight-sided base.
+// Each part rotates about the same frame centre.
+fn shaped_fill(project: &mut Project, mint: &mut IdMint, owner: &Clip, role: &str,
+    rect: Rect, shape: ApertureShape, fill: &str, opacity: f64, rotation: f64, aspect: f64) -> Vec<Arc<Clip>> {
+    let mut result = Vec::new();
+    let (cx, cy) = rect.center();
+    let angle = rotation.to_radians();
+    let mut part = |role: &str, mut piece: Rect, radius: f64| {
+        let (px, py) = piece.center();
+        let dx = (px-cx)*aspect;
+        let dy = py-cy;
+        let x = cx + (dx*angle.cos()-dy*angle.sin())/aspect;
+        let y = cy + dx*angle.sin()+dy*angle.cos();
+        piece.x = x+0.5-piece.width/2.0;
+        piece.y = y+0.5-piece.height/2.0;
+        let lane = track(project, mint, &owner.track_id, role, true);
+        let mut clip = rectangle(mint, owner, &lane, role, piece, fill, radius, opacity);
+        Arc::make_mut(&mut clip).rotation = rotation;
+        result.push(clip);
+    };
+    match shape {
+        ApertureShape::Circle => part(role, rect, rect.height / 2.0),
+        ApertureShape::Arch => {
+            let diameter = rect.width * aspect;
+            part(&format!("{role}ArchTop"), Rect { height: diameter, ..rect }, diameter / 2.0);
+            part(&format!("{role}ArchBase"), Rect {
+                y: rect.y + diameter / 2.0, height: rect.height - diameter / 2.0, ..rect
+            }, 0.0);
+        }
+        ApertureShape::Rectangle => unreachable!("ordinary rectangle uses configured radius"),
+    }
+    result
 }
 fn label(
     mint: &mut IdMint,
@@ -893,13 +941,29 @@ pub fn apply_with_confirmation(project: &mut Project, mint: &mut IdMint, config:
         let fit = (w / sw).min(h / sh);
         let fw = sw * fit;
         let fh = sh * fit;
-        let scale = (config.foreground.width * w / fw).min(config.foreground.height * h / fh);
+        let mut scale = (config.foreground.width * w / fw).min(config.foreground.height * h / fh);
+        let aperture_shape = match config.preset {
+            10 => ApertureShape::Arch, 17 => ApertureShape::Circle, _ => ApertureShape::Rectangle,
+        };
         let mut actual = Rect {
             x: config.foreground.x + (config.foreground.width - fw * scale / w) / 2.0,
             y: config.foreground.y + (config.foreground.height - fh * scale / h) / 2.0,
             width: fw * scale / w,
             height: fh * scale / h,
         };
+        if aperture_shape != ApertureShape::Rectangle {
+            // Shape geometry is independent of source aspect. Cover-fit the
+            // original into the genuine output-space opening.
+            let ratio = if aperture_shape == ApertureShape::Circle { 1.0 } else { 0.68 };
+            let ph = (config.foreground.height * h).min(config.foreground.width * w / ratio);
+            let pw = ph * ratio;
+            actual = Rect {
+                x: config.foreground.x + (config.foreground.width - pw / w) / 2.0,
+                y: config.foreground.y + (config.foreground.height - ph / h) / 2.0,
+                width: pw / w, height: ph / h,
+            };
+            scale = (pw / fw).max(ph / fh);
+        }
         if config.preset == 20 {
             match config.bleed_edge.as_str() {
                 "left" => actual.x = config.foreground.x,
@@ -1024,6 +1088,28 @@ pub fn apply_with_confirmation(project: &mut Project, mint: &mut IdMint, config:
         };
         let rect = |x, y, width, height| Rect { x, y, width, height };
         match config.preset {
+            10 => {
+                decorate("archWallLeft", true, rect(0.035, 0.06, 0.11, 0.88), "#b19b7b", 0.0, 1.0, 0.0);
+                decorate("archWallRight", true, rect(0.855, 0.06, 0.11, 0.88), "#b19b7b", 0.0, 1.0, 0.0);
+            }
+            17 => {
+                let available = (actual.x * w / h).min((1.0 - actual.x - actual.width) * w / h)
+                    .min(actual.y).min(1.0 - actual.y - actual.height);
+                let extra = available.min(0.07);
+                if extra > 0.005 {
+                    for (role, factor, color) in [
+                        ("orbitalOuter", 1.0, "#466c9b"),
+                        ("orbitalGap", 0.72, "#101e35"),
+                        ("orbitalInner", 0.42, "#6d9acf"),
+                        ("orbitalInnerGap", 0.22, "#101e35"),
+                    ] {
+                        let d = extra * factor;
+                        decorate(role, true,
+                            rect(actual.x - d * h / w, actual.y - d, actual.width + 2.0*d*h/w, actual.height + 2.0*d),
+                            color, actual.height / 2.0 + d, 1.0, 0.0);
+                    }
+                }
+            }
             11 => {
                 let floor_y = (actual.y + actual.height + 0.012).min(1.0);
                 decorate("mirrorFloor", true, rect(0.0, floor_y, 1.0, 1.0 - floor_y),
@@ -1126,7 +1212,8 @@ pub fn apply_with_confirmation(project: &mut Project, mint: &mut IdMint, config:
                 reflected.offset_y = (actual.height - height) / (2.0 * scale);
                 reflected.rotation = -config.rotation;
                 let viewport = crate::canvas_viewport::Viewport { version: 1, scale, x, y,
-                    width: aperture.width, height: aperture.height, rotation: 0.0, radius: 0.0 };
+                    width: aperture.width, height: aperture.height, rotation: 0.0, radius: 0.0,
+                    shape: ApertureShape::Rectangle };
                 if viewport.valid() {
                     reflected.extra.insert(crate::canvas_viewport::KEY.into(), json!(viewport));
                     layers.push(tagged(reflected, &id, "mirrorReflection"));
@@ -1160,11 +1247,16 @@ pub fn apply_with_confirmation(project: &mut Project, mint: &mut IdMint, config:
             if !shadow_rect.validate() {
                 return Err(error("Shadow exceeds canvas; reduce offset or media size"));
             }
-            let shadow_lane = track(&mut staged, mint, &original.track_id, "shadow", true);
-            let mut shadow = rectangle(mint, &original, &shadow_lane, "shadow",
-                shadow_rect, &config.shadow_color, config.radius, config.shadow_opacity);
-            Arc::make_mut(&mut shadow).rotation = config.rotation;
-            layers.push(shadow);
+            if aperture_shape == ApertureShape::Rectangle {
+                let shadow_lane = track(&mut staged, mint, &original.track_id, "shadow", true);
+                let mut shadow = rectangle(mint, &original, &shadow_lane, "shadow",
+                    shadow_rect, &config.shadow_color, config.radius, config.shadow_opacity);
+                Arc::make_mut(&mut shadow).rotation = config.rotation;
+                layers.push(shadow);
+            } else {
+                layers.extend(shaped_fill(&mut staged, mint, &original, "shadow", shadow_rect,
+                    aperture_shape, &config.shadow_color, config.shadow_opacity, config.rotation, w/h));
+            }
         }
         if config.mat_bottom > 0.0 {
             let margin = 0.02;
@@ -1183,24 +1275,20 @@ pub fn apply_with_confirmation(project: &mut Project, mint: &mut IdMint, config:
             layers.push(mat);
         }
         if config.border_width > 0.0 {
-            let frame_lane = track(&mut staged, mint, &original.track_id, "frame", true);
-            let mut frame = rectangle(
-                mint,
-                &original,
-                &frame_lane,
-                "frame",
-                Rect {
-                    x: actual.x - border_w,
-                    y: actual.y - config.border_width,
-                    width: actual.width + 2.0 * border_w,
-                    height: actual.height + 2.0 * config.border_width,
-                },
-                &config.border_color,
-                config.radius + config.border_width,
-                1.0,
-            );
-            Arc::make_mut(&mut frame).rotation = config.rotation;
-            layers.push(frame);
+            let frame_rect = Rect {
+                x: actual.x - border_w, y: actual.y - config.border_width,
+                width: actual.width + 2.0 * border_w, height: actual.height + 2.0 * config.border_width,
+            };
+            if aperture_shape == ApertureShape::Rectangle {
+                let frame_lane = track(&mut staged, mint, &original.track_id, "frame", true);
+                let mut frame = rectangle(mint, &original, &frame_lane, "frame", frame_rect,
+                    &config.border_color, config.radius + config.border_width, 1.0);
+                Arc::make_mut(&mut frame).rotation = config.rotation;
+                layers.push(frame);
+            } else {
+                layers.extend(shaped_fill(&mut staged, mint, &original, "frame", frame_rect,
+                    aperture_shape, &config.border_color, 1.0, config.rotation, w/h));
+            }
         }
         // Canvas never generates a headline bar, fake caption text or even
         // an empty headline track. The legacy config.headline JSON field is
@@ -1254,7 +1342,7 @@ pub fn apply_with_confirmation(project: &mut Project, mint: &mut IdMint, config:
         foreground.mask=None;
         let (x,y)=actual.center();
         let viewport=crate::canvas_viewport::Viewport {version:1,scale,x,y,width:actual.width,height:actual.height,
-            rotation:config.rotation,radius:config.radius};
+            rotation:config.rotation,radius:config.radius,shape:aperture_shape};
         if !viewport.valid() {return Err(error("Invalid Canvas aperture geometry"));}
         foreground.extra.insert(crate::canvas_viewport::KEY.into(),json!(viewport));
         foreground.extra.insert(
@@ -1292,9 +1380,9 @@ pub fn apply_with_confirmation(project: &mut Project, mint: &mut IdMint, config:
 
 
 /// Catalogue retirement is an editor policy, not a change to legacy decoding.
-pub const ACTIVE_PRESETS: [u32; 16] = [1, 2, 3, 4, 5, 6, 9, 12, 13, 14, 15, 16, 18, 11, 19, 20];
+pub const ACTIVE_PRESETS: [u32; 18] = [1, 2, 3, 4, 5, 6, 9, 12, 13, 14, 15, 16, 18, 11, 19, 20, 10, 17];
 /// Retired IDs 7 and 8 remain decodable. Unimplemented IDs are reserved.
-const DECODABLE_PRESETS: [u32; 18] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 15, 16, 18, 11, 19, 20];
+const DECODABLE_PRESETS: [u32; 20] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 15, 16, 18, 11, 19, 20, 10, 17];
 
 /// Clear only known Canvas-owned layout data. A customized or protected
 /// companion cannot be silently discarded. The old snapshot is used solely
@@ -1615,7 +1703,7 @@ mod tests {
         assert!(print.mat_bottom > 0.0 && print.rotation != 0.0);
         assert!(cinema.foreground.height < 0.75);
         assert!(editorial.foreground.x > 0.3);
-        assert!(Config::preset(10).is_none());
+        assert!(Config::preset(0).is_none());
         assert!(Config::preset(21).is_none());
         // Old JSON omits the new optional fields, and must still be loadable.
         let mut old = serde_json::to_value(Config::preset(1).unwrap()).unwrap();
@@ -2270,6 +2358,47 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn shaped_apertures_cover_original_and_match_cross_renderer_samples() {
+        for (id, expected) in [(10, ApertureShape::Arch), (17, ApertureShape::Circle)] {
+            for portrait in [true, false] {
+                let (mut p, mut mint) = fixture();
+                if !portrait { p.media[0].width = Some(1920); p.media[0].height = Some(1080); }
+                apply(&mut p, &mut mint, Config::preset(id).unwrap(), vec!["c1".into()], vec![]).unwrap();
+                let owner = p.active().clip("c1").unwrap();
+                let view = crate::canvas_viewport::Viewport::of(owner).unwrap();
+                assert_eq!(view.shape, expected);
+                let video = p.active().video;
+                let aspect = video.width as f64 / video.height as f64;
+                let mask = view.engine(aspect).aperture();
+                let packed = mask.uniform(video.width as f32, video.height as f32, 1.0 / video.width.min(video.height) as f32);
+                let cx = (view.x + 0.5) as f32;
+                let cy = (view.y + 0.5) as f32;
+                assert!(concat_core::mask::coverage(&packed,cx,cy) > 0.99);
+                let x = cx + (view.width * 0.44) as f32;
+                let y = cy + (view.height * 0.44) as f32;
+                let bottom = concat_core::mask::coverage(&packed,x,y);
+                let top = concat_core::mask::coverage(&packed,x,cy-(view.height * 0.44) as f32);
+                assert!(top < 0.01);
+                if expected == ApertureShape::Arch { assert!(bottom > 0.99); }
+                else { assert!(bottom < 0.01); assert!((view.width*aspect-view.height).abs()<1e-8); }
+                let samples: Vec<_> = (0..=16).flat_map(|a| (0..=16).map(move|b| {
+                    let (u,v)=(a as f32/16.0,b as f32/16.0);
+                    json!({"u":u,"v":v,"coverage":concat_core::mask::coverage(&packed,u,v)})
+                })).collect();
+                if let Ok(directory)=std::env::var("CONCAT_CANVAS_FIXTURE_DIR") {
+                    std::fs::create_dir_all(&directory).unwrap();
+                    let value=json!({"viewport":view,"width":video.width,"height":video.height,"samples":samples});
+                    std::fs::write(std::path::Path::new(&directory).join(format!("aperture-shape-{id}-{portrait}.json")),
+                        serde_json::to_vec_pretty(&value).unwrap()).unwrap();
+                }
+                assert_eq!(p.media.len(),1);
+                clear(&mut p,vec!["c1".into()],vec![]).unwrap();
+                assert_eq!(p.active().clips.len(),1);
+            }
+        }
+    }
+
     #[test]
     fn picture_size_rejects_nonfinite_or_invalid_values_without_mutating() {
         let mut config = Config::preset(4).unwrap();

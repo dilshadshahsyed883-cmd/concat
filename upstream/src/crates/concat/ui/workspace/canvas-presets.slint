@@ -68,7 +68,9 @@ export component CanvasPresetPanel inherits VerticalLayout {
             : CanvasPresets.selected == 18 ? "Broken Grid"
             : CanvasPresets.selected == 11 ? "Mirror Stage"
             : CanvasPresets.selected == 19 ? "Image Echo"
-            : "Edge Bleed";
+            : CanvasPresets.selected == 20 ? "Edge Bleed"
+            : CanvasPresets.selected == 10 ? "Arch Window"
+            : "Orbital Frame";
         color: Theme.fg-muted; font-size: Theme.fs-sm;
     }
     VerticalLayout {
@@ -84,7 +86,7 @@ export component CanvasPresetPanel inherits VerticalLayout {
         Param { label: "Height"; value: CanvasPresets.foreground-height; minimum: 0.05; maximum: 1 - CanvasPresets.foreground-y; step: 0.005; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("foregroundHeight", v); } }
         Param { label: "Border thickness"; value: CanvasPresets.border-width; minimum: 0; maximum: 0.1; step: 0.001; fmt: ParamFormat.outline; changed(v) => { CanvasPresets.edit-number("borderWidth", v); } }
         ColourField { label: "Border color"; value: CanvasPresets.border-color; changed(c) => { CanvasPresets.edit-colour("borderColor", c); } }
-        Param { label: "Corner radius"; value: CanvasPresets.radius; minimum: 0; maximum: 0.5; step: 0.005; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("radius", v); } }
+        if CanvasPresets.selected != 10 && CanvasPresets.selected != 17: Param { label: "Corner radius"; value: CanvasPresets.radius; minimum: 0; maximum: 0.5; step: 0.005; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("radius", v); } }
         Text { text: "Background"; color: Theme.fg-muted; font-size: Theme.fs-sm; }
         Select {
             options: ["Source", "Blurred source", "Solid color", "None"];
@@ -193,9 +195,9 @@ export component CanvasPresetClearBar inherits VerticalLayout {
 }
 
 export component CanvasPresetLibrary inherits VerticalLayout {
-    property <[string]> names: ["Sports Frame", "Orange Frame", "Adaptive Blur (Blurred Fill)", "Gallery Mat", "Floating Card", "Photo Print", "Broadcast Edge", "Focus Island", "Diagonal Cut", "Projector Slide", "Browser Window", "Taped Memory", "Broken Grid", "Mirror Stage", "Image Echo", "Edge Bleed"];
+    property <[string]> names: ["Sports Frame", "Orange Frame", "Adaptive Blur (Blurred Fill)", "Gallery Mat", "Floating Card", "Photo Print", "Broadcast Edge", "Focus Island", "Diagonal Cut", "Projector Slide", "Browser Window", "Taped Memory", "Broken Grid", "Mirror Stage", "Image Echo", "Edge Bleed", "Arch Window", "Orbital Frame"];
     // Catalogue position is NOT the persistent ID. Retired 7/8 stay retired.
-    property <[int]> ids: [1, 2, 3, 4, 5, 6, 9, 12, 13, 14, 15, 16, 18, 11, 19, 20];
+    property <[int]> ids: [1, 2, 3, 4, 5, 6, 9, 12, 13, 14, 15, 16, 18, 11, 19, 20, 10, 17];
     property <bool> favourites-only: false;
     // Dense positions in the Favorites view, following AnimationFavoriteCards.
     pure function is-starred(index: int) -> bool {
@@ -289,7 +291,13 @@ export component CanvasPresetLibrary inherits VerticalLayout {
                     : index == 12 ? #355f61
                     : index == 13 ? #111923
                     : index == 14 ? #142135
-                    : index == 15 ? #192a3e : #596e8f;
+                    : index == 15 ? #192a3e
+                    : index == 16 ? #d4c3a7
+                    : index == 17 ? #101e35 : #596e8f;
+                if index == 17: Rectangle { x: 7px; y: 3px; width: 40px; height: 40px; border-radius: 20px; background: #466c9b; }
+                if index == 17: Rectangle { x: 10px; y: 6px; width: 34px; height: 34px; border-radius: 17px; background: #101e35; }
+                if index == 16: Rectangle { x: 13px; y: 4px; width: 28px; height: 28px; border-radius: 14px; background: #8899ac; }
+                if index == 16: Rectangle { x: 13px; y: 18px; width: 28px; height: 24px; background: #8899ac; }
                 if index == 13: Rectangle { x: 9px; y: 33px; width: 36px; height: 8px; background: #465466; }
                 if index == 14: Rectangle { x: 3px; y: 4px; width: 41px; height: 38px; background: #506785; }
                 if index == 14: Rectangle { x: 12px; y: 5px; width: 40px; height: 35px; background: #415774; }
@@ -299,12 +307,13 @@ export component CanvasPresetLibrary inherits VerticalLayout {
                 if index == 10: Rectangle { x: 6px; y: 3px; width: 42px; height: 7px; background: #d9e2ee; }
                 if index == 12: Rectangle { x: 35px; y: 28px; width: 17px; height: 16px; background: #c67c51; }
                 Rectangle {
-                    x: index == 15 ? 0px : 8px;
-                    y: index == 5 ? 5px : index == 10 ? 11px : index == 13 ? 4px : 7px;
-                    width: 38px;
-                    height: index == 13 ? 27px : index == 5 || index == 10 ? 29px : 32px;
+                    visible: index != 16;
+                    x: index == 15 ? 0px : index == 17 ? 13px : 8px;
+                    y: index == 5 ? 5px : index == 10 ? 11px : index == 13 ? 4px : index == 17 ? 9px : 7px;
+                    width: index == 17 ? 28px : 38px;
+                    height: index == 17 ? 28px : index == 13 ? 27px : index == 5 || index == 10 ? 29px : 32px;
                     background: #8899ac;
-                    border-radius: index == 4 || index == 7 ? 5px : 1px;
+                    border-radius: index == 17 ? 14px : index == 4 || index == 7 ? 5px : 1px;
                     border-width: index < 2 || index == 11 ? 2px : 0px;
                     border-color: index == 0 ? #ff153a : index == 11 ? #fff9ed : #ff914d;
                 }
@@ -341,7 +350,9 @@ export component CanvasPresetLibrary inherits VerticalLayout {
                     : index == 12 ? "Staggered background blocks"
                     : index == 13 ? "Same-source floor reflection"
                     : index == 14 ? "Enlarged source echoes"
-                    : "Edge-aligned picture";
+                    : index == 15 ? "Edge-aligned picture"
+                    : index == 16 ? "Rounded-top arch opening"
+                    : "Circular opening and rings";
                 color: Theme.fg-muted;
                 font-size: Theme.fs-sm;
             }
