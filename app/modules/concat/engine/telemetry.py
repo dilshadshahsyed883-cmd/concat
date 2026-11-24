@@ -57,6 +57,7 @@ class Telemetry:
         self.thread = None
         self.request_lock = threading.Lock()
         self.last_resource_poll = 0
+        self.resource_failures = 0
         self.worker_ready_at = 0
         with manager.connection() as con:
             con.execute('''CREATE TABLE IF NOT EXISTS metric_samples(
@@ -201,6 +202,25 @@ class Telemetry:
             except (JobError, AttributeError, TypeError):
                 pass
 
+    def resource_poll_allowed(self, con, active):
+        """Use lifecycle knowledge before telemetry I/O; never wake a stopped GPU."""
+        m = self.manager
+        if m.get(con, 'salad_idle_status') in ('stopped', 'stop_requested', 'stop_pending_confirmation'):
+            return False
+        status = m.get(con, 'salad_worker_status') or ''
+        if status in ('stopped', 'start_requested', 'start_pending_confirmation',
+                      'waiting_for_group', 'waiting_for_instance', 'waiting_for_allocating',
+                      'waiting_for_stopping', 'health_check_passed', 'allocation_state_uncertain',
+                      'download_timestamp_unavailable', 'download_progress_unavailable',
+                      'downloading_healthy', 'checking_download', 'manual_download_slow',
+                      'waiting_for_reallocation', 'reallocation_cooldown', 'reallocation_limit',
+                      'instance_changed_rechecking', 'reallocate_requested',
+                      'manual_start_queued', 'manual_stop_queued'):
+            return False
+        # Active submitted jobs are evidence of a manually managed worker, even
+        # when its lifecycle status is unknown. Ready is an explicit observation.
+        return bool(active) or status == 'ready'
+
     def collect(self):
         m, now = self.manager, time.time()
         with m.connection() as con:
@@ -224,9 +244,13 @@ class Telemetry:
                        'download_since': record.get('download_since'),
                        'threshold_percent': int(m.get(con, 'image_pull_threshold') or '8'),
                        'window_seconds': int(m.get(con, 'image_pull_seconds') or '20')}, con=con)
+            if not self.resource_poll_allowed(con, context['active_jobs']):
+                self.worker_ready_at = 0
+                return
             path, key = m.salad_group_path(con), m.get(con, 'salad_key')
         # Independent thread; never holds the manager lock during network I/O.
-        if not path or not key or now - self.last_resource_poll < 20:
+        interval = min(300, 20 * 2 ** min(self.resource_failures, 4))
+        if not path or not key or now - self.last_resource_poll < interval:
             return
         if not self.request_lock.acquire(blocking=False):
             return
@@ -247,9 +271,21 @@ class Telemetry:
             body = response.json()
             stage = 'instance_schema'
             instances = body.get('instances') if isinstance(body, dict) else None
-            if not isinstance(instances, list) or len(instances) != 1 or not isinstance(instances[0], dict):
+            if not isinstance(instances, list):
+                raise ValueError('Invalid instance collection')
+            if not instances:
+                self.resource_failures = 0
+                self.event('resources', {**context, 'source': 'Salad API',
+                           'collection_status': 'unavailable', 'reason': 'no_active_instance'})
+                return
+            if len(instances) != 1 or not isinstance(instances[0], dict):
                 raise ValueError('Invalid instance collection')
             instance = instances[0]
+            self.resource_failures = 0
+            if instance.get('state') != 'running' or instance.get('ready') is not True:
+                self.event('resources', {**context, 'source': 'Salad API',
+                           'collection_status': 'unavailable', 'reason': 'instance_not_ready'})
+                return
             payload = numbers(instance, RESOURCE_FIELDS)
             payload.update(source='Salad API', source_sample_time=None,
                            collection_status='available', **context)
@@ -264,7 +300,9 @@ class Telemetry:
                     worker = m.production_worker('')
                     worker.timeout = min(worker.timeout, 5)
                     activity = worker.request('GET', '/api/config/concurrency')
-                    actual = numbers(activity, {'active_renders': 2, 'concurrency': 2})
+                    actual = numbers(activity, {'active_renders': 2, 'concurrency': 2,
+                                                'pipeline_version': 1, 'queued_renders': 10000,
+                                                'delivering': 10000, 'active_jobs': 10000})
                     if actual:
                         self.event('worker_activity', {**context, **actual})
                 except (JobError, AttributeError, TypeError):
@@ -283,6 +321,7 @@ class Telemetry:
                           'freshness': 'freshness_check_failed',
                           'json': 'invalid_json',
                           'instance_schema': 'invalid_instance_collection'}.get(stage, 'invalid_response')
+            self.resource_failures += 1
             diagnostic = {**context, 'source': 'Salad API',
                           'collection_status': 'request_failed', 'failure_reason': reason}
             code = getattr(response, 'status_code', None)
@@ -315,7 +354,12 @@ class Telemetry:
         successes = [p for p in resource_samples if p.get('collection_status') == 'available']
         failures = [p for p in resource_samples if p.get('collection_status') == 'request_failed']
         lines += ['', 'Salad API collection health:']
-        lines.append(f'Available samples={len(successes)}; failed attempts={len(failures)}')
+        unavailable = [p for p in resource_samples if p.get('collection_status') == 'unavailable']
+        lines.append(f'Available samples={len(successes)}; failed attempts={len(failures)}; unavailable samples={len(unavailable)}')
+        for reason in ('no_active_instance', 'instance_not_ready'):
+            count = sum(p.get('reason') == reason for p in unavailable)
+            if count:
+                lines.append(f'{reason}: {count}')
         reasons = {}
         for payload in failures:
             key = payload.get('failure_reason', 'unknown')

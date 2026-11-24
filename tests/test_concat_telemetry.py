@@ -110,6 +110,47 @@ class TelemetryTests(unittest.TestCase):
         self.assertNotIn('secret.test', report)
         self.assertIn('"active_renders": 2', report)
 
+    def test_known_nonrunning_worker_never_polls_resources(self):
+        self.job(1, 'Ready for GPU')
+        self.manager.save({'salad_key': 'SECRET_API', 'salad_organization': 'org-one',
+            'salad_project': 'project-one', 'salad_container_group': 'group-one'})
+        for status in ('downloading_healthy', 'waiting_for_instance', 'start_requested',
+                       'health_check_passed', 'reallocate_requested', 'stopped'):
+            with self.manager.connection() as con:
+                self.manager.put(con, 'salad_worker_status', status)
+            with patch('app.modules.concat.engine.telemetry.requests.get') as get:
+                self.metrics.collect()
+                get.assert_not_called()
+        self.assertEqual(self.samples('resources'), [])
+        self.assertTrue(self.samples('queue'))
+
+    def test_empty_instance_collection_is_unavailable_not_failure(self):
+        self.job(1)
+        self.manager.save({'salad_key': 'SECRET_API', 'salad_organization': 'org-one',
+            'salad_project': 'project-one', 'salad_container_group': 'group-one'})
+        response = Mock(status_code=200, headers={}, json=lambda: {'instances': []})
+        with patch('app.modules.concat.engine.telemetry.requests.get', return_value=response):
+            self.metrics.collect()
+        payload = json.loads(self.samples('resources')[-1]['payload'])
+        self.assertEqual(payload['collection_status'], 'unavailable')
+        self.assertEqual(payload['reason'], 'no_active_instance')
+        self.assertIn('failed attempts=0; unavailable samples=1', self.metrics.report(24))
+
+    def test_resource_failure_backoff(self):
+        self.job(1)
+        self.manager.save({'salad_key': 'SECRET_API', 'salad_organization': 'org-one',
+            'salad_project': 'project-one', 'salad_container_group': 'group-one'})
+        response = Mock(status_code=429, headers={})
+        with patch('app.modules.concat.engine.telemetry.requests.get', return_value=response) as get:
+            with patch('app.modules.concat.engine.telemetry.time.time', return_value=1000):
+                self.metrics.collect()
+            with patch('app.modules.concat.engine.telemetry.time.time', return_value=1020):
+                self.metrics.collect()
+            get.assert_called_once()
+            with patch('app.modules.concat.engine.telemetry.time.time', return_value=1040):
+                self.metrics.collect()
+            self.assertEqual(get.call_count, 2)
+
     def test_http_failure_reports_sanitized_status_without_response_body(self):
         self.job(1)
         self.manager.save({'salad_key': 'SECRET_API', 'salad_organization': 'org-one',

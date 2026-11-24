@@ -10,7 +10,10 @@ and the response is sent in chunks with private/no-store headers.
 A dedicated background thread samples local job activity every 10 seconds while
 work is pending or the worker is enabled. It polls the saved Salad group and
 existing worker concurrency API at most every 20 seconds, separately from the
-production dispatcher. Worker API reads require a recent running/ready Salad
+production dispatcher. Resource polling is skipped when the lifecycle controller
+knows the instance is stopped, allocating, downloading or otherwise not ready.
+Local queue sampling continues. Empty instance collections and non-ready instances
+are unavailable rather than API failures; genuine failures back off up to five minutes. Worker API reads require a recent running/ready Salad
 instance observation and are blocked by the stop journal. An owner-specific file
 lock prevents duplicate collectors
 across web processes. Closing the page does not stop collection. No lifecycle
