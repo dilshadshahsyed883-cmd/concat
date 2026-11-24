@@ -57,7 +57,12 @@ jobs:
         run: |
           python upstream/src/crates/concat/tests/test_cloud_gpu_background_uploads.py
           python upstream/src/crates/concat/tests/test_recent_projects_menu.py
+      - name: Build shared animation generator for CUDA manifest parity
+        working-directory: upstream/src
+        run: cargo build --locked -p concat-project --bin concat-motion-expand
       - run: python -m unittest discover -v -s cloud_render/concat/tests
+        env:
+          CONCAT_MOTION_EXPAND: ${{ github.workspace }}/upstream/src/target/debug/concat-motion-expand
   worker-image:
     runs-on: ubuntu-24.04
     timeout-minutes: 20

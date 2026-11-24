@@ -1,6 +1,13 @@
 # CUDA/NVENC hybrid candidate for Salad.
 # The native concat-cli / Rust wgpu / Vulkan / Mesa renderer is retired.
 # This image DOES NOT modify Salad configuration or deploy to VPS.
+# Compile only the shared, headless native animation generator, not the
+# retired Rust video renderer. CUDA still owns all actual frame rendering.
+FROM rust:1.93-bookworm AS motion-generator
+WORKDIR /src
+COPY upstream/src/ ./
+RUN cargo build --locked --release -p concat-project --bin concat-motion-expand
+
 FROM ubuntu:24.04
 ARG DEBIAN_FRONTEND=noninteractive
 ARG SOURCE_SHA=unknown
@@ -17,6 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && mkdir -p /worker/jobs /worker/outputs /worker/state /worker/.config /worker/.local/share \
     && chown -R 10001:10001 /worker
 
+COPY --from=motion-generator /src/target/release/concat-motion-expand /usr/local/bin/concat-motion-expand
 COPY cloud_render/concat/hybrid/ /opt/app/cloud_render/concat/hybrid/
 COPY upstream/src/crates/concat-text/fonts/HankenGrotesk-SemiBold.ttf /opt/app/cloud_render/concat/hybrid/HankenGrotesk-SemiBold.ttf
 COPY upstream/src/crates/concat-text/fonts/ /opt/app/cloud_render/concat/hybrid/fonts/
