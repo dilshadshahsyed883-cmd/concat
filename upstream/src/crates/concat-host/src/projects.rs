@@ -290,7 +290,7 @@ pub fn save_ordered(
         return Ok(Saved::Superseded);
     }
 
-    let encoded = serde_json::to_vec_pretty(document)
+    let encoded = serde_json::to_vec(document)
         .map_err(|error| format!("could not encode the project: {error}"))?;
     write_manifest(&root, &encoded)?;
     state.written.store(ticket.0, Ordering::Release);

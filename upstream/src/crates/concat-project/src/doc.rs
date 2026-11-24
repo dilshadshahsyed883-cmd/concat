@@ -38,7 +38,7 @@ use crate::model::{Clip, ColorSpace, MediaItem, Project, Timeline, VideoSettings
 /// on load: a document from a later version is refused whole rather than
 /// read in part and then saved over. Every bump adds a step to
 /// [`MIGRATIONS`].
-pub const DOCUMENT_VERSION: u64 = 1;
+pub const DOCUMENT_VERSION: u64 = 2;
 
 /// The version a document says it is. Documents from before the field
 /// existed are version 1: that is the version their shape was given.
@@ -138,10 +138,12 @@ fn give_timelines_their_frame(document: &mut Map<String, Value>) {
 /// The document at this build's shape, or `None` for one from a later
 /// build.
 fn migrate(document: &Value) -> Option<Map<String, Value>> {
-    let mut document = document.as_object()?.clone();
-    if document_version(&Value::Object(document.clone())) > DOCUMENT_VERSION {
+    if document_version(document) > DOCUMENT_VERSION {
         return None;
     }
+    let mut expanded = document.clone();
+    crate::motion_wire::expand_document(&mut expanded, true).ok()?;
+    let mut document = expanded.as_object()?.clone();
     for migration in MIGRATIONS {
         (migration.apply)(&mut document);
     }
@@ -318,7 +320,8 @@ pub fn to_document(settings: &DocumentSettings, project: &Project) -> Value {
     let active = project.active();
     let mut document = Map::new();
     document.insert("concat".into(), json!("0.1.0"));
-    document.insert("version".into(), json!(DOCUMENT_VERSION));
+    // Native key documents retain version 1; compact recipes require version 2.
+    document.insert("version".into(), json!(1));
     document.insert("name".into(), json!(settings.name));
     // The active timeline's frame, at the top level where every build has
     // read it - the same mirror `tracks` and `clips` are, and for the same
@@ -360,5 +363,7 @@ pub fn to_document(settings: &DocumentSettings, project: &Project) -> Value {
     for (key, value) in &project.extra {
         document.entry(key.clone()).or_insert_with(|| value.clone());
     }
-    Value::Object(document)
+    let mut document = Value::Object(document);
+    crate::motion_wire::compact_document(&mut document);
+    document
 }

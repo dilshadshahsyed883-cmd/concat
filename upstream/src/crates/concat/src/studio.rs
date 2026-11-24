@@ -10991,6 +10991,7 @@ impl Studio {
                 let command = Command::ApplyGeneratedMotion {
                     clip_id: clip.id.clone(), expected_keys: clip.keys.clone(), keys: keys.to_vec(),
                     preset: preset_id.into(), canvas_style: None,
+                    recipe: Some(concat_project::motion_wire::recipe(self.frame_seconds(), PhysicsControls::default())),
                 };
                 self.apply(command);
                 self.seek(preview as f32);
@@ -11024,16 +11025,18 @@ impl Studio {
             self.notify(&t("studio.motionPresetAlreadyKeyed"), true);
             return;
         };
-        match preset.keys_with(&base, self.frame_seconds(), PhysicsControls {
+        let controls = PhysicsControls {
             strength: strength as f64,
             duration: if auto_fit {1.0}else{duration as f64},
             speed: speed as f64,
             intensity: intensity as f64,
-        }) {
+        };
+        match preset.keys_with(&base, self.frame_seconds(), controls) {
             Ok((keys, preview)) => {
                 let command = Command::ApplyGeneratedMotion {
                     clip_id: clip.id.clone(), expected_keys: clip.keys.clone(), keys,
                     preset: preset.id().into(), canvas_style: None,
+                    recipe: Some(concat_project::motion_wire::recipe(self.frame_seconds(), controls)),
                 };
                 self.apply(command);
                 self.seek(preview as f32);
