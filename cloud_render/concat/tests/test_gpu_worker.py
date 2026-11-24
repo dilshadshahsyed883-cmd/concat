@@ -51,11 +51,11 @@ class WorkerTests(unittest.TestCase):
         self.delivered.append(job)
 
     def tearDown(self):
-        self.worker.pool.shutdown(wait=True)
+        self.worker.shutdown()
         self.temp.cleanup()
 
     def wait(self):
-        self.worker.pool.shutdown(wait=True)
+        self.worker.shutdown()
 
     def add(self, job="abc"):
         return self.worker.accept(job, io.BytesIO(self.data), len(self.data), self.sha)
@@ -167,7 +167,7 @@ class WorkerTests(unittest.TestCase):
         fresh = RenderWorker(Path(self.temp.name), token=TOKEN,
                              renderer=self.render)
         self.assertEqual(fresh.status("old")["state"], "failed")
-        fresh.pool.shutdown(wait=True)
+        fresh.shutdown()
 
     def test_retired_native_mode_fails_before_creating_job(self):
         with self.assertRaisesRegex(WorkerError, "Native Vulkan engine retired"):
@@ -361,13 +361,13 @@ class ConcatCUDAIntegrationTests(unittest.TestCase):
             self.assertEqual(first["render_mode"], "cuda-stage1")
             worker.spool.put_chunk("cuda1", 0, io.BytesIO(raw), len(raw), sha)
             worker.spool.complete("cuda1")
-            worker.pool.shutdown(wait=True)
+            worker.shutdown()
             self.assertEqual(worker.status("cuda1")["state"], "delivered")
             self.assertEqual(delivered, ["cuda1"])
             self.assertEqual(len(gpu_calls), 1)
             self.assertFalse((worker.outputs / "cuda1.mp4").exists())
         finally:
-            worker.pool.shutdown(wait=True)
+            worker.shutdown()
 
     def test_resumable_mode_cannot_change_during_retry(self):
         worker = RenderWorker(self.root / "worker2",
@@ -380,7 +380,7 @@ class ConcatCUDAIntegrationTests(unittest.TestCase):
                 worker.spool.begin("a",len(data),checksum,"native")
             self.assertTrue((worker.spool.uploads / "a" / "manifest.json").is_file())
         finally:
-            worker.pool.shutdown(wait=True)
+            worker.shutdown()
 
 
 if __name__ == "__main__":

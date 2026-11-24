@@ -217,6 +217,8 @@ class RenderWorker:
         self.lock = threading.RLock()
         # Two executor slots; the runtime setting controls how many renders start.
         self.pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="concat-export")
+        # Output transfers must never occupy either render executor thread.
+        self.delivery_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="concat-delivery")
         self.slots = threading.Condition(self.lock)
         self.active_renders = 0
         self.concurrency = 1
@@ -246,15 +248,28 @@ class RenderWorker:
             try:
                 item = json.loads(path.read_text())
                 if item.get("state") in ("queued", "running", "delivering", "cancellation_requested"):
-                    self._save(path.stem, {**item, "state": "failed",
+                    recovered = "delivery_failed" if item["state"] == "delivering" and item.get("output_sha256") else "failed"
+                    self._save(path.stem, {**item, "state": recovered,
                         "error": "Interrupted by worker restart; source bundle retained"})
             except (OSError, ValueError):
                 continue
 
+    def shutdown(self):
+        # Finish producers before closing the delivery executor.
+        self.pool.shutdown(wait=True)
+        self.delivery_pool.shutdown(wait=True)
+
     def concurrency_status(self) -> dict:
         with self.slots:
+            states = [self._read_state(path) for path in self.state.glob("*.json")
+                      if IDS.fullmatch(path.stem)]
             return {"concurrency": self.concurrency, "max_concurrency": 2,
-                    "active_renders": self.active_renders}
+                    "active_renders": self.active_renders,
+                    "pipeline_version": 1,
+                    "active_jobs": max(self.active_renders, sum(state in
+                        ("queued", "running", "delivering", "cancellation_requested") for state in states)),
+                    "queued_renders": states.count("queued"),
+                    "delivering": states.count("delivering")}
 
     def set_concurrency(self, value: int) -> dict:
         if type(value) is not int or value not in (1, 2):
@@ -374,7 +389,7 @@ class RenderWorker:
         # has already committed success, leaving a permanently pending cancel.
         with self.lock:
             item = self.status(job)
-            if item["state"] in ("rendered", "delivered", "delivery_failed", "failed", "cancelled", "captions_ready"):
+            if item["state"] in ("rendered", "delivering", "delivered", "delivery_failed", "failed", "cancelled", "captions_ready"):
                 return item
             self.cancellations.setdefault(job, threading.Event()).set()
             self._change(job, state="cancellation_requested")
@@ -484,12 +499,9 @@ class RenderWorker:
                              **({"caption_state": "rendered"} if caption_result is not None else {}),
                              **self._performance_metrics(report, elapsed))
             if self.receiver:
-                self._change(job, state="delivering")
-                self.deliver(job, output)
-                self._change(job, state="delivered")
-                # GPU side cache only: VPS has confirmed the complete file.
-                output.unlink()
-                shutil.rmtree(directory)
+                with self.lock:
+                    self._change(job, state="delivering")
+                    self.delivery_pool.submit(self._retry, job, output)
         except CaptionCancelled as exc:
             self._change(job, state="cancelled", error=str(exc))
         except GpuSpeechUnavailable as exc:
@@ -587,7 +599,7 @@ class RenderWorker:
             if not target.is_file() or target.is_symlink():
                 raise WorkerError(409, "Output missing")
             self._change(job, state="delivering", error="")
-            self.pool.submit(self._retry, job, target)
+            self.delivery_pool.submit(self._retry, job, target)
             return self.status(job)
 
     def _retry(self, job: str, output: Path):

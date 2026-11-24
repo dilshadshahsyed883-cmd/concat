@@ -37,7 +37,7 @@ class RenderSlotsTest(unittest.TestCase):
 
     def tearDown(self):
         self.release.set()
-        self.worker.pool.shutdown(wait=True)
+        self.worker.shutdown()
         self.temp.cleanup()
 
     def render(self, project, output):
@@ -76,12 +76,12 @@ class RenderSlotsTest(unittest.TestCase):
         self.wait_started(2)
         self.assertEqual(self.max_active, 2)
         self.release.set()
-        self.worker.pool.shutdown(wait=True)
+        self.worker.shutdown()
         self.assertEqual(self.worker.status("one")["state"], "rendered")
         self.assertEqual(self.worker.status("two")["state"], "rendered")
         reopened = RenderWorker(Path(self.temp.name), token=TOKEN, renderer=self.render)
         self.assertEqual(reopened.concurrency_status()["concurrency"], 2)
-        reopened.pool.shutdown(wait=True)
+        reopened.shutdown()
 
     def test_decrease_keeps_both_active_and_holds_next(self):
         self.worker.set_concurrency(2)
@@ -94,9 +94,47 @@ class RenderSlotsTest(unittest.TestCase):
         self.assertEqual(len(self.started), 2)
         self.assertEqual(self.worker.concurrency_status()["active_renders"], 2)
         self.release.set()
-        self.worker.pool.shutdown(wait=True)
+        self.worker.shutdown()
         self.assertEqual(len(self.started), 3)
         self.assertTrue(all(self.worker.status(x)["state"] == "rendered" for x in ("one", "two", "three")))
+
+    def test_delivery_does_not_hold_render_slot_in_either_mode(self):
+        for concurrency in (1, 2):
+            with self.subTest(concurrency=concurrency), tempfile.TemporaryDirectory() as tmp:
+                delivering = threading.Event()
+                finish_delivery = threading.Event()
+                next_render = threading.Event()
+                release_render = threading.Event()
+                def render(project, output):
+                    if output.stem == "next":
+                        next_render.set()
+                        if not release_render.wait(5):
+                            raise RuntimeError("test render timeout")
+                    output.write_bytes(MP4)
+                def deliver(job, output):
+                    delivering.set()
+                    if not finish_delivery.wait(5):
+                        raise RuntimeError("test delivery timeout")
+                worker = RenderWorker(Path(tmp), token=TOKEN, receiver="https://example.com",
+                                      renderer=render, deliver=deliver)
+                try:
+                    worker.set_concurrency(concurrency)
+                    worker.accept("first", io.BytesIO(self.data), len(self.data), self.sha)
+                    self.assertTrue(delivering.wait(3))
+                    worker.accept("next", io.BytesIO(self.data), len(self.data), self.sha)
+                    self.assertTrue(next_render.wait(3))
+                    self.assertEqual(worker.status("first")["state"], "delivering")
+                    status = worker.concurrency_status()
+                    self.assertEqual(status["pipeline_version"], 1)
+                    self.assertEqual(status["active_renders"], 1)
+                    self.assertEqual(status["active_jobs"], 2)
+                    self.assertEqual(status["delivering"], 1)
+                finally:
+                    release_render.set()
+                    finish_delivery.set()
+                    worker.shutdown()
+                self.assertEqual(worker.status("first")["state"], "delivered")
+                self.assertEqual(worker.status("next")["state"], "delivered")
 
     def test_invalid_values_are_rejected(self):
         for v in (0, 3, True, "2", None, 1.5):
