@@ -145,7 +145,7 @@ fn canvas_publish(app: &App, config: &concat_project::canvas_preset::Config) {
     panel.set_mat_bottom(config.mat_bottom as f32);
     panel.set_rotation(config.rotation as f32);
     panel.set_background_mode(match config.background.as_str() {
-        "blur" => 1, "color" => 2, "none" => 3, _ => 0,
+        "blur" => 1, "color" => 2, "none" => 3, "adaptive" => 4, _ => 0,
     });
     panel.set_border_color(canvas_picker_color(&config.border_color));
     panel.set_background_color(canvas_picker_color(&config.background_color));
@@ -948,8 +948,9 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         Shell::with(|_, app| {
             canvas_modify(&app, |config| {
                 config.background = match mode {
-                    1 => "blur", 2 => "color", 3 => "none", _ => "source",
+                    1 => "blur", 2 => "color", 3 => "none", 4 => "adaptive", _ => "source",
                 }.into();
+                config.adaptive_palette = None;
             });
         });
     });
@@ -987,7 +988,9 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     app.global::<CanvasPresets>().on_save_default(move |profile| {
         Shell::with(|shell, app| {
             match concat_project::canvas_preset::Config::from_json(profile.as_str()) {
-                Ok(config) => {
+                Ok(mut config) => {
+                    // Defaults describe a style, not colors captured from somebody else’s source.
+                    config.adaptive_palette = None;
                     let mut studio = shell.studio.borrow_mut();
                     if !concat_project::canvas_preset::ACTIVE_PRESETS.contains(&config.preset) {
                         app.global::<CanvasPresets>().set_default_status("Retired Canvas presets cannot be saved as defaults.".into());

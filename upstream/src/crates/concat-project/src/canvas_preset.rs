@@ -71,8 +71,12 @@ pub struct Config {
     pub radius: f64,
     pub border_color: String,
     pub border_width: f64,
-    /// `source`, `blur`, `color`, or `none`.
+    /// `source`, `blur`, `color`, `none`, or `adaptive`.
     pub background: String,
+    /// Stable, source-derived background and accent colors. Unresolved in library profiles;
+    /// resolved exactly once per source by the desktop before committing the edit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adaptive_palette: Option<[String; 2]>,
     pub blur: f64,
     pub background_color: String,
     pub background_tint: String,
@@ -99,6 +103,33 @@ fn default_shadow_color() -> String { "#000000".into() }
 fn default_mat_color() -> String { "#ffffff".into() }
 fn color(s: &str) -> bool {
     matches!(s.len(), 7 | 9) && s.starts_with('#') && s[1..].bytes().all(|b| b.is_ascii_hexdigit())
+}
+/// Quantize visible original-source pixels into 4-bit RGB bins and average
+/// the two most frequent distinct colors. Sampling and tie breaks are stable;
+/// transparent pixels do not contribute. The darker base and brighter accent
+/// preserve the source hue without competing with the foreground.
+pub fn adaptive_palette(rgba: &[u8]) -> Option<[String; 2]> {
+    let mut bins = vec![[0u32; 4]; 4096];
+    let stride = (rgba.len() / 4 / 4096).max(1);
+    for pixel in rgba.chunks_exact(4).step_by(stride) {
+        if pixel[3] < 128 { continue; }
+        let key = ((pixel[0] as usize >> 4) << 8)
+            | ((pixel[1] as usize >> 4) << 4) | (pixel[2] as usize >> 4);
+        let bin = &mut bins[key];
+        bin[0] += 1;
+        for channel in 0..3 { bin[channel + 1] += u32::from(pixel[channel]); }
+    }
+    let mut ranked: Vec<_> = bins.into_iter().enumerate().filter(|(_, b)| b[0] > 0).collect();
+    ranked.sort_by_key(|(index, bin)| (std::cmp::Reverse(bin[0]), *index));
+    let average = |b: &[u32; 4]| [b[1] / b[0], b[2] / b[0], b[3] / b[0]];
+    let primary = average(&ranked.first()?.1);
+    let secondary = ranked.iter().skip(1).map(|(_, b)| average(b)).find(|color|
+        (0..3).map(|i| color[i].abs_diff(primary[i])).sum::<u32>() >= 48
+    ).unwrap_or(primary);
+    let base = primary.map(|v| v / 2 + 8);
+    let accent = secondary.map(|v| v * 7 / 10 + 18);
+    let hex = |rgb: [u32; 3]| format!("#{:02x}{:02x}{:02x}", rgb[0], rgb[1], rgb[2]);
+    Some([hex(base), hex(accent)])
 }
 impl Config {
     pub fn preset(number: u32) -> Option<Self> {
@@ -229,6 +260,7 @@ impl Config {
                 0.0
             },
             background: bg.into(),
+            adaptive_palette: None,
             blur: if number == 3 { 0.75 } else { 0.0 },
             background_color: "#000000".into(),
             background_tint: "#000000".into(),
@@ -343,7 +375,7 @@ impl Config {
         }
         if !matches!(
             self.background.as_str(),
-            "source" | "blur" | "color" | "none"
+            "source" | "blur" | "color" | "none" | "adaptive"
         ) {
             return Err("Unknown canvas background mode".into());
         }
@@ -373,6 +405,9 @@ impl Config {
             if !color(value) {
                 return Err("Canvas colors must be #rrggbb[aa]".into());
             }
+        }
+        if self.adaptive_palette.as_ref().is_some_and(|palette| palette.iter().any(|value| !color(value) || value.len() != 7)) {
+            return Err("Adaptive Canvas palette requires two opaque #rrggbb colors".into());
         }
         for label in [&self.headline, &self.badge] {
             if !label.rect.validate()
@@ -793,6 +828,9 @@ pub fn apply(
 pub fn apply_with_confirmation(project: &mut Project, mint: &mut IdMint, config: Config,
     targets: Vec<String>, locked: Vec<String>, replace_conflicts: bool) -> Result<Outcome, CommandError> {
     config.validate().map_err(error)?;
+    if config.background == "adaptive" && config.adaptive_palette.is_none() {
+        return Err(error("Resolve the adaptive background palette from the original media before applying"));
+    }
     let conflicts = conflicts(project,&targets);
     if !replace_conflicts && !conflicts.is_empty() {
         return Err(error("Canvas conflicts with an authored mask or customized layer; confirm replacement or cancel"));
@@ -914,7 +952,9 @@ pub fn apply_with_confirmation(project: &mut Project, mint: &mut IdMint, config:
             mask.feather = 0.0;
             mask.invert = true;
             bg.mask = Some(mask);
-            bg.background = Some(if config.background == "color" {
+            bg.background = Some(if config.background == "adaptive" {
+                Background::Color { color: config.adaptive_palette.as_ref().expect("validated adaptive palette")[0].clone() }
+            } else if config.background == "color" {
                 Background::Color {
                     color: config.background_color.clone(),
                 }
@@ -968,6 +1008,11 @@ pub fn apply_with_confirmation(project: &mut Project, mint: &mut IdMint, config:
             layers.push(piece);
         };
         let rect = |x, y, width, height| Rect { x, y, width, height };
+        if config.background == "adaptive" {
+            let accent = &config.adaptive_palette.as_ref().expect("validated adaptive palette")[1];
+            decorate("adaptiveAccentLeft", true, rect(0.0, 0.0, 0.16, 1.0), accent, 0.0, 0.48, 0.0);
+            decorate("adaptiveAccentBottom", true, rect(0.0, 0.86, 1.0, 0.14), accent, 0.0, 0.32, 0.0);
+        }
         match config.preset {
             9 => {
                 decorate("broadcastSide", true, rect(0.0, 0.0, 0.18, 1.0), "#19395b", 0.0, 1.0, 0.0);
@@ -2105,6 +2150,33 @@ mod tests {
         }
         assert!(!ACTIVE_PRESETS.contains(&7) && !ACTIVE_PRESETS.contains(&8));
         assert!(Config::preset(7).is_some() && Config::preset(8).is_some());
+    }
+
+    #[test]
+    fn adaptive_palette_is_deterministic_and_ignores_transparent_pixels() {
+        let rgba = [[200, 40, 20, 255], [200, 40, 20, 255], [20, 80, 200, 255], [0, 255, 0, 0]].concat();
+        let palette = adaptive_palette(&rgba).unwrap();
+        assert_eq!(palette, ["#6c1c12".to_string(), "#204a9e".to_string()]);
+        assert_eq!(adaptive_palette(&rgba), Some(palette));
+        assert!(adaptive_palette(&[0, 0, 0, 0]).is_none());
+    }
+
+    #[test]
+    fn adaptive_colors_are_saved_and_clear_with_the_owned_background() {
+        let (mut p, mut mint) = fixture();
+        let mut cfg = Config::preset(3).unwrap();
+        cfg.background = "adaptive".into();
+        assert!(apply(&mut p, &mut mint, cfg.clone(), vec!["c1".into()], vec![]).is_err());
+        cfg.adaptive_palette = Some(["#6c1c12".into(), "#204a9e".into()]);
+        apply(&mut p, &mut mint, cfg.clone(), vec!["c1".into()], vec![]).unwrap();
+        let owner = p.active().clip("c1").unwrap();
+        assert_eq!(serde_json::from_value::<Config>(owner.extra["canvasPreset"].clone()).unwrap(), cfg);
+        let layers: Vec<_> = p.active().clips.iter().filter(|c| c.extra.get("canvasOwner") == Some(&json!("c1"))).collect();
+        assert!(layers.iter().any(|c| c.background == Some(Background::Color { color: "#6c1c12".into() })));
+        assert!(layers.iter().any(|c| c.extra.get("canvasRole") == Some(&json!("adaptiveAccentLeft"))));
+        assert_eq!(p.media.len(), 1);
+        clear(&mut p, vec!["c1".into()], vec![]).unwrap();
+        assert!(p.active().clips.iter().all(|c| !c.extra.contains_key("canvasOwner")));
     }
 
     #[test]

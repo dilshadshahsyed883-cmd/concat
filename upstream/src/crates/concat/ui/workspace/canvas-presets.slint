@@ -82,13 +82,17 @@ export component CanvasPresetPanel inherits VerticalLayout {
         Param { label: "Corner radius"; value: CanvasPresets.radius; minimum: 0; maximum: 0.5; step: 0.005; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("radius", v); } }
         Text { text: "Background"; color: Theme.fg-muted; font-size: Theme.fs-sm; }
         Select {
-            options: ["Source", "Blurred source", "Solid color", "None"];
+            options: ["Source", "Blurred source", "Solid color", "None", "Adaptive Colors"];
             current: CanvasPresets.background-mode;
             changed(index) => { CanvasPresets.edit-mode(index); }
         }
         if CanvasPresets.background-mode == 1: Param {
             label: "Blur softness"; value: CanvasPresets.blur; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction;
             changed(v) => { CanvasPresets.edit-number("blur", v); }
+        }
+        if CanvasPresets.background-mode == 4: Text {
+            text: "Extract dominant colors from the original media once. Video colors stay stable during playback.";
+            color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
         }
         if CanvasPresets.background-mode == 2: ColourField {
             label: "Background color"; value: CanvasPresets.background-color;

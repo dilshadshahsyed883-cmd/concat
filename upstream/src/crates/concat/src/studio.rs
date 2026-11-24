@@ -4160,6 +4160,67 @@ impl Studio {
 
     fn stage_canvas_plans(&mut self, plans:Vec<(concat_project::canvas_preset::Config,Vec<String>)>) {
         self.flush_commit();
+        if !plans.iter().any(|(config, _)| config.background == "adaptive") {
+            self.stage_resolved_canvas_plans(plans);
+            return;
+        }
+        // Resolve original-source colors outside the UI thread. Each source
+        // is sampled once, independent of the playback cursor, and each
+        // target receives its own resolved profile. Never use a fake palette.
+        let mut work = Vec::new();
+        for (config, ids) in plans {
+            if config.background != "adaptive" {
+                work.push((config, ids, None));
+                continue;
+            }
+            for id in ids {
+                let Some(source) = self.timeline().clip(&id).and_then(|clip| self.project().media_by_id(&clip.media_id)) else {
+                    self.notify("Cannot resolve adaptive colors: original media is unavailable.", true);
+                    return;
+                };
+                let at = if source.kind == model::MediaKind::Image { 0.0 }
+                    else { source.duration.map_or(0.0, |duration| (duration * 0.25).min(2.0)) };
+                work.push((config.clone(), vec![id], Some((source.path.clone(), at))));
+            }
+        }
+        if work.is_empty() { self.notify("Select eligible image/video media first.", true); return; }
+        let revision = self.revision;
+        let timeline_id = self.timeline().id.clone();
+        self.notify("Extracting adaptive colors from original media…", false);
+        spawn_in_project(move || {
+            let mut palettes = HashMap::<String, [String; 2]>::new();
+            let mut resolved = Vec::new();
+            for (mut config, ids, source) in work {
+                if let Some((path, at)) = source {
+                    let palette = if let Some(palette) = palettes.get(&path) {
+                        palette.clone()
+                    } else {
+                        let frame = media::still_at(&path, at, 160)
+                            .map_err(|e| format!("Cannot decode original media for adaptive colors: {e}"))?;
+                        let palette = concat_project::canvas_preset::adaptive_palette(frame.pixels())
+                            .ok_or_else(|| "No visible source pixels for adaptive colors.".to_string())?;
+                        palettes.insert(path, palette.clone());
+                        palette
+                    };
+                    config.adaptive_palette = Some(palette);
+                }
+                resolved.push((config, ids));
+            }
+            Ok::<_, String>(resolved)
+        }, move |studio, _, _, result| {
+            if studio.revision != revision || studio.timeline().id != timeline_id {
+                studio.notify("Timeline changed during adaptive color extraction; apply again.", true);
+                return;
+            }
+            match result {
+                Ok(plans) => studio.stage_resolved_canvas_plans(plans),
+                Err(reason) => studio.notify(&reason, true),
+            }
+        });
+    }
+
+    fn stage_resolved_canvas_plans(&mut self, plans:Vec<(concat_project::canvas_preset::Config,Vec<String>)>) {
+        self.flush_commit();
         let locked_tracks:Vec<_>=self.timeline().tracks.iter().filter(|t|self.locked(&t.id)).map(|t|t.id.clone()).collect();
         let targets:Vec<_>=plans.iter().flat_map(|(_,ids)|ids.iter().cloned()).collect();
         if targets.is_empty() {self.notify("Select eligible image/video media first.",true);return;}
