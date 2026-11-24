@@ -1170,6 +1170,30 @@ mod tests {
     }
 
     #[test]
+    fn canvas_preset_and_physics_animation_coexist_in_both_orders() {
+        use crate::motion_preset::{generated_ownership, replace_generated};
+        use crate::physics_motion::PhysicsPreset;
+        for physics_first in [true,false] {
+            let (mut project,mut mint)=fixture();
+            if !physics_first {
+                apply(&mut project,&mut mint,Config::preset(6).unwrap(),vec!["c1".into()],vec![]).unwrap();
+            }
+            let clip=project.active_mut().clip_mut("c1").unwrap();
+            let p=PhysicsPreset::SpringZoom;
+            let keys=p.keys(clip,1.0/30.0).unwrap().0;
+            replace_generated(clip,&[],keys,p.id().into(),None).unwrap();
+            let keys=clip.keys.clone();
+            if physics_first {
+                apply(&mut project,&mut mint,Config::preset(6).unwrap(),vec!["c1".into()],vec![]).unwrap();
+            }
+            let clip=project.active().clip("c1").unwrap();
+            assert_eq!(clip.keys,keys);
+            assert_eq!(generated_ownership(clip).unwrap().preset,p.id());
+            assert!(crate::canvas_viewport::Viewport::of(clip).is_some());
+        }
+    }
+
+    #[test]
     fn canvas_preset_does_not_silently_delete_manually_edited_canvas_animation() {
         let (mut project,mut mint)=fixture();
         let clip=project.active_mut().clip_mut("c1").unwrap();
