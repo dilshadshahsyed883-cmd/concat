@@ -91,14 +91,15 @@ class SharedLayoutContractTests(unittest.TestCase):
         for retired in ("Cinema Frame", "Editorial Panel"):
             self.assertNotIn(retired, self.canvas)
         model = source(ROOT.parent / "concat-project/src/canvas_preset.rs")
-        self.assertIn("pub const ACTIVE_PRESETS: [u32; 13] = [1, 2, 3, 4, 5, 6, 9, 12, 13, 14, 15, 16, 18];", model)
+        self.assertIn("pub const ACTIVE_PRESETS: [u32; 16] = [1, 2, 3, 4, 5, 6, 9, 12, 13, 14, 15, 16, 18, 11, 19, 20];", model)
         self.assertIn("7 => { // Cinema Frame", model)
         self.assertIn("8 => { // Editorial Panel", model)
         self.assertIn('property <[string]> names:', self.canvas)
-        self.assertIn('property <[int]> ids: [1, 2, 3, 4, 5, 6, 9, 12, 13, 14, 15, 16, 18];', self.canvas)
+        self.assertIn('property <[int]> ids: [1, 2, 3, 4, 5, 6, 9, 12, 13, 14, 15, 16, 18, 11, 19, 20];', self.canvas)
         self.assertIn('CanvasPresets.toggle-favourite(root.ids[index]);', self.canvas)
         for name in ("Broadcast Edge", "Focus Island", "Diagonal Cut", "Projector Slide",
-                     "Browser Window", "Taped Memory", "Broken Grid"):
+                     "Browser Window", "Taped Memory", "Broken Grid", "Mirror Stage",
+                     "Image Echo", "Edge Bleed"):
             self.assertIn(name, self.canvas)
         self.assertIn('CanvasPresets.edit-number("borderWidth", v);', self.canvas)
         self.assertIn('CanvasPresets.edit-colour("borderColor", c);', self.canvas)

@@ -144,6 +144,10 @@ fn canvas_publish(app: &App, config: &concat_project::canvas_preset::Config) {
     panel.set_shadow_offset(config.shadow_offset as f32);
     panel.set_mat_bottom(config.mat_bottom as f32);
     panel.set_rotation(config.rotation as f32);
+    panel.set_derivative_opacity(config.derivative_opacity as f32);
+    panel.set_bleed_edge(match config.bleed_edge.as_str() {
+        "right" => 1, "top" => 2, "bottom" => 3, _ => 0,
+    });
     panel.set_background_mode(match config.background.as_str() {
         "blur" => 1, "color" => 2, "none" => 3, _ => 0,
     });
@@ -924,6 +928,12 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                     "shadowOffset" => config.shadow_offset = value,
                     "matBottom" => config.mat_bottom = value,
                     "rotation" => config.rotation = value,
+                    "derivativeOpacity" => config.derivative_opacity = value,
+                    "bleedEdge" => {
+                        if let Some(edge) = ["left", "right", "top", "bottom"].get(value as usize) {
+                            config.set_bleed_edge(edge);
+                        }
+                    }
                     _ => {}
                 }
             });

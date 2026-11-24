@@ -92,11 +92,19 @@ pub struct Config {
     /// Foreground and native decorative shape tilt; legacy profiles keep their source rotation.
     #[serde(default)]
     pub rotation: f64,
+    /// Strength of the owned same-source reflection or echo, not the foreground.
+    #[serde(default = "default_derivative_opacity")]
+    pub derivative_opacity: f64,
+    /// Which edge anchors Edge Bleed's contain-fit opening.
+    #[serde(default = "default_bleed_edge")]
+    pub bleed_edge: String,
     pub headline: Label,
     pub badge: Label,
 }
 fn default_shadow_color() -> String { "#000000".into() }
 fn default_mat_color() -> String { "#ffffff".into() }
+fn default_derivative_opacity() -> f64 { 0.22 }
+fn default_bleed_edge() -> String { "left".into() }
 fn color(s: &str) -> bool {
     matches!(s.len(), 7 | 9) && s.starts_with('#') && s[1..].bytes().all(|b| b.is_ascii_hexdigit())
 }
@@ -239,6 +247,8 @@ impl Config {
             mat_bottom: 0.0,
             mat_color: default_mat_color(),
             rotation: 0.0,
+            derivative_opacity: default_derivative_opacity(),
+            bleed_edge: default_bleed_edge(),
             headline,
             badge,
         };
@@ -333,6 +343,26 @@ impl Config {
                 config.border_color = "#d8e3dc".into();
                 config.border_width = 0.004;
             }
+            11 => { // Mirror Stage: real vertically reflected source below the picture.
+                config.foreground = Rect { x: 0.10, y: 0.05, width: 0.80, height: 0.63 };
+                config.background = "color".into();
+                config.background_color = "#111923".into();
+                config.border_width = 0.0;
+                config.derivative_opacity = 0.24;
+            }
+            19 => { // Image Echo: enlarged, offset copies behind the original.
+                config.foreground = Rect { x: 0.17, y: 0.16, width: 0.66, height: 0.68 };
+                config.background = "color".into();
+                config.background_color = "#142135".into();
+                config.radius = 0.012;
+                config.derivative_opacity = 0.25;
+            }
+            20 => { // Edge Bleed: edge-aligned sharp source with asymmetric space.
+                config.foreground = Rect { x: 0.0, y: 0.04, width: 0.87, height: 0.92 };
+                config.background = "color".into();
+                config.background_color = "#192a3e".into();
+                config.border_width = 0.0;
+            }
             _ => {}
         }
         Some(config)
@@ -355,10 +385,14 @@ impl Config {
             ("shadowOpacity", self.shadow_opacity, 1.0),
             ("shadowOffset", self.shadow_offset, 0.08),
             ("matBottom", self.mat_bottom, 0.2),
+            ("derivativeOpacity", self.derivative_opacity, 1.0),
         ] {
             if !value.is_finite() || value < 0.0 || value > max {
                 return Err(format!("Invalid canvas {name}"));
             }
+        }
+        if !matches!(self.bleed_edge.as_str(), "left" | "right" | "top" | "bottom") {
+            return Err("Unknown Canvas bleed edge".into());
         }
         if !self.rotation.is_finite() || self.rotation.abs() > 12.0 {
             return Err("Invalid canvas rotation (max 12 degrees)".into());
@@ -452,6 +486,18 @@ impl Config {
             return Err(error);
         }
         Ok(())
+    }
+    /// Align the opening to the chosen canvas edge without changing its size.
+    pub fn set_bleed_edge(&mut self, edge: &str) {
+        if self.preset != 20 { return; }
+        match edge {
+            "left" => self.foreground.x = 0.0,
+            "right" => self.foreground.x = 1.0 - self.foreground.width,
+            "top" => self.foreground.y = 0.0,
+            "bottom" => self.foreground.y = 1.0 - self.foreground.height,
+            _ => return,
+        }
+        self.bleed_edge = edge.into();
     }
     pub fn from_json(source: &str) -> Result<Self, String> {
         if source.len() > 65536 {
@@ -684,9 +730,9 @@ pub(crate) fn reconcile_companions(before: &Project, after: &mut Project) {
                 || owner.source_start != previous.source_start || owner.speed != previous.speed
                 || owner.speed_curve != previous.speed_curve;
             if !owner_changed { continue; }
-            let backdrop = piece.extra.get("canvasRole").and_then(Value::as_str) == Some("backdrop");
+            let source_companion = matches!(piece.kind, ClipKind::Image | ClipKind::Video);
             if piece.start == owner.start && piece.duration == owner.duration
-                && (!backdrop || (piece.source_start == owner.source_start && piece.speed == owner.speed
+                && (!source_companion || (piece.source_start == owner.source_start && piece.speed == owner.speed
                     && piece.speed_curve == owner.speed_curve)) { continue; }
             let untouched = untouched_companion(piece);
             let piece = Arc::make_mut(piece);
@@ -699,7 +745,7 @@ pub(crate) fn reconcile_companions(before: &Project, after: &mut Project) {
             }
             piece.start = owner.start;
             piece.duration = owner.duration;
-            if backdrop {
+            if source_companion {
                 piece.source_start = owner.source_start;
                 piece.speed = owner.speed;
                 piece.speed_curve = owner.speed_curve.clone();
@@ -848,12 +894,21 @@ pub fn apply_with_confirmation(project: &mut Project, mint: &mut IdMint, config:
         let fw = sw * fit;
         let fh = sh * fit;
         let scale = (config.foreground.width * w / fw).min(config.foreground.height * h / fh);
-        let actual = Rect {
+        let mut actual = Rect {
             x: config.foreground.x + (config.foreground.width - fw * scale / w) / 2.0,
             y: config.foreground.y + (config.foreground.height - fh * scale / h) / 2.0,
             width: fw * scale / w,
             height: fh * scale / h,
         };
+        if config.preset == 20 {
+            match config.bleed_edge.as_str() {
+                "left" => actual.x = config.foreground.x,
+                "right" => actual.x = config.foreground.x + config.foreground.width - actual.width,
+                "top" => actual.y = config.foreground.y,
+                "bottom" => actual.y = config.foreground.y + config.foreground.height - actual.height,
+                _ => unreachable!("validated bleed edge"),
+            }
+        }
         let border_w = config.border_width * h / w;
         if actual.x < border_w
             || actual.y < config.border_width
@@ -969,6 +1024,11 @@ pub fn apply_with_confirmation(project: &mut Project, mint: &mut IdMint, config:
         };
         let rect = |x, y, width, height| Rect { x, y, width, height };
         match config.preset {
+            11 => {
+                let floor_y = (actual.y + actual.height + 0.012).min(1.0);
+                decorate("mirrorFloor", true, rect(0.0, floor_y, 1.0, 1.0 - floor_y),
+                    "#26313f", 0.0, 1.0, 0.0);
+            }
             9 => {
                 decorate("broadcastSide", true, rect(0.0, 0.0, 0.18, 1.0), "#19395b", 0.0, 1.0, 0.0);
                 decorate("broadcastAccent", true, rect(0.025, 0.09, 0.018, 0.66), "#f33748", 0.0, 1.0, 0.0);
@@ -1034,6 +1094,61 @@ pub fn apply_with_confirmation(project: &mut Project, mint: &mut IdMint, config:
             _ => {}
         }
         drop(decorate);
+        // These source derivatives use the same media ID and current playback
+        // window. Never copy audio, authored effects, transitions or motion.
+        // They are ordinary, owned visual clips in both renderers.
+        let mut derive_source = |role: &str| -> Clip {
+            let lane = track(&mut staged, mint, &original.track_id, role, true);
+            let mut piece = Clip::blank(mint.next("c"), &lane, original.kind,
+                format!("Canvas {role}"), original.start, original.duration);
+            piece.media_id = original.media_id.clone();
+            piece.source_start = original.source_start;
+            piece.speed = original.speed;
+            piece.speed_curve = original.speed_curve.clone();
+            piece.volume = 0.0;
+            piece.muted = Some(true);
+            piece.flip_h = original.flip_h;
+            piece.flip_v = original.flip_v;
+            piece.background = Some(Background::None);
+            piece.opacity = config.derivative_opacity;
+            piece
+        };
+        if config.preset == 11 && config.derivative_opacity > 0.0 {
+            let top = actual.y + actual.height + 0.012;
+            let height = (actual.height * 0.30).min(1.0 - top);
+            if height > 0.005 {
+                let mut reflected = derive_source("mirrorReflection");
+                reflected.flip_v = !original.flip_v;
+                // The reflection's top samples the bottom of the original
+                // picture. Crop it in output space rather than squashing it.
+                let aperture = Rect { x: actual.x, y: top, width: actual.width, height };
+                let (x, y) = aperture.center();
+                reflected.offset_y = (actual.height - height) / (2.0 * scale);
+                reflected.rotation = -config.rotation;
+                let viewport = crate::canvas_viewport::Viewport { version: 1, scale, x, y,
+                    width: aperture.width, height: aperture.height, rotation: 0.0, radius: 0.0 };
+                if viewport.valid() {
+                    reflected.extra.insert(crate::canvas_viewport::KEY.into(), json!(viewport));
+                    layers.push(tagged(reflected, &id, "mirrorReflection"));
+                }
+            }
+        }
+        if config.preset == 19 && config.derivative_opacity > 0.0 {
+            let (x, y) = actual.center();
+            for (role, dx, factor, strength) in [
+                ("echoFar", -0.09, 1.32, 0.65),
+                ("echoNear", 0.09, 1.18, 1.0),
+            ] {
+                let mut echo = derive_source(role);
+                echo.scale = scale * factor;
+                echo.offset_x = x + dx;
+                echo.offset_y = y + 0.018;
+                echo.rotation = config.rotation;
+                echo.opacity *= strength;
+                layers.push(tagged(echo, &id, role));
+            }
+        }
+        drop(derive_source);
         // Native decorative shapes stay tied to this same source and are
         // replaced atomically on reapply. No separate media slot is created.
         if config.shadow_opacity > 0.0 {
@@ -1177,9 +1292,9 @@ pub fn apply_with_confirmation(project: &mut Project, mint: &mut IdMint, config:
 
 
 /// Catalogue retirement is an editor policy, not a change to legacy decoding.
-pub const ACTIVE_PRESETS: [u32; 13] = [1, 2, 3, 4, 5, 6, 9, 12, 13, 14, 15, 16, 18];
+pub const ACTIVE_PRESETS: [u32; 16] = [1, 2, 3, 4, 5, 6, 9, 12, 13, 14, 15, 16, 18, 11, 19, 20];
 /// Retired IDs 7 and 8 remain decodable. Unimplemented IDs are reserved.
-const DECODABLE_PRESETS: [u32; 15] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 15, 16, 18];
+const DECODABLE_PRESETS: [u32; 18] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 15, 16, 18, 11, 19, 20];
 
 /// Clear only known Canvas-owned layout data. A customized or protected
 /// companion cannot be silently discarded. The old snapshot is used solely
@@ -2107,6 +2222,54 @@ mod tests {
         assert!(Config::preset(7).is_some() && Config::preset(8).is_some());
     }
 
+    #[test]
+    fn source_derivatives_share_original_playback_and_edge_bleed_anchors() {
+        for id in [11, 19] {
+            let (mut p, mut mint) = fixture();
+            let source = p.active().clip("c1").unwrap().clone();
+            apply(&mut p, &mut mint, Config::preset(id).unwrap(), vec!["c1".into()], vec![]).unwrap();
+            let derived: Vec<_> = p.active().clips.iter().filter(|c|
+                c.extra.contains_key("canvasOwner") && c.kind == ClipKind::Video
+                && c.extra.get("canvasRole") != Some(&json!("backdrop"))).collect();
+            assert_eq!(derived.len(), if id == 11 { 1 } else { 2 });
+            for piece in derived {
+                assert_eq!(piece.media_id, source.media_id);
+                assert_eq!(piece.source_start, source.source_start);
+                assert_eq!(piece.duration, source.duration);
+                assert_eq!(piece.muted, Some(true));
+                assert_eq!(piece.volume, 0.0);
+                if id == 11 {
+                    assert_ne!(piece.flip_v, source.flip_v);
+                    assert!(crate::canvas_viewport::Viewport::of(piece).is_some());
+                } else { assert!(piece.scale > 0.0); }
+            }
+            let before = p.clone();
+            p.active_mut().clip_mut("c1").unwrap().source_start += 0.5;
+            reconcile_companions(&before, &mut p);
+            for piece in p.active().clips.iter().filter(|c| c.extra.contains_key("canvasOwner") && c.kind == ClipKind::Video) {
+                assert_eq!(piece.source_start, source.source_start + 0.5);
+            }
+            clear(&mut p, vec!["c1".into()], vec![]).unwrap();
+            assert_eq!(p.active().clips.len(), 1);
+        }
+        for edge in ["left", "right", "top", "bottom"] {
+            for landscape in [false, true] {
+                let (mut p, mut mint) = fixture();
+                if landscape { p.media[0].width = Some(1920); p.media[0].height = Some(1080); }
+                let mut config = Config::preset(20).unwrap();
+                config.set_bleed_edge(edge);
+                apply(&mut p, &mut mint, config, vec!["c1".into()], vec![]).unwrap();
+                let view = crate::canvas_viewport::Viewport::of(p.active().clip("c1").unwrap()).unwrap();
+                let distance = match edge {
+                    "left" => view.x + 0.5 - view.width / 2.0,
+                    "right" => 0.5 - view.x - view.width / 2.0,
+                    "top" => view.y + 0.5 - view.height / 2.0,
+                    _ => 0.5 - view.y - view.height / 2.0,
+                };
+                assert!(distance.abs() < 1e-8, "{edge} {landscape}: {distance}");
+            }
+        }
+    }
     #[test]
     fn picture_size_rejects_nonfinite_or_invalid_values_without_mutating() {
         let mut config = Config::preset(4).unwrap();

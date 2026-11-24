@@ -29,6 +29,8 @@ export global CanvasPresets {
     in property <float> shadow-offset: 0;
     in property <float> mat-bottom: 0;
     in property <float> rotation: 0;
+    in property <float> derivative-opacity: 0.22;
+    in property <int> bleed-edge: 0;
     in property <int> background-mode: 0;
     in property <color> border-color: #ff153a;
     in property <color> background-color: #000000;
@@ -63,7 +65,10 @@ export component CanvasPresetPanel inherits VerticalLayout {
             : CanvasPresets.selected == 14 ? "Projector Slide"
             : CanvasPresets.selected == 15 ? "Browser Window"
             : CanvasPresets.selected == 16 ? "Taped Memory"
-            : "Broken Grid";
+            : CanvasPresets.selected == 18 ? "Broken Grid"
+            : CanvasPresets.selected == 11 ? "Mirror Stage"
+            : CanvasPresets.selected == 19 ? "Image Echo"
+            : "Edge Bleed";
         color: Theme.fg-muted; font-size: Theme.fs-sm;
     }
     VerticalLayout {
@@ -106,6 +111,25 @@ export component CanvasPresetPanel inherits VerticalLayout {
             spacing: 4px;
             Param { label: "Print bottom mat"; value: CanvasPresets.mat-bottom; minimum: 0; maximum: 0.2; step: 0.005; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("matBottom", v); } }
             ColourField { label: "Print mat color"; value: CanvasPresets.mat-color; changed(c) => { CanvasPresets.edit-colour("matColor", c); } }
+        }
+        if CanvasPresets.selected == 14: ColourField {
+            label: "Projector mount color"; value: CanvasPresets.mat-color;
+            changed(c) => { CanvasPresets.edit-colour("matColor", c); }
+        }
+        if CanvasPresets.selected == 11 || CanvasPresets.selected == 19: Param {
+            label: CanvasPresets.selected == 11 ? "Reflection opacity" : "Echo opacity";
+            value: CanvasPresets.derivative-opacity; minimum: 0; maximum: 1;
+            step: 0.01; fmt: ParamFormat.fraction;
+            changed(v) => { CanvasPresets.edit-number("derivativeOpacity", v); }
+        }
+        if CanvasPresets.selected == 20: VerticalLayout {
+            spacing: 4px;
+            Text { text: "Bleed edge"; color: Theme.fg-muted; font-size: Theme.fs-sm; }
+            Select {
+                options: ["Left", "Right", "Top", "Bottom"];
+                current: CanvasPresets.bleed-edge;
+                changed(index) => { CanvasPresets.edit-number("bleedEdge", index); }
+            }
         }
         if CanvasPresets.selected >= 4: Param {
             label: "Rotation"; value: CanvasPresets.rotation; minimum: -12; maximum: 12; step: 1; fmt: ParamFormat.degrees;
@@ -169,9 +193,9 @@ export component CanvasPresetClearBar inherits VerticalLayout {
 }
 
 export component CanvasPresetLibrary inherits VerticalLayout {
-    property <[string]> names: ["Sports Frame", "Orange Frame", "Adaptive Blur (Blurred Fill)", "Gallery Mat", "Floating Card", "Photo Print", "Broadcast Edge", "Focus Island", "Diagonal Cut", "Projector Slide", "Browser Window", "Taped Memory", "Broken Grid"];
+    property <[string]> names: ["Sports Frame", "Orange Frame", "Adaptive Blur (Blurred Fill)", "Gallery Mat", "Floating Card", "Photo Print", "Broadcast Edge", "Focus Island", "Diagonal Cut", "Projector Slide", "Browser Window", "Taped Memory", "Broken Grid", "Mirror Stage", "Image Echo", "Edge Bleed"];
     // Catalogue position is NOT the persistent ID. Retired 7/8 stay retired.
-    property <[int]> ids: [1, 2, 3, 4, 5, 6, 9, 12, 13, 14, 15, 16, 18];
+    property <[int]> ids: [1, 2, 3, 4, 5, 6, 9, 12, 13, 14, 15, 16, 18, 11, 19, 20];
     property <bool> favourites-only: false;
     // Dense positions in the Favorites view, following AnimationFavoriteCards.
     pure function is-starred(index: int) -> bool {
@@ -262,17 +286,23 @@ export component CanvasPresetLibrary inherits VerticalLayout {
                     : index == 9 ? #ddd2b9
                     : index == 10 ? #34465e
                     : index == 11 ? #d6c5aa
-                    : index == 12 ? #355f61 : #596e8f;
+                    : index == 12 ? #355f61
+                    : index == 13 ? #111923
+                    : index == 14 ? #142135
+                    : index == 15 ? #192a3e : #596e8f;
+                if index == 13: Rectangle { x: 9px; y: 33px; width: 36px; height: 8px; background: #465466; }
+                if index == 14: Rectangle { x: 3px; y: 4px; width: 41px; height: 38px; background: #506785; }
+                if index == 14: Rectangle { x: 12px; y: 5px; width: 40px; height: 35px; background: #415774; }
                 if index == 6: Rectangle { x: 2px; y: 4px; width: 4px; height: 36px; background: #f33748; }
                 if index == 8: Rectangle { x: 3px; y: 0px; width: 12px; height: 46px; background: #263d66; }
                 if index == 9: Rectangle { x: 4px; y: 3px; width: 46px; height: 40px; background: #ddd2b9; border-width: 2px; border-color: #514638; }
                 if index == 10: Rectangle { x: 6px; y: 3px; width: 42px; height: 7px; background: #d9e2ee; }
                 if index == 12: Rectangle { x: 35px; y: 28px; width: 17px; height: 16px; background: #c67c51; }
                 Rectangle {
-                    x: 8px;
-                    y: index == 5 ? 5px : index == 10 ? 11px : 7px;
+                    x: index == 15 ? 0px : 8px;
+                    y: index == 5 ? 5px : index == 10 ? 11px : index == 13 ? 4px : 7px;
                     width: 38px;
-                    height: index == 5 || index == 10 ? 29px : 32px;
+                    height: index == 13 ? 27px : index == 5 || index == 10 ? 29px : 32px;
                     background: #8899ac;
                     border-radius: index == 4 || index == 7 ? 5px : 1px;
                     border-width: index < 2 || index == 11 ? 2px : 0px;
@@ -308,7 +338,10 @@ export component CanvasPresetLibrary inherits VerticalLayout {
                     : index == 9 ? "Mounted transparency"
                     : index == 10 ? "Digital window frame"
                     : index == 11 ? "Decorative photo tape"
-                    : "Staggered background blocks";
+                    : index == 12 ? "Staggered background blocks"
+                    : index == 13 ? "Same-source floor reflection"
+                    : index == 14 ? "Enlarged source echoes"
+                    : "Edge-aligned picture";
                 color: Theme.fg-muted;
                 font-size: Theme.fs-sm;
             }
