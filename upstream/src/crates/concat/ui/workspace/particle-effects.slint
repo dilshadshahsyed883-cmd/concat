@@ -76,23 +76,27 @@ export component EffectSettings inherits VerticalLayout {
                 changed(colour) => { ParticleBulk.change-colour(ParticleBulk.draft-id, c.key, colour); }
             }
         }
-        HorizontalLayout {
-            spacing: 6px;
-            Button {
-                label: "Save as Default";
-                clicked => { ParticleBulk.save-default(ParticleBulk.draft-id); }
-            }
-            Button {
-                label: "Reset Default";
-                clicked => { ParticleBulk.reset-default(ParticleBulk.draft-id); }
-            }
-        }
     }
     if LibraryFocus.selected-id == "" || ParticleBulk.draft-id != LibraryFocus.selected-id: Text {
         text: "Select a Color or Particle card to edit its supported settings.";
         color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
     }
 }
+// Fixed footer, shared by Color, Particles and Favorites, outside PaneScroll.
+export component EffectDefaultBar inherits HorizontalLayout {
+    padding-left: 8px;
+    padding-right: 8px;
+    spacing: 6px;
+    Button {
+        label: "Save Default";
+        clicked => { ParticleBulk.save-default(ParticleBulk.draft-id); }
+    }
+    Button {
+        label: "Reset Default";
+        clicked => { ParticleBulk.reset-default(ParticleBulk.draft-id); }
+    }
+}
+
 export component ParticleEffectsPanel inherits VerticalLayout {
     property <int> preset <=> ParticleBulk.preset;
     property <bool> images <=> Keyframes.animation-images;

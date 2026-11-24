@@ -63,6 +63,26 @@ class SharedLayoutContractTests(unittest.TestCase):
         self.assertIn("if root.tab == 6: VerticalLayout {", self.media)
         self.assertNotIn("if root.tab == 6: PaneScroll {", self.media)
 
+    def test_effect_defaults_fixed_and_particle_parameters_are_browser_only(self):
+        settings, footer = self.particle.split("export component EffectDefaultBar", 1)
+        self.assertNotIn("ParticleBulk.save-default(", settings)
+        self.assertNotIn("ParticleBulk.reset-default(", settings)
+        self.assertIn('label: "Save Default"', footer)
+        self.assertIn('label: "Reset Default"', footer)
+        self.assertIn("ParticleBulk.save-default(ParticleBulk.draft-id);", footer)
+        self.assertIn("ParticleBulk.reset-default(ParticleBulk.draft-id);", footer)
+        self.assertIn("ParticleBulk.draft-id == LibraryFocus.selected-id: EffectDefaultBar", self.inspector)
+        self.assertLess(self.inspector.index("EffectDefaultBar { }"), self.inspector.index("if LibraryFocus.page == 9: ParticleApplyBar"))
+        studio = source(SRC / "studio.rs")
+        browser = studio.split("fn effect_draft_rows(", 1)[1].split("pub fn effect_select(", 1)[0]
+        self.assertIn("params.retain(|p| particle_browser_param_visible", browser)
+        self.assertIn("key: PARTICLE_BROWSER_RGB.into()", browser)
+        self.assertIn('channel("red"), channel("green"), channel("blue")', browser)
+        colour = studio.split("pub fn effect_set_colour(", 1)[1].split("pub fn effect_save_default(", 1)[0]
+        self.assertIn("PARTICLE_BROWSER_RGB_KEYS.into_iter().zip(channels)", colour)
+        self.assertIn("draft.extend(values.into_iter()", colour)
+        self.assertIn("self.request_preview();", colour)
+
     def test_caption_favourites_do_not_stage_or_apply(self):
         self.assertIn("callback toggle-favourite(id: string);", self.caption)
         self.assertIn("callback filter-favourites(on: bool);", self.caption)
