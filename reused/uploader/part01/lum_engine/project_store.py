@@ -28,7 +28,7 @@ def parse_time(value: str | None) -> datetime | None:
     except ValueError:
         return None
 
-    
+
 def concat_grace_until(created_at: str | None) -> datetime | None:
     created = parse_time(created_at)
     return created + timedelta(seconds=CONCAT_UPLOAD_GRACE_SECONDS) if created else None

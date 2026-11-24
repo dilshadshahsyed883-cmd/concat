@@ -25,8 +25,13 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from lum_engine.config import DATA_ROOT, STAGING_ROOT
-from lum_engine.project_store import ProjectStore
+from lum_engine.project_store import ProjectStore, concat_grace_until
 from lum_engine.studio_tenants import StudioTenants
+from unittest.mock import patch
+from lum_engine import project_store
+
+assert concat_grace_until("2026-11-24T12:00:00+00:00").isoformat() == "2026-11-24T12:05:00+00:00"
+assert concat_grace_until("not-a-date") is None
 
 assert DATA_ROOT.name == "concat-only"
 assert STAGING_ROOT.is_dir() or not STAGING_ROOT.exists()
@@ -62,6 +67,17 @@ assert store.owner_queue_paused("owner2") is False
 assert store.claim_next_eligible() is None, "New work must wait five minutes"
 assert store.next_eligible() is None
 store.set_owner_queue_paused("owner2", True)
+created = datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc)
+with store.connect() as con:
+    con.execute("UPDATE projects SET created_at=?", (created.isoformat(),))
+# Exact boundary without sleeps: one second early cannot claim, 300s can.
+with patch.object(project_store, "datetime", wraps=datetime) as clock:
+    clock.now.return_value = created + timedelta(seconds=299)
+    assert store.claim_next_eligible() is None
+    clock.now.return_value = created + timedelta(seconds=300)
+    assert store.next_eligible()["id"] == a
+    assert store.claim_next_eligible()["id"] == a
+store.recover_wrapper_states()
 with store.connect() as con:
     con.execute("UPDATE projects SET created_at=?", ((datetime.now(timezone.utc) - timedelta(minutes=6)).isoformat(),))
 assert [x["id"] for x in store.list(owner="owner1")] == [a]
