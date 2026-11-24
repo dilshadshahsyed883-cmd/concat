@@ -13,7 +13,12 @@ FACES = {
 def resolve_font(family, weight):
     if not isinstance(family, str) or type(weight) not in (int, float):
         raise ValueError("Unsupported caption styling fontFamily or fontWeight")
-    filename = FACES.get(family.strip('"'), {}).get(weight)
+    family = family.strip('"')
+    # Older desktop caption presets serialized Archivo Black as 900 even
+    # though the only shipped face (and desktop-selected face) is regular.
+    if family == "Archivo Black" and weight == 900:
+        weight = 400
+    filename = FACES.get(family, {}).get(weight)
     if filename is None:
         raise ValueError("Unsupported caption styling fontFamily or fontWeight; choose a shipped font face")
     packaged = Path(__file__).with_name("fonts") / filename
