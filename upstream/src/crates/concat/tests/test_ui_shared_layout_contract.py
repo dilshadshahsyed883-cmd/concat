@@ -155,6 +155,16 @@ class SharedLayoutContractTests(unittest.TestCase):
         self.assertIn('CanvasPresets.clear(true, root.images, root.videos);', self.canvas)
         self.assertIn('CanvasPresets.clear(false, root.images, root.videos);', self.canvas)
 
+    def test_particle_apply_paths_share_exclusive_family_rule(self):
+        model = source(ROOT.parent / "concat-project/src/model.rs")
+        bulk = source(ROOT / "src/studio/particle_bulk.rs")
+        studio = source(ROOT / "src/studio.rs")
+        self.assertIn('entry.id.starts_with("concat.particles-")', model)
+        self.assertIn('chain.retain(|old|!old.id.starts_with("concat.particles-"))', model)
+        self.assertIn("model::upsert_effect(&mut effects, entry)", bulk)
+        self.assertIn("model::upsert_effect(&mut effects,entry)", studio)
+        self.assertIn("model::upsert_effect(&mut flat.effects, draft)", studio)
+
     def test_stable_canvas_and_particle_target_scopes(self):
         self.assertIn("CanvasPresets.apply(CanvasPresets.profile, false, root.images, root.videos);", self.canvas)
         self.assertIn("CanvasPresets.apply(CanvasPresets.profile, true, root.images, root.videos);", self.canvas)

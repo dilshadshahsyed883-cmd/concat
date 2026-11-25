@@ -77,9 +77,26 @@ impl ClipKind {
     }
 }
 
-/// Replace the addressed effect type in place, preserving other effect types.
-/// Legacy duplicates of that type collapse to a single updated instance.
+/// Replace the addressed effect in place, preserving unrelated effect types.
+/// Particle presets form one exclusive family: applying any preset replaces
+/// every previous particle on this clip. Other effects retain their order.
+/// Same-ID updates preserve their parameter keys and collapse duplicates.
 pub fn upsert_effect(chain:&mut Vec<AppliedFilter>,mut entry:AppliedFilter) {
+    if entry.id.starts_with("concat.particles-") {
+        // Only preserve keys from the same preset, never from a different one.
+        if let Some(old)=chain.iter().find(|old|old.id==entry.id) {
+            for (name,keys) in &old.keys {
+                entry.keys.entry(name.clone()).or_insert_with(||keys.clone());
+            }
+        }
+        if let Some(first)=chain.iter().position(|old|old.id.starts_with("concat.particles-")) {
+            chain.retain(|old|!old.id.starts_with("concat.particles-"));
+            chain.insert(first,entry);
+        } else {
+            chain.push(entry);
+        }
+        return;
+    }
     if let Some(index)=chain.iter().position(|old|old.id==entry.id) {
         for (name,keys) in &chain[index].keys {
             entry.keys.entry(name.clone()).or_insert_with(||keys.clone());
@@ -88,6 +105,40 @@ pub fn upsert_effect(chain:&mut Vec<AppliedFilter>,mut entry:AppliedFilter) {
         let mut kept=false;
         chain.retain(|old|if old.id!=entry.id {true}else if kept {false}else{kept=true;true});
     } else {chain.push(entry);}
+}
+
+#[cfg(test)]
+mod exclusive_particle_tests {
+    use super::*;
+
+    #[test]
+    fn particle_replaces_entire_family_without_disturbing_other_effects() {
+        let color=AppliedFilter::new("concat.color-test");
+        let lut=AppliedFilter::new("concat.lut-test");
+        let mut chain=vec![color.clone(),AppliedFilter::new("concat.particles-stars"),lut.clone(),AppliedFilter::new("concat.particles-rain")];
+        let snow=AppliedFilter::new("concat.particles-snow");
+        upsert_effect(&mut chain,snow.clone());
+        assert_eq!(chain,vec![color.clone(),snow.clone(),lut.clone()]);
+        let mut updated=snow;
+        updated.params.insert("seed".into(),42.);
+        upsert_effect(&mut chain,updated.clone());
+        assert_eq!(chain,vec![color,updated,lut]);
+    }
+
+    #[test]
+    fn same_preset_keeps_keys_but_other_particle_keys_do_not_leak() {
+        let mut stars=AppliedFilter::new("concat.particles-stars");
+        stars.keys.insert("size".into(),vec![ParamKey{at:0.,value:2.,ease:Default::default()}]);
+        let mut chain=vec![stars.clone(),AppliedFilter::new("concat.particles-rain"),stars.clone()];
+        upsert_effect(&mut chain,AppliedFilter::new("concat.particles-stars"));
+        assert_eq!(chain.len(),1);
+        assert_eq!(chain[0].keys,stars.keys);
+        upsert_effect(&mut chain,AppliedFilter::new("concat.particles-bokeh"));
+        assert_eq!(chain.len(),1);
+        assert!(chain[0].keys.is_empty());
+        upsert_effect(&mut chain,AppliedFilter::new("concat.color-test"));
+        assert_eq!(chain.len(),2);
+    }
 }
 
 /// One audio stream of a media file, as the probe reported it. A screen

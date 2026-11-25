@@ -62,18 +62,14 @@ impl Studio {
                 .fold(seed, |s, b| s.wrapping_mul(0x100000001b3) ^ u64::from(b));
             let id = &options[draw as usize % options.len()];
             let mut effects = clip.video_effects.clone();
-            // Explicit application changes only the requested preset, preserving other overlays and authored effects.
+            // The shared upsert enforces one particle preset per clip and preserves unrelated effects.
             let mut entry = self.effect_application(id);
             // Preserve deterministic per-clip random seeds unless this preset
             // has an explicitly edited/saved seed override.
             if !entry.params.contains_key("seed") {
                 entry.params.insert("seed".into(), (draw % 65536) as f64);
             }
-            if let Some(index) = effects.iter().position(|e| &e.id == id) {
-                effects[index] = entry;
-            } else {
-                effects.push(entry);
-            }
+            model::upsert_effect(&mut effects, entry);
             commands.push(Command::UpdateClip {
                 clip_id: clip.id.clone(),
                 patch: ClipPatch {
