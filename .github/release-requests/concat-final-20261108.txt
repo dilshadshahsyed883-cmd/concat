@@ -169,3 +169,11 @@ Keep existing build, compatibility, smoke, checksums, immutable digest and
 matching-release gates, including publish-main-release. Do not claim pending
 native/Slint or Windows runtime checks passed. Candidate builds only: no live
 Salad deployment, VPS/queue changes or deletion of previous rollback releases.
+
+REBUILD REQUEST — 2026-11-25 Windows stale GPU Queue contract fix (#186)
+Parent main 2fbccdc775a7d47f9d637da01d74b6ea1022a23d; matching build request after correcting stale tests from
+the approved desktop GPU Queue retirement (#170). Build Windows portable EXE
+and Salad CUDA candidate from this exact request commit's identical GITHUB_SHA.
+Preserve all release and smoke gates; no production deployment or rollback
+artifact deletion. The previous GPU image succeeded but must not be paired
+with a different source SHA for the matching release.
