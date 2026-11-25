@@ -828,6 +828,25 @@ pub(crate) fn reconcile_companions(before: &Project, after: &mut Project) {
     use std::collections::HashMap;
     for timeline in &mut after.timelines {
         let Some(old) = before.timelines.iter().find(|old| old.id == timeline.id) else { continue; };
+        // The saved restoration snapshot supplies source data on reapply too.
+        // Advance its source identity when the owner is replaced/reversed, while
+        // keeping the pre-preset authored styling intact.
+        for owner in Arc::make_mut(timeline).clips_where(|c| !c.extra.contains_key("canvasOwner")) {
+            let changed = old.clip(&owner.id).is_some_and(|previous|
+                previous.media_id != owner.media_id || previous.kind != owner.kind);
+            if !changed { continue; }
+            let Some(saved) = owner.extra.get("canvasOriginal").cloned() else { continue; };
+            let Ok(mut base) = serde_json::from_value::<Clip>(saved) else { continue; };
+            base.media_id = owner.media_id.clone();
+            base.kind = owner.kind;
+            base.source_start = owner.source_start;
+            base.speed = owner.speed;
+            base.speed_curve = owner.speed_curve.clone();
+            base.enhanced = owner.enhanced.clone();
+            base.stabilize = owner.stabilize.clone();
+            base.cutout = owner.cutout.clone();
+            owner.extra.insert("canvasOriginal".into(), json!(base));
+        }
         let owners: HashMap<_,_> = timeline.clips.iter()
             .filter(|clip| !clip.extra.contains_key("canvasOwner"))
             .map(|clip| (clip.id.clone(),clip.clone())).collect();
@@ -839,16 +858,26 @@ pub(crate) fn reconcile_companions(before: &Project, after: &mut Project) {
         for piece in &mut timeline.clips {
             let Some(owner_id) = piece.extra.get("canvasOwner").and_then(Value::as_str) else { continue; };
             let (Some(owner),Some(previous)) = (owners.get(owner_id),old.clip(owner_id)) else { continue; };
-            let owner_changed = owner.start != previous.start || owner.duration != previous.duration
+            let source_changed = owner.media_id != previous.media_id || owner.kind != previous.kind;
+            let owner_changed = source_changed || owner.start != previous.start || owner.duration != previous.duration
                 || owner.source_start != previous.source_start || owner.speed != previous.speed
                 || owner.speed_curve != previous.speed_curve;
             if !owner_changed { continue; }
             let source_companion = matches!(piece.kind, ClipKind::Image | ClipKind::Video);
-            if piece.start == owner.start && piece.duration == owner.duration
+            if !source_changed && piece.start == owner.start && piece.duration == owner.duration
                 && (!source_companion || (piece.source_start == owner.source_start && piece.speed == owner.speed
                     && piece.speed_curve == owner.speed_curve)) { continue; }
             let untouched = untouched_companion(piece);
+            let follows_source = source_companion && source_changed && untouched
+                && piece.media_id == previous.media_id;
             let piece = Arc::make_mut(piece);
+            if follows_source {
+                piece.media_id = owner.media_id.clone();
+                piece.kind = owner.kind;
+                piece.enhanced = owner.enhanced.clone();
+                piece.stabilize = owner.stabilize.clone();
+                piece.cutout = owner.cutout.clone();
+            }
             if piece.duration != owner.duration {
                 let from = if previous.speed == owner.speed {
                     (owner.source_start - previous.source_start) / previous.speed
@@ -1075,6 +1104,8 @@ pub fn apply_with_confirmation(project: &mut Project, mint: &mut IdMint, config:
             let bg_lane = track(&mut staged, mint, &original.track_id, "backdrop", true);
             let mut bg = base.clone();
             // Restoration metadata is immutable; playback state is current.
+            bg.media_id = original.media_id.clone();
+            bg.kind = original.kind;
             bg.start = original.start;
             bg.duration = original.duration;
             bg.source_start = original.source_start;
@@ -1617,6 +1648,42 @@ mod tests {
         m.adopt_project(&p);
         (p, m)
     }
+    #[test]
+    fn replacement_updates_source_layers_and_baseline_but_preserves_custom_media() {
+        for custom in [false, true] {
+            let (mut before, mut mint) = fixture();
+            let config = Config::preset(3).unwrap();
+            apply(&mut before, &mut mint, config, vec!["c1".into()], vec![]).unwrap();
+            let backdrop = before.active().clips.iter().find(|c| c.extra.get("canvasRole").and_then(Value::as_str) == Some("backdrop")).unwrap().id.clone();
+            if custom {
+                before.active_mut().clip_mut(&backdrop).unwrap().media_id = "custom-background".into();
+            }
+            let mut after = before.clone();
+            after.active_mut().clip_mut("c1").unwrap().media_id = "replacement".into();
+            reconcile_companions(&before, &mut after);
+            let owner = after.active().clip("c1").unwrap();
+            assert_eq!(owner.extra["canvasOriginal"]["mediaId"], json!("replacement"));
+            let piece = after.active().clip(&backdrop).unwrap();
+            assert_eq!(piece.media_id, if custom { "custom-background" } else { "replacement" });
+            assert_eq!(untouched_companion(piece), !custom);
+        }
+    }
+
+    #[test]
+    fn replacement_advances_restoration_source_without_companion_layers() {
+        let (mut project, mut mint) = fixture();
+        let original = project.active().clip("c1").unwrap().clone();
+        project.active_mut().clip_mut("c1").unwrap().extra.insert("canvasOriginal".into(), json!(original));
+        let mut media = project.media[0].clone();
+        media.id = "m2".into();
+        project.media.push(media);
+        crate::commands::apply(&mut project, &mut mint, crate::commands::Command::ReplaceMediaInSlot {
+            clip_id: "c1".into(), media_id: "m2".into(), use_source_duration: false, keep_edits: true,
+            tracks: vec!["T1".into()], locked_tracks: vec![], linked_audio: false,
+        }).unwrap();
+        assert_eq!(project.active().clip("c1").unwrap().extra["canvasOriginal"]["mediaId"], json!("m2"));
+    }
+
     #[test]
     fn automatic_ripple_cannot_move_a_locked_canvas_companion() {
         let (mut project, mut mint) = fixture();
