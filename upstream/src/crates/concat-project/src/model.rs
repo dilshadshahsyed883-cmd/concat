@@ -2073,33 +2073,134 @@ pub struct Clip {
 /// One property's keys, as `(at, value, ease)` over `0..=1` of an old
 /// length, re-anchored to the window `(a, b)` of that length; see
 /// [`Clip::rewindow_keys`]. `value_at` is the ride over the old length.
+fn bezier_point(ease: KeyEase, t: f64) -> [f64; 2] {
+    let [x1, y1, x2, y2] = ease.sane().0;
+    let u = 1.0 - t;
+    [3.0*u*u*t*x1 + 3.0*u*t*t*x2 + t*t*t,
+     3.0*u*u*t*y1 + 3.0*u*t*t*y2 + t*t*t]
+}
+
+fn bezier_parameter(ease: KeyEase, x: f64) -> f64 {
+    let (mut lo, mut hi) = (0.0, 1.0);
+    for _ in 0..60 {
+        let mid = (lo + hi) / 2.0;
+        if bezier_point(ease, mid)[0] < x { lo = mid; } else { hi = mid; }
+    }
+    (lo + hi) / 2.0
+}
+
+// Restrict a cubic in parameter space, then normalize both axes to its
+// retained endpoints. Reusing the whole segment's ease changes the curve.
+fn sliced_ease(ease: KeyEase, from: f64, to: f64) -> KeyEase {
+    if from <= 0.0 && to >= 1.0 { return ease; }
+    let ease = ease.sane();
+    let [x1, y1, x2, y2] = ease.0;
+    let t0 = bezier_parameter(ease, from.clamp(0.0, 1.0));
+    let t1 = bezier_parameter(ease, to.clamp(0.0, 1.0));
+    let p0 = bezier_point(ease, t0);
+    let p3 = bezier_point(ease, t1);
+    let derivative = |t: f64| {
+        let u = 1.0-t;
+        [3.0*u*u*x1 + 6.0*u*t*(x2-x1) + 3.0*t*t*(1.0-x2),
+         3.0*u*u*y1 + 6.0*u*t*(y2-y1) + 3.0*t*t*(1.0-y2)]
+    };
+    let d0 = derivative(t0);
+    let d1 = derivative(t1);
+    let (dx, dy) = (p3[0]-p0[0], p3[1]-p0[1]);
+    if dx.abs() < 1e-14 || dy.abs() < 1e-14 { return KeyEase::LINEAR; }
+    let span = (t1-t0)/3.0;
+    KeyEase([(d0[0]*span/dx).clamp(0.0,1.0), d0[1]*span/dy,
+        (1.0-d1[0]*span/dx).clamp(0.0,1.0), 1.0-d1[1]*span/dy])
+}
+
 fn rewindow(
     keys: impl Iterator<Item = (f64, f64, KeyEase)>,
     (a, b): (f64, f64),
     value_at: impl Fn(f64) -> f64,
 ) -> Vec<(f64, f64, KeyEase)> {
-    let keys: Vec<(f64, f64, KeyEase)> = keys.collect();
-    let span = b - a;
-    let mut out = Vec::with_capacity(keys.len() + 2);
-    let before = keys.iter().any(|(at, ..)| *at < a - KEY_EPSILON);
-    if before {
-        out.push((0.0, value_at(a), KeyEase::LINEAR));
-    }
-    let mut first_after: Option<KeyEase> = None;
-    for (at, value, ease) in &keys {
-        if *at < a - KEY_EPSILON {
-            continue;
+    let keys: Vec<_> = keys.collect();
+    let mut points: Vec<f64> = keys.iter().map(|k| k.0).filter(|at| *at >= a && *at <= b).collect();
+    if keys.iter().any(|k| k.0 < a) { points.push(a); }
+    if keys.iter().any(|k| k.0 > b) { points.push(b); }
+    // A clipped overshooting segment can have equal endpoint values and
+    // nonconstant interior values. Split at its extrema so each normalized
+    // subcurve still has a nonzero value span; ordinary full segments stay intact.
+    for pair in keys.windows(2) {
+        let (left, right) = (pair[0], pair[1]);
+        let lo = a.max(left.0);
+        let hi = b.min(right.0);
+        if hi <= lo || (lo == left.0 && hi == right.0) { continue; }
+        let [_, y1, _, y2] = right.2.sane().0;
+        let qa = 3.0*(3.0*y1-3.0*y2+1.0);
+        let qb = 2.0*(-6.0*y1+3.0*y2);
+        let qc = 3.0*y1;
+        let mut roots = Vec::new();
+        if qa.abs() < 1e-14 {
+            if qb.abs() > 1e-14 { roots.push(-qc/qb); }
+        } else {
+            let disc = qb*qb-4.0*qa*qc;
+            if disc >= 0.0 {
+                roots.extend([(-qb-disc.sqrt())/(2.0*qa), (-qb+disc.sqrt())/(2.0*qa)]);
+            }
         }
-        if *at > b + KEY_EPSILON {
-            first_after.get_or_insert(*ease);
-            continue;
+        for t in roots.into_iter().filter(|t| *t > 0.0 && *t < 1.0) {
+            let at = left.0 + (right.0-left.0)*bezier_point(right.2,t)[0];
+            if at > lo && at < hi { points.push(at); }
         }
-        out.push((((at - a) / span).clamp(0.0, 1.0), *value, *ease));
     }
-    if let Some(ease) = first_after {
-        out.push((1.0, value_at(b), ease));
+    points.sort_by(f64::total_cmp);
+    points.dedup_by(|x,y| (*x-*y).abs() < 1e-12);
+    let mut out = Vec::new();
+    for (index, at) in points.iter().copied().enumerate() {
+        let mut ease = keys.iter().find(|k| k.0 == at).map_or(KeyEase::LINEAR, |k| k.2);
+        if index > 0 {
+            let previous = points[index-1];
+            let mid = (previous+at)/2.0;
+            if let Some(pair) = keys.windows(2).find(|pair| pair[0].0 <= mid && mid <= pair[1].0) {
+                let span = pair[1].0-pair[0].0;
+                if span > 0.0 { ease = sliced_ease(pair[1].2, (previous-pair[0].0)/span, (at-pair[0].0)/span); }
+            }
+        }
+        out.push((((at-a)/(b-a)).clamp(0.0,1.0),value_at(at),ease));
     }
     out
+}
+
+#[cfg(test)]
+mod retained_curve_tests {
+    use super::*;
+
+    #[test]
+    fn clipped_nonlinear_motion_and_effects_follow_original_at_source_times() {
+        for ease in [KeyEase::LINEAR, KeyEase::IN, KeyEase::OUT, KeyEase::IN_OUT,
+            KeyEase([0.3, 1.5, 0.7, -0.5])] {
+            let mut source = Clip::blank("v", "T1", ClipKind::Video, "Video", 0.0, 10.0);
+            source.keys = vec![
+                ClipKey { property: KeyProperty::Scale, at: 0.0, value: 1.0, ease: KeyEase::LINEAR },
+                ClipKey { property: KeyProperty::Scale, at: 1.0, value: 3.0, ease },
+            ];
+            let mut filter = AppliedFilter::new("effect");
+            filter.keys.insert("amount".into(), vec![
+                ParamKey { at: 0.0, value: 1.0, ease: KeyEase::LINEAR },
+                ParamKey { at: 1.0, value: 3.0, ease },
+            ]);
+            source.video_effects.push(filter);
+            for (from, to) in [(0.0, 4.0), (4.0, 10.0), (2.0, 8.0), (-2.0, 5.0), (7.0, 12.0), (0.001, 9.999)] {
+                let mut piece = source.clone();
+                piece.rewindow_keys(10.0, from, to);
+                let piece: Clip = serde_json::from_value(serde_json::to_value(&piece).unwrap()).unwrap();
+                for step in 0..=100 {
+                    let t = step as f64 / 100.0;
+                    let original_t = (from + (to-from)*t)/10.0;
+                    let expected = source.track_on(KeyProperty::Scale).value_at(original_t, 1.0);
+                    let actual = piece.track_on(KeyProperty::Scale).value_at(t, 1.0);
+                    assert!((expected-actual).abs() < 0.00002, "{ease:?} [{from},{to}] at {t}: {expected} != {actual}");
+                    let effect = piece.video_effects[0].track_on("amount").value_at(t, 1.0);
+                    assert!((expected-effect).abs() < 0.00002);
+                }
+            }
+        }
+    }
 }
 
 impl Default for Clip {
