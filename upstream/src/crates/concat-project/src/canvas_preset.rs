@@ -1669,6 +1669,21 @@ mod tests {
         }
     }
 
+    #[test]
+    fn replacement_advances_restoration_source_without_companion_layers() {
+        let (mut project, mut mint) = fixture();
+        let original = project.active().clip("c1").unwrap().clone();
+        project.active_mut().clip_mut("c1").unwrap().extra.insert("canvasOriginal".into(), json!(original));
+        let mut media = project.media[0].clone();
+        media.id = "m2".into();
+        project.media.push(media);
+        crate::commands::apply(&mut project, &mut mint, crate::commands::Command::ReplaceMediaInSlot {
+            clip_id: "c1".into(), media_id: "m2".into(), use_source_duration: false, keep_edits: true,
+            tracks: vec!["T1".into()], locked_tracks: vec![], linked_audio: false,
+        }).unwrap();
+        assert_eq!(project.active().clip("c1").unwrap().extra["canvasOriginal"]["mediaId"], json!("m2"));
+    }
+
     fn generated_animation(clip: &mut Clip, canvas: bool) {
         use crate::motion_preset::{MotionPreset, replace_generated};
         use crate::canvas_motion::{CanvasMotionPreset, CanvasMotionControls, rounded_mask};

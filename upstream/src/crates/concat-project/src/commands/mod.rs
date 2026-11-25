@@ -1270,7 +1270,7 @@ pub fn apply(
 ) -> Result<Outcome, CommandError> {
     // Whole-project snapshots share Arcs, so normal edits on Canvas groups
     // can reconcile dependent timing/deletion transactionally at this boundary.
-    if project.timelines.iter().any(|t|t.clips.iter().any(|c|c.extra.contains_key("canvasOwner") || c.detached_from.is_some() || c.transition_in.is_some())) {
+    if project.timelines.iter().any(|t|t.clips.iter().any(|c|c.extra.contains_key("canvasOwner") || c.extra.contains_key("canvasOriginal") || c.detached_from.is_some() || c.transition_in.is_some())) {
         let mut staged = project.clone();
         let outcome = apply_inner(&mut staged,mint,command)?;
         if outcome.applied {
