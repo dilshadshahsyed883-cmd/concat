@@ -993,6 +993,120 @@ mod tests {
     }
 
     #[test]
+    fn locks_cover_automatic_placement_and_indirect_audio_changes() {
+        let mut editor = fixture();
+        let timeline_id = editor.project().active().id.clone();
+        let wrap = |command| Command::ProtectTrackLocks {
+            timeline_id: timeline_id.clone(),
+            locked_tracks: vec!["T2".into()],
+            command: Box::new(command),
+        };
+        let id = editor
+            .apply(wrap(Command::AddClipAtFirstFree {
+                media_id: "m2".into(),
+                start: 0.0,
+            }))
+            .unwrap()
+            .created_id
+            .unwrap();
+        assert_eq!(editor.project().active().clip(&id).unwrap().track_id, "T3");
+        let mut sound = Clip::blank("sound", "T2", ClipKind::Text, "Linked", 25.0, 2.0);
+        sound
+            .extra
+            .insert("gpuCaptionSource".into(), serde_json::json!("c1"));
+        editor
+            .apply(Command::CopyClips {
+                copies: vec![sound],
+            })
+            .unwrap();
+        let sound_id = editor
+            .project()
+            .active()
+            .clips
+            .iter()
+            .find(|c| c.track_id == "T2")
+            .unwrap()
+            .id
+            .clone();
+        let before = editor.to_document(&settings());
+        assert!(
+            editor
+                .apply(wrap(Command::RemoveClips {
+                    clip_ids: vec![sound_id],
+                    ripple: false
+                }))
+                .is_err()
+        );
+        assert_eq!(editor.to_document(&settings()), before);
+        assert!(
+            editor
+                .apply(wrap(Command::Batch {
+                    commands: vec![
+                        Command::AddClipAtFirstFree {
+                            media_id: "m2".into(),
+                            start: 40.0
+                        },
+                        Command::AddClip {
+                            media_id: "m2".into(),
+                            track_id: "T2".into(),
+                            start: 50.0,
+                            ripple: false
+                        },
+                    ]
+                }))
+                .is_err()
+        );
+        assert_eq!(editor.to_document(&settings()), before);
+    }
+
+    #[test]
+    fn detached_audio_skips_locked_lanes_and_reattach_respects_child_lock() {
+        let mut project = Project::new();
+        project.media.push(MediaItem {
+            id: "m".into(),
+            path: "a.mp4".into(),
+            kind: MediaKind::Video,
+            has_audio: true,
+            duration: Some(5.0),
+            ..Default::default()
+        });
+        let mut video = Clip::blank("v", "T1", ClipKind::Video, "Video", 0.0, 5.0);
+        video.media_id = "m".into();
+        project.active_mut().clips.push(Arc::new(video));
+        let mut editor =
+            Editor::from_document(&crate::doc::to_document(&settings(), &project)).unwrap();
+        let timeline_id = project.active().id.clone();
+        let sound = editor
+            .apply(Command::ProtectTrackLocks {
+                timeline_id: timeline_id.clone(),
+                locked_tracks: vec!["T2".into()],
+                command: Box::new(Command::DetachAudio {
+                    clip_id: "v".into(),
+                }),
+            })
+            .unwrap()
+            .created_id
+            .unwrap();
+        assert_eq!(
+            editor.project().active().clip(&sound).unwrap().track_id,
+            "T3"
+        );
+        let before = editor.to_document(&settings());
+        assert!(
+            editor
+                .apply(Command::ProtectTrackLocks {
+                    timeline_id,
+                    locked_tracks: vec!["T3".into()],
+                    command: Box::new(Command::ReattachAudio {
+                        clip_id: "v".into()
+                    })
+                })
+                .is_err()
+        );
+        assert_eq!(editor.to_document(&settings()), before);
+    }
+
+    #[test]
     fn rejected_edits_are_atomic() {
         let mut e = fixture();
         let before = e.to_document(&settings());

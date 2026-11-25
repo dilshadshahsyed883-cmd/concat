@@ -591,6 +591,15 @@ pub enum Command {
     ApplyCanvasPresetConfirmed { config: crate::canvas_preset::Config, targets: Vec<String>, locked_tracks: Vec<String> },
     /// Clear only Canvas-owned layout data and companions from eligible media.
     ClearCanvasPresets { targets: Vec<String>, locked_tracks: Vec<String> },
+    /// Apply an edit with the editor's current track locks, including indirect changes.
+    ProtectTrackLocks {
+        /// Timeline owning these track identifiers.
+        timeline_id: String,
+        /// Locked lanes excluded from automatic placement and protected from mutation.
+        locked_tracks: Vec<String>,
+        /// The ordinary existing edit.
+        command: Box<Command>,
+    },
     /// Protect locked Canvas companion tracks, including implicit lifecycle changes.
     ProtectCanvasTracks { timeline_id: String, locked_tracks: Vec<String>, command: Box<Command> },
     /// Import exact returned words once, replacing only the matching generated captions.
@@ -1086,7 +1095,7 @@ impl Command {
                     || c.keys.iter().any(|k| bad([k.at, k.value]) || bad(k.ease.0))
             }),
             Command::Batch { commands } => commands.iter().any(Command::has_non_finite),
-            Command::ProtectCanvasTracks {command,..} => command.has_non_finite(),
+            Command::ProtectCanvasTracks {command,..} | Command::ProtectTrackLocks {command,..} => command.has_non_finite(),
             Command::InsertMedia { time, .. } => bad([*time]),
             Command::CloseTrackGaps { at, .. } => bad(*at),
             Command::AddMedia { item }
@@ -1280,6 +1289,27 @@ pub fn apply(
     } else { apply_inner(project,mint,command) }
 }
 
+// Carry locks into automatic lane choice; all other indirect changes are
+// checked against the original locked-lane snapshot by the outer wrapper.
+fn apply_with_track_locks(project: &mut Project, mint: &mut IdMint, command: Command, locked: &[String]) -> Result<Outcome, CommandError> {
+    match command {
+        Command::Batch { commands } => {
+            let mut outcome = Outcome::default();
+            for command in commands {
+                let next = apply_with_track_locks(project, mint, command, locked)?;
+                outcome.applied |= next.applied;
+                if next.created_id.is_some() { outcome.created_id = next.created_id; }
+            }
+            Ok(outcome)
+        }
+        command @ (Command::AddClipAtFirstFree {..} | Command::AddClipsInSequence {..}
+            | Command::AddTextClip {..} | Command::AddShapeClip {..} | Command::AddLayerClip {..}) =>
+            clips::apply_with_locks(project, mint, command, locked),
+        command @ Command::DetachAudio {..} => audio::apply_with_locks(project, mint, command, locked),
+        command => apply(project, mint, command),
+    }
+}
+
 fn apply_inner(project: &mut Project, mint: &mut IdMint, command: Command) -> Result<Outcome, CommandError> {
     if command.has_non_finite() {
         return Err(CommandError::NotANumber);
@@ -1306,6 +1336,15 @@ fn apply_inner(project: &mut Project, mint: &mut IdMint, command: Command) -> Re
             })
         }
 
+        Command::ProtectTrackLocks { timeline_id, locked_tracks, command } => {
+            let mut staged = project.clone();
+            let outcome = apply_with_track_locks(&mut staged, mint, *command, &locked_tracks)?;
+            if crate::canvas_preset::protected_tracks_changed(project, &staged, &timeline_id, &locked_tracks) {
+                return Err(CommandError::UnsafeEdit { reason: "An affected track is locked; unlock it before editing".into() });
+            }
+            *project = staged;
+            Ok(outcome)
+        }
         Command::ProtectCanvasTracks {timeline_id,locked_tracks,command} => {
             let mut staged = project.clone();
             let outcome = apply(&mut staged,mint,*command)?;

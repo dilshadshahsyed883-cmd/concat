@@ -14,6 +14,12 @@ pub(super) fn apply(
     mint: &mut IdMint,
     command: Command,
 ) -> Result<Outcome, CommandError> {
+    apply_with_locks(project, mint, command, &[])
+}
+
+pub(super) fn apply_with_locks(
+    project: &mut Project, mint: &mut IdMint, command: Command, locked: &[String],
+) -> Result<Outcome, CommandError> {
     match command {
         Command::DetachAudio { clip_id } => {
             // What comes off, as `(stream, name)`: one sound clip per audio
@@ -63,7 +69,7 @@ pub(super) fn apply(
                 let track_id = {
                     let end = clip.start + clip.duration;
                     let free = timeline.tracks.iter().find(|track| {
-                        !timeline.clips.iter().any(|other| {
+                        !locked.contains(&track.id) && !timeline.clips.iter().any(|other| {
                             other.track_id == track.id
                                 && other.start < end
                                 && clip.start < other.start + other.duration
