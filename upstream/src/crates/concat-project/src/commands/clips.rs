@@ -15,6 +15,45 @@ pub(super) fn apply(
     command: Command,
 ) -> Result<Outcome, CommandError> {
     match command {
+        Command::CopyClips { copies } => {
+            let mut staged = project.clone();
+            let mut ids = std::collections::HashMap::new();
+            for source in &copies {
+                if staged.active().track(&source.track_id).is_none() {
+                    return Err(CommandError::TrackGone);
+                }
+                if matches!(source.kind, ClipKind::Video | ClipKind::Image | ClipKind::Audio)
+                    && staged.media_by_id(&source.media_id).is_none() {
+                    return Err(CommandError::MediaGone);
+                }
+                if source.duration < MIN_CLIP_DURATION || source.speed <= 0.0 {
+                    return Err(CommandError::UnsafeEdit { reason: "Invalid copied clip timing".into() });
+                }
+                ids.insert(source.id.clone(), mint.next("c"));
+            }
+            let mut last = None;
+            for mut copy in copies {
+                copy.id = ids[&copy.id].clone();
+                copy.start = staged.active().nearest_free_start(&copy.track_id, copy.start.max(0.0), copy.duration, &[]);
+                copy.name = format!("{} copy", copy.name);
+                copy.detached_from = copy.detached_from.as_ref().and_then(|id| ids.get(id)).cloned();
+                for key in ["canvasOwner", "gpuCaptionSource"] {
+                    if let Some(parent) = copy.extra.get(key).and_then(serde_json::Value::as_str).and_then(|id| ids.get(id)).cloned() {
+                        copy.extra.insert(key.into(), serde_json::json!(parent));
+                    }
+                }
+                if let Some(original) = copy.extra.get_mut("canvasOriginal").and_then(serde_json::Value::as_object_mut) {
+                    original.insert("id".into(), serde_json::json!(copy.id));
+                    original.insert("trackId".into(), serde_json::json!(copy.track_id));
+                }
+                last = Some(copy.id.clone());
+                staged.active_mut().clips.push(Arc::new(copy));
+            }
+            let applied = last.is_some();
+            *project = staged;
+            Ok(Outcome { created_id: last, applied })
+        }
+
         Command::AddClip {
             media_id,
             track_id,

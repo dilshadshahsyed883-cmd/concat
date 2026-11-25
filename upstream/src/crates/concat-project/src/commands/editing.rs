@@ -933,6 +933,66 @@ mod tests {
     }
 
     #[test]
+    fn full_clip_copy_preserves_state_and_is_one_atomic_undo() {
+        let mut editor = fixture();
+        let mut source = editor.project().active().clip("c1").unwrap().clone();
+        source.start = 30.0;
+        source.source_start = 2.0;
+        source.duration = 3.0;
+        source.audio_stream = Some(3);
+        source.mask = Some(ClipMask::default());
+        source
+            .extra
+            .insert("ownership-test".into(), serde_json::json!({"saved": true}));
+        let mut text = Clip::blank("title", "T2", ClipKind::Text, "Caption", 30.0, 3.0);
+        text.text = Some(TextStyle::default());
+        text.extra
+            .insert("gpuCaptionSource".into(), serde_json::json!(source.id));
+        let before = editor.to_document(&settings());
+        let outcome = editor
+            .apply(Command::CopyClips {
+                copies: vec![source.clone(), text],
+            })
+            .unwrap();
+        let copy = editor
+            .project()
+            .active()
+            .clips
+            .iter()
+            .find(|c| c.start == 30.0 && c.kind == ClipKind::Video)
+            .unwrap();
+        let mut expected = source;
+        expected.id = copy.id.clone();
+        expected.name = format!("{} copy", expected.name);
+        assert_eq!(copy.as_ref(), &expected);
+        assert_eq!(
+            editor
+                .project()
+                .active()
+                .clip(&outcome.created_id.unwrap())
+                .unwrap()
+                .extra["gpuCaptionSource"],
+            serde_json::json!(copy.id)
+        );
+        let saved = editor.to_document(&settings());
+        assert!(editor.undo());
+        assert_eq!(editor.to_document(&settings()), before);
+        assert!(editor.redo());
+        assert_eq!(editor.to_document(&settings()), saved);
+        let valid = editor.project().active().clip("c1").unwrap().clone();
+        let mut invalid = valid.clone();
+        invalid.media_id = "missing".into();
+        assert!(
+            editor
+                .apply(Command::CopyClips {
+                    copies: vec![valid, invalid]
+                })
+                .is_err()
+        );
+        assert_eq!(editor.to_document(&settings()), saved);
+    }
+
+    #[test]
     fn rejected_edits_are_atomic() {
         let mut e = fixture();
         let before = e.to_document(&settings());

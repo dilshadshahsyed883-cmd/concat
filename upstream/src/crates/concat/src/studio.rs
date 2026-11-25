@@ -2178,6 +2178,7 @@ pub struct Held {
 /// retimed - the speed command keeps the footage covered and recomputes
 /// the length - and only then moved to `start`, so neighbours there never
 /// push the whole file aside and shift the frames the trims cut.
+#[cfg(test)]
 fn copy_commands(source: &Clip, placed: &Clip, track_id: &str, start: f64) -> Vec<Command> {
     let created = &placed.id;
     let mut commands = Vec::new();
@@ -8606,22 +8607,21 @@ impl Studio {
             return;
         }
         sources.sort_by(|left, right| right.start.total_cmp(&left.start));
-        let mut last = None;
-        for source in &sources {
-            self.duplicate(source);
-            last = self.selection.first().cloned();
-        }
-        if let Some(id) = last {
+        let copies = sources.into_iter().map(|mut source| {
+            source.start += source.duration;
+            source
+        }).collect();
+        if let Some(id) = self.apply(Command::CopyClips { copies }) {
             self.selection = vec![id];
         }
     }
 
-    /// A copy of `source` laid right after it on its own lane, selected.
+    /// A complete copy of `source`, as one undoable operation.
     pub fn duplicate(&mut self, source: &Clip) {
-        let end = source.start + source.duration;
-        let track_id = source.track_id.clone();
-        if let Some(created) = self.place_copy(source, &track_id, end, None) {
-            self.selection = vec![created];
+        let mut copy = source.clone();
+        copy.start += copy.duration;
+        if let Some(id) = self.apply(Command::CopyClips { copies: vec![copy] }) {
+            self.selection = vec![id];
         }
     }
 
@@ -8693,84 +8693,18 @@ impl Studio {
         let plan = paste_plan(&held, base, shift, tracks.len(), &|row| {
             tracks.get(row).is_some_and(|id| self.locked(id))
         });
-        self.flush_commit();
-        let mut created = Vec::new();
+        let mut copies = Vec::new();
         for (held, place) in held.iter().zip(plan) {
-            let Some((row, start)) = place else {
-                continue;
-            };
-            if let Some(id) = self.place_copy(&held.clip, &tracks[row], start, Some("paste")) {
-                created.push(id);
-            }
+            let Some((row, start)) = place else { return; };
+            let mut copy = held.clip.clone();
+            copy.track_id = tracks[row].clone();
+            copy.start = start;
+            copies.push(copy);
         }
-        // One step for the lot, and the next paste a step of its own.
-        if let Some(session) = self.session.as_mut() {
-            session.end_gesture();
+        let before: std::collections::HashSet<_> = self.timeline().clips.iter().map(|c| c.id.clone()).collect();
+        if self.apply(Command::CopyClips { copies }).is_some() {
+            self.selection = self.timeline().clips.iter().filter(|c| !before.contains(&c.id)).map(|c| c.id.clone()).collect();
         }
-        if !created.is_empty() {
-            self.selection = created;
-        }
-    }
-
-    /// Lays a copy of `source` on `track_id` starting at `start` - its
-    /// trims, mix, placement, speed, keys and effects with it - and says
-    /// the new clip's id. `gesture` folds the commands into one undo step
-    /// with whatever else names it; `None` leaves them steps of their own.
-    /// Footage is first laid past the lane's last clip, then shaped by
-    /// [`copy_commands`].
-    fn place_copy(
-        &mut self,
-        source: &Clip,
-        track_id: &str,
-        start: f64,
-        gesture: Option<&str>,
-    ) -> Option<String> {
-        if source.kind == model::ClipKind::Text {
-            return self.apply_in(
-                gesture,
-                Command::AddTextClip {
-                    above: false,
-                    track_id: Some(track_id.to_owned()),
-                    start,
-                    style: source.text.clone(),
-                    duration: Some(source.duration),
-                    offset_y: Some(source.offset_y),
-                },
-            );
-        }
-        if source.kind == model::ClipKind::Shape {
-            return self.apply_in(
-                gesture,
-                Command::AddShapeClip {
-                    above: false,
-                    track_id: Some(track_id.to_owned()),
-                    start,
-                    style: source.shape.clone(),
-                    duration: Some(source.duration),
-                    name: source.name.clone(),
-                },
-            );
-        }
-        let lane_end = self
-            .timeline()
-            .clips
-            .iter()
-            .filter(|clip| clip.track_id == track_id)
-            .map(|clip| clip.start + clip.duration)
-            .fold(0.0, f64::max);
-        let created = self.apply_in(
-            gesture,
-            Command::AddClip {
-                media_id: source.media_id.clone(),
-                track_id: track_id.to_owned(),
-                start: lane_end,
-                ripple: false,
-            },
-        )?;
-        let placed = self.clip(&created).cloned()?;
-        let commands = copy_commands(source, &placed, track_id, start);
-        self.apply_in(gesture, Command::Batch { commands });
-        Some(created)
     }
 
     /// What the tray's sound and word tools may do to the selection: one
