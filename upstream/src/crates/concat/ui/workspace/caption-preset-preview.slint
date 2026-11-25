@@ -91,11 +91,12 @@ export component CaptionPresetPreviewPanel inherits VerticalLayout {
         color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
     }
     if !root.inspector-only: Rectangle {
-        property <length> gap: 8px;
+        property <length> gap: 6px;
         property <length> min-card: 144px;
         property <int> cols: Math.max(1, Math.floor((self.width + self.gap) / (self.min-card + self.gap)));
         property <length> card-w: (self.width - (self.cols - 1) * self.gap) / self.cols;
-        property <length> card-h: self.card-w * 9 / 16 + 56px;
+        // Keep the responsive column count; compact only the shelf cards.
+        property <length> card-h: (self.card-w * 9 / 16 + 56px) * 0.7;
         height: Math.ceil(CaptionPresetPreview.cards.length / self.cols) * (self.card-h + self.gap);
         for card[index] in CaptionPresetPreview.cards: Rectangle {
             x: Math.mod(index, parent.cols) * (parent.card-w + parent.gap);
@@ -106,7 +107,7 @@ export component CaptionPresetPreviewPanel inherits VerticalLayout {
             border-color: CaptionPresetPreview.chosen == card.id ? Theme.accent : touch.has-hover ? Theme.line-strong : Theme.line;
             background: Theme.sample-ground;
             Image {
-                x: 4px; y: 4px; width: parent.width - 8px; height: parent.width * 9 / 16 - 4px;
+                x: 4px; y: 3px; width: parent.width - 8px; height: parent.height - 39px;
                 source: card.thumbnail; image-fit: contain;
             }
             if CaptionPresetPreview.applied == card.id: Text {
@@ -115,8 +116,8 @@ export component CaptionPresetPreviewPanel inherits VerticalLayout {
                 horizontal-alignment: right;
             }
             Text {
-                x: 6px; y: parent.width * 9 / 16 + 2px;
-                width: parent.width - 12px; height: 52px;
+                x: 6px; y: parent.height - 36px;
+                width: parent.width - 12px; height: 34px;
                 text: card.name; color: Theme.fg; font-size: Theme.fs-sm;
                 wrap: word-wrap; horizontal-alignment: center; vertical-alignment: center;
             }
