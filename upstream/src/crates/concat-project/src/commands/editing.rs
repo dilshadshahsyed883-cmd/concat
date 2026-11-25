@@ -1107,6 +1107,70 @@ mod tests {
     }
 
     #[test]
+    fn deleting_or_trimming_a_neighbor_clears_only_orphan_transitions() {
+        for trim in [false, true] {
+            let mut editor = fixture();
+            editor
+                .apply(Command::UpdateClip {
+                    clip_id: "c2".into(),
+                    patch: ClipPatch {
+                        transition_in: Some(Some(Transition {
+                            id: "cross-fade".into(),
+                            duration: 0.9,
+                            intensity: None,
+                            params: Default::default(),
+                        })),
+                        ..Default::default()
+                    },
+                })
+                .unwrap();
+            let before = editor.to_document(&settings());
+            let command = if trim {
+                Command::TrimClip {
+                    clip_id: "c1".into(),
+                    edge: TrimEdge::End,
+                    delta: -1.0,
+                    ripple: false,
+                }
+            } else {
+                Command::RemoveClips {
+                    clip_ids: vec!["c1".into()],
+                    ripple: false,
+                }
+            };
+            editor.apply(command).unwrap();
+            assert!(
+                editor
+                    .project()
+                    .active()
+                    .clip("c2")
+                    .unwrap()
+                    .transition_in
+                    .is_none()
+            );
+            assert!(editor.undo());
+            assert_eq!(editor.to_document(&settings()), before);
+            editor
+                .apply(Command::TrimClip {
+                    clip_id: "c2".into(),
+                    edge: TrimEdge::End,
+                    delta: -1.0,
+                    ripple: false,
+                })
+                .unwrap();
+            assert!(
+                editor
+                    .project()
+                    .active()
+                    .clip("c2")
+                    .unwrap()
+                    .transition_in
+                    .is_some()
+            );
+        }
+    }
+
+    #[test]
     fn full_clip_copy_retains_narration_lane_protection() {
         let mut project = fixture().project().clone();
         project

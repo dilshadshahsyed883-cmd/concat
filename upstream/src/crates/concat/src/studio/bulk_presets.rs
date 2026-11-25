@@ -631,10 +631,16 @@ impl Studio {
             return;
         }
         self.flush_commit();
-        let pairs = self.scoped_transition_pairs(images, videos, selected_only);
+        // Clearing metadata must also reach clips whose former neighbor is gone.
+        let selected: HashSet<&str> = self.selection.iter().map(String::as_str)
+            .chain(self.transition_selected.as_deref()).collect();
         let mut ids = Vec::new();
         let mut unchanged = 0usize;
-        for (_, incoming) in &pairs {
+        for incoming in &self.timeline().clips {
+            if !chosen_media_type(incoming, images, videos)
+                || self.locked(&incoming.track_id)
+                || self.timeline().track(&incoming.track_id).is_none_or(|t| !t.visible)
+                || (selected_only && !selected.contains(incoming.id.as_str())) { continue; }
             if incoming.transition_in.is_some() { ids.push(incoming.id.clone()); }
             else { unchanged += 1; }
         }
