@@ -2,12 +2,6 @@ name: Concat native development build
 
 on:
   workflow_dispatch:
-    inputs:
-      publish_release:
-        description: 'Publish official GitHub release (requires matching GPU image)'
-        required: false
-        type: boolean
-        default: false
   push:
     branches: [main, issue-109-editor-consistency]
     paths: ['.github/release-requests/concat-final-20261108.txt', '.github/release-requests/issue-109-build.txt']
@@ -242,7 +236,7 @@ jobs:
 
   publish-main-release:
     needs: native-editor-windows
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true))
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
