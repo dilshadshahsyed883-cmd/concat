@@ -45,6 +45,8 @@ export global ParticleBulk {
 
 /// The same manifest-driven controls work for Color and Particle presets.
 export component EffectSettings inherits VerticalLayout {
+    // Unit overrides are scoped to the twelve particle presets, not Color effects.
+    property <bool> particle: ParticleBulk.index-of(ParticleBulk.draft-id) >= 0;
     spacing: 6px;
     if LibraryFocus.selected-id != "" && ParticleBulk.draft-id == LibraryFocus.selected-id: VerticalLayout {
         spacing: 6px;
@@ -53,6 +55,7 @@ export component EffectSettings inherits VerticalLayout {
             color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
         for p in ParticleBulk.draft-params: Rectangle {
             property <AppliedParamData> data: p;
+            property <bool> particle-percent: root.particle && (p.key == "size" || p.key == "opacity" || p.key == "glow");
             height: knob.preferred-height;
             changed data => { knob.value = self.data.value; }
             knob := Param {
@@ -62,7 +65,12 @@ export component EffectSettings inherits VerticalLayout {
                 maximum: p.max;
                 step: p.step;
                 default-value: p.default-value;
-                unit: p.unit;
+                single-value: true;
+                unit: parent.particle-percent ? "%" : root.particle && p.key == "direction" ? "°" : p.unit;
+                unit-scale: parent.particle-percent ? 100 : 1;
+                // Light leaks and dust motes have 0.025/0.035 factory speeds
+                // despite a 0.05 nudge step. Keep those values representable.
+                minimum-precision: root.particle && p.key == "speed" ? 3 : 0;
                 fmt: p.fmt;
                 changed(value) => { ParticleBulk.change-param(ParticleBulk.draft-id, p.key, value); }
             }
