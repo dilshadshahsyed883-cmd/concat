@@ -614,7 +614,9 @@ export component App inherits Window {
                 toggle-maximize => { root.titlebar-toggle-maximize(); }
                 minimize => { root.titlebar-minimize(); }
                 close => {
-                    if (root.on-start) {
+                    if (root.c-builder-home) {
+                        root.c-builder-return-home("");
+                    } else if (root.on-start) {
                         root.titlebar-close();
                     } else {
                         root.app-menu-selected("close-project");
