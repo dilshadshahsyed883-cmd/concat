@@ -4654,6 +4654,9 @@ impl Studio {
                 && f64::from(value) >= p.min && f64::from(value) <= p.max
         });
         if !valid { return; }
+        let mut candidate = self.effect_application(id);
+        candidate.params.insert(key.to_owned(), f64::from(value));
+        if !concat_project::particle_validation::valid(&candidate) { return; }
         let initial = self.prefs.effect_preset_defaults.get(id).cloned().unwrap_or_default();
         self.effect_drafts.entry(id.to_owned()).or_insert(initial)
             .insert(key.to_owned(), f64::from(value));
@@ -5183,7 +5186,9 @@ impl Studio {
             &mut clip.video_effects
         };
         if let Some(entry) = usize::try_from(index).ok().and_then(|i| chain.get_mut(i)) {
-            entry.params.insert(key.to_owned(), f64::from(value));
+            let mut candidate = entry.clone();
+            candidate.params.insert(key.to_owned(), f64::from(value));
+            if concat_project::particle_validation::valid(&candidate) { *entry = candidate; }
         }
     }
 
