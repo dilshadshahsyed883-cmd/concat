@@ -9,6 +9,7 @@ export component CBuilderHome inherits Rectangle {
     in property <string> output-folder;
     in property <bool> generating;
     in property <bool> used-pending;
+    property <int> page:0;
     callback cancel-generation();
     callback retry-used();
     callback return-home(profile:string);
@@ -34,23 +35,32 @@ export component CBuilderHome inherits Rectangle {
         }
         Text {text:"Output: " + root.output-folder;color:Theme.fg-muted;font-size:Theme.fs-sm;wrap:word-wrap;}
         if root.generated-project!="": Text {text:"Generated: " + root.generated-project;color:Theme.fg-muted;wrap:word-wrap;font-size:Theme.fs-sm;}
+        Text { text: "1  Media Library    /    2  Timeline Builder    /    3  Media Selection"; color: Theme.fg-muted; font-size: Theme.fs-sm; }
+        HorizontalLayout {
+            spacing: 6px;
+            Button { label:"Media Library"; primary:root.page==0; clicked=>{root.page=0;} }
+            Button { label:"Timeline Builder"; primary:root.page==1; clicked=>{root.page=1;} }
+            Button { label:"Media Selection"; primary:root.page==2; clicked=>{root.page=2;} }
+        }
+        // Navigation and actions remain outside the scroll viewport.
         PaneScroll {
+            vertical-stretch:1;
             builder := CBuilderPane {
+                page <=> root.page;
                 can-generate:!root.used-pending;generating:root.generating;
                 project-name:Editor.cb-project-name;name-overridden:Editor.cb-name-overridden;name-preview:Editor.cb-name-preview;
                 project-name-edited(name)=>{Editor.cb-project-name-edited(name);}reset-project-name=>{Editor.cb-reset-project-name();}
                 media-folder:Editor.cb-media-folder;narration:Editor.cb-narration;narration-duration:Editor.cb-duration;
                 status:Editor.cb-status;keywords:Editor.cb-keywords;image-count:Editor.cb-image-count;video-count:Editor.cb-video-count;
                 cache-probed:Editor.cb-probed;cache-reused:Editor.cb-reused;scan-done:Editor.cb-scan-done;scan-total:Editor.cb-scan-total;
-                busy:Editor.cb-busy;profile:Editor.cb-profile;profile-names:Editor.cb-profile-names;preview:Editor.cb-preview;
-                plan-name: Editor.cb-plan-name;
+                busy:Editor.cb-busy;profile:Editor.cb-profile;preview:Editor.cb-preview;
                 plan-opening: Editor.cb-plan-opening; plan-closing: Editor.cb-plan-closing;
                 plan-image-min: Editor.cb-plan-image-min; plan-image-max: Editor.cb-plan-image-max;
                 plan-video-min: Editor.cb-plan-video-min; plan-video-max: Editor.cb-plan-video-max;
                 plan-max-videos: Editor.cb-plan-max-videos; plan-max-images: Editor.cb-plan-max-images;
                 plan-cooldown: Editor.cb-plan-cooldown; plan-seed: Editor.cb-plan-seed;
-                tune-profile(json,name,opening,closing,imin,imax,vmin,vmax,maxv,maxi,cooldown,seed) => {
-                    Editor.cb-tune-profile(json,name,opening,closing,imin,imax,vmin,vmax,maxv,maxi,cooldown,seed);
+                tune-profile(json,opening,closing,imin,imax,vmin,vmax,maxv,maxi,cooldown,seed) => {
+                    Editor.cb-tune-profile(json,opening,closing,imin,imax,vmin,vmax,maxv,maxi,cooldown,seed);
                 }
                 equalize-keywords(json,video) => { Editor.cb-equalize-keywords(json,video); }
                 image-keywords:Editor.cb-image-keywords;video-keywords:Editor.cb-video-keywords;videos-enabled:Editor.cb-videos-enabled;

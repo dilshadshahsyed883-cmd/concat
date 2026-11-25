@@ -43,7 +43,7 @@ class CBuilderLinkedUiContracts(unittest.TestCase):
         self.assertIn("editor.on_cb_overall_video_ratio_changed", self.lib)
         self.assertEqual(self.lib.count("profile.overall_video_percent=Some("), 2)
 
-    def test_compact_form_and_advanced_json_are_wired_to_backend(self):
+    def test_compact_planning_form_is_wired_to_backend(self):
         for label in (
             "Media Library", "Timeline Builder", "Media Selection", "Preview Plan", "Reroll",
             "Generate Native Concat Timeline", "Apply Planning Settings",
@@ -52,8 +52,19 @@ class CBuilderLinkedUiContracts(unittest.TestCase):
             "Repeat cooldown", "Random seed",
         ):
             self.assertIn(label, self.pane)
-        self.assertIn("if root.show-advanced: VerticalLayout", self.pane)
-        self.assertIn("Advanced / Edit JSON", self.pane)
+        for label in ("Planning profile","Profile name","Advanced / Edit JSON","Pin Preview Shot","Clear Pins","Delete Saved",'label: "Store"','label: "Duplicate"','label: "Rename"','label: "Import"','label: "Export"'):
+            self.assertNotIn(label,self.pane)
+        self.assertIn('Param { label: "Opening video %"',self.pane)
+        self.assertIn('Param { label: "Ending video %"',self.pane)
+        self.assertIn("save_planning_settings",self.lib)
+        self.assertIn("load_planning_settings",self.studio)
+        self.assertIn("simplify_planning",self.lib)
+        for label in ("Select Audio","Use Audio Name","root.name-preview","root.status","root.narration-duration"):
+            self.assertIn(label,self.pane)
+        for label in ('label:"Media Library"','label:"Timeline Builder"','label:"Media Selection"'):
+            self.assertLess(self.home.index(label),self.home.index("        PaneScroll {"))
+        self.assertIn("page <=> root.page",self.home)
+        self.assertNotIn('label: "Timeline Builder"',self.pane)
         self.assertIn("callback tune-profile(", self.pane)
         self.assertIn("Editor.cb-tune-profile(", self.home)
         self.assertIn("callback cb-tune-profile(", self.editor)
@@ -61,7 +72,7 @@ class CBuilderLinkedUiContracts(unittest.TestCase):
         self.assertIn("profile.validate()", self.lib)
 
     def test_legacy_and_generation_paths_use_canonical_shares(self):
-        self.assertIn("if let Some(s)=p.media_selection.as_mut(){s.normalize();}", self.lib)
+        self.assertIn("if let Some(selection)=profile.media_selection.as_mut(){selection.normalize();}", self.lib)
         self.assertIn("profile.media_selection.get_or_insert_with(Default::default).normalize();", self.lib)
         self.assertIn("studio.builder_archive_finished(pending,finish)", self.lib)
         self.assertIn("studio.c_builder.effective_name()", self.lib)

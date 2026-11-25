@@ -105,7 +105,6 @@ export global Editor {
     callback cb-project-name-edited(name:string);
     callback cb-reset-project-name();
     in-out property <string> cb-profile;
-    in-out property <[string]> cb-profile-names;
     in-out property <[CBuilderKeywordData]> cb-image-keywords;
     in-out property <[CBuilderKeywordData]> cb-video-keywords;
     in-out property <bool> cb-videos-enabled;
@@ -113,9 +112,8 @@ export global Editor {
     callback cb-overall-video-ratio-changed(value:int);
     in-out property <string> cb-image-selection-summary;
     in-out property <string> cb-video-selection-summary;
-    in-out property <string> cb-plan-name;
-    in-out property <string> cb-plan-opening;
-    in-out property <string> cb-plan-closing;
+    in-out property <float> cb-plan-opening:65;
+    in-out property <float> cb-plan-closing:5;
     in-out property <string> cb-plan-image-min;
     in-out property <string> cb-plan-image-max;
     in-out property <string> cb-plan-video-min;
@@ -124,7 +122,7 @@ export global Editor {
     in-out property <string> cb-plan-max-images;
     in-out property <string> cb-plan-cooldown;
     in-out property <string> cb-plan-seed;
-    callback cb-tune-profile(json:string, name:string, opening:string, closing:string,
+    callback cb-tune-profile(json:string, opening:float, closing:float,
         image-min:string, image-max:string, video-min:string, video-max:string,
         max-videos:string, max-images:string, cooldown:string, seed:string);
     callback cb-equalize-keywords(json:string, video:bool);

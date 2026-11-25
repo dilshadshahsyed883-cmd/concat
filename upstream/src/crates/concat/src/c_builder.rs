@@ -621,8 +621,6 @@ pub struct State {
     pub profile_json: String,
     pub preview: String,
     pub preview_shots: Vec<Shot>,
-    pub stored_profiles: Vec<concat_project::planning::Profile>,
-    pub active_profile_name: String,
 }
 impl State {
     pub fn choose_narration_name(&mut self,path:&Path) {
@@ -648,13 +646,31 @@ impl State {
     }
 }
 
-/// Validated profile persistence with Windows-safe replacement and rollback.
-pub fn save_profile(path: &Path, source: &str) -> Result<(), String> {
-    let profile = concat_project::planning::Profile::from_json(source)?;
-    let bytes = serde_json::to_vec_pretty(&profile).map_err(|e| e.to_string())?;
+/// Simplify the internal configuration without changing the shared planner.
+pub fn simplify_planning(p:&mut concat_project::planning::Profile){
+    use concat_project::planning::Anchor;
+    let opening=p.curve.first().map_or(0.65,|a|a.video);
+    let ending=p.curve.last().map_or(0.05,|a|a.video);
+    p.name="Timeline Planning".into();
+    p.curve=vec![Anchor{at:0.,video:opening},Anchor{at:1.,video:ending}];
+    p.pins.clear();p.ratio_by_seconds=true;
+}
+const PLANNING_SETTINGS:&str="c-builder-planning.json";
+pub fn load_planning_settings(config:&Path)->concat_project::planning::Profile {
+    let path=config.join(PLANNING_SETTINGS);
+    let mut p=[path.clone(),path.with_extension("json.backup")].iter().filter_map(|p|fs::read_to_string(p).ok())
+        .find_map(|s|concat_project::planning::Profile::from_json(&s).ok()).unwrap_or_default();
+    simplify_planning(&mut p);p.media_selection=None;p.overall_video_percent=None;p
+}
+pub fn save_planning_settings(config:&Path,p:&concat_project::planning::Profile)->Result<(),String>{
+    let mut p=p.clone();simplify_planning(&mut p);p.media_selection=None;p.overall_video_percent=None;p.validate()?;
+    fs::create_dir_all(config).map_err(|e|e.to_string())?;
+    let path=config.join(PLANNING_SETTINGS);
+    let bytes=serde_json::to_vec_pretty(&p).map_err(|e|e.to_string())?;
     let pending = path.with_extension("json.pending");
     let backup = path.with_extension("json.backup");
     fs::write(&pending, bytes).map_err(|e| e.to_string())?;
+    if backup.exists() && !path.exists(){fs::rename(&backup,&path).map_err(|e|e.to_string())?;}
     if backup.exists() { fs::remove_file(&backup).map_err(|e| e.to_string())?; }
     let existed = path.exists();
     if existed { fs::rename(path, &backup).map_err(|e| e.to_string())?; }
@@ -666,44 +682,18 @@ pub fn save_profile(path: &Path, source: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Managed profile filenames never interpret a profile name as a filesystem path.
-pub fn profile_file(folder:&Path,name:&str)->PathBuf {
-    let hash=name.bytes().fold(0xcbf29ce484222325_u64,|h,b|(h^u64::from(b)).wrapping_mul(0x100000001b3));
-    folder.join(format!("profile-{hash:016x}.json"))
-}
-pub fn load_profiles(folder:&Path)->Vec<concat_project::planning::Profile> {
-    let mut profiles=Vec::new();
-    if let Ok(entries)=fs::read_dir(folder){for entry in entries.flatten().take(500){
-        if entry.file_type().is_ok_and(|t|t.is_file())&&entry.path().extension().is_some_and(|e|e=="json"){
-            if let Ok(source)=fs::read_to_string(entry.path()){
-                if let Ok(profile)=concat_project::planning::Profile::from_json(&source){profiles.push(profile);}
-            }
-        }
-    }}
-    profiles.sort_by(|a,b|a.name.cmp(&b.name));profiles
-}
-pub fn store_profile(folder:&Path,source:&str)->Result<(),String> {
-    let profile=concat_project::planning::Profile::from_json(source)?;
-    fs::create_dir_all(folder).map_err(|e|e.to_string())?;
-    let path=profile_file(folder,&profile.name);
-    if path.is_symlink(){return Err("Managed profile cannot be a symbolic link".into());}
-    if path.exists(){let old=concat_project::planning::Profile::from_json(&fs::read_to_string(&path).map_err(|e|e.to_string())?)?;
-        if old.name!=profile.name{return Err("Profile filename collision; choose another name".into());}}
-    save_profile(&path,source)
-}
-
 #[cfg(test)]
-mod profile_tests {
+mod planning_settings_tests {
     use super::*;
     #[test]
-    fn managed_profiles_replace_atomically_and_preserve_sources() {
-        let root=std::env::temp_dir().join(format!("concat-profile-test-{}",random_seed()));
-        let mut profile=concat_project::planning::Profile::default();profile.name="Custom / profile".into();
-        let mut json=serde_json::to_string(&profile).unwrap();store_profile(&root,&json).unwrap();
-        profile.max_videos=3;json=serde_json::to_string(&profile).unwrap();store_profile(&root,&json).unwrap();
-        let profiles=load_profiles(&root);assert_eq!(profiles.len(),1);assert_eq!(profiles[0].max_videos,3);
-        assert!(save_profile(&profile_file(&root,&profile.name),"{}").is_err());
-        assert_eq!(load_profiles(&root)[0].max_videos,3);
-        std::fs::remove_dir_all(root).unwrap();
+    fn configuration_survives_restart_without_project_selections(){
+        let root=std::env::temp_dir().join(format!("concat-planning-settings-{}",random_seed()));
+        let mut p=concat_project::planning::Profile::default();
+        p.max_videos=4;p.image_seconds=[2.,6.];p.seed=42;p.media_selection=Some(Default::default());p.overall_video_percent=Some(30);
+        save_planning_settings(&root,&p).unwrap();let saved=load_planning_settings(&root);
+        assert_eq!(saved.max_videos,4);assert_eq!(saved.image_seconds,[2.,6.]);assert_eq!(saved.seed,42);
+        assert_eq!(saved.curve.len(),2);assert!(saved.pins.is_empty());assert!(saved.media_selection.is_none());assert!(saved.overall_video_percent.is_none());
+        p.image_seconds=[6.,2.];assert!(save_planning_settings(&root,&p).is_err());assert_eq!(load_planning_settings(&root),saved);
+        fs::remove_dir_all(root).unwrap();
     }
 }
