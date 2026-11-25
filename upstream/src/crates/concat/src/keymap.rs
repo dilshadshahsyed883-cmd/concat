@@ -20,7 +20,7 @@
 //! way that platform does.
 //!
 //! Some keys never enter the table: the menu bar's F10 and Alt+F/E/V,
-//! and the window's Ctrl+O/W/Q stay `KeyBinding`s in app.slint, ahead
+//! and the window's Ctrl+O/W and quit chord stay `KeyBinding`s in app.slint, ahead
 //! of everything this module sees. [`reserved`] names their chords so a
 //! capture in Settings is turned away rather than shadowing them.
 
@@ -58,6 +58,11 @@ pub const ACTIONS: &[Action] = &[
     Action {
         id: "export",
         defaults: &["ctrl+e"],
+    },
+    #[cfg(windows)]
+    Action {
+        id: "prepare-zip-only",
+        defaults: &["ctrl+q"],
     },
     Action {
         id: "settings",
@@ -195,6 +200,7 @@ pub fn name(id: &str) -> String {
         "save" => i18n::t("studio.save"),
         "import" => i18n::t("studio.importMedia"),
         "export" => i18n::t("studio.export"),
+        "prepare-zip-only" => "Prepare ZIP Only (Offline)".into(),
         "settings" => i18n::t("common.settings"),
         "undo" => i18n::t("studio.undo"),
         "redo" => i18n::t("studio.redo"),
@@ -338,7 +344,9 @@ pub fn reserved(chord: &str) -> bool {
     // system's own.
     let apple = cfg!(any(target_os = "macos", target_os = "ios"));
     matches!(chord, "ctrl+o" | "ctrl+w")
-        || (!apple && matches!(chord, "ctrl+q" | "f10" | "alt+f" | "alt+e" | "alt+v"))
+        || (!apple && matches!(chord, "f10" | "alt+f" | "alt+e" | "alt+v"))
+        || (cfg!(windows) && chord == "ctrl+shift+q")
+        || (!apple && !cfg!(windows) && chord == "ctrl+q")
 }
 
 /// The chord the key event makes, or `None` when the press is no chord:
@@ -748,8 +756,25 @@ mod tests {
         if cfg!(not(any(target_os = "macos", target_os = "ios"))) {
             assert!(reserved("f10"));
             assert!(reserved("alt+f"));
-            assert!(reserved("ctrl+q"));
+            assert_eq!(reserved("ctrl+q"), !cfg!(windows));
+            assert_eq!(reserved("ctrl+shift+q"), cfg!(windows));
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn offline_zip_uses_ctrl_q_and_quit_stays_reserved() {
+        let mut prefs = Preferences::default();
+        assert_eq!(resolve(&prefs, "ctrl+q"), Some("prepare-zip-only"));
+        assert_eq!(resolve(&prefs, "ctrl+e"), Some("export"));
+        assert_eq!(resolve(&prefs, "ctrl+shift+q"), None);
+        assert!(!reserved("ctrl+q"));
+        assert!(reserved("ctrl+shift+q"));
+        bind(&mut prefs, "prepare-zip-only", "ctrl+shift+e");
+        assert_eq!(resolve(&prefs, "ctrl+shift+e"), Some("prepare-zip-only"));
+        assert_eq!(resolve(&prefs, "ctrl+q"), None);
+        reset(&mut prefs, "prepare-zip-only");
+        assert_eq!(resolve(&prefs, "ctrl+q"), Some("prepare-zip-only"));
     }
 
     #[test]
