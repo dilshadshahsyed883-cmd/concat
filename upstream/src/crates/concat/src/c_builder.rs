@@ -394,6 +394,40 @@ mod tests {
             has_audio: false, used_count: 0 }
     }
     #[test]
+    fn successful_build_reset_keeps_preferences_but_excludes_every_keyword() {
+        use concat_project::planning::{KeywordSelection, Profile};
+        let mut profile = Profile::default();
+        profile.seed = 42;
+        profile.overall_video_percent = Some(30);
+        let selection = profile.media_selection.get_or_insert_with(Default::default);
+        selection.videos_enabled = true;
+        selection.images.insert("Eala".into(), KeywordSelection { selected: true, weight: 40 });
+        selection.images.insert("Osaka".into(), KeywordSelection { selected: true, weight: 60 });
+        selection.videos.insert("Eala".into(), KeywordSelection { selected: true, weight: 100 });
+        selection.videos.insert("Other".into(), KeywordSelection { selected: false, weight: 0 });
+        let saved_project_profile = profile.clone();
+        let mut state = State { profile_json: serde_json::to_string(&profile).unwrap(), ..Default::default() };
+        state.reset_keyword_selections_after_build().unwrap();
+        assert_eq!(state.remembered_keyword_weight(false, "Eala"), 40);
+        assert_eq!(state.remembered_keyword_weight(false, "Osaka"), 60);
+        assert_eq!(state.remembered_keyword_weight(true, "Eala"), 100);
+        assert_eq!(state.remembered_keyword_weight(true, "Other"), 0);
+        let draft = Profile::from_json(&state.profile_json).unwrap();
+        let mut expected = saved_project_profile.clone();
+        let empty = expected.media_selection.as_mut().unwrap();
+        empty.images.clear();
+        empty.videos.clear();
+        assert_eq!(draft, expected);
+        let error = plan_profile(&[image("one")], 10., "", "", &draft).err().unwrap();
+        assert!(error.contains("Select at least one"));
+        state.reset_keyword_selections_after_build().unwrap();
+        assert_eq!(state.remembered_keyword_weight(false, "Eala"), 40);
+        state.forget_keyword_weight(false, "Eala");
+        assert_eq!(state.remembered_keyword_weight(false, "Eala"), 0);
+        assert_eq!(state.remembered_keyword_weight(true, "Eala"), 100);
+        assert!(saved_project_profile.media_selection.unwrap().images["Eala"].selected);
+    }
+    #[test]
     fn keyword_suffixes_preserve_base() {
         assert_eq!(keyword(Path::new("Alex Eala_001.jpg")), "Alex Eala");
         assert_eq!(keyword(Path::new("Alex Eala.jpg")), "Alex Eala");
@@ -619,10 +653,43 @@ pub struct State {
     pub reused: usize,
     pub removed: usize,
     pub profile_json: String,
+    // Session-local preferences are separate from active planner weights.
+    pub remembered_image_weights: BTreeMap<String, u32>,
+    pub remembered_video_weights: BTreeMap<String, u32>,
     pub preview: String,
     pub preview_shots: Vec<Shot>,
 }
 impl State {
+    pub fn remembered_keyword_weight(&self, video: bool, keyword: &str) -> u32 {
+        let weights = if video { &self.remembered_video_weights } else { &self.remembered_image_weights };
+        weights.get(keyword).copied().unwrap_or(0)
+    }
+
+    pub fn forget_keyword_weight(&mut self, video: bool, keyword: &str) {
+        let weights = if video { &mut self.remembered_video_weights } else { &mut self.remembered_image_weights };
+        weights.remove(keyword);
+    }
+
+    /// Clear only the active keyword choices after a verified generation.
+    /// The completed project's profile is already saved; this changes only the next draft.
+    pub fn reset_keyword_selections_after_build(&mut self) -> Result<(), String> {
+        let mut profile = if self.profile_json.trim().is_empty() {
+            concat_project::planning::Profile::default()
+        } else {
+            concat_project::planning::Profile::from_json(&self.profile_json)?
+        };
+        let selection = profile.media_selection.get_or_insert_with(Default::default);
+        selection.normalize();
+        let images = std::mem::take(&mut selection.images);
+        let videos = std::mem::take(&mut selection.videos);
+        let encoded = serde_json::to_string_pretty(&profile).map_err(|e| e.to_string())?;
+        self.remembered_image_weights.extend(images.into_iter().filter(|(_, row)| row.selected).map(|(key, row)| (key, row.weight)));
+        self.remembered_video_weights.extend(videos.into_iter().filter(|(_, row)| row.selected).map(|(key, row)| (key, row.weight)));
+        self.profile_json = encoded;
+        self.preview_shots.clear();
+        Ok(())
+    }
+
     pub fn choose_narration_name(&mut self,path:&Path) {
         let next=concat_project::naming::audio_stem(path);
         if !self.name_overridden || self.project_name.trim().is_empty() {self.project_name=next.clone();}
