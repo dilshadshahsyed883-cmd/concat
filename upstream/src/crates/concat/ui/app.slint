@@ -613,7 +613,13 @@ export component App inherits Window {
                 begin-drag => { root.titlebar-begin-drag(); }
                 toggle-maximize => { root.titlebar-toggle-maximize(); }
                 minimize => { root.titlebar-minimize(); }
-                close => { root.titlebar-close(); }
+                close => {
+                    if (root.on-start) {
+                        root.titlebar-close();
+                    } else {
+                        root.app-menu-selected("close-project");
+                    }
+                }
                 open-settings => { root.open-settings(); }
                 add-pane(kind) => { Editor.dock-add(kind); }
                 export-clicked => { root.export-clicked(); }
