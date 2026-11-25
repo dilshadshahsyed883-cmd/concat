@@ -15,7 +15,7 @@ This file distinguishes execution from mocks and from pending checks. It is upda
 | CPU runtime integration | Pinned CPU ICD, app-local loader and independent instance/device discovery gate added; Windows validation pending | Pending |
 | Latest native source | Native timeline drop/zoom, persistent selection, stage echo preservation, service initialization and saved field hydration corrected | Acceptance run required |
 | WebView2 interactions | Test exercises ten-clip project boot, offscreen selection, Physics application, monitor image and settings | Test written; execution pending |
-| Packaged portable EXE | Window-startup gate included after packaging | Pending |
+| Packaged portable EXE | Bundled-engine and React-workspace boot gate included after packaging | Pending |
 | Existing CUDA worker image | Earlier candidate builds passed imports, compatibility contract and authenticated container entrypoint | Real container smoke; not GPU hardware rendering |
 | CUDA rendering on NVIDIA hardware | No CUDA device exercised by these GitHub-hosted jobs | Unverified |
 | Microphone capture / real speech model inference | Controllers retained; no hardware/model acceptance run recorded here | Unverified |

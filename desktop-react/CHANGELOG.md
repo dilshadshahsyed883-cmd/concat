@@ -14,7 +14,7 @@ Development branch: `feature/react-desktop-ui-20261125`; review: pull request #1
 - React panels for captions/karaoke/SRT, microphone recording, speech models, CBuilder, GPU connection/queue and settings. Typed controller forms expose the remaining original service controls without opening the old editor.
 - Original keyboard resolution and rebinding controllers receive desktop key events. Project open/close, export and settings shortcuts are handled by the React shell.
 - CPU Vulkan runtime packaging uses a checksum-pinned Mesa distribution and a source-pinned Khronos loader. The same native WGSL renderer is retained.
-- Windows source-build, real engine integration, WebView2 interaction and packaged-window smoke gates; separate immutable candidate worker-image workflow with no deployment step.
+- Windows source-build, real engine integration, WebView2 interaction and packaged native/workspace boot smoke gates; separate immutable candidate worker-image workflow with no deployment step.
 
 ## Verification status
 

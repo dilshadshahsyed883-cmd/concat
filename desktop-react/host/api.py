@@ -100,7 +100,9 @@ class Api:
     @rpc
     def boot(self):
         self._discover();self.motion=self._helper({'operation':'catalogue'});self.catalogue=self._call('effects_list');self._native_snapshot()
-        return {**self._state(),'version':self._call('concat_version'),'recents':self._call('project_list'),'catalogue':self.catalogue,'motion':self.motion,'tools':[{'name':v['name'],'title':v.get('title',v['name']),'description':v.get('description',''),'inputSchema':v.get('inputSchema',{})} for v in self.engine.tools.values()]}
+        result={**self._state(),'version':self._call('concat_version'),'recents':self._call('project_list'),'catalogue':self.catalogue,'motion':self.motion,'tools':[{'name':v['name'],'title':v.get('title',v['name']),'description':v.get('description',''),'inputSchema':v.get('inputSchema',{})} for v in self.engine.tools.values()]}
+        self.boot_complete=True
+        return result
     @rpc
     def state(self):return self._state()
     @rpc
