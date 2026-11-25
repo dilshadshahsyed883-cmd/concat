@@ -82,16 +82,16 @@ export component CanvasPresetPanel inherits VerticalLayout {
         spacing: 7px;
         Text { text: "Picture Size changes the foreground opening and frame, not Content Zoom / Crop. Default target: 120%; safe canvas bounds may limit the actual size.";
             color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
-        Param { label: "Picture Size (%)"; value: CanvasPresets.foreground-size;
-            minimum: 40; maximum: 130; step: 1; default-value: 120; fmt: ParamFormat.percent;
+        Param { label: "Picture Size"; value: CanvasPresets.foreground-size;
+            minimum: 40; maximum: 130; step: 1; default-value: 120; unit: "%"; fmt: ParamFormat.percent;
             changed(v) => { CanvasPresets.edit-number("foregroundSize", v); } }
-        Param { label: "Left"; value: CanvasPresets.foreground-x; minimum: 0; maximum: 1 - CanvasPresets.foreground-width; step: 0.005; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("foregroundX", v); } }
-        Param { label: "Top"; value: CanvasPresets.foreground-y; minimum: 0; maximum: 1 - CanvasPresets.foreground-height; step: 0.005; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("foregroundY", v); } }
-        Param { label: "Width"; value: CanvasPresets.foreground-width; minimum: 0.05; maximum: 1 - CanvasPresets.foreground-x; step: 0.005; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("foregroundWidth", v); } }
-        Param { label: "Height"; value: CanvasPresets.foreground-height; minimum: 0.05; maximum: 1 - CanvasPresets.foreground-y; step: 0.005; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("foregroundHeight", v); } }
-        Param { label: "Border thickness"; value: CanvasPresets.border-width; minimum: 0; maximum: 0.1; step: 0.001; fmt: ParamFormat.outline; changed(v) => { CanvasPresets.edit-number("borderWidth", v); } }
+        Param { label: "Left"; value: CanvasPresets.foreground-x; minimum: 0; maximum: 1 - CanvasPresets.foreground-width; step: 0.005; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("foregroundX", v); } }
+        Param { label: "Top"; value: CanvasPresets.foreground-y; minimum: 0; maximum: 1 - CanvasPresets.foreground-height; step: 0.005; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("foregroundY", v); } }
+        Param { label: "Width"; value: CanvasPresets.foreground-width; minimum: 0.05; maximum: 1 - CanvasPresets.foreground-x; step: 0.005; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("foregroundWidth", v); } }
+        Param { label: "Height"; value: CanvasPresets.foreground-height; minimum: 0.05; maximum: 1 - CanvasPresets.foreground-y; step: 0.005; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("foregroundHeight", v); } }
+        Param { label: "Border thickness"; value: CanvasPresets.border-width; minimum: 0; maximum: 0.1; step: 0.001; unit: "%"; unit-scale: 100; fmt: ParamFormat.outline; changed(v) => { CanvasPresets.edit-number("borderWidth", v); } }
         ColourField { label: "Border color"; value: CanvasPresets.border-color; changed(c) => { CanvasPresets.edit-colour("borderColor", c); } }
-        if CanvasPresets.selected != 10 && CanvasPresets.selected != 17: Param { label: "Corner radius"; value: CanvasPresets.radius; minimum: 0; maximum: 0.5; step: 0.005; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("radius", v); } }
+        if CanvasPresets.selected != 10 && CanvasPresets.selected != 17: Param { label: "Corner radius"; value: CanvasPresets.radius; minimum: 0; maximum: 0.5; step: 0.005; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("radius", v); } }
         Text { text: "Background"; color: Theme.fg-muted; font-size: Theme.fs-sm; }
         Select {
             options: ["Source", "Blurred source", "Solid color", "None", "Adaptive Colors", "Ambient Color Clouds", "Frosted Glass Panels", "Radial Spotlight", "Halftone Arena", "Diagonal Light Streaks", "Monochrome Backdrop", "Topographic Waves", "Carbon Fiber", "Prism Refraction", "Cinematic Bokeh", "Textured Paper", "Light Tunnel"];
@@ -99,7 +99,7 @@ export component CanvasPresetPanel inherits VerticalLayout {
             changed(index) => { CanvasPresets.edit-mode(index); }
         }
         if CanvasPresets.background-mode == 1: Param {
-            label: "Blur softness"; value: CanvasPresets.blur; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction;
+            label: "Blur softness"; value: CanvasPresets.blur; minimum: 0; maximum: 1; step: 0.01; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction;
             changed(v) => { CanvasPresets.edit-number("blur", v); }
         }
         if CanvasPresets.background-mode == 4: Text {
@@ -113,24 +113,24 @@ export component CanvasPresetPanel inherits VerticalLayout {
         if CanvasPresets.background-mode >= 5: VerticalLayout {
             spacing: 5px;
             if CanvasPresets.background-mode != 10: ColourField { label: "Accent color"; value: CanvasPresets.tint-color; changed(c) => { CanvasPresets.edit-colour("backgroundTint", c); } }
-            Param { label: "Intensity"; value: CanvasPresets.pattern-intensity; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("patternIntensity", v); } }
-            Param { label: "Opacity"; value: CanvasPresets.pattern-opacity; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("patternOpacity", v); } }
-            if CanvasPresets.background-mode == 8 || CanvasPresets.background-mode == 9 || CanvasPresets.background-mode >= 11: Param { label: "Texture density"; value: CanvasPresets.pattern-density; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("patternDensity", v); } }
-            if CanvasPresets.background-mode == 8 || CanvasPresets.background-mode == 9 || CanvasPresets.background-mode >= 11: Param { label: "Pattern size"; value: CanvasPresets.pattern-size; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("patternSize", v); } }
-            if CanvasPresets.background-mode == 5 || CanvasPresets.background-mode == 7 || CanvasPresets.background-mode == 9 || CanvasPresets.background-mode == 14 || CanvasPresets.background-mode == 16: Param { label: "Lighting spread"; value: CanvasPresets.lighting-spread; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("lightingSpread", v); } }
-            if CanvasPresets.background-mode == 6 || CanvasPresets.background-mode == 8 || CanvasPresets.background-mode == 11 || CanvasPresets.background-mode == 14 || CanvasPresets.background-mode == 16: Param { label: "Blur softness"; value: CanvasPresets.blur; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("blur", v); } }
+            Param { label: "Intensity"; value: CanvasPresets.pattern-intensity; minimum: 0; maximum: 1; step: 0.01; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("patternIntensity", v); } }
+            Param { label: "Opacity"; value: CanvasPresets.pattern-opacity; minimum: 0; maximum: 1; step: 0.01; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("patternOpacity", v); } }
+            if CanvasPresets.background-mode == 8 || CanvasPresets.background-mode == 9 || CanvasPresets.background-mode >= 11: Param { label: "Texture density"; value: CanvasPresets.pattern-density; minimum: 0; maximum: 1; step: 0.01; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("patternDensity", v); } }
+            if CanvasPresets.background-mode == 8 || CanvasPresets.background-mode == 9 || CanvasPresets.background-mode >= 11: Param { label: "Pattern size"; value: CanvasPresets.pattern-size; minimum: 0; maximum: 1; step: 0.01; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("patternSize", v); } }
+            if CanvasPresets.background-mode == 5 || CanvasPresets.background-mode == 7 || CanvasPresets.background-mode == 9 || CanvasPresets.background-mode == 14 || CanvasPresets.background-mode == 16: Param { label: "Lighting spread"; value: CanvasPresets.lighting-spread; minimum: 0; maximum: 1; step: 0.01; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("lightingSpread", v); } }
+            if CanvasPresets.background-mode == 6 || CanvasPresets.background-mode == 8 || CanvasPresets.background-mode == 11 || CanvasPresets.background-mode == 14 || CanvasPresets.background-mode == 16: Param { label: "Blur softness"; value: CanvasPresets.blur; minimum: 0; maximum: 1; step: 0.01; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("blur", v); } }
         }
         if CanvasPresets.background-mode < 5: ColourField { label: "Background tint"; value: CanvasPresets.tint-color; changed(c) => { CanvasPresets.edit-colour("backgroundTint", c); } }
-        if CanvasPresets.background-mode < 5: Param { label: "Tint opacity"; value: CanvasPresets.tint-opacity; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("tintOpacity", v); } }
-        Param { label: "Shadow opacity"; value: CanvasPresets.shadow-opacity; minimum: 0; maximum: 1; step: 0.01; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("shadowOpacity", v); } }
+        if CanvasPresets.background-mode < 5: Param { label: "Tint opacity"; value: CanvasPresets.tint-opacity; minimum: 0; maximum: 1; step: 0.01; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("tintOpacity", v); } }
+        Param { label: "Shadow opacity"; value: CanvasPresets.shadow-opacity; minimum: 0; maximum: 1; step: 0.01; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("shadowOpacity", v); } }
         if CanvasPresets.shadow-opacity > 0: VerticalLayout {
             spacing: 4px;
-            Param { label: "Shadow offset"; value: CanvasPresets.shadow-offset; minimum: 0; maximum: 0.08; step: 0.001; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("shadowOffset", v); } }
+            Param { label: "Shadow offset"; value: CanvasPresets.shadow-offset; minimum: 0; maximum: 0.08; step: 0.001; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("shadowOffset", v); } }
             ColourField { label: "Shadow color"; value: CanvasPresets.shadow-color; changed(c) => { CanvasPresets.edit-colour("shadowColor", c); } }
         }
         if CanvasPresets.selected == 6: VerticalLayout {
             spacing: 4px;
-            Param { label: "Print bottom mat"; value: CanvasPresets.mat-bottom; minimum: 0; maximum: 0.2; step: 0.005; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("matBottom", v); } }
+            Param { label: "Print bottom mat"; value: CanvasPresets.mat-bottom; minimum: 0; maximum: 0.2; step: 0.005; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("matBottom", v); } }
             ColourField { label: "Print mat color"; value: CanvasPresets.mat-color; changed(c) => { CanvasPresets.edit-colour("matColor", c); } }
         }
         if CanvasPresets.selected == 14: ColourField {
@@ -140,7 +140,7 @@ export component CanvasPresetPanel inherits VerticalLayout {
         if CanvasPresets.selected == 11 || CanvasPresets.selected == 19: Param {
             label: CanvasPresets.selected == 11 ? "Reflection opacity" : "Echo opacity";
             value: CanvasPresets.derivative-opacity; minimum: 0; maximum: 1;
-            step: 0.01; fmt: ParamFormat.fraction;
+            step: 0.01; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction;
             changed(v) => { CanvasPresets.edit-number("derivativeOpacity", v); }
         }
         if CanvasPresets.selected == 20: VerticalLayout {
@@ -153,7 +153,7 @@ export component CanvasPresetPanel inherits VerticalLayout {
             }
         }
         if CanvasPresets.selected >= 4: Param {
-            label: "Rotation"; value: CanvasPresets.rotation; minimum: -12; maximum: 12; step: 1; fmt: ParamFormat.degrees;
+            label: "Rotation"; value: CanvasPresets.rotation; minimum: -12; maximum: 12; step: 1; unit: "°"; fmt: ParamFormat.degrees;
             changed(v) => { CanvasPresets.edit-number("rotation", v); }
         }
     }
