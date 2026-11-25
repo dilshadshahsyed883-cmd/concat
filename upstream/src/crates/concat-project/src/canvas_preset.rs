@@ -546,7 +546,9 @@ impl Config {
             .min(1.0 - cy - extent - self.mat_bottom);
         let max_factor = (w_room / previous.width)
             .min(h_room / previous.height).max(0.0);
-        let factor = (percent / current).min(max_factor);
+        // Leave a tiny numerical margin when constrained, so rounding cannot
+        // produce a negative origin at the exact canvas boundary.
+        let factor = (percent / current).min(max_factor * (1.0 - 1e-12));
         if !factor.is_finite() || factor <= 0.0
             || previous.width * factor < 0.05
             || previous.height * factor < 0.05
