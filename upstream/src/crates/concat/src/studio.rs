@@ -2348,9 +2348,12 @@ impl Studio {
         // the remembered language.
         i18n::select(prefs.locale.as_deref().unwrap_or(i18n::ENGLISH), &host.dirs);
         let languages = i18n::languages(&host.dirs);
-        let recents = projects::recents(&host.dirs.config);
         let text_presets = presets::all(&host.dirs);
         let cb_output_folder=if start.location.trim().is_empty() {host.dirs.data.join("C Builder Projects").to_string_lossy().into_owned()}else{start.location.clone()};
+        let recents = projects::recents_in_folders(&host.dirs.config, &[
+            crate::panes::start::default_location().into(),
+            start.location.clone().into(), cb_output_folder.clone().into(),
+        ]);
         let transition_draft_duration = prefs.transition_default_duration
             .filter(|value| value.is_finite() && (0.1..=5.0).contains(value))
             .unwrap_or(0.9);
@@ -9077,7 +9080,7 @@ impl Studio {
             .playback
             .set_clips(std::path::PathBuf::new(), Vec::new());
         self.on_start = true;
-        self.recents = projects::recents(&self.host.dirs.config);
+        self.refresh_home_projects();
     }
 
     /// Posters, and the running time, for the recents not yet looked at,

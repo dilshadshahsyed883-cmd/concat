@@ -2,6 +2,12 @@
 //! A first-class Home workflow sharing the existing builder state, without a dummy project.
 use super::*;
 impl Studio {
+    pub(super) fn refresh_home_projects(&mut self) {
+        self.recents = projects::recents_in_folders(&self.host.dirs.config, &[
+            crate::panes::start::default_location().into(),
+            self.start.location.clone().into(), self.cb_output_folder.clone().into(),
+        ]);
+    }
     pub fn builder_home(&mut self) {
         if self.c_builder.scanning {return;}
         if self.session.is_some() && self.close_project().is_err() {return;}
@@ -10,6 +16,7 @@ impl Studio {
     pub fn builder_return_home(&mut self,_profile:&str) {
         if self.c_builder.scanning {return;}
         self.cb_home=false;self.on_start=true;
+        self.refresh_home_projects();
     }
     pub fn builder_open_generated(&mut self) {
         if self.c_builder.scanning || self.cb_generated_project.is_empty() {return;}
@@ -39,6 +46,14 @@ impl Studio {
     pub fn builder_archive_finished(&mut self,pending:PendingUsed,finish:crate::c_builder_used::Finish) {
         self.c_builder.scanning=false;self.cb_generation_cancel=None;
         self.cb_generated_project=pending.project.to_string_lossy().into_owned();
+        // The native project is already saved, even if used-media archival
+        // needs a retry. Register it without requiring Open in Editor.
+        match projects::open(&self.cb_generated_project)
+            .and_then(|info| projects::remember(&self.host.dirs.config, &info)) {
+            Ok(()) => {},
+            Err(error) => self.notify(&format!("Project saved; recent history update failed: {error}"), true),
+        }
+        self.refresh_home_projects();
         match finish.result {
             Ok(report)=>{
                 let used:std::collections::HashSet<_>=pending.sources.iter().map(|p|p.to_string_lossy().into_owned()).collect();

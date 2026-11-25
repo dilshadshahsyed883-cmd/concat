@@ -17,7 +17,7 @@ HOST_PROJECTS = (ROOT / "concat-host/src/projects.rs").read_text(encoding="utf-8
 
 
 class HomeProjectManagement(unittest.TestCase):
-    def test_home_only_c_builder_launcher_full_label_next_to_queue(self):
+    def test_home_only_c_builder_launcher_without_removed_gpu_queue(self):
         wide = HOME.split("component WideHome inherits", 1)[1].split(
             "component NarrowHome inherits", 1
         )[0]
@@ -26,7 +26,7 @@ class HomeProjectManagement(unittest.TestCase):
         )[0]
         for page in (wide, narrow):
             self.assertIn('label: "C Builder";', page)
-            self.assertIn('I18n.t("cloudGpu.gpuQueue")', page)
+            self.assertNotIn('I18n.t("cloudGpu.gpuQueue")', page)
             self.assertIn("root.open-c-builder()", page)
             self.assertNotIn('BarAction { glyph:Glyph.slot;', page)
         self.assertNotIn("component CBuilderPane inherits", HOME)
