@@ -3,6 +3,14 @@
 use crate::{canvas_motion::CanvasMotionControls, physics_motion::PhysicsControls};
 use serde::{Deserialize, Serialize};
 
+/// Convert an existing UI control's exact f32 endpoints to its f64 contract.
+/// Adjacent out-of-range f32 values remain out of range; this is not a clamp.
+pub fn ui_endpoint(value: f32, lower: f64, upper: f64) -> f64 {
+    if value == lower as f32 { lower }
+    else if value == upper as f32 { upper }
+    else { f64::from(value) }
+}
+
 /// Persisted by stable catalogue ID in application preferences, never applied by browsing.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
@@ -49,6 +57,22 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ui_endpoints_accept_exact_controls_without_loosening_bounds() {
+        for (lower, upper) in [(0.2, 0.8), (0.0, 0.1), (0.0, 0.2), (-0.45, 0.45)] {
+            assert_eq!(ui_endpoint(lower as f32, lower, upper), lower);
+            assert_eq!(ui_endpoint(upper as f32, lower, upper), upper);
+            let above = f32::from_bits((upper as f32).to_bits()+1);
+            assert!(ui_endpoint(above, lower, upper) > upper);
+            assert!(ui_endpoint(f32::NAN, lower, upper).is_nan());
+        }
+        let mut controls = CanvasMotionControls::default();
+        controls.peak_time = ui_endpoint(0.8, 0.2, 0.8);
+        assert!(controls.valid());
+        controls.peak_time = ui_endpoint(f32::from_bits(0.8f32.to_bits()+1), 0.2, 0.8);
+        assert!(!controls.valid());
+    }
+
     #[test]
     fn configured_families_round_trip_without_substituting_timing_units() {
         let mut settings = Settings::from_value(None);

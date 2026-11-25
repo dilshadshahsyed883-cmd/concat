@@ -75,21 +75,22 @@ fn motion_id(preset: MotionKind) -> &'static str {
 }
 
 pub(super) fn canvas_controls(settings: &crate::ui::CanvasMotionData)->CanvasMotionControls {
+    use concat_project::animation_settings::ui_endpoint;
     CanvasMotionControls {
-            start_scale: f64::from(settings.start_scale),
-            middle_scale: f64::from(settings.middle_scale),
-            peak_time: f64::from(settings.peak_time),
+            start_scale: ui_endpoint(settings.start_scale, 0.05, 1.0),
+            middle_scale: ui_endpoint(settings.middle_scale, 0.5, 1.0),
+            peak_time: ui_endpoint(settings.peak_time, 0.2, 0.8),
             auto_fit: settings.auto_fit,
-            end_scale: f64::from(settings.end_scale),
+            end_scale: ui_endpoint(settings.end_scale, 0.05, 1.0),
             duration_seconds: f64::from(settings.duration), delay_seconds: f64::from(settings.delay),
             entry_seconds: f64::from(settings.entry_seconds), hold_seconds: f64::from(settings.hold_seconds),
             exit_seconds: f64::from(settings.exit_seconds),
-            focus_middle: [f64::from(settings.focus_middle_x), f64::from(settings.focus_middle_y)],
+            focus_middle: [ui_endpoint(settings.focus_middle_x, -0.45, 0.45), ui_endpoint(settings.focus_middle_y, -0.45, 0.45)],
             focus_hold_seconds: f64::from(settings.focus_hold),
             speed: f64::from(settings.speed), strength: f64::from(settings.strength),
-            intensity: f64::from(settings.intensity), blur: f64::from(settings.blur), reverse: settings.reverse,
-            start_anchor: settings.custom_anchors.then_some([f64::from(settings.start_x),f64::from(settings.start_y)]),
-            end_anchor: settings.custom_anchors.then_some([f64::from(settings.end_x),f64::from(settings.end_y)]),
+            intensity: ui_endpoint(settings.intensity, 0.2, 2.0), blur: f64::from(settings.blur), reverse: settings.reverse,
+            start_anchor: settings.custom_anchors.then_some([ui_endpoint(settings.start_x, -0.45, 0.45),ui_endpoint(settings.start_y, -0.45, 0.45)]),
+            end_anchor: settings.custom_anchors.then_some([ui_endpoint(settings.end_x, -0.45, 0.45),ui_endpoint(settings.end_y, -0.45, 0.45)]),
             easing: match settings.easing {
                 0 => concat_project::canvas_motion::MotionEasing::Linear,
                 2 => concat_project::canvas_motion::MotionEasing::Cinematic,

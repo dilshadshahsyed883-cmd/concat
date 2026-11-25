@@ -920,7 +920,12 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     app.global::<CanvasPresets>().on_edit_number(move |field, value| {
         Shell::with(|_, app| {
             canvas_modify(&app, |config| {
-                let value = value as f64;
+                let value = match field.as_str() {
+                    "borderWidth" => concat_project::animation_settings::ui_endpoint(value, 0.0, 0.1),
+                    "matBottom" => concat_project::animation_settings::ui_endpoint(value, 0.0, 0.2),
+                    "shadowOffset" => concat_project::animation_settings::ui_endpoint(value, 0.0, 0.08),
+                    _ => f64::from(value),
+                };
                 match field.as_str() {
                     "foregroundX" => config.foreground.x = value,
                     "foregroundY" => config.foreground.y = value,
