@@ -2805,29 +2805,43 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                                 // Reuse precisely the Send to GPU saved-project snapshot.
                                 // The picker runs later with Studio unborrowed.
                                 let label = concat_project::naming::basename(&state.project_name);
-                                host::after_dialog(
-                                    move || rfd::FileDialog::new()
-                                        .set_title("Prepare ZIP Only - Offline")
-                                        .add_filter("GPU-ready ZIP", &["zip"])
-                                        .set_file_name(format!("{label}.zip"))
-                                        .save_file(),
-                                    move |studio, app, _, selected| {
-                                        let destination = if selected.extension()
-                                            .is_some_and(|extension| extension.eq_ignore_ascii_case("zip"))
-                                        {
-                                            selected
-                                        } else {
-                                            selected.with_extension("zip")
-                                        };
-                                        // Never overwrite an existing archive.
-                                        if destination.exists() {
-                                            studio.notify("ZIP already exists. Choose a new name.", true);
-                                            return;
-                                        }
-                                        cloud_gpu::prepare_zip_only(app, project, destination);
-                                        studio.notify("Preparing local GPU-ready ZIP (no upload)", false);
-                                    },
-                                );
+                                let folder = dirs::desktop_dir()
+                                    .ok_or_else(|| "Could not locate the Desktop folder.".to_string())
+                                    .and_then(|desktop| {
+                                        let folder = desktop.join("Concat");
+                                        std::fs::create_dir_all(&folder)
+                                            .map_err(|error| format!("Could not create Desktop/Concat: {error}"))?;
+                                        Ok(folder)
+                                    });
+                                match folder {
+                                    Ok(folder) => {
+                                        host::after_dialog(
+                                            move || rfd::FileDialog::new()
+                                                .set_title("Prepare ZIP Only - Offline")
+                                                .set_directory(folder)
+                                                .add_filter("GPU-ready ZIP", &["zip"])
+                                                .set_file_name(format!("{label}.zip"))
+                                                .save_file(),
+                                            move |studio, app, _, selected| {
+                                                let destination = if selected.extension()
+                                                    .is_some_and(|extension| extension.eq_ignore_ascii_case("zip"))
+                                                {
+                                                    selected
+                                                } else {
+                                                    selected.with_extension("zip")
+                                                };
+                                                // Never overwrite an existing archive.
+                                                if destination.exists() {
+                                                    studio.notify("ZIP already exists. Choose a new name.", true);
+                                                    return;
+                                                }
+                                                cloud_gpu::prepare_zip_only(app, project, destination);
+                                                studio.notify("Preparing local GPU-ready ZIP (no upload)", false);
+                                            },
+                                        );
+                                    }
+                                    Err(error) => state.notify(&error, true),
+                                }
                             }
                         }
                         #[cfg(windows)]
