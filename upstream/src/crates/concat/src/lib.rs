@@ -892,8 +892,8 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     app.global::<ParticleBulk>().on_clear_preview(on_window!(|state| {
         state.effect_select("");
     }));
-    app.global::<ParticleBulk>().on_apply(on_window!(|state, preset:i32, mode:i32, selected_only:bool, images:bool, videos:bool| {
-        state.apply_particle_bulk(preset,mode,selected_only,images,videos);
+    app.global::<ParticleBulk>().on_apply(on_window!(|state, preset:i32, selected_only:bool, images:bool, videos:bool| {
+        state.apply_particle_bulk(preset,selected_only,images,videos);
     }));
     app.global::<ParticleBulk>().on_toggle_favourite(on_window!(|state, index: i32| {
         const PARTICLE_IDS: [&str; 12] = [

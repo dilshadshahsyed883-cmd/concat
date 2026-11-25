@@ -9834,7 +9834,7 @@ impl Studio {
             .collect();
         keys.set_physics_favourites(slint::ModelRc::new(VecModel::from(physics_stars)));
         // These stable particle package IDs use the same preference store as
-        // effect-library stars, so Favorites Randomly never sees a second list.
+        // effect-library stars, so Favorites browsing uses the same list.
         let particle_stars = [
             "stars", "gold-sparkles", "embers", "fireflies", "bokeh",
             "dust-motes", "snow", "rain", "ash", "light-leaks",

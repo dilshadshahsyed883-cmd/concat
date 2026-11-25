@@ -25,7 +25,7 @@ export global ParticleBulk {
             id == "concat.particles-confetti" ? 11 : -1;
     }
 
-    callback apply(preset: int, mode: int, selected-only: bool, images: bool, videos: bool);
+    callback apply(preset: int, selected-only: bool, images: bool, videos: bool);
     callback toggle-favourite(index: int);
     in property <[bool]> favourites;
     in-out property <int> preset: 0;
@@ -109,8 +109,7 @@ export component ParticleEffectsPanel inherits VerticalLayout {
     EffectSettings { }
 }
 
-// The inspector scrolls settings, but not the five existing Apply actions.
-// No new bulk modes are introduced; the Rust dispatch parameters are unchanged.
+// The inspector scrolls settings, but the two explicit Apply actions stay visible.
 export component ParticleApplyBar inherits VerticalLayout {
     property <int> preset <=> ParticleBulk.preset;
     property <bool> images <=> Keyframes.animation-images;
@@ -119,15 +118,9 @@ export component ParticleApplyBar inherits VerticalLayout {
     padding: 8px;
     HorizontalLayout {
         spacing: 6px;
-        Button { label: "Apply Selected"; enabled: root.images || root.videos; clicked => { ParticleBulk.apply(root.preset, 0, true, root.images, root.videos); } }
-        Button { label: "Apply All"; enabled: root.images || root.videos; clicked => { ParticleBulk.apply(root.preset, 0, false, root.images, root.videos); } }
+        Button { label: "Apply Selected"; enabled: root.images || root.videos; clicked => { ParticleBulk.apply(root.preset, true, root.images, root.videos); } }
+        Button { label: "Apply All"; enabled: root.images || root.videos; clicked => { ParticleBulk.apply(root.preset, false, root.images, root.videos); } }
     }
-    HorizontalLayout {
-        spacing: 6px;
-        Button { label: "Random All"; enabled: root.images || root.videos; clicked => { ParticleBulk.apply(root.preset, 1, false, root.images, root.videos); } }
-        Button { label: "Random Selected"; enabled: root.images || root.videos; clicked => { ParticleBulk.apply(root.preset, 1, true, root.images, root.videos); } }
-    }
-    Button { label: "Favorites Randomly"; enabled: root.images || root.videos; clicked => { ParticleBulk.apply(root.preset, 2, Keyframes.animation-scope == 1, root.images, root.videos); } }
 }
 
 // Left library: stable preset order matches Studio::apply_particle_bulk IDS.
