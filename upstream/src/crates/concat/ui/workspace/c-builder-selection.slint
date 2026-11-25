@@ -127,7 +127,7 @@ component KeywordGrid inherits Rectangle {
     in property <bool> busy;
     callback changed(keyword: string, selected: bool, weight: int);
     property <int> columns: root.width >= 720px ? 3 : root.width >= 480px ? 2 : 1;
-    property <int> rows: Math.ceil(root.entries.length / root.columns);
+    property <int> rows: Math.floor((root.entries.length + root.columns - 1) / root.columns);
     property <length> tile-width: (root.width - (root.columns - 1) * 6px) / root.columns;
     height: root.rows > 0 ? root.rows * 48px + (root.rows - 1) * 6px : 0px;
     for entry[index] in root.entries: KeywordTile {
