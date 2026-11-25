@@ -11,10 +11,10 @@ fn controls<T:serde::Serialize+serde::de::DeserializeOwned>(default:T,patch:&Val
 fn run(v:Value)->Result<Value,String>{
  if v["operation"]=="catalogue"{
   let mut rows=Vec::new();
-  for (i,p) in BASIC.into_iter().enumerate(){rows.push(json!({"id":p.id(),"category":"basic","card":format!("animation-card-{i}.svg")}));}
-  for (i,p) in PhysicsPreset::ALL.into_iter().enumerate(){rows.push(json!({"id":p.id(),"category":"physics","card":format!("animation-card-{}.svg",i+11)}));}
-  for p in CanvasMotionPreset::ALL{rows.push(json!({"id":p.id(),"category":"canvas"}));}
-  for i in concat_project::canvas_preset::ACTIVE_PRESETS{rows.push(json!({"id":format!("canvas-preset.{i}"),"category":"adjustment"}));}
+  for (i,p) in BASIC.into_iter().enumerate(){rows.push(json!({"id":p.id(),"category":"basic","nativeIndex":[6,7,8,37,38,39,40,41,42,43,44][i],"card":format!("animation-card-{i}.svg")}));}
+  for (i,p) in PhysicsPreset::ALL.into_iter().enumerate(){rows.push(json!({"id":p.id(),"category":"physics","nativeIndex":if i<6{i}else{i+24},"card":format!("animation-card-{}.svg",i+11)}));}
+  for (i,p) in CanvasMotionPreset::ALL.into_iter().enumerate(){rows.push(json!({"id":p.id(),"category":"canvas","nativeIndex":if i<21{i+9}else{i+24},"card":format!("animation-card-{}.svg",24+i%20)}));}
+  for i in concat_project::canvas_preset::ACTIVE_PRESETS{rows.push(json!({"id":format!("canvas-preset.{i}"),"category":"adjustment","nativeIndex":i}));}
   return Ok(json!({"presets":rows,"defaults":{"basic":PhysicsControls::default(),"physics":PhysicsControls::default(),"canvas":CanvasMotionControls::default()}}));
  }
  let clip:Clip=serde_json::from_value(v["clip"].clone()).map_err(|e|e.to_string())?;
@@ -27,7 +27,7 @@ fn run(v:Value)->Result<Value,String>{
   return serde_json::to_value(Command::ApplyCanvasPreset{config,targets:vec![clip.id],locked_tracks:vec![]}).map_err(|e|e.to_string());
  }
  let frame=v["frame"].as_f64().ok_or("Frame duration required")?;
- let base=motion_preset::preset_base(&clip,std::iter::empty::<&[concat_project::model::ClipKey]>()).ok_or("This clip has manual keys. Clear or edit those in the advanced editor first.")?;
+ let base=motion_preset::preset_base(&clip,std::iter::empty::<&[concat_project::model::ClipKey]>()).ok_or("This clip has manual keys. Clear or edit those in the keyframe editor first.")?;
  let (keys,style,recipe)=if let Some(p)=BASIC.into_iter().find(|p|p.id()==id){
   let c:PhysicsControls=controls(PhysicsControls::default(),&v["controls"])?;if !c.valid(){return Err("Invalid motion controls".into());}
   let keys=p.keys_with(&base,frame,c.strength,c.duration,c.speed).map_err(|e|format!("{e:?}"))?.0;
@@ -40,7 +40,7 @@ fn run(v:Value)->Result<Value,String>{
   let p=CanvasMotionPreset::ALL.into_iter().find(|p|p.id()==id).ok_or("Unknown native preset")?;
   let c:CanvasMotionControls=controls(CanvasMotionControls::default(),&v["controls"])?;if !c.valid(){return Err("Invalid canvas controls".into());}
   let keys=p.keys(&base,frame,c).map_err(|e|format!("{e:?}"))?;
-  (keys,Some((c.blur,None)),concat_project::motion_wire::recipe(frame,c))
+  (keys,Some((c.blur,base.mask.clone())),concat_project::motion_wire::recipe(frame,c))
  };
  serde_json::to_value(Command::ApplyGeneratedMotion{clip_id:clip.id,expected_keys:clip.keys,keys,preset:id.into(),canvas_style:style,recipe:Some(recipe)}).map_err(|e|e.to_string())
 }

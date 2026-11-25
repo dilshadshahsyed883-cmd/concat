@@ -18,6 +18,17 @@ def main():
             schema=check('native service schema',lambda:engine.request('desktop/schema',{}));assert sum(len(t['callbacks']) for t in schema['targets'].values())>=350
             for target,name,args in [('App','open-settings',[]),('App','settings-closed',[])]:
                 check(target+'.'+name,lambda:engine.request('desktop/invoke',{'target':target,'callback':name,'arguments':args}))
+            original=engine.request('desktop/animation-default',{'id':'motion.push-in'})
+            changed={**original['physics'],'duration':.4}
+            engine.request('desktop/animation-default',{'id':'motion.push-in','controls':changed})
+            assert engine.request('desktop/animation-default',{'id':'motion.push-in'})['physics']['duration']==.4
+            engine.request('desktop/animation-default',{'id':'motion.push-in','controls':original['physics']})
+            checks.append({'name':'native preset default save and restore','status':'passed'})
+            favorites=engine.request('desktop/state',{})['favorites']['animation']
+            engine.request('desktop/invoke',{'target':'Keyframes','callback':'toggle-physics-favourite','arguments':[6]})
+            assert ('motion.push-in' in engine.request('desktop/state',{})['favorites']['animation']) != ('motion.push-in' in favorites)
+            engine.request('desktop/invoke',{'target':'Keyframes','callback':'toggle-physics-favourite','arguments':[6]})
+            checks.append({'name':'native favorite persistence controller','status':'passed'})
             engine.call('project_create',{'location':folder,'name':'React integration'})
             state=engine.request('desktop/state',{});path=state['path'];assert state['view']['project']['timelines']
             engine.call('media_import',{'path':path,'file':str(pic)})

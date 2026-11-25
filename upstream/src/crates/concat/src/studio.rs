@@ -2919,6 +2919,25 @@ impl Studio {
     /// follow the document, the autosave, the monitor and the mix.
     pub(crate) fn react_revision(&self) -> (u64, bool) { (self.revision, self.dirty) }
 
+    pub(crate) fn react_favorites(&self) -> serde_json::Value {
+        serde_json::json!({"animation":self.prefs.physics_motion_favourites,"canvas":self.prefs.canvas_preset_favourites,"packages":self.prefs.favourites})
+    }
+
+    pub(crate) fn react_animation_default(&mut self, id: &str, controls: Option<serde_json::Value>, reset: bool) -> Result<serde_json::Value, String> {
+        let index=(0..59).find(|i|bulk_presets::animation_favourite_id(*i)==Some(id)).ok_or("Unknown animation preset")?;
+        if reset { self.reset_animation_settings(index); }
+        if let Some(controls)=controls {
+            let mut settings=self.animation_settings(index);
+            if id.starts_with("canvas.") || (9..30).contains(&index) || (45..59).contains(&index) {
+                settings.canvas=serde_json::from_value(controls).map_err(|e|e.to_string())?;
+            } else { settings.physics=serde_json::from_value(controls).map_err(|e|e.to_string())?; }
+            if !settings.valid() { return Err("Animation controls are outside supported ranges".into()); }
+            self.prefs.animation_preset_settings.insert(id.into(),serde_json::to_value(settings).map_err(|e|e.to_string())?);
+            self.prefs.save(&self.host.dirs);
+        }
+        serde_json::to_value(self.animation_settings(index)).map_err(|e|e.to_string())
+    }
+
     pub(crate) fn react_saved(&mut self) {
         self.autosave.stop();
         self.dirty = false;

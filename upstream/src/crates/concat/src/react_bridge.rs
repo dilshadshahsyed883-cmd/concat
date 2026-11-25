@@ -61,7 +61,7 @@ fn engine(mut request:Request)->Result<Value,ApiError>{
     Shell::with(|shell,app|{
         let mut studio=shell.studio.borrow_mut();
         studio.flush_commit();
-        if studio.session.is_some() { if let Request::EditApply{path,command}=request { request=Request::EditApply{path,command:studio.protect_canvas_tracks(command)}; } }
+        if studio.session.is_some() { if let Request::EditApply{path,command}=request { request=Request::EditApply{path,command:Box::new(studio.protect_canvas_tracks(*command))}; } }
         let lifecycle=match &request {
             Request::ProjectCreate{location,name,video}=>{
                 let v=video.unwrap_or_default();
@@ -109,10 +109,20 @@ impl concat_mcp::Backend for Desktop {
             if method=="desktop/schema"{return serde_json::from_str(include_str!("react_schema.json")).map_err(|e|ApiError::failed(e.to_string()));}
             let mut result=Err(ApiError::failed("Desktop not ready"));
             Shell::with(|shell,app|{result=(||{match method.as_str(){
+                "desktop/key"=>{
+                    use slint::platform::Key;
+                    let text=params["key"].as_str().ok_or("Key required")?;
+                    let special=match text{"ArrowLeft"=>Some(Key::LeftArrow),"ArrowRight"=>Some(Key::RightArrow),"ArrowUp"=>Some(Key::UpArrow),"ArrowDown"=>Some(Key::DownArrow),"Delete"=>Some(Key::Delete),"Backspace"=>Some(Key::Backspace),"Home"=>Some(Key::Home),"End"=>Some(Key::End),"Enter"=>Some(Key::Return),"Escape"=>Some(Key::Escape),"Tab"=>Some(Key::Tab),"F1"=>Some(Key::F1),"F2"=>Some(Key::F2),"F3"=>Some(Key::F3),"F4"=>Some(Key::F4),"F5"=>Some(Key::F5),"F6"=>Some(Key::F6),"F7"=>Some(Key::F7),"F8"=>Some(Key::F8),"F9"=>Some(Key::F9),"F10"=>Some(Key::F10),"F11"=>Some(Key::F11),"F12"=>Some(Key::F12),_=>None};
+                    let key:slint::SharedString=special.map(|k|char::from(k).to_string()).unwrap_or_else(||text.into()).into();
+                    Ok(json!(app.global::<crate::ui::Editor>().invoke_key_chord(key,params["shift"].as_bool().unwrap_or(false),params["alt"].as_bool().unwrap_or(false),params["ctrl"].as_bool().unwrap_or(false),params["meta"].as_bool().unwrap_or(false),app.get_on_start())))
+                },
+                "desktop/animation-default"=>shell.studio.borrow_mut().react_animation_default(params["id"].as_str().ok_or("Preset ID required")?,params.get("controls").cloned(),params["reset"].as_bool().unwrap_or(false)),
                 "desktop/events"=>{
                     let studio=shell.studio.borrow();let(revision,dirty)=studio.react_revision();
                     let editor=app.global::<crate::ui::Editor>();
-                    Ok(json!({"path":studio.session.as_ref().map(|s|s.path()),"revision":revision,"dirty":dirty,"toast":app.get_toast().wire("toast"),"playing":editor.get_playing(),"time":editor.get_playhead()}))
+                    let clips=editor.get_clips();
+                    let waves:Vec<Value>=(0..clips.row_count()).filter_map(|i|clips.row_data(i)).filter(|c|!c.wave.is_empty()).map(|c|json!({"id":c.id.as_str(),"path":c.wave.as_str(),"from":c.wave_from,"span":c.wave_span,"volume":c.volume})).collect();
+                    Ok(json!({"path":studio.session.as_ref().map(|s|s.path()),"revision":revision,"dirty":dirty,"toast":app.get_toast().wire("toast"),"playing":editor.get_playing(),"time":editor.get_playhead(),"waves":waves,"stage":{"items":editor.get_stage_items().wire("stage.items"),"painting":editor.get_painting(),"brush-size":editor.get_brush_size(),"brush-tool":editor.get_brush_tool()},"selected":(0..clips.row_count()).filter_map(|i|clips.row_data(i)).filter(|c|c.selected).map(|c|c.id.to_string()).collect::<Vec<_>>(),"capturing":!app.get_settings().capturing.is_empty(),"sheets":{"Settings":app.get_settings().open,"Captions":app.get_captions().open,"Speech":app.get_speech().open,"Voiceover":app.get_voiceover().open,"Project":app.get_project_sheet().open||app.get_export().open}}))
                 },
                 "desktop/playback"=>{let editor=app.global::<crate::ui::Editor>();Ok(json!({"time":editor.get_playhead(),"playing":editor.get_playing()}))},
                 "desktop/image"=>{
@@ -125,7 +135,7 @@ impl concat_mcp::Backend for Desktop {
                     image::DynamicImage::ImageRgba8(rgba).write_to(&mut png,image::ImageFormat::Png).map_err(|e|e.to_string())?;
                     Ok(json!(format!("data:image/png;base64,{}",base64(png.get_ref()))))
                 },
-                "desktop/state"=>Ok(json!({"services":generated::state(&app),"appearance":{"dark":app.global::<crate::ui::Theme>().get_dark(),"scale":app.global::<crate::ui::Theme>().get_ui_scale()},"view":shell.studio.borrow().session.as_ref().map(|s|s.view()),"path":shell.studio.borrow().session.as_ref().map(|s|s.path().to_owned())})),
+                "desktop/state"=>Ok(json!({"services":generated::state(&app),"favorites":shell.studio.borrow().react_favorites(),"appearance":{"dark":app.global::<crate::ui::Theme>().get_dark(),"scale":app.global::<crate::ui::Theme>().get_ui_scale()},"view":shell.studio.borrow().session.as_ref().map(|s|s.view()),"path":shell.studio.borrow().session.as_ref().map(|s|s.path().to_owned())})),
                 "desktop/invoke"=>{
                     let target=params["target"].as_str().ok_or("Target required")?;
                     let callback=params["callback"].as_str().unwrap_or("");

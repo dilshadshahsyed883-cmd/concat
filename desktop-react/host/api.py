@@ -27,7 +27,7 @@ def public_api(api):return SimpleNamespace(**{n:getattr(api,n) for n in dir(api)
 
 class Api:
     def __init__(self,engine=None,presets=None,settings=None):
-        self.window=None;self.lock=threading.RLock();self.engine=engine;self.engine_path=None;self.preset_path=Path(presets) if presets else None;self.native=None;self.path='';self.view=None;self.dirty=False;self.revision=0;self.jobs={};self.thumb_cache={};self.settings_path=Path(settings) if settings else ROOT/'preferences.json'
+        self.window=None;self.lock=threading.RLock();self.engine=engine;self.engine_path=None;self.preset_path=Path(presets) if presets else None;self.path='';self.view=None;self.dirty=False;self.revision=0;self.jobs={};self.thumb_cache={};self.settings_path=Path(settings) if settings else ROOT/'preferences.json'
         try:self.prefs=json.loads(self.settings_path.read_text(encoding='utf8'))
         except (OSError,ValueError):self.prefs={}
         self.prefs.setdefault('favorites',{});self.prefs.setdefault('defaults',{});self.prefs.setdefault('lockedTracks',[]);self.prefs.setdefault('lockedProjects',{})
@@ -41,7 +41,6 @@ class Api:
             if not self.engine_path:raise EngineError('Bundled Concat engine not found. Set its location in Settings.')
             self.engine=McpEngine(self.engine_path)
     def _call(self,name,args=None,raw=False):
-        if self.native and self.native.poll() is None:raise EngineError('Project is open in the advanced editor. Save and close that window, then choose Return to workspace.')
         if self.engine is None:self._discover()
         return self.engine.call(name,args or {},raw=raw)
     def _helper(self,obj):
@@ -60,14 +59,20 @@ class Api:
     def _active(self):
         if not self.view:raise EngineError('Open a project first.')
         p=self.view['project'];return next((x for x in p['timelines'] if x['id']==p['activeTimelineId']),p['timelines'][0])
-    def _state(self):return {'path':self.path,'view':self.view,'dirty':self.dirty,'revision':self.revision,'preferences':self.prefs,'nativeOpen':bool(self.native and self.native.poll() is None),'appearance':getattr(self,'appearance',{})}
+    def _state(self):return {'path':self.path,'view':self.view,'dirty':self.dirty,'revision':self.revision,'preferences':self.prefs,'appearance':getattr(self,'appearance',{})}
     def _refresh(self,changed=False):
         if self.path:self.view=self._call('project_get',{'path':self.path})
-        key=self.path+'#'+(self.view['project']['activeTimelineId'] if self.view else '')
-        if key!=getattr(self,'_locks_key',None):
-            self._locks_key=key;self.prefs['lockedTracks']=self.prefs['lockedProjects'].get(key,[])
+        self._lock_scope()
         if changed:self.dirty=True
         self.revision+=1;self.thumb_cache.clear();return self._state()
+    def _lock_scope(self):
+        key=self.path+'#'+(self.view['project']['activeTimelineId'] if self.view else '')
+        if key==getattr(self,'_locks_key',None):return
+        self._locks_key=key;self.prefs['lockedTracks']=self.prefs['lockedProjects'].get(key,[])
+        if self.prefs['lockedTracks'] and self.view and self.engine:
+            tracks=self._active()['tracks'];locked=set(self.prefs['lockedTracks'])
+            for i,t in enumerate(tracks):
+                self.engine.request('desktop/invoke',{'target':'Editor','callback':'track-flag-changed','arguments':[len(tracks)-1-i,t['visible'],t['muted'],t['id'] in locked]})
     def _edit(self,command):
         if not self.path:raise EngineError('Open a project first.')
         self._check_locks(command)
@@ -80,6 +85,7 @@ class Api:
             if isinstance(value,list):
                 for v in value:visit(v)
             elif isinstance(value,dict):
+                if value.get('op')=='setTrackFlag':return
                 if value.get('trackId') in locked:raise ValueError('This track is locked.')
                 ids=[value.get('clipId')]+value.get('clipIds',[])+value.get('targets',[])
                 if any(clips.get(i,{}).get('trackId') in locked for i in ids):raise ValueError('The edit includes a locked clip.')
@@ -89,7 +95,8 @@ class Api:
         visit(command)
     @rpc
     def boot(self):
-        self._discover();self.native_state();return {**self._state(),'version':self._call('concat_version'),'recents':self._call('project_list'),'catalogue':self._call('effects_list'),'motion':self._helper({'operation':'catalogue'}),'tools':[{'name':v['name'],'title':v.get('title',v['name']),'description':v.get('description',''),'inputSchema':v.get('inputSchema',{})} for v in self.engine.tools.values()]}
+        self._discover();self.motion=self._helper({'operation':'catalogue'});self.catalogue=self._call('effects_list');self._native_snapshot()
+        return {**self._state(),'version':self._call('concat_version'),'recents':self._call('project_list'),'catalogue':self.catalogue,'motion':self.motion,'tools':[{'name':v['name'],'title':v.get('title',v['name']),'description':v.get('description',''),'inputSchema':v.get('inputSchema',{})} for v in self.engine.tools.values()]}
     @rpc
     def state(self):return self._state()
     @rpc
@@ -112,6 +119,9 @@ class Api:
     def _save_close(self):
         if self.path:
             self._call('project_close',{'path':self.path,'save':True});self.path='';self.view=None;self.dirty=False
+    @rpc
+    def close_project(self):
+        self._save_close();return self._state()
     @rpc
     def save_project(self):
         if not self.path:raise EngineError('No open project.')
@@ -137,10 +147,18 @@ class Api:
             else:commands.append(self._helper({'clip':c,'frame':frame,'category':category,'preset':preset,'controls':controls or {}}))
         return self._edit({'op':'batch','commands':commands})
     @rpc
+    def load_preset_controls(self,preset):
+        p=next((p for p in self.motion['presets'] if p['id']==preset),None)
+        if not p or p['category']=='adjustment':return {}
+        settings=self.engine.request('desktop/animation-default',{'id':preset})
+        return settings['canvas' if p['category']=='canvas' else 'physics']
+    @rpc
     def effect(self,kind,package,params,ids,all_clips=False,duration=.9):
         timeline=self._active();locked=self.prefs.get('lockedTracks',[]);commands=[]
         for c in timeline['clips']:
             if c['trackId'] in locked or not(all_clips or c['id'] in ids):continue
+            if kind in ['transition','effect'] and c['kind'] not in ['image','video','text','shape']:continue
+            if kind=='audio' and c['kind'] not in ['audio','video']:continue
             if kind=='transition':patch={'transitionIn':{'id':package,'duration':float(duration),'params':params} if package!='none' else None}
             else:
                 field='filters' if kind=='audio' else 'videoEffects';old=list(c.get(field,[]));old=[e for e in old if e['id']!=package]
@@ -191,6 +209,27 @@ class Api:
     def preferences(self,changes):
         allowed={'favorites','defaults','lockedTracks'}
         if set(changes)-allowed:raise ValueError('Unknown preference.')
+        if 'defaults' in changes:
+            presets={p['id']:p for p in getattr(self,'motion',{}).get('presets',[])}
+            for category,value in changes['defaults'].items():
+                before=self.prefs['defaults'].get(category)
+                if value==before:continue
+                ident=(value or before or {}).get('preset')
+                if ident in presets and category in ['basic','physics','canvas']:
+                    args={'id':ident,'controls':value['controls']} if value else {'id':ident,'reset':True}
+                    self.engine.request('desktop/animation-default',args)
+        if 'favorites' in changes:
+            if not isinstance(changes['favorites'],dict):raise ValueError('Favorites must be grouped by category.')
+            presets={p['id']:p for p in getattr(self,'motion',{}).get('presets',[])}
+            for category,ids in changes['favorites'].items():
+                if not isinstance(ids,list) or not all(isinstance(i,str) for i in ids):raise ValueError('Favorites must be preset IDs.')
+                old=set(self.prefs['favorites'].get(category,[]));new=set(ids)
+                for ident in sorted(old^new):
+                    if ident in presets:
+                        p=presets[ident];target='CanvasPresets' if category=='adjustment' else 'Keyframes';callback='toggle-favourite' if category=='adjustment' else 'toggle-physics-favourite';args=[p['nativeIndex']]
+                    else:target='Library';callback='favourite';args=[ident,ident in new]
+                    self.engine.request('desktop/invoke',{'target':target,'callback':callback,'arguments':args})
+        if 'lockedTracks' in changes and (not isinstance(changes['lockedTracks'],list) or not all(isinstance(i,str) for i in changes['lockedTracks'])):raise ValueError('Track locks must be a list of track IDs.')
         if 'lockedTracks' in changes and self.view:
             tracks=self._active()['tracks'];locked=set(changes['lockedTracks'])
             for i,t in enumerate(tracks):
@@ -198,21 +237,31 @@ class Api:
         if 'lockedTracks' in changes:self.prefs['lockedProjects'][getattr(self,'_locks_key',self.path)]=changes['lockedTracks']
         self.prefs.update(changes);save_json(self.settings_path,self.prefs);return self._state()
     @rpc
-    def native_state(self):
+    def native_state(self):return self._native_snapshot()
+    def _native_snapshot(self):
         if self.engine is None:self._discover()
         value=self.engine.request('desktop/state',{})
-        self.path=value.get('path') or '';self.view=value.get('view')
+        self.path=value.get('path') or '';self.view=value.get('view');self._lock_scope()
         self.appearance=value.get('appearance',{})
+        favorites=value.get('favorites',{})
+        if hasattr(self,'motion'):
+            for category in ['basic','physics','canvas','adjustment']:
+                saved=set(favorites.get('canvas' if category=='adjustment' else 'animation',[]))
+                self.prefs['favorites'][category]=[p['id'] for p in self.motion['presets'] if p['category']==category and (('canvas:'+p['id'].split('.')[-1]) if category=='adjustment' else p['id']) in saved]
+        if hasattr(self,'catalogue'):
+            saved=set(favorites.get('packages',[]))
+            for category in ['effect','transition','audio']:
+                self.prefs['favorites'][category]=[p['id'] for p in self.catalogue if (p['kind']==category or category=='effect' and p['kind']=='filter') and p['id'] in saved]
         return {**value,'state':self._state()}
     @rpc
     def poll(self):
         events=self.engine.request('desktop/events',{})
         self.dirty=events.get('dirty',self.dirty)
-        key=(events.get('path'),events.get('revision'))
+        key=(events.get('path'),events.get('revision'),events.get('dirty'))
         if key!=getattr(self,'_native_revision',None):
             self._native_revision=key
             self.revision+=1;self.thumb_cache.clear()
-            events['state']=self.native_state()['data']['state']
+            events['state']=self._native_snapshot()['state']
         return events
     @rpc
     def native_schema(self):
@@ -220,6 +269,19 @@ class Api:
         return self.engine.request('desktop/schema',{})
     @rpc
     def native_image(self,key):return self.engine.request('desktop/image',{'key':key})
+    @rpc
+    def quit(self):
+        self._shutdown()
+        if self.window:self.window.destroy()
+        return True
+    @rpc
+    def key(self,event):
+        if set(event)-{'key','shift','alt','ctrl','meta'}:raise ValueError('Invalid key event.')
+        return self.engine.request('desktop/key',event)
+    @rpc
+    def stage(self,action,arguments):
+        if action not in ['stage-pressed','stage-grip-pressed','stage-dragged','stage-released']:raise ValueError('Invalid stage gesture.')
+        return self.engine.request('desktop/invoke',{'target':'Editor','callback':action,'arguments':arguments})
     @rpc
     def playback_toggle(self):
         self.engine.request('desktop/invoke',{'target':'Editor','callback':'play-toggled','arguments':[]})
@@ -233,14 +295,16 @@ class Api:
     @rpc
     def native_invoke(self,target,callback,arguments=None,properties=None):
         if self.engine is None:self._discover()
-        self.engine.request('desktop/invoke',{'target':target,'callback':callback,'arguments':arguments or [],'properties':properties or {}})
+        reply=self.engine.request('desktop/invoke',{'target':target,'callback':callback,'arguments':arguments or [],'properties':properties or {}})
         self.dirty=True;self.revision+=1;self.thumb_cache.clear()
-        return self.native_state()['data']
+        return {**self._native_snapshot(),'result':reply.get('value')}
     @rpc
     def select_native(self,ids):
         # Use the original timeline selection controller before opening an inspector/service.
+        if not ids:self.engine.request('desktop/invoke',{'target':'Editor','callback':'shortcut','arguments':['deselect']})
         for i,ident in enumerate(ids):
             self.engine.request('desktop/invoke',{'target':'Editor','callback':'clip-pressed','arguments':[ident,i>0,0]})
+            self.engine.request('desktop/invoke',{'target':'Editor','callback':'clip-released','arguments':[]})
         return True
     @rpc
     def queue_add_files(self):
@@ -248,7 +312,7 @@ class Api:
         paths=self._dialog(multiple=True,types=('GPU project ZIP (*.zip)',))
         for path in paths:
             self.engine.request('desktop/invoke',{'target':'CloudGpu','callback':'queue-add','arguments':[path]})
-        return self.native_state()['data']
+        return self._native_snapshot()
     @rpc
     def choose_engine(self):
         if self.path:raise ValueError('Close the current project before changing its engine.')
@@ -273,6 +337,5 @@ class Api:
             return False
     def _shutdown(self):
         with self.lock:
-            if self.native and self.native.poll() is None:return
             if self.path and self.engine:self._save_close()
             if self.engine:self.engine.close();self.engine=None

@@ -8,7 +8,7 @@ def main():
     from host.api import Api,public_api
     api=Api();base=Path(getattr(sys,'_MEIPASS',Path(__file__).resolve().parent));page=base/'frontend/dist/index.html'
     if not page.exists():raise RuntimeError('Frontend missing. Run npm ci && npm run build inside desktop-react/frontend.')
-    window=webview.create_window('Concat React Preview',str(page),js_api=public_api(api),width=1500,height=960,min_size=(1050,740),confirm_close=True,background_color='#f3f6fb');api.window=window
+    window=webview.create_window('Concat React Preview',str(page),js_api=public_api(api),width=1500,height=960,min_size=(1050,740),confirm_close=False,background_color='#f3f6fb');api.window=window
     window.events.closing+=api.shutdown
     webview.start(gui='edgechromium' if sys.platform=='win32' else None,http_server=True)
 if __name__=='__main__':
