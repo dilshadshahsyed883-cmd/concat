@@ -59,6 +59,20 @@ fn scope(project: &Project, tracks: &[String], locked: &[String]) -> Result<(), 
     }
     Ok(())
 }
+fn gap_link_parents(clip: &Clip) -> impl Iterator<Item = &str> {
+    [
+        clip.detached_from.as_deref(),
+        clip.extra
+            .get("gpuCaptionSource")
+            .and_then(serde_json::Value::as_str),
+        clip.extra
+            .get("canvasOwner")
+            .and_then(serde_json::Value::as_str),
+    ]
+    .into_iter()
+    .flatten()
+}
+
 fn links(project: &Project, tracks: &[String], from: f64) -> Result<(), CommandError> {
     let timeline = project.active();
     for clip in &timeline.clips {
@@ -415,22 +429,13 @@ pub(super) fn apply(
             loop {
                 let mut added = false;
                 for clip in &timeline.clips {
-                    for parent_id in [
-                        clip.detached_from.as_deref(),
-                        clip.extra
-                            .get("gpuCaptionSource")
-                            .and_then(serde_json::Value::as_str),
-                        clip.extra
-                            .get("canvasOwner")
-                            .and_then(serde_json::Value::as_str),
-                    ]
-                    .into_iter()
-                    .flatten()
-                    {
+                    for parent_id in gap_link_parents(clip) {
                         if let Some(&delta) = deltas.get(parent_id) {
                             if let Some(&existing) = deltas.get(&clip.id) {
                                 if (existing - delta).abs() > 1e-6 {
-                                    return Err(refused("Linked clips require different gap shifts"));
+                                    return Err(refused(
+                                        "Linked clips require different gap shifts",
+                                    ));
                                 }
                             } else {
                                 deltas.insert(clip.id.clone(), delta);
@@ -452,18 +457,7 @@ pub(super) fn apply(
             // move independently of a stationary source.
             for clip in &timeline.clips {
                 let delta = deltas.get(&clip.id).copied().unwrap_or(0.0);
-                for parent_id in [
-                    clip.detached_from.as_deref(),
-                    clip.extra
-                            .get("gpuCaptionSource")
-                            .and_then(serde_json::Value::as_str),
-                    clip.extra
-                            .get("canvasOwner")
-                            .and_then(serde_json::Value::as_str),
-                ]
-                .into_iter()
-                .flatten()
-                {
+                for parent_id in gap_link_parents(clip) {
                     if timeline.clip(parent_id).is_some()
                         && (delta - deltas.get(parent_id).copied().unwrap_or(0.0)).abs() > 1e-6
                     {
@@ -984,14 +978,36 @@ mod safety_tests {
             ("first", "T1", ClipKind::Video, 0.0, 5.0, None),
             ("second", "T1", ClipKind::Image, 7.0, 3.0, None),
             ("third", "T1", ClipKind::Video, 12.0, 2.0, None),
-            ("frame1", "T2", ClipKind::Layer, 0.0, 5.0, Some(("canvasOwner", "first"))),
-            ("frame2", "T2", ClipKind::Layer, 7.0, 3.0, Some(("canvasOwner", "second"))),
-            ("caption", "T3", ClipKind::Text, 8.0, 1.0, Some(("gpuCaptionSource", "second"))),
+            (
+                "frame1",
+                "T2",
+                ClipKind::Layer,
+                0.0,
+                5.0,
+                Some(("canvasOwner", "first")),
+            ),
+            (
+                "frame2",
+                "T2",
+                ClipKind::Layer,
+                7.0,
+                3.0,
+                Some(("canvasOwner", "second")),
+            ),
+            (
+                "caption",
+                "T3",
+                ClipKind::Text,
+                8.0,
+                1.0,
+                Some(("gpuCaptionSource", "second")),
+            ),
             ("narration", "T4", ClipKind::Audio, 0.0, 15.0, None),
         ] {
             let mut clip = Clip::blank(id, track, kind, id, start, duration);
             if let Some((key, owner)) = link {
-                clip.extra.insert(key.into(), serde_json::Value::String(owner.into()));
+                clip.extra
+                    .insert(key.into(), serde_json::Value::String(owner.into()));
             }
             p.active_mut().clips.push(Arc::new(clip));
         }
@@ -1030,6 +1046,29 @@ mod safety_tests {
     }
 
     #[test]
+    fn stationary_canvas_on_locked_track_does_not_block_gap_close() {
+        let mut p = linked_gap_fixture();
+        p.active_mut()
+            .clips
+            .retain(|c| c.id != "frame2" && c.id != "caption");
+        let mut mint = IdMint::default();
+        mint.adopt_project(&p);
+        apply(
+            &mut p,
+            &mut mint,
+            Command::CloseTrackGaps {
+                track_id: "T1".into(),
+                locked_tracks: vec!["T2".into()],
+                at: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(p.active().clip("frame1").unwrap().start, 0.0);
+        assert_eq!(p.active().clip("second").unwrap().start, 5.0);
+        assert_eq!(p.active().clip("third").unwrap().start, 8.0);
+    }
+
+    #[test]
     fn gap_close_with_locked_or_obstructed_companion_is_atomic() {
         for locked in [true, false] {
             let mut p = linked_gap_fixture();
@@ -1051,7 +1090,11 @@ mod safety_tests {
                 &mut mint,
                 Command::CloseTrackGaps {
                     track_id: "T1".into(),
-                    locked_tracks: if locked { vec!["T2".into()] } else { vec![] },
+                    locked_tracks: if locked {
+                        vec!["T2".into()]
+                    } else {
+                        vec![]
+                    },
                     at: None,
                 },
             )
