@@ -2685,6 +2685,29 @@ mod tests {
         assert_eq!(timeline.clip(&clip_id).expect("exists").muted, None);
     }
 
+    #[test]
+    fn split_detached_pair_reattaches_only_its_own_sound() {
+        let (mut editor, _, video) = fixture();
+        let sound = editor.apply(Command::DetachAudio { clip_id: video.clone() }).unwrap().created_id.unwrap();
+        let duration = editor.project().active().clip(&video).unwrap().duration;
+        editor.apply(Command::SplitClips { clip_ids: vec![video.clone(), sound.clone()], time: duration / 2.0 }).unwrap();
+        let tail = editor.project().active().clips.iter().find(|c| c.kind == ClipKind::Video && c.id != video).unwrap().id.clone();
+        let timeline = editor.project().active();
+        assert_eq!(timeline.clips.iter().filter(|c| c.detached_from.as_deref() == Some(tail.as_str())).count(), 1);
+        let saved = editor.to_document(&settings());
+        editor.apply(Command::ReattachAudio { clip_id: video.clone() }).unwrap();
+        let timeline = editor.project().active();
+        assert_eq!(timeline.clip(&tail).unwrap().muted, Some(true));
+        assert_eq!(timeline.clips.iter().filter(|c| c.detached_from.as_deref() == Some(tail.as_str())).count(), 1);
+        assert!(editor.undo());
+        assert_eq!(editor.to_document(&settings()), saved);
+        editor.apply(Command::RemoveClips { clip_ids: vec![video], ripple: false }).unwrap();
+        assert_eq!(editor.project().active().clip(&sound).unwrap().detached_from, None);
+        let independent = editor.project().active().clip(&sound).unwrap().clone();
+        editor.apply(Command::ReattachAudio { clip_id: sound.clone() }).unwrap();
+        assert_eq!(editor.project().active().clip(&sound).unwrap(), &independent);
+    }
+
     /// A file with two audio tracks detaches as two sound clips, one per
     /// track, each on its own lane and named for its track; reattaching
     /// takes both back. A clip's chosen track survives the document.
