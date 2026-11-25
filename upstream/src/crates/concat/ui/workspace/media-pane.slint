@@ -1380,7 +1380,7 @@ export component ShelfGrid inherits Rectangle {
         auditioned => { root.auditioned(entry.id); }
         applied => {
             if root.page-kind == 2 && ParticleBulk.index-of(entry.id) >= 0 {
-                ParticleBulk.apply(ParticleBulk.index-of(entry.id), 0, true, Keyframes.animation-images, Keyframes.animation-videos);
+                ParticleBulk.apply(ParticleBulk.index-of(entry.id), true, Keyframes.animation-images, Keyframes.animation-videos);
             } else { root.applied(entry.id, entry.name); }
         }
     }
