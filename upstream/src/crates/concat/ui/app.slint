@@ -205,6 +205,7 @@ export component App inherits Window {
     in property <string> project-name: I18n.t("common.untitledProject");
     in property <string> project-status: I18n.t("common.saved");
     in property <bool> macos;
+    in property <bool> windows-desktop;
     /// The window is a phone's: one screen, held upright, driven by a
     /// finger. The editor is then the phone shell (ui/phone/) - no title
     /// strip, no dock - and the launch screen carries its own verbs, as it
@@ -504,7 +505,8 @@ export component App inherits Window {
             activated => { root.app-menu-selected("open"); }
         }
         // ⌘W closes the window on a Mac. Elsewhere Ctrl+W closes the
-        // document - the project - and Ctrl+Q quits; Windows' Alt+F4 is
+        // document - the project - and Ctrl+Q quits on Linux; on Windows,
+        // Ctrl+Shift+Q quits and Ctrl+Q prepares a ZIP. Windows' Alt+F4 is
         // the system's, and arrives as the window's close request.
         KeyBinding {
             keys: @keys(Control + W);
@@ -515,7 +517,12 @@ export component App inherits Window {
         }
         KeyBinding {
             keys: @keys(Control + Q);
-            enabled: !root.macos;
+            enabled: !root.macos && !root.windows-desktop;
+            activated => { root.app-menu-selected("close-window"); }
+        }
+        KeyBinding {
+            keys: @keys(Control + Shift + Q);
+            enabled: root.windows-desktop;
             activated => { root.app-menu-selected("close-window"); }
         }
         // Everything the keymap owns lands here only when nothing else
