@@ -290,6 +290,18 @@ export default function Services({
     await refresh();
     return reply;
   }
+  async function openNative(name) {
+    const action = {
+      Settings: ["App", "open-settings", "settings"],
+      Captions: ["Editor", "captions", "captions"],
+      Speech: ["Editor", "speak", "speech"],
+      Voiceover: ["Editor", "record-voiceover", "voiceover"],
+    }[name];
+    if (!action) return;
+    const current = await call("native_state");
+    if (!current.services?.App?.[action[2]]?.open)
+      await call("native_invoke", action[0], action[1], []);
+  }
   useEffect(() => {
     if (!open) return;
     setActive(initial);
@@ -301,6 +313,7 @@ export default function Services({
         if (!alive) return;
         setSchema(s);
         if (selection.length) await call("select_native", selection);
+        await openNative(initial);
         await refresh();
       } catch (e) {
         setError(e.message);
@@ -393,7 +406,16 @@ export default function Services({
       <div className="service-nav">
         <Select
           value={active}
-          onChange={setActive}
+          onChange={async (name) => {
+            setActive(name);
+            setError("");
+            try {
+              await openNative(name);
+              await refresh();
+            } catch (e) {
+              setError(e.message);
+            }
+          }}
           options={GROUPS.map((value) => ({ value }))}
         />
         <Input.Search

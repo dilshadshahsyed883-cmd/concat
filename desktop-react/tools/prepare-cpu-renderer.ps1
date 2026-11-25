@@ -37,5 +37,5 @@ foreach ($license in $licenses) {
 }
 Invoke-WebRequest 'https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-21.1.0/llvm/LICENSE.TXT' -OutFile "$destinationPath/LLVM-LICENSE.txt"
 @{mesa='26.3.1';mesa_sha256='64e84cf13d67dd354640bf443ed0445e6a83afd06a5729f0750b3744d633b3f1';loader_source=$revision;purpose='CPU Vulkan adapter for the existing WGSL renderer; no effect substitution'} | ConvertTo-Json | Set-Content "$destinationPath/runtime-metadata.json"
-python -c "import ctypes; from pathlib import Path; p=Path(r'$destinationPath'); loader=ctypes.WinDLL(str(p/'vulkan-1.dll')); driver=ctypes.WinDLL(str(p/'vulkan_lvp.dll')); print('PASS bundled Vulkan loader and CPU ICD DLL loading')"
-if ($LASTEXITCODE) { throw 'Bundled CPU Vulkan DLL loading failed' }
+python "$PSScriptRoot/cpu-runtime-smoke.py" $destinationPath
+if ($LASTEXITCODE) { throw 'Bundled CPU Vulkan instance/device check failed' }

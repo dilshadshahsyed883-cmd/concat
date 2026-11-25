@@ -25,6 +25,7 @@ export function GpuPanel({ native, refresh, invoke }) {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   useEffect(() => {
+    if (!native?.services?.CloudGpu) return;
     setValues((v) =>
       Object.keys(v).length
         ? v
@@ -34,7 +35,7 @@ export function GpuPanel({ native, refresh, invoke }) {
             "renderer-token": cfg["renderer-token"] || "",
           },
     );
-  }, [cfg.configured]);
+  }, [native?.services?.CloudGpu]);
   const edit = (k, v) => setValues({ ...values, [k]: v });
   async function run(fn) {
     setBusy(true);
@@ -485,7 +486,9 @@ export function SpeechPanel({ native, invoke }) {
 export function SettingsPanel({ native, invoke }) {
   const app = native?.services?.App || {},
     s = app.settings || {},
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [downloadBase, setDownloadBase] = useState("");
+  useEffect(() => setDownloadBase(s["download-base"] || ""), [s["download-base"]]);
   const act = (name, args = []) =>
     invoke("App", name, args).catch((e) => setError(e.message));
   const set = (key, value) => act("settings-" + key + "-changed", [value]);
@@ -544,7 +547,8 @@ export function SettingsPanel({ native, invoke }) {
         {row(
           "Custom download URL",
           <Input
-            defaultValue={s["download-base"]}
+            value={downloadBase}
+            onChange={(e) => setDownloadBase(e.target.value)}
             onBlur={(e) =>
               act("settings-download-base-edited", [e.target.value])
             }

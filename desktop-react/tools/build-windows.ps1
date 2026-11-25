@@ -17,6 +17,7 @@ try {
   Copy-Item ../upstream/src/target/x86_64-pc-windows-msvc/quick/concat-ui-presets.exe native/
   & ./tools/prepare-cpu-renderer.ps1
   $env:CONCAT_GPU = 'software'
+  $env:VK_LOADER_DEBUG = 'error,warn'
   python tools/engine-smoke.py --engine native/concat.exe --presets native/concat-ui-presets.exe --report dist/engine-smoke.json
   if ($LASTEXITCODE) { throw 'Real native bridge integration test failed' }
   python -m pytest tests -q

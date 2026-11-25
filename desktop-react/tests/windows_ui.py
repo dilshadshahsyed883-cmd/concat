@@ -42,6 +42,7 @@ def main():
                 ImageGrab.grab().save(root/'dist/windows-editor.png')
                 window.evaluate_js('Array.from(document.querySelectorAll("header button")).find(x=>x.textContent.includes("Settings")).click()')
                 wait(lambda:'Installed and available models' in (window.evaluate_js('document.body.innerText') or ''),'Native settings and model services inside React drawer')
+                wait(lambda:api.engine.request('desktop/state',{})['services']['App']['settings']['open'],'Settings drawer opens the original native controller')
                 ImageGrab.grab().save(root/'dist/windows-settings.png')
             except Exception as e:
                 errors.append(str(e));print(traceback.format_exc(),flush=True)
