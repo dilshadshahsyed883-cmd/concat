@@ -1,1 +1,1 @@
-Candidate revision 7: preserve active gestures during reads, native timeline drop/zoom/viewport, body selection, custom brush activation, controller state adoption and regression tests. No deployment.
+Candidate revision 8: preserve active gestures during reads, native timeline drop/zoom/viewport, body selection, custom brush activation, controller state adoption and regression tests. No deployment.

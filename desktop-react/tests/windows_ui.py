@@ -27,6 +27,11 @@ def main():
                 wait(lambda:window.evaluate_js('Boolean(document.querySelector(".timeline-clip"))'),'React workspace and native project boot')
                 window.evaluate_js('document.querySelector(".timeline-clip").click()')
                 wait(lambda:'picture' in (window.evaluate_js('document.querySelector(".inspector .panel-head").textContent') or '').lower(),'Timeline selection reaches inspector')
+                first=api._active()['clips'][0]['id']
+                result=api.edit({'op':'updateClip','clipId':first,'patch':{'scale':1.2}});assert result['ok'],result
+                wait(lambda:window.evaluate_js('Number(document.querySelector(".inspector [data-field=scale] input").value)')==1.2,'Inspector follows native property changes')
+                result=api.history();assert result['ok'],result
+                wait(lambda:window.evaluate_js('Number(document.querySelector(".inspector [data-field=scale] input").value)')==1,'Inspector follows native undo')
                 window.evaluate_js('Array.from(document.querySelectorAll("[role=tab]")).find(x=>x.textContent==="Physics").click()')
                 wait(lambda:window.evaluate_js('Array.from(document.querySelectorAll(".preset")).some(x=>x.textContent.includes("Spring"))'),'Native physics catalogue visible')
                 window.evaluate_js('Array.from(document.querySelectorAll(".preset")).find(x=>x.textContent.includes("Spring")).click()')

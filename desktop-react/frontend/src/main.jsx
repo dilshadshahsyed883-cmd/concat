@@ -1095,7 +1095,7 @@ function App() {
                     ["fadeIn", 0, 60, 0.1],
                     ["fadeOut", 0, 60, 0.1],
                   ].map(([key, min, max, step]) => (
-                    <div className="row spaced" key={clip.id + key}>
+                    <div className="row spaced" data-field={key} key={clip.id + key + ":" + String(clip[key])}>
                       <label>{words(key)}</label>
                       <InputNumber
                         defaultValue={clip[key] ?? (key === "opacity" ? 1 : 0)}
@@ -1204,7 +1204,7 @@ function App() {
                   </Button>
                   <div className="section-label">CROP</div>
                   {["left", "top", "right", "bottom"].map((edge) => (
-                    <div className="row spaced" key={clip.id + "crop" + edge}>
+                    <div className="row spaced" key={clip.id + "crop" + edge + ":" + String(clip.crop?.[edge])}>
                       <label>{words(edge)}</label>
                       <InputNumber
                         min={0}
