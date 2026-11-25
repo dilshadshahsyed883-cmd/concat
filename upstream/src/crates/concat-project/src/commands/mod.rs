@@ -1339,6 +1339,9 @@ fn apply_inner(project: &mut Project, mint: &mut IdMint, command: Command) -> Re
         Command::ProtectTrackLocks { timeline_id, locked_tracks, command } => {
             let mut staged = project.clone();
             let outcome = apply_with_track_locks(&mut staged, mint, *command, &locked_tracks)?;
+            // Automatic placement can ripple an owner without directly touching
+            // its companion. Reconcile before checking protected lane snapshots.
+            if outcome.applied { crate::canvas_preset::reconcile_companions(project, &mut staged); }
             if crate::canvas_preset::protected_tracks_changed(project, &staged, &timeline_id, &locked_tracks) {
                 return Err(CommandError::UnsafeEdit { reason: "An affected track is locked; unlock it before editing".into() });
             }
