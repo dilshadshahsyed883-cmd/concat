@@ -103,6 +103,22 @@ class SharedLayoutContractTests(unittest.TestCase):
         self.assertIn('minimum-precision: 0;', controls)
         self.assertIn('t.to-float() / root.unit-scale', controls)
 
+    def test_canvas_preset_numeric_fields_use_one_native_scaled_value(self):
+        rows = [line for line in self.canvas.splitlines() if "fmt: ParamFormat." in line]
+        self.assertEqual(len(rows), 20)
+        for row in rows:
+            if "ParamFormat.fraction" in row or "ParamFormat.outline" in row:
+                self.assertIn('unit: "%"; unit-scale: 100;', row)
+            elif "ParamFormat.percent" in row:
+                self.assertIn('unit: "%";', row)
+                self.assertNotIn("unit-scale: 100", row)
+                self.assertIn("minimum: 40; maximum: 130; step: 1; default-value: 120;", row)
+            elif "ParamFormat.degrees" in row:
+                self.assertIn('unit: "°";', row)
+                self.assertIn("minimum: -12; maximum: 12; step: 1;", row)
+            else:
+                self.fail("Unmapped Canvas numeric format: " + row)
+
     def test_caption_favourites_do_not_stage_or_apply(self):
         self.assertIn("callback toggle-favourite(id: string);", self.caption)
         self.assertIn("callback filter-favourites(on: bool);", self.caption)
