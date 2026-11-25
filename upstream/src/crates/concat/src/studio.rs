@@ -12530,7 +12530,7 @@ impl Studio {
                     "prepare-zip-only",
                     "Prepare ZIP Only (Offline)...".to_string(),
                     Glyph::Export,
-                    "",
+                    &keymap::label(&self.prefs, "prepare-zip-only"),
                     self.session.is_some(),
                 ),
                 #[cfg(windows)]
@@ -12561,7 +12561,7 @@ impl Studio {
                 rule(),
                 // The last row is each platform's own word for leaving:
                 // Close Window on a Mac, where ⌘W is it; Exit on Windows,
-                // where Alt+F4 is; Quit on Linux, with Ctrl+Q. Off the Mac
+                // where Ctrl+Shift+Q and Alt+F4 quit; Quit on Linux, with Ctrl+Q. Off the Mac
                 // Ctrl+W closes the document instead, which is the project.
                 row(
                     "close-project",
@@ -12589,7 +12589,7 @@ impl Studio {
                     shortcut: if platform::MACOS {
                         platform::keys(&["Control", "W"])
                     } else if cfg!(windows) {
-                        platform::keys(&["Alt", "F4"])
+                        platform::keys(&["Control", "Shift", "Q"])
                     } else {
                         platform::keys(&["Control", "Q"])
                     }

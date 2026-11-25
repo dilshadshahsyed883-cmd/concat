@@ -328,6 +328,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     fonts::register();
     let app = App::new()?;
     app.set_macos(platform::MACOS);
+    app.set_windows_desktop(cfg!(windows));
     // A phone wears the phone shell - see ui/phone/ - and its lanes keep
     // the playhead at their middle; the strip and the dock are the desk's.
     let phone = platform::phone();
@@ -2189,7 +2190,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     app.global::<Focus>()
         .on_release(|| Shell::with(|_, app| app.invoke_blur()));
     editor.on_shortcut(move |action: SharedString| match action.as_str() {
-        "import" | "export" | "settings" | "zoom-in" | "zoom-out" | "start" | "end" | "snap"
+        "import" | "export" | "prepare-zip-only" | "settings" | "zoom-in" | "zoom-out" | "start" | "end" | "snap"
         | "magnetic" | "pan" | "preview-axis" => {
             Shell::with(|_, app| app.invoke_app_menu_selected(action.clone()));
         }
@@ -2303,7 +2304,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                 // The chords that are also menu rows go through the
                 // menu's own handler, so the key and the row cannot come
                 // apart — the same door on_shortcut keeps open.
-                "save" | "undo" | "redo" | "import" | "export" | "settings" | "zoom-in"
+                "save" | "undo" | "redo" | "import" | "export" | "prepare-zip-only" | "settings" | "zoom-in"
                 | "zoom-out" | "start" | "end" | "snap" | "pan" | "preview-axis" | "delete" => {
                     app.invoke_app_menu_selected(SharedString::from(action));
                 }
