@@ -128,7 +128,7 @@ export component App inherits Window {
     }
     property <bool> sheet-open: root.export.open || root.settings.open
         || root.project-sheet.open || root.captions.open || root.speech.open
-        || root.start.composing || CloudGpu.queue-open || CloudGpu.zip-open;
+        || root.start.composing || CloudGpu.zip-open;
     changed sheet-open => {
         if (!root.sheet-open) {
             keys.focus();
@@ -645,7 +645,6 @@ export component App inherits Window {
                 compose => { root.start-compose(); }
                 open => { root.start-open(); }
                 open-settings => { root.open-settings(); }
-                open-gpu-queue => { CloudGpu.queue-open = true; }
                 open-c-builder => {root.start-c-builder();}
                 open-recent(path) => { root.start-open-recent(path); }
                 forget-recent(path) => { root.start-forget-recent(path); }
@@ -1018,20 +1017,6 @@ export component App inherits Window {
         closed => { CloudGpu.zip-open = false; }
     }
 
-    GpuQueueDialog {
-        fill: root.sheets-fill;
-        inset-top: root.safe-area-insets.top;
-        inset-bottom: root.safe-area-insets.bottom;
-        inset-left: root.safe-area-insets.left;
-        inset-right: root.safe-area-insets.right;
-        x: 0;
-        y: 0;
-        width: root.width;
-        height: root.height;
-        phone: root.phone;
-        open: CloudGpu.queue-open;
-        closed => { CloudGpu.queue-open = false; }
-    }
 
 
     // Over the workspace and both sheets, under the menus. A tooltip has to

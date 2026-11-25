@@ -2367,10 +2367,8 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     }));
 
     #[cfg(windows)]
-    let _gpu_queue_timer = {
-        app.global::<GpuCompatibility>().set_enabled(true);
-        cloud_gpu::wire(&app)
-    };
+    app.global::<GpuCompatibility>().set_enabled(true);
+    // Legacy desktop cloud queue is retired. Do not wire credentials, callbacks or timers.
 
     // ── the dialogs ──
     app.on_export_clicked(on_window!(|state| {
@@ -2788,22 +2786,11 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                         ),
                         "export" => state.handle(Msg::Export(ExportMsg::Open)),
                         #[cfg(windows)]
-                        "send-gpu" => {
-                            if cloud_gpu::can_submit(&app) {
-                                if let Some(path) = state.save_for_gpu() {
-                                    cloud_gpu::submit(&app, path);
-                                    state.notify("Project queued for GPU upload", false);
-                                }
-                            } else {
-                                state.notify("GPU Queue is unavailable", true);
-                            }
-                        }
-                        #[cfg(windows)]
                         "prepare-zip-only" => {
                             if cloud_gpu::offline_zip_busy(&app) {
                                 app.global::<CloudGpu>().set_zip_open(true);
                             } else if let Some(project) = state.save_for_gpu() {
-                                // Reuse precisely the Send to GPU saved-project snapshot.
+                                // Preserve the atomic saved-project snapshot for offline packaging.
                                 // The picker runs later with Studio unborrowed.
                                 let label = concat_project::naming::basename(&state.project_name);
                                 let folder = dirs::desktop_dir()
@@ -2844,11 +2831,6 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                                     Err(error) => state.notify(&error, true),
                                 }
                             }
-                        }
-                        #[cfg(windows)]
-                        "gpu-config" => {
-                            state.handle(Msg::Settings(SettingsMsg::Open));
-                            state.handle(Msg::Settings(SettingsMsg::PageChanged(cloud_gpu::SETTINGS_PAGE)));
                         }
                         "template" => state.save_template(),
                         "speech" => state.handle(Msg::Speech(SpeechMsg::Open)),

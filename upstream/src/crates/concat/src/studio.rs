@@ -12519,22 +12519,12 @@ impl Studio {
                 ),
                 #[cfg(windows)]
                 row(
-                    "send-gpu",
-                    "Send to GPU (CUDA)...".to_string(),
-                    Glyph::Export,
-                    "",
-                    self.session.is_some(),
-                ),
-                #[cfg(windows)]
-                row(
                     "prepare-zip-only",
                     "Prepare ZIP Only (Offline)...".to_string(),
                     Glyph::Export,
                     &keymap::label(&self.prefs, "prepare-zip-only"),
                     self.session.is_some(),
                 ),
-                #[cfg(windows)]
-                row("gpu-config", t("cloudGpu.title"), Glyph::Settings, "", true),
                 row(
                     "template",
                     t("studio.saveAsTemplate"),
