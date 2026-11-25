@@ -351,6 +351,8 @@ export component Param inherits VerticalLayout {
     /// What the field shows per unit of value: 100 for a fraction worn as
     /// a percent. The value itself stays what the model holds.
     in property <float> unit-scale: 1;
+    /// Opt in for unitless controls that should not repeat their value.
+    in property <bool> single-value: false;
     /// Show the keyframe cluster, and which field it keys. Opt-in rather
     /// than derived from `field`, because a Slint enum property with nothing
     /// assigned to it is its first variant and not "none" - every unkeyable
@@ -387,7 +389,7 @@ export component Param inherits VerticalLayout {
 
         Rectangle { horizontal-stretch: 1; }
 
-        if root.unit == "": Text {
+        if root.unit == "" && !root.single-value: Text {
             text: InspectorFmt.format(root.fmt, root.value);
             color: Theme.fg;
             font-family: Theme.font-technical;
