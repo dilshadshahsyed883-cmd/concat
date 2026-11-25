@@ -165,6 +165,16 @@ class SharedLayoutContractTests(unittest.TestCase):
         self.assertIn("model::upsert_effect(&mut effects,entry)", studio)
         self.assertIn("model::upsert_effect(&mut flat.effects, draft)", studio)
 
+    def test_content_crop_defaults_are_separate_from_transform_and_reset_fit(self):
+        layout = source(UI / "media-layout.slint")
+        self.assertIn("property <float> content-zoom: 1.25;", layout)
+        self.assertIn("property <float> content-y: 0.09;", layout)
+        self.assertIn("property <float> content-x: 0;", layout)
+        self.assertIn("property <float> scale: 1;", layout)
+        self.assertIn("property <float> position-y: 0;", layout)
+        self.assertIn("selected,Adjustment.content-zoom,Adjustment.content-x,Adjustment.content-y,", layout)
+        self.assertIn("Keyframes.animation-scope == 1,1,0,0,Adjustment.rotation", layout)
+
     def test_stable_canvas_and_particle_target_scopes(self):
         self.assertIn("CanvasPresets.apply(CanvasPresets.profile, false, root.images, root.videos);", self.canvas)
         self.assertIn("CanvasPresets.apply(CanvasPresets.profile, true, root.images, root.videos);", self.canvas)
