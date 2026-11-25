@@ -54,7 +54,7 @@ def main():
                 if status['state']!='running':break
                 if time.monotonic()>deadline:raise TimeoutError('Real render timed out')
                 time.sleep(.25)
-            assert status['state']=='done',status;assert output.stat().st_size>100;checks.append({'name':'real local MP4 export','status':'passed'})
+            assert status['state']=='done',status;assert output.stat().st_size>100;checks.append({'name':'real local MP4 export','status':'passed'});a.report.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(output,a.report.parent/'native-render-sample.mp4')
             cancel=engine.call('export_start',{'path':path,'output':str(Path(folder)/'cancelled.mp4'),'width':1920,'height':1080});engine.call('export_cancel',{'job':cancel['job']})
             deadline=time.monotonic()+40
             while True:

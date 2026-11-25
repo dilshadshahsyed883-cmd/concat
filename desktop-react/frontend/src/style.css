@@ -783,7 +783,7 @@ footer {
   font-size: 34px;
 }
 .video-canvas {
-  width: min(100cqw, calc(100cqh * 1.7777778));
+  width: min(100cqw, calc(100cqh * var(--preview-aspect, 1.7777778)));
   max-height: 100%;
   background: #101725;
   display: flex;

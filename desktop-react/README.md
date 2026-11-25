@@ -16,6 +16,8 @@ Use Python 3.11, Node 22, Rust 1.93 and the pinned native dependencies from `.gi
 
 The portable folder includes a CPU Vulkan adapter for computers without a usable hardware or WARP adapter. `tools/prepare-cpu-renderer.ps1` verifies the Mesa archive checksum and builds the Khronos loader from an exact source revision. Driver discovery is scoped to the native subprocess; no system graphics driver or registry entry is installed. Rendering retains Concat's WGSL calculations and can be slower on CPU. The runtime's notices and source metadata are included beside its DLLs.
 
+After extracting the entire Windows ZIP, run `Concat-React.exe` or `Launch-Concat.cmd`. Use `Launch-CPU.cmd` to force the software graphics adapter for this launch. Keep the `_internal` folder beside the EXE. WebView2 Runtime must be installed; Windows 10/11 with Microsoft Edge normally already provides it. The existing native editor remains in `_internal/native/concat.exe` as a standalone rollback, and is not used to count React feature migration as complete.
+
 `docs/native-service-schema.json` records typed public controller properties and callbacks. Regenerate the adapters with `upstream/src/crates/concat/tools/generate_react_wire.py`; tests reject drift. Settings and provider secrets continue through the original controllers. Animation favorites and defaults are synchronized with the original preference store; React layout preferences use a stable Concat AppData folder.
 
 ## Verification limits

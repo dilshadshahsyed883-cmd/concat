@@ -25,4 +25,11 @@ if ($LASTEXITCODE) { throw 'Vulkan loader compilation failed' }
 Copy-Item "$work/loader-install/bin/vulkan-1.dll" $destinationPath
 Copy-Item "$loader/LICENSE.txt" "$destinationPath/Vulkan-Loader-LICENSE.txt"
 Invoke-WebRequest 'https://gitlab.freedesktop.org/mesa/mesa/-/raw/mesa-26.3.1/docs/license.rst' -OutFile "$destinationPath/Mesa-LICENSE.txt"
+$licenseDir=Join-Path $destinationPath 'Mesa-licenses'
+New-Item -ItemType Directory -Force $licenseDir | Out-Null
+$licenses=Invoke-RestMethod 'https://gitlab.freedesktop.org/api/v4/projects/mesa%2Fmesa/repository/tree?path=licenses&ref=mesa-26.3.1&per_page=100'
+foreach ($license in $licenses) {
+  if ($license.type -eq 'blob') { Invoke-WebRequest "https://gitlab.freedesktop.org/mesa/mesa/-/raw/mesa-26.3.1/licenses/$($license.name)" -OutFile (Join-Path $licenseDir $license.name) }
+}
+Invoke-WebRequest 'https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-21.1.0/llvm/LICENSE.TXT' -OutFile "$destinationPath/LLVM-LICENSE.txt"
 @{mesa='26.3.1';mesa_sha256='64e84cf13d67dd354640bf443ed0445e6a83afd06a5729f0750b3744d633b3f1';loader_source=$revision;purpose='CPU Vulkan adapter for the existing WGSL renderer; no effect substitution'} | ConvertTo-Json | Set-Content "$destinationPath/runtime-metadata.json"

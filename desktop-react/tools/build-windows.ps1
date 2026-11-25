@@ -26,7 +26,8 @@ try {
   python -m PyInstaller --noconfirm --clean --windowed --name Concat-React --add-data 'frontend/dist;frontend/dist' --add-data 'native;native' app.py
   if ($LASTEXITCODE) { throw 'Portable Windows packaging failed' }
   & ./tools/smoke-portable.ps1
-  Copy-Item ../upstream/LICENSE, ../upstream/THIRD_PARTY_NOTICES.md, README.md dist/Concat-React/
+  Copy-Item ../upstream/LICENSE, ../upstream/THIRD_PARTY_NOTICES.md, README.md, CHANGELOG.md, Launch-Concat.cmd, Launch-CPU.cmd dist/Concat-React/
+  Copy-Item docs/TEST-REPORT.md dist/Concat-React/
   $sha = $env:GITHUB_SHA
   if (!$sha) { $sha = (git rev-parse HEAD) }
   Compress-Archive -Path dist/Concat-React/* -DestinationPath "dist/Concat-React-Windows-x64-$sha.zip" -Force

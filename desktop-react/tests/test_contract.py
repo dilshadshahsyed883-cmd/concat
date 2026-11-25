@@ -13,7 +13,7 @@ def test_only_explicit_rpc_methods_are_exposed():
 
 def test_settings_are_atomic_and_preserve_unicode(tmp_path):
     path=tmp_path/'preferences.json';value={'favorites':{'basic':['motion.push-in']},'name':'Café'}
-    save_json(path,value);assert json.loads(path.read_text())==value;assert not list(tmp_path.glob('*.tmp'))
+    save_json(path,value);assert json.loads(path.read_text(encoding='utf8'))==value;assert not list(tmp_path.glob('*.tmp'))
 
 def test_generated_adapters_cover_public_callbacks():
     src=ROOT/'upstream/src/crates/concat';script=src/'tools/generate_react_wire.py'

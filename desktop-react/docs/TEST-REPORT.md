@@ -13,7 +13,7 @@ This file distinguishes execution from mocks and from pending checks. It is upda
 | Windows native editor and helper | Compiled successfully at `fbddc1849221a79f4895d74a6495714f3095dd6e`; Windows project/host tests passed | Real Windows compilation/tests |
 | PNG preview and MP4 export on that runner | Preview failed because no graphics/software adapter was available | Failed integration test; not passed |
 | CPU runtime integration | Pinned Vulkan CPU adapter and loader added; next Windows gate required | Pending |
-| Latest native source | A subsequent locked-track wrapper compile error was identified and corrected | Rebuild required |
+| Latest native source | Subsequent boxed lock-wrapper and preset metadata macro errors were corrected; the updated helper compiled and all 70 adapter paths passed locally | Rebuild required |
 | WebView2 interactions | Test exercises native project boot, timeline selection, Physics application, monitor image and settings | Test written; execution pending |
 | Packaged portable EXE | Window-startup gate included after packaging | Pending |
 | Existing CUDA worker image | Earlier candidate builds passed imports, compatibility contract and authenticated container entrypoint | Real container smoke; not GPU hardware rendering |

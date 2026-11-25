@@ -88,6 +88,7 @@ function App() {
     [title, setTitle] = useState("Your title"),
     [params, setParams] = useState({}),
     [duration, setDuration] = useState(0.9),
+    [intensity, setIntensity] = useState(0.7),
     [expert, setExpert] = useState(false),
     [tool, setTool] = useState("edit_apply"),
     [argumentsText, setArgumentsText] = useState("{}");
@@ -243,6 +244,8 @@ function App() {
     setPreset(d?.preset || "none");
     setControls(d?.controls || boot?.motion?.defaults?.[category] || {});
     setParams(d?.params || {});
+    setDuration(d?.duration ?? state?.transitionDefaults?.duration ?? 0.9);
+    setIntensity(d?.intensity ?? state?.transitionDefaults?.intensity ?? 0.7);
   }, [category, !!boot]);
   useEffect(() => {
     let live = true;
@@ -316,6 +319,7 @@ function App() {
         selected,
         all,
         duration,
+        intensity,
       );
     return action("preset", category, id, selected, setting, all);
   }
@@ -760,6 +764,9 @@ function App() {
                 className="video-canvas"
                 style={{
                   aspectRatio: `${view?.settings?.width || 16}/${view?.settings?.height || 9}`,
+                  "--preview-aspect":
+                    (view?.settings?.width || 16) /
+                    (view?.settings?.height || 9),
                 }}
               >
                 {!video && frame && (
@@ -940,11 +947,18 @@ function App() {
                       Random favorite
                     </Button>
                     <Button
+                      disabled={preset === "none" || busy}
                       onClick={() =>
                         pref({
                           defaults: {
                             ...prefs.defaults,
-                            [category]: { preset, controls, params },
+                            [category]: {
+                              preset,
+                              controls,
+                              params,
+                              duration,
+                              intensity,
+                            },
                           },
                         })
                       }
@@ -952,13 +966,25 @@ function App() {
                       Save default
                     </Button>
                     <Button
-                      onClick={() => {
-                        setPreset("none");
-                        setControls(boot.motion.defaults[category] || {});
-                        pref({
-                          defaults: { ...prefs.defaults, [category]: null },
-                        });
-                      }}
+                      onClick={() =>
+                        run(async () => {
+                          const r = await call(
+                            "reset_preset_default",
+                            category,
+                            preset,
+                          );
+                          setControls(r.controls);
+                          adopt(r.state);
+                          if (category === "transition") {
+                            setDuration(
+                              r.state.transitionDefaults?.duration ?? 0.9,
+                            );
+                            setIntensity(
+                              r.state.transitionDefaults?.intensity ?? 0.7,
+                            );
+                          }
+                        })
+                      }
                     >
                       Reset default
                     </Button>
@@ -1242,6 +1268,14 @@ function App() {
               ))}
               {category === "transition" && (
                 <>
+                  <label>Intensity</label>
+                  <Slider
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={intensity}
+                    onChange={setIntensity}
+                  />
                   <label>Duration (seconds)</label>
                   <InputNumber
                     min={0.05}

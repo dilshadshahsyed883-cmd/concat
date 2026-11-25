@@ -59,7 +59,7 @@ class Api:
     def _active(self):
         if not self.view:raise EngineError('Open a project first.')
         p=self.view['project'];return next((x for x in p['timelines'] if x['id']==p['activeTimelineId']),p['timelines'][0])
-    def _state(self):return {'path':self.path,'view':self.view,'dirty':self.dirty,'revision':self.revision,'preferences':self.prefs,'appearance':getattr(self,'appearance',{})}
+    def _state(self):return {'path':self.path,'view':self.view,'dirty':self.dirty,'revision':self.revision,'preferences':self.prefs,'appearance':getattr(self,'appearance',{}),'transitionDefaults':getattr(self,'native_transition',{})}
     def _refresh(self,changed=False):
         if self.path:self.view=self._call('project_get',{'path':self.path})
         self._lock_scope()
@@ -153,13 +153,22 @@ class Api:
         settings=self.engine.request('desktop/animation-default',{'id':preset})
         return settings['canvas' if p['category']=='canvas' else 'physics']
     @rpc
-    def effect(self,kind,package,params,ids,all_clips=False,duration=.9):
+    def reset_preset_default(self,category,preset):
+        if category in ['basic','physics','canvas'] and preset!='none':
+            settings=self.engine.request('desktop/animation-default',{'id':preset,'reset':True})
+            controls=settings['canvas' if category=='canvas' else 'physics']
+        else:controls=getattr(self,'motion',{}).get('defaults',{}).get(category,{})
+        if category=='transition':self.engine.request('desktop/invoke',{'target':'Editor','callback':'transition-default-reset','arguments':[]})
+        self.prefs['defaults'].pop(category,None);save_json(self.settings_path,self.prefs)
+        return {'controls':controls,'state':self._native_snapshot()['state']}
+    @rpc
+    def effect(self,kind,package,params,ids,all_clips=False,duration=.9,intensity=.7):
         timeline=self._active();locked=self.prefs.get('lockedTracks',[]);commands=[]
         for c in timeline['clips']:
             if c['trackId'] in locked or not(all_clips or c['id'] in ids):continue
             if kind in ['transition','effect'] and c['kind'] not in ['image','video','text','shape']:continue
             if kind=='audio' and c['kind'] not in ['audio','video']:continue
-            if kind=='transition':patch={'transitionIn':{'id':package,'duration':float(duration),'params':params} if package!='none' else None}
+            if kind=='transition':patch={'transitionIn':{'id':package,'duration':float(duration),'intensity':float(intensity),'params':params} if package!='none' else None}
             else:
                 field='filters' if kind=='audio' else 'videoEffects';old=list(c.get(field,[]));old=[e for e in old if e['id']!=package]
                 patch={field:[] if package=='none' else old+[{'id':package,'params':params,'enabled':True}]}
@@ -214,6 +223,9 @@ class Api:
             for category,value in changes['defaults'].items():
                 before=self.prefs['defaults'].get(category)
                 if value==before:continue
+                if category=='transition':
+                    callback='transition-default-save' if value else 'transition-default-reset';args=[value.get('duration',.9),value.get('intensity',.7)] if value else []
+                    self.engine.request('desktop/invoke',{'target':'Editor','callback':callback,'arguments':args})
                 ident=(value or before or {}).get('preset')
                 if ident in presets and category in ['basic','physics','canvas']:
                     args={'id':ident,'controls':value['controls']} if value else {'id':ident,'reset':True}
@@ -243,6 +255,8 @@ class Api:
         value=self.engine.request('desktop/state',{})
         self.path=value.get('path') or '';self.view=value.get('view');self._lock_scope()
         self.appearance=value.get('appearance',{})
+        editor=value.get('services',{}).get('Editor',{})
+        self.native_transition={'duration':editor.get('transition-draft-duration',.9),'intensity':editor.get('transition-draft-intensity',.7)}
         favorites=value.get('favorites',{})
         if hasattr(self,'motion'):
             for category in ['basic','physics','canvas','adjustment']:

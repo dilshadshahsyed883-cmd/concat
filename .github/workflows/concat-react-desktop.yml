@@ -35,6 +35,28 @@ jobs:
         run: |
           cargo test --locked -p concat-effects --lib every_built_in_manifest_validates_before_gui_startup
           cargo test --locked -p concat-effects --lib every_built_in_package_loads_and_its_fixtures_pass
+      - name: Compile and exercise the native React preset adapter before Windows
+        working-directory: upstream/src
+        run: |
+          cargo build --locked -p concat-project --bin concat-ui-presets
+          cargo test --locked -p concat-project --lib
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify all native preset paths and host routing
+        run: |
+          python3 -m pip install pytest==8.3.5
+          python3 desktop-react/tools/preset-smoke.py --helper upstream/src/target/debug/concat-ui-presets
+          python3 -m pytest desktop-react/tests -q
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify React production build before Windows
+        working-directory: desktop-react/frontend
+        run: |
+          npm ci
+          npm test
+          npm run build
 
   native-editor-windows:
     needs: effect-catalogue-preflight
@@ -241,6 +263,7 @@ jobs:
             desktop-react/dist/*.zip
             desktop-react/dist/*.json
             desktop-react/dist/*.png
+            desktop-react/dist/*.mp4
             desktop-react/dist/SHA256SUMS
           if-no-files-found: warn
           retention-days: 30

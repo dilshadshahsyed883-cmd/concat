@@ -11,7 +11,7 @@ fn controls<T:serde::Serialize+serde::de::DeserializeOwned>(default:T,patch:&Val
 fn run(v:Value)->Result<Value,String>{
  if v["operation"]=="catalogue"{
   let mut rows=Vec::new();
-  for (i,p) in BASIC.into_iter().enumerate(){rows.push(json!({"id":p.id(),"category":"basic","nativeIndex":[6,7,8,37,38,39,40,41,42,43,44][i],"card":format!("animation-card-{i}.svg")}));}
+  for (i,p) in BASIC.into_iter().enumerate(){rows.push(json!({"id":p.id(),"category":"basic","nativeIndex":([6,7,8,37,38,39,40,41,42,43,44][i]),"card":format!("animation-card-{i}.svg")}));}
   for (i,p) in PhysicsPreset::ALL.into_iter().enumerate(){rows.push(json!({"id":p.id(),"category":"physics","nativeIndex":if i<6{i}else{i+24},"card":format!("animation-card-{}.svg",i+11)}));}
   for (i,p) in CanvasMotionPreset::ALL.into_iter().enumerate(){rows.push(json!({"id":p.id(),"category":"canvas","nativeIndex":if i<21{i+9}else{i+24},"card":format!("animation-card-{}.svg",24+i%20)}));}
   for i in concat_project::canvas_preset::ACTIVE_PRESETS{rows.push(json!({"id":format!("canvas-preset.{i}"),"category":"adjustment","nativeIndex":i}));}
