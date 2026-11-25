@@ -993,6 +993,32 @@ mod tests {
     }
 
     #[test]
+    fn full_clip_copy_retains_narration_lane_protection() {
+        let mut project = fixture().project().clone();
+        project
+            .active_mut()
+            .tracks
+            .iter_mut()
+            .find(|t| t.id == "T2")
+            .unwrap()
+            .extra
+            .insert("audioOnly".into(), serde_json::json!(true));
+        let mut editor =
+            Editor::from_document(&crate::doc::to_document(&settings(), &project)).unwrap();
+        let before = editor.to_document(&settings());
+        let mut source = project.active().clip("c1").unwrap().clone();
+        source.track_id = "T2".into();
+        assert!(
+            editor
+                .apply(Command::CopyClips {
+                    copies: vec![source]
+                })
+                .is_err()
+        );
+        assert_eq!(editor.to_document(&settings()), before);
+    }
+
+    #[test]
     fn rejected_edits_are_atomic() {
         let mut e = fixture();
         let before = e.to_document(&settings());
