@@ -32,6 +32,10 @@ pub(super) fn apply_with_locks(
                     && staged.media_by_id(&source.media_id).is_none() {
                     return Err(CommandError::MediaGone);
                 }
+                if matches!(source.kind, ClipKind::Video | ClipKind::Image)
+                    && super::editing::audio_lane(staged.active(), &source.track_id) {
+                    return Err(CommandError::UnsafeEdit { reason: "Cannot place visual media on a narration track".into() });
+                }
                 if source.duration < MIN_CLIP_DURATION || source.speed <= 0.0 {
                     return Err(CommandError::UnsafeEdit { reason: "Invalid copied clip timing".into() });
                 }
