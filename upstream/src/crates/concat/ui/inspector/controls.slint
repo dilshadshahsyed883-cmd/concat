@@ -353,6 +353,8 @@ export component Param inherits VerticalLayout {
     in property <float> unit-scale: 1;
     /// Opt in for unitless controls that should not repeat their value.
     in property <bool> single-value: false;
+    /// Optional extra precision for presets whose saved values are finer than their step.
+    in property <int> minimum-precision: 0;
     /// Show the keyframe cluster, and which field it keys. Opt-in rather
     /// than derived from `field`, because a Slint enum property with nothing
     /// assigned to it is its first variant and not "none" - every unkeyable
@@ -409,13 +411,13 @@ export component Param inherits VerticalLayout {
             // display's precision is the format's business below; handing
             // it here rounded a scale of 1.01 to 1, and a drag on Width
             // went nowhere until it could go to 200%.
-            precision: InspectorFmt.precision-of(root.step);
+            precision: Math.max(root.minimum-precision, InspectorFmt.precision-of(root.step));
             enabled: root.enabled;
             unit: root.unit;
             // Shown scaled, typed scaled, held as is.
             format(v) => {
                 return Fmt.round-to(v * root.unit-scale,
-                    InspectorFmt.precision-of(root.step * root.unit-scale));
+                    Math.max(root.minimum-precision, InspectorFmt.precision-of(root.step * root.unit-scale)));
             }
             parse(t) => {
                 return t.is-float() ? t.to-float() / root.unit-scale : root.value;
@@ -457,12 +459,12 @@ export component Param inherits VerticalLayout {
             maximum: root.maximum;
             step: root.step;
             // The model's precision, as above.
-            precision: InspectorFmt.precision-of(root.step);
+            precision: Math.max(root.minimum-precision, InspectorFmt.precision-of(root.step));
             enabled: root.enabled;
             unit: root.unit;
             format(v) => {
                 return Fmt.round-to(v * root.unit-scale,
-                    InspectorFmt.precision-of(root.step * root.unit-scale));
+                    Math.max(root.minimum-precision, InspectorFmt.precision-of(root.step * root.unit-scale)));
             }
             parse(t) => {
                 return t.is-float() ? t.to-float() / root.unit-scale : root.value;
