@@ -20,7 +20,7 @@ export global CanvasPresets {
     in property <float> foreground-width: 0.92;
     in property <float> foreground-height: 0.80;
     /// Percent of this preset's baseline picture opening, not source zoom.
-    in property <float> foreground-size: 100;
+    in property <float> foreground-size: 120;
     in property <float> border-width: 0.006;
     in property <float> radius: 0;
     in property <float> blur: 0;
@@ -80,10 +80,10 @@ export component CanvasPresetPanel inherits VerticalLayout {
     }
     VerticalLayout {
         spacing: 7px;
-        Text { text: "Picture Size changes the foreground opening and its frame, not Content Zoom / Crop.";
+        Text { text: "Picture Size changes the foreground opening and frame, not Content Zoom / Crop. Default target: 120%; safe canvas bounds may limit the actual size.";
             color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
         Param { label: "Picture Size (%)"; value: CanvasPresets.foreground-size;
-            minimum: 40; maximum: 130; step: 1; fmt: ParamFormat.percent;
+            minimum: 40; maximum: 130; step: 1; default-value: 120; fmt: ParamFormat.percent;
             changed(v) => { CanvasPresets.edit-number("foregroundSize", v); } }
         Param { label: "Left"; value: CanvasPresets.foreground-x; minimum: 0; maximum: 1 - CanvasPresets.foreground-width; step: 0.005; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("foregroundX", v); } }
         Param { label: "Top"; value: CanvasPresets.foreground-y; minimum: 0; maximum: 1 - CanvasPresets.foreground-height; step: 0.005; fmt: ParamFormat.fraction; changed(v) => { CanvasPresets.edit-number("foregroundY", v); } }

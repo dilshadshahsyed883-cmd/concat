@@ -911,7 +911,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     app.global::<CanvasPresets>().on_choose(move |index| {
         Shell::with(|_, app| {
             if !concat_project::canvas_preset::ACTIVE_PRESETS.contains(&(index as u32)) { return; }
-            if let Some(config) = concat_project::canvas_preset::Config::preset(index as u32) {
+            if let Some(config) = concat_project::canvas_preset::Config::editor_default(index as u32) {
                 canvas_publish(&app, &config);
             }
         });
@@ -1046,7 +1046,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             studio.prefs.canvas_default = None;
             studio.prefs.save(&studio.host.dirs);
             drop(studio);
-            let sports = concat_project::canvas_preset::Config::preset(1)
+            let sports = concat_project::canvas_preset::Config::editor_default(1)
                 .expect("sports canvas default");
             canvas_publish(&app, &sports);
             app.global::<CanvasPresets>().set_default_status(
@@ -1057,7 +1057,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         let remembered = shell.studio.borrow().prefs.canvas_default.as_deref()
             .and_then(|json| concat_project::canvas_preset::Config::from_json(json).ok())
             .filter(|config| concat_project::canvas_preset::ACTIVE_PRESETS.contains(&config.preset))
-            .unwrap_or_else(|| concat_project::canvas_preset::Config::preset(1)
+            .unwrap_or_else(|| concat_project::canvas_preset::Config::editor_default(1)
                 .expect("sports canvas default"));
         let stars = concat_project::canvas_preset::ACTIVE_PRESETS
             .into_iter()

@@ -673,9 +673,9 @@ pub fn save_planning_settings(config:&Path,p:&concat_project::planning::Profile)
     if backup.exists() && !path.exists(){fs::rename(&backup,&path).map_err(|e|e.to_string())?;}
     if backup.exists() { fs::remove_file(&backup).map_err(|e| e.to_string())?; }
     let existed = path.exists();
-    if existed { fs::rename(path, &backup).map_err(|e| e.to_string())?; }
+    if existed { fs::rename(&path, &backup).map_err(|e| e.to_string())?; }
     if let Err(e) = fs::rename(&pending, &path) {
-        if existed { let _ = fs::rename(&backup, path); }
+        if existed { let _ = fs::rename(&backup, &path); }
         return Err(e.to_string());
     }
     if existed { let _ = fs::remove_file(backup); }
