@@ -19,6 +19,8 @@ export async function call(method, ...args) {
 }
 export const duration = (timeline) =>
   Math.max(0, ...(timeline?.clips || []).map((c) => c.start + c.duration));
+export const stateFromReply = (reply) =>
+  reply?.state?.view !== undefined ? reply.state : reply;
 export const clipsAt = (timeline, time) =>
   (timeline?.clips || []).filter(
     (c) => time >= c.start && time < c.start + c.duration,

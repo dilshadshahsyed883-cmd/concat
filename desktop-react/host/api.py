@@ -30,6 +30,10 @@ class Api:
         self.window=None;self.lock=threading.RLock();self.engine=engine;self.engine_path=None;self.preset_path=Path(presets) if presets else None;self.path='';self.view=None;self.dirty=False;self.revision=0;self.jobs={};self.thumb_cache={};self.settings_path=Path(settings) if settings else ROOT/'preferences.json'
         try:self.prefs=json.loads(self.settings_path.read_text(encoding='utf8'))
         except (OSError,ValueError):self.prefs={}
+        if not isinstance(self.prefs,dict):self.prefs={}
+        for key in ['favorites','defaults','lockedProjects']:
+            if not isinstance(self.prefs.get(key,{}),dict):self.prefs[key]={}
+        if not isinstance(self.prefs.get('lockedTracks',[]),list):self.prefs['lockedTracks']=[]
         self.prefs.setdefault('favorites',{});self.prefs.setdefault('defaults',{});self.prefs.setdefault('lockedTracks',[]);self.prefs.setdefault('lockedProjects',{})
     def _discover(self):
         base=Path(getattr(sys,'_MEIPASS',Path(__file__).resolve().parents[1]))
@@ -297,6 +301,16 @@ class Api:
         if action not in ['stage-pressed','stage-grip-pressed','stage-dragged','stage-released']:raise ValueError('Invalid stage gesture.')
         return self.engine.request('desktop/invoke',{'target':'Editor','callback':action,'arguments':arguments})
     @rpc
+    def timeline_drop(self,clip,start,track,copy=False):
+        self.engine.request('desktop/timeline-drop',{'id':clip,'start':float(start),'track':track,'copy':bool(copy)})
+        return self._refresh(True)
+    @rpc
+    def zoom(self,pixels,anchor=0):return self.engine.request('desktop/zoom',{'pixels':float(pixels),'anchor':float(anchor)})
+    @rpc
+    def timeline_view(self,left,width):
+        self.engine.request('desktop/invoke',{'target':'Editor','callback':'lanes-resized','arguments':[max(1,float(width))]})
+        return self.engine.request('desktop/invoke',{'target':'Editor','callback':'scrolled','arguments':[max(0,float(left))]})
+    @rpc
     def playback_toggle(self):
         self.engine.request('desktop/invoke',{'target':'Editor','callback':'play-toggled','arguments':[]})
         return self.engine.request('desktop/playback',{})
@@ -317,7 +331,7 @@ class Api:
         # Use the original timeline selection controller before opening an inspector/service.
         if not ids:self.engine.request('desktop/invoke',{'target':'Editor','callback':'shortcut','arguments':['deselect']})
         for i,ident in enumerate(ids):
-            self.engine.request('desktop/invoke',{'target':'Editor','callback':'clip-pressed','arguments':[ident,i>0,0]})
+            self.engine.request('desktop/invoke',{'target':'Editor','callback':'clip-pressed','arguments':[ident,i>0,-1]})
             self.engine.request('desktop/invoke',{'target':'Editor','callback':'clip-released','arguments':[]})
         return True
     @rpc

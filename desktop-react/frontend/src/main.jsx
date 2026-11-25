@@ -45,6 +45,7 @@ import {
   call,
   clock,
   duration as timelineDuration,
+  stateFromReply,
   snappedTime,
 } from "./bridge";
 import "./style.css";
@@ -79,6 +80,7 @@ function App() {
     [waves, setWaves] = useState({}),
     [stageData, setStageData] = useState({}),
     [scale, setScale] = useState(75),
+    [timelineTool, setTimelineTool] = useState("select"),
     [job, setJob] = useState(null),
     [video, setVideo] = useState(""),
     [playing, setPlaying] = useState(false),
@@ -92,6 +94,9 @@ function App() {
     [expert, setExpert] = useState(false),
     [tool, setTool] = useState("edit_apply"),
     [argumentsText, setArgumentsText] = useState("{}");
+  const scrollHost = useRef(null),
+    scrollTimer = useRef(null),
+    lastScroll = useRef(0);
   const sheets = useRef({}),
     capturing = useRef(false);
   const notices = useRef(0),
@@ -127,6 +132,7 @@ function App() {
     favorites = prefs.favorites?.[category] || [];
   latest.current = { path: state?.path, revision: state?.revision, time };
   function adopt(s) {
+    s = stateFromReply(s);
     if (s?.view !== undefined) {
       setState(s);
       setVideo("");
@@ -163,6 +169,7 @@ function App() {
       const b = await call("boot");
       setBoot(b);
       adopt(b);
+      await call("zoom", 75, 0);
     });
   }
   useEffect(() => {
@@ -182,6 +189,22 @@ function App() {
         const events = await call("poll");
         if (!live) return;
         if (events.state) adopt(events.state);
+        if (events.pixelsPerSecond) setScale(events.pixelsPerSecond);
+        if (
+          scrollHost.current &&
+          events.scrollSeconds != null &&
+          performance.now() - lastScroll.current > 200
+        ) {
+          const left = events.scrollSeconds * (events.pixelsPerSecond || scale);
+          requestAnimationFrame(() => {
+            if (
+              scrollHost.current &&
+              Math.abs(scrollHost.current.scrollLeft - left) > 2
+            )
+              scrollHost.current.scrollLeft = left;
+          });
+        }
+        if (events.tool) setTimelineTool(events.tool);
         if (events.stage) setStageData(events.stage);
         if (events.selected) setSelected(events.selected);
         capturing.current = !!events.capturing;
@@ -270,6 +293,10 @@ function App() {
       clearInterval(timer);
     };
   }, []);
+  useEffect(() => {
+    setThumbs({});
+    setFrame("");
+  }, [state?.path]);
   useEffect(() => {
     let live = true;
     (async () => {
@@ -418,7 +445,10 @@ function App() {
         [side]: Math.max(
           170,
           Math.min(
-            480,
+            Math.min(
+              480,
+              window.innerWidth - p[side === "left" ? "right" : "left"] - 312,
+            ),
             base + (e.clientX - start) * (side === "left" ? 1 : -1),
           ),
         ),
@@ -430,6 +460,21 @@ function App() {
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", end);
   }
+  useEffect(() => {
+    const resize = () =>
+      setPanels((p) => {
+        const available = Math.max(340, window.innerWidth - 312),
+          sum = p.left + p.right;
+        return sum <= available
+          ? p
+          : {
+              left: Math.max(170, (p.left * available) / sum),
+              right: Math.max(170, (p.right * available) / sum),
+            };
+      });
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
   async function seekTime(v) {
     setTime(v);
     if (vid.current) vid.current.currentTime = v;
@@ -449,6 +494,14 @@ function App() {
     }
   }
   function select(c, e) {
+    if (timelineTool === "split" && e) {
+      const bounds = e.currentTarget.getBoundingClientRect();
+      const at = c.start + (e.clientX - bounds.left) / scale;
+      action("native_invoke", "Editor", "clip-split", [c.id, at]).then(
+        (r) => r && adopt(r.state),
+      );
+      return;
+    }
     const ids = e?.ctrlKey
       ? selected.includes(c.id)
         ? selected.filter((x) => x !== c.id)
@@ -503,6 +556,30 @@ function App() {
       edit({ op: "setClipTransform", clipId: clip.id, [key]: value });
     else edit({ op: "updateClip", clipId: clip.id, patch: { [key]: value } });
   }
+  function syncTimelineView() {
+    const element = scrollHost.current;
+    if (!element) return;
+    lastScroll.current = performance.now();
+    clearTimeout(scrollTimer.current);
+    scrollTimer.current = setTimeout(
+      () =>
+        call(
+          "timeline_view",
+          element.scrollLeft / scale,
+          Math.max(1, element.clientWidth - 90),
+        ).catch((e) => setError(e.message)),
+      60,
+    );
+  }
+  useEffect(() => {
+    if (!boot || !scrollHost.current) return;
+    const observer = new ResizeObserver(syncTimelineView);
+    observer.observe(scrollHost.current);
+    return () => {
+      observer.disconnect();
+      clearTimeout(scrollTimer.current);
+    };
+  }, [!!boot, scale]);
   function drop(e, track) {
     e.preventDefault();
     if (busy) return;
@@ -511,16 +588,13 @@ function App() {
       ),
       rect = e.currentTarget.getBoundingClientRect(),
       start = snappedTime(
-        (e.clientX - rect.left) / scale,
+        (e.clientX - rect.left) / scale - (data.clip ? data.grab || 0 : 0),
         view.settings.rateNum,
         view.settings.rateDen,
       );
     if (data.media) action("add_media", [data.media], start, track);
     if (data.clip)
-      edit({
-        op: "moveClips",
-        moves: [{ clipId: data.clip, start, trackId: track }],
-      });
+      action("timeline_drop", data.clip, start, track, e.ctrlKey || e.altKey);
   }
   async function render(preview = false) {
     run(async () => {
@@ -1086,9 +1160,12 @@ function App() {
                     <Checkbox
                       checked={!!stageData.painting}
                       onChange={(e) =>
-                        action("native_invoke", "Editor", "cutout-painting", [
-                          e.target.checked,
-                        ]).then((r) => r && adopt(r.state))
+                        action(
+                          "native_invoke",
+                          "Editor",
+                          e.target.checked ? "cutout-mode" : "cutout-painting",
+                          [e.target.checked ? 2 : false],
+                        ).then((r) => r && adopt(r.state))
                       }
                     >
                       Paint on preview
@@ -1305,12 +1382,19 @@ function App() {
                 min={20}
                 max={250}
                 value={scale}
-                onChange={setScale}
+                onChange={(v) => {
+                  setScale(v);
+                  call("zoom", v, time).catch((e) => setError(e.message));
+                }}
                 style={{ width: 130 }}
               />
             </div>
           </div>
-          <div className="tracks-scroll">
+          <div
+            className="tracks-scroll"
+            ref={scrollHost}
+            onScroll={syncTimelineView}
+          >
             <div
               className="tracks"
               style={{ width: Math.max(800, end * scale + 100) }}
@@ -1339,117 +1423,130 @@ function App() {
                   </span>
                 ))}
               </div>
-              {timeline?.tracks.map((track, i) => (
-                <div className="track-row" key={track.id}>
-                  <div className="track-label">
-                    Track {i + 1}
-                    <Button
-                      size="small"
-                      type="text"
-                      aria-label="Toggle track visibility"
-                      icon={
-                        track.visible ? (
-                          <EyeOutlined />
-                        ) : (
-                          <EyeInvisibleOutlined />
-                        )
-                      }
-                      onClick={() =>
-                        edit({
-                          op: "setTrackFlag",
-                          trackId: track.id,
-                          flag: "visible",
-                          value: !track.visible,
-                        })
-                      }
-                    />
-                    <Button
-                      size="small"
-                      type="text"
-                      aria-label="Toggle track audio"
-                      icon={<SoundOutlined />}
-                      danger={track.muted}
-                      onClick={() =>
-                        edit({
-                          op: "setTrackFlag",
-                          trackId: track.id,
-                          flag: "muted",
-                          value: !track.muted,
-                        })
-                      }
-                    />
-                    <Button
-                      size="small"
-                      type="text"
-                      icon={
-                        prefs.lockedTracks.includes(track.id) ? (
-                          <LockOutlined />
-                        ) : (
-                          <UnlockOutlined />
-                        )
-                      }
-                      onClick={() =>
-                        pref({
-                          lockedTracks: prefs.lockedTracks.includes(track.id)
-                            ? prefs.lockedTracks.filter((id) => id !== track.id)
-                            : [...prefs.lockedTracks, track.id],
-                        })
-                      }
-                    />
+              {timeline?.tracks
+                .slice()
+                .reverse()
+                .map((track, i) => (
+                  <div className="track-row" key={track.id}>
+                    <div className="track-label">
+                      Track{" "}
+                      {timeline.tracks.findIndex((t) => t.id === track.id) + 1}
+                      <Button
+                        size="small"
+                        type="text"
+                        aria-label="Toggle track visibility"
+                        icon={
+                          track.visible ? (
+                            <EyeOutlined />
+                          ) : (
+                            <EyeInvisibleOutlined />
+                          )
+                        }
+                        onClick={() =>
+                          edit({
+                            op: "setTrackFlag",
+                            trackId: track.id,
+                            flag: "visible",
+                            value: !track.visible,
+                          })
+                        }
+                      />
+                      <Button
+                        size="small"
+                        type="text"
+                        aria-label="Toggle track audio"
+                        icon={<SoundOutlined />}
+                        danger={track.muted}
+                        onClick={() =>
+                          edit({
+                            op: "setTrackFlag",
+                            trackId: track.id,
+                            flag: "muted",
+                            value: !track.muted,
+                          })
+                        }
+                      />
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={
+                          prefs.lockedTracks.includes(track.id) ? (
+                            <LockOutlined />
+                          ) : (
+                            <UnlockOutlined />
+                          )
+                        }
+                        onClick={() =>
+                          pref({
+                            lockedTracks: prefs.lockedTracks.includes(track.id)
+                              ? prefs.lockedTracks.filter(
+                                  (id) => id !== track.id,
+                                )
+                              : [...prefs.lockedTracks, track.id],
+                          })
+                        }
+                      />
+                    </div>
+                    <div
+                      className="track-content"
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => drop(e, track.id)}
+                    >
+                      {clips
+                        .filter((c) => c.trackId === track.id)
+                        .map((c) => (
+                          <button
+                            key={c.id}
+                            draggable={!prefs.lockedTracks.includes(track.id)}
+                            onDragStart={(e) =>
+                              e.dataTransfer.setData(
+                                "application/concat",
+                                JSON.stringify({
+                                  clip: c.id,
+                                  grab:
+                                    (e.clientX -
+                                      e.currentTarget.getBoundingClientRect()
+                                        .left) /
+                                    scale,
+                                }),
+                              )
+                            }
+                            className={
+                              "timeline-clip " +
+                              (selected.includes(c.id) ? "selected" : "") +
+                              " " +
+                              c.kind
+                            }
+                            style={{
+                              left: c.start * scale,
+                              width: Math.max(5, c.duration * scale),
+                            }}
+                            onClick={(e) => select(c, e)}
+                          >
+                            {thumbs[c.id] && <img src={thumbs[c.id]} />}{" "}
+                            {waves[c.id] && (
+                              <svg
+                                className="clip-wave"
+                                viewBox="0 0 1 1"
+                                preserveAspectRatio="none"
+                                style={{
+                                  left: (waves[c.id].from || 0) * 100 + "%",
+                                  width: (waves[c.id].span || 1) * 100 + "%",
+                                  transform: `scaleY(${waves[c.id].volume || 0})`,
+                                }}
+                              >
+                                <path d={waves[c.id].path} />
+                              </svg>
+                            )}
+                            <span>
+                              {c.name || c.id}
+                              <small>{c.duration.toFixed(2)}s</small>
+                            </span>
+                          </button>
+                        ))}
+                    </div>
                   </div>
-                  <div
-                    className="track-content"
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => drop(e, track.id)}
-                  >
-                    {clips
-                      .filter((c) => c.trackId === track.id)
-                      .map((c) => (
-                        <button
-                          key={c.id}
-                          draggable={!prefs.lockedTracks.includes(track.id)}
-                          onDragStart={(e) =>
-                            e.dataTransfer.setData(
-                              "application/concat",
-                              JSON.stringify({ clip: c.id }),
-                            )
-                          }
-                          className={
-                            "timeline-clip " +
-                            (selected.includes(c.id) ? "selected" : "") +
-                            " " +
-                            c.kind
-                          }
-                          style={{
-                            left: c.start * scale,
-                            width: Math.max(5, c.duration * scale),
-                          }}
-                          onClick={(e) => select(c, e)}
-                        >
-                          {thumbs[c.id] && <img src={thumbs[c.id]} />}{" "}
-                          {waves[c.id] && (
-                            <svg
-                              className="clip-wave"
-                              viewBox="0 0 1 1"
-                              preserveAspectRatio="none"
-                              style={{
-                                left: (waves[c.id].from || 0) * 100 + "%",
-                                width: (waves[c.id].span || 1) * 100 + "%",
-                                transform: `scaleY(${waves[c.id].volume || 0})`,
-                              }}
-                            >
-                              <path d={waves[c.id].path} />
-                            </svg>
-                          )}
-                          <span>
-                            {c.name || c.id}
-                            <small>{c.duration.toFixed(2)}s</small>
-                          </span>
-                        </button>
-                      ))}
-                  </div>
-                </div>
-              ))}
+                ))}
               <div className="playhead" style={{ left: 90 + time * scale }} />
             </div>
           </div>

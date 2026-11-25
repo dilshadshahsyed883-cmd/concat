@@ -88,7 +88,7 @@ fn engine(mut request:Request)->Result<Value,ApiError>{
             API.with(|slot|{
                 let mut slot=slot.borrow_mut();let api=slot.as_mut().unwrap();
                 let response=if let Some(session)=studio.session.take(){
-                    studio.echo=None;
+                    if changed {studio.echo=None;}
                     let(session,response)=api.dispatch_live(session,request);
                     studio.session=Some(session);response
                 }else{api.dispatch(request)};
@@ -109,6 +109,28 @@ impl concat_mcp::Backend for Desktop {
             if method=="desktop/schema"{return serde_json::from_str(include_str!("react_schema.json")).map_err(|e|ApiError::failed(e.to_string()));}
             let mut result=Err(ApiError::failed("Desktop not ready"));
             Shell::with(|shell,app|{result=(||{match method.as_str(){
+                "desktop/timeline-drop"=>{
+                    let before=app.get_toast().token;
+                    let id=params["id"].as_str().ok_or("Clip ID required")?;
+                    let target=params["track"].as_str().ok_or("Destination track required")?;
+                    let destination=params["start"].as_f64().filter(|v|v.is_finite()).ok_or("Destination time required")?;
+                    let (start,source)={let studio=shell.studio.borrow();let session=studio.session.as_ref().ok_or("No project open")?;let clip=session.project().active().clips.iter().find(|c|c.id==id).ok_or("Clip is missing")?;(clip.start,clip.track_id.clone())};
+                    let editor=app.global::<crate::ui::Editor>();let tracks=editor.get_tracks();
+                    let center=|id:&str|->Option<f32>{(0..tracks.row_count()).filter_map(|i|tracks.row_data(i)).find(|t|t.id.as_str()==id).map(|t|t.top+t.height/2.0)};
+                    let dy=center(target).ok_or("Destination track missing")?-center(&source).ok_or("Source track missing")?;
+                    let modes=app.global::<crate::ui::TimelineDrag>();modes.set_copy_modifier(params["copy"].as_bool().unwrap_or(false));
+                    editor.invoke_clip_pressed(id.into(),false,-1);
+                    editor.invoke_clip_dragged((destination-start) as f32,dy);
+                    editor.invoke_clip_released();modes.set_copy_modifier(false);
+                    let notice=app.get_toast();if notice.token!=before&&notice.failed{return Err(notice.message.to_string());}
+                    Ok(Value::Null)
+                },
+                "desktop/zoom"=>{
+                    let pixels=params["pixels"].as_f64().filter(|p|p.is_finite()&&*p>0.0).ok_or("Invalid timeline scale")? as f32;
+                    let editor=app.global::<crate::ui::Editor>();
+                    editor.invoke_zoom(1.0/(pixels*editor.get_seconds_per_pixel().max(0.000001)),params["anchor"].as_f64().unwrap_or(0.0) as f32);
+                    Ok(json!(1.0/editor.get_seconds_per_pixel().max(0.000001)))
+                },
                 "desktop/key"=>{
                     use slint::platform::Key;
                     let text=params["key"].as_str().ok_or("Key required")?;
@@ -122,7 +144,7 @@ impl concat_mcp::Backend for Desktop {
                     let editor=app.global::<crate::ui::Editor>();
                     let clips=editor.get_clips();
                     let waves:Vec<Value>=(0..clips.row_count()).filter_map(|i|clips.row_data(i)).filter(|c|!c.wave.is_empty()).map(|c|json!({"id":c.id.as_str(),"path":c.wave.as_str(),"from":c.wave_from,"span":c.wave_span,"volume":c.volume})).collect();
-                    Ok(json!({"path":studio.session.as_ref().map(|s|s.path()),"revision":revision,"dirty":dirty,"toast":app.get_toast().wire("toast"),"playing":editor.get_playing(),"time":editor.get_playhead(),"waves":waves,"stage":{"items":editor.get_stage_items().wire("stage.items"),"painting":editor.get_painting(),"brush-size":editor.get_brush_size(),"brush-tool":editor.get_brush_tool()},"selected":(0..clips.row_count()).filter_map(|i|clips.row_data(i)).filter(|c|c.selected).map(|c|c.id.to_string()).collect::<Vec<_>>(),"capturing":!app.get_settings().capturing.is_empty(),"sheets":{"Settings":app.get_settings().open,"Captions":app.get_captions().open,"Speech":app.get_speech().open,"Voiceover":app.get_voiceover().open,"Project":app.get_project_sheet().open||app.get_export().open}}))
+                    Ok(json!({"path":studio.session.as_ref().map(|s|s.path()),"revision":revision,"dirty":dirty,"toast":app.get_toast().wire("toast"),"playing":editor.get_playing(),"time":editor.get_playhead(),"waves":waves,"pixelsPerSecond":1.0/editor.get_seconds_per_pixel().max(0.000001),"scrollSeconds":editor.get_scroll_left(),"tool":editor.get_tool().wire("tool"),"stage":{"items":editor.get_stage_items().wire("stage.items"),"painting":editor.get_painting(),"brush-size":editor.get_brush_size(),"brush-tool":editor.get_brush_tool()},"selected":studio.selection,"capturing":!app.get_settings().capturing.is_empty(),"sheets":{"Settings":app.get_settings().open,"Captions":app.get_captions().open,"Speech":app.get_speech().open,"Voiceover":app.get_voiceover().open,"Project":app.get_project_sheet().open||app.get_export().open||app.get_relink().open||app.get_confirm().open}}))
                 },
                 "desktop/playback"=>{let editor=app.global::<crate::ui::Editor>();Ok(json!({"time":editor.get_playhead(),"playing":editor.get_playing()}))},
                 "desktop/image"=>{

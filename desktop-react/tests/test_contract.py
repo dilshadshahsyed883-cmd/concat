@@ -25,3 +25,12 @@ def test_generated_adapters_cover_public_callbacks():
     assert schema==json.loads((src/'src/react_schema.json').read_text())
     for name in ['captions-begin','speech-begin','voiceover-action','open-settings']:
         assert any(c['name']==name for c in schema['targets']['App']['callbacks'])
+
+def test_invalid_old_settings_root_does_not_prevent_startup(tmp_path):
+    path=tmp_path/'preferences.json';path.write_text('[]',encoding='utf8')
+    api=Api(settings=path);assert api.prefs['favorites']=={} and api.prefs['lockedTracks']==[]
+
+def test_invalid_known_settings_fields_keep_unrelated_future_settings(tmp_path):
+    path=tmp_path/'preferences.json';path.write_text('{"favorites":null,"defaults":[],"lockedTracks":false,"futureField":{"keep":1}}',encoding='utf8')
+    api=Api(settings=path);assert api.prefs['favorites']=={} and api.prefs['defaults']=={}
+    assert api.prefs['futureField']=={'keep':1}

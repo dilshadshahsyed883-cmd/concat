@@ -1,1 +1,1 @@
-Candidate revision 5: fast native preset preflight, per-preset reset, transition defaults/intensity, complete CPU runtime notices, CPU launcher, sample-render artifact. No main merge or deployment.
+Candidate revision 6: preserve active gestures during reads, native timeline drop/zoom/viewport, body selection, custom brush activation, controller state adoption and regression tests. No deployment.

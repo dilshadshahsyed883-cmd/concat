@@ -1118,3 +1118,12 @@ footer {
   height: 100%;
   pointer-events: none;
 }
+
+.timeline {
+  height: 280px;
+}
+.track-label {
+  position: sticky;
+  left: 0;
+  z-index: 6;
+}

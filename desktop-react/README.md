@@ -23,3 +23,5 @@ After extracting the entire Windows ZIP, run `Concat-React.exe` or `Launch-Conca
 ## Verification limits
 
 Local JavaScript builds and host/code-generation tests do not prove Windows startup, actual transcription, microphone capture or CUDA rendering. The Windows workflow must compile and exercise the real native bridge before packaging. CUDA hardware execution requires a separate GPU runner. The tools panel currently renders typed controls from the native service schema; it needs additional task-specific layout and acceptance testing before claiming complete UI migration.
+
+The current program-monitor image refreshes after a transform drag is committed; native selection outlines update while dragging. Some complex service actions use typed controller forms instead of the original Slint layout. Hardware-specific acceptance limits are listed in `docs/TEST-REPORT.md`.

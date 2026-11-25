@@ -44,9 +44,9 @@ def test_native_errors_are_not_replaced_with_missing_envelope_errors(tmp_path):
 
 def test_native_selection_uses_integer_edge_and_preserves_additive_selection(tmp_path):
     api,engine=fixture(tmp_path);assert api.select_native(['c1','c2'])['ok']
-    assert engine.calls[0][1]['arguments']==['c1',False,0]
+    assert engine.calls[0][1]['arguments']==['c1',False,-1]
     assert engine.calls[1][1]['callback']=='clip-released'
-    assert engine.calls[2][1]['arguments']==['c2',True,0]
+    assert engine.calls[2][1]['arguments']==['c2',True,-1]
 
 def test_native_callback_result_is_returned_to_typed_service_form(tmp_path):
     api,engine=fixture(tmp_path)

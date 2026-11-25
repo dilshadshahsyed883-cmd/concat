@@ -14,7 +14,7 @@ def main():
         api=Api(settings=Path(folder)/'preferences.json');api._discover()
         result=api.new_project('WebView test',folder);assert result['ok'],result
         pic=Path(folder)/'picture.png';image=Image.new('RGB',(640,360),'#dceaff');ImageDraw.Draw(image).ellipse((150,40,490,340),fill='#3979ef');image.save(pic)
-        api._call('media_import',{'path':api.path,'file':str(pic)});api._refresh();mid=api.view['project']['media'][0]['id'];api.add_media([mid],0)
+        api._call('media_import',{'path':api.path,'file':str(pic)});api._refresh();mid=api.view['project']['media'][0]['id'];api.add_media([mid]*10,0)
         window=webview.create_window('Concat React integration',str(root/'frontend/dist/index.html'),js_api=public_api(api),width=1500,height=960);api.window=window
         def wait(fn,label):
             deadline=time.monotonic()+45
@@ -33,6 +33,10 @@ def main():
                 window.evaluate_js('Array.from(document.querySelectorAll("button")).find(x=>x.textContent==="Apply to selected").click()')
                 wait(lambda:bool(api._active()['clips'][0].get('keys')),'React preset action commits real native keys')
                 wait(lambda:window.evaluate_js('Boolean(document.querySelector(".video-canvas img"))'),'Native composited preview visible')
+                assert window.evaluate_js('document.querySelectorAll(".timeline-clip").length')==10
+                window.evaluate_js('const clip=document.querySelectorAll(".timeline-clip")[9];clip.scrollIntoView({block:"nearest",inline:"center"});clip.click()')
+                last=api._active()['clips'][9]['id']
+                wait(lambda:last in api.engine.request('desktop/events',{}).get('selected',[]),'Last clip selection survives native viewport virtualization')
                 assert window.evaluate_js('document.querySelectorAll("[role=separator]").length')>=2
                 checks.append('Resizable workbench separators present')
                 ImageGrab.grab().save(root/'dist/windows-editor.png')

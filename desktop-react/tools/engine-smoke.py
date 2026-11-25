@@ -36,6 +36,19 @@ def main():
             engine.call('edit_apply',{'path':path,'command':{'op':'addClipsInSequence','mediaIds':[mid],'start':0,'trackId':None,'ripple':False}})
             def current():
                 v=engine.call('project_get',{'path':path});p=v['project'];t=next(t for t in p['timelines'] if t['id']==p['activeTimelineId']);return v,t['clips'][0]
+            engine.request('desktop/invoke',{'target':'Editor','callback':'stage-pressed','arguments':[.5,.5,False]})
+            engine.request('desktop/invoke',{'target':'Editor','callback':'stage-dragged','arguments':[.6,.5,False]})
+            engine.call('project_get',{'path':path})
+            engine.request('desktop/invoke',{'target':'Editor','callback':'stage-released','arguments':[]})
+            assert current()[1].get('offsetX',0)>.05,'A read during a stage gesture must not discard its native preview state'
+            engine.call('edit_undo',{'path':path})
+            checks.append({'name':'stage gesture survives concurrent project reads and is undoable','status':'passed'})
+            assert abs(engine.request('desktop/zoom',{'pixels':75,'anchor':0})-75)<.01
+            _,initial=current()
+            engine.request('desktop/timeline-drop',{'id':initial['id'],'start':2.5,'track':initial['trackId'],'copy':False})
+            assert abs(current()[1]['start']-2.5)<1/30,'Timeline drops must use the native drag planner'
+            engine.call('edit_undo',{'path':path})
+            checks.append({'name':'native timeline drop and zoom routing','status':'passed'})
             check('open native captions on live project',lambda:engine.request('desktop/invoke',{'target':'Editor','callback':'captions','arguments':[]}));engine.request('desktop/invoke',{'target':'App','callback':'captions-closed','arguments':[]})
             view,clip=current();frame=view['settings']['rateDen']/view['settings']['rateNum'];catalogue=helper({'operation':'catalogue'})
             for preset in catalogue['presets']:

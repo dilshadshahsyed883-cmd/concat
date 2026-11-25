@@ -5,7 +5,7 @@ from pathlib import Path
 class EngineError(RuntimeError):pass
 class McpEngine:
     def __init__(self,executable,timeout=90):
-        self.executable=Path(executable).resolve();self.timeout=timeout;self.pending={};self.guard=threading.Lock();self.serial=threading.RLock();self.ids=itertools.count(1);self.logs=collections.deque(maxlen=30)
+        self.executable=Path(executable).resolve();self.timeout=timeout;self.pending={};self.guard=threading.Lock();self.serial=threading.RLock();self.ids=itertools.count(1);self.logs=collections.deque(maxlen=250)
         if not self.executable.is_file():raise EngineError('Concat engine is missing. Choose the bundled native/concat.exe in Settings.')
         env=os.environ.copy();cpu=self.executable.parent/'cpu-vulkan';manifest=cpu/'lvp_icd.x86_64.json'
         if os.name=='nt' and manifest.is_file():

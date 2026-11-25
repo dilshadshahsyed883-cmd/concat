@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { clipsAt, duration, clock, snappedTime } from "../src/bridge.js";
+import {
+  clipsAt,
+  duration,
+  clock,
+  snappedTime,
+  stateFromReply,
+} from "../src/bridge.js";
 test("Timeline duration follows the latest clip end across overlapping tracks and gaps", () => {
   const timeline = {
     clips: [
@@ -31,4 +37,15 @@ test("Clock and empty timeline", () => {
   assert.equal(clock(61.5), "01:01.50");
   assert.equal(duration(null), 0);
   assert.deepEqual(clipsAt(null, 0), []);
+});
+
+test("Controller replies retain preferences and revision when adopting project state", () => {
+  const state = {
+    view: { project: {} },
+    preferences: { favorites: { physics: ["spring"] } },
+    revision: 8,
+  };
+  assert.equal(stateFromReply({ view: state.view, state }), state);
+  assert.equal(stateFromReply(state), state);
+  assert.equal(stateFromReply(null), null);
 });
