@@ -18,26 +18,19 @@ impl Studio {
     pub fn apply_particle_bulk(
         &mut self,
         preset: i32,
-        mode: i32,
         selected_only: bool,
         images: bool,
         videos: bool,
     ) {
-        if !matches!(mode, 0..=2) || (!images && !videos) {
+        let Some(id) = IDS.get(preset as usize) else {
+            self.notify("Choose a valid particle preset and target type", true);
+            return;
+        };
+        if !images && !videos {
             self.notify("Choose a valid particle preset and target type", true);
             return;
         }
-        let options: Vec<String> = IDS
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| mode != 0 || *i == preset as usize)
-            .map(|(_, id)| format!("concat.particles-{id}"))
-            .filter(|id| mode != 2 || self.prefs.favourites.contains(id))
-            .collect();
-        if options.is_empty() {
-            self.notify("Choose or favorite a particle effect first", true);
-            return;
-        }
+        let id = format!("concat.particles-{id}");
         if selected_only && self.selection.is_empty() {
             self.notify("Select timeline media first", true);
             return;
@@ -60,10 +53,9 @@ impl Studio {
                 .id
                 .bytes()
                 .fold(seed, |s, b| s.wrapping_mul(0x100000001b3) ^ u64::from(b));
-            let id = &options[draw as usize % options.len()];
             let mut effects = clip.video_effects.clone();
             // The shared upsert enforces one particle preset per clip and preserves unrelated effects.
-            let mut entry = self.effect_application(id);
+            let mut entry = self.effect_application(&id);
             // Preserve deterministic per-clip random seeds unless this preset
             // has an explicitly edited/saved seed override.
             if !entry.params.contains_key("seed") {
