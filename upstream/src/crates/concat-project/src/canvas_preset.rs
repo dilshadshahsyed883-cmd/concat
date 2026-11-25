@@ -1617,6 +1617,22 @@ mod tests {
         m.adopt_project(&p);
         (p, m)
     }
+    #[test]
+    fn automatic_ripple_cannot_move_a_locked_canvas_companion() {
+        let (mut project, mut mint) = fixture();
+        apply(&mut project, &mut mint, Config::preset(3).unwrap(), vec!["c1".into()], vec![]).unwrap();
+        let locked = project.active().clips.iter().find(|c| c.extra.contains_key("canvasOwner")).unwrap().track_id.clone();
+        let before = project.clone();
+        let result = crate::commands::apply(&mut project, &mut mint, crate::commands::Command::ProtectTrackLocks {
+            timeline_id: before.active().id.clone(), locked_tracks: vec![locked],
+            command: Box::new(crate::commands::Command::AddClipsInSequence {
+                media_ids: vec!["m1".into()], track_id: Some("T1".into()), start: 2.0, ripple: true,
+            }),
+        });
+        assert!(result.is_err());
+        assert_eq!(project, before);
+    }
+
     fn generated_animation(clip: &mut Clip, canvas: bool) {
         use crate::motion_preset::{MotionPreset, replace_generated};
         use crate::canvas_motion::{CanvasMotionPreset, CanvasMotionControls, rounded_mask};

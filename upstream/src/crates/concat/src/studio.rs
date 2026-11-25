@@ -2835,13 +2835,13 @@ impl Studio {
         }
     }
 
-    fn protect_canvas_tracks(&self, command: Command) -> Command {
-        if command.is_view_state() || !self.timeline().clips.iter().any(|c|c.extra.contains_key("canvasOwner")) {
+    fn protect_tracks(&self, command: Command) -> Command {
+        if command.is_view_state() {
             return command;
         }
         let locked_tracks: Vec<_> = self.timeline().tracks.iter().filter(|t|self.locked(&t.id)).map(|t|t.id.clone()).collect();
         if locked_tracks.is_empty() { command } else {
-            Command::ProtectCanvasTracks {timeline_id:self.timeline().id.clone(),locked_tracks,command:Box::new(command)}
+            Command::ProtectTrackLocks {timeline_id:self.timeline().id.clone(),locked_tracks,command:Box::new(command)}
         }
     }
 
@@ -2855,7 +2855,7 @@ impl Studio {
         // commit path sets `last_commit` again right after calling here.
         self.last_commit = None;
         let chosen = matches!(command, Command::SetTimelineVideo { .. });
-        let command = self.protect_canvas_tracks(command);
+        let command = self.protect_tracks(command);
         let session = self.session.as_mut()?;
         let before = session.video().color_space;
         match session.apply(command) {
@@ -2882,7 +2882,7 @@ impl Studio {
         // dial turned is many of these.
         log::debug!("edit: {} ({gesture})", command_name(&command));
         self.echo = None;
-        let command = self.protect_canvas_tracks(command);
+        let command = self.protect_tracks(command);
         let session = self.session.as_mut()?;
         let before = session.video().color_space;
         match session.apply_within(Some(gesture), command) {

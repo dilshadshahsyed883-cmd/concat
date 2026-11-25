@@ -14,6 +14,12 @@ pub(super) fn apply(
     mint: &mut IdMint,
     command: Command,
 ) -> Result<Outcome, CommandError> {
+    apply_with_locks(project, mint, command, &[])
+}
+
+pub(super) fn apply_with_locks(
+    project: &mut Project, mint: &mut IdMint, command: Command, locked: &[String],
+) -> Result<Outcome, CommandError> {
     match command {
         Command::CopyClips { copies } => {
             let mut staged = project.clone();
@@ -102,7 +108,7 @@ pub(super) fn apply(
             let duration = clip_length(&media);
             let timeline = project.active_mut();
             let track_id = timeline.tracks.iter()
-                .find(|track| (media.kind == MediaKind::Audio
+                .find(|track| !locked.contains(&track.id) && (media.kind == MediaKind::Audio
                     || !super::editing::audio_lane(timeline, &track.id))
                     && timeline.is_free(&track.id, start, duration, &[]))
                 .map(|track| track.id.clone())
@@ -152,7 +158,7 @@ pub(super) fn apply(
                 }
                 Some(id) => id,
                 None => timeline.tracks.iter()
-                    .find(|track| (!has_visual || !super::editing::audio_lane(timeline, &track.id))
+                    .find(|track| !locked.contains(&track.id) && (!has_visual || !super::editing::audio_lane(timeline, &track.id))
                         && timeline.is_free(&track.id, start, total, &[]))
                     .map(|track| track.id.clone())
                     .unwrap_or_else(|| fresh_track(timeline, mint)),
@@ -201,9 +207,9 @@ pub(super) fn apply(
                 Some(_) => return Err(CommandError::TrackGone),
                 // Every lane above the video is taken: a new one at the top
                 // for the words to land on.
-                None if above => first_free_track_above(timeline, start, duration)
+                None if above => first_free_track_above(timeline, start, duration, locked)
                     .unwrap_or_else(|| fresh_track(timeline, mint)),
-                None => first_free_track(timeline, start, duration)
+                None => first_free_track(timeline, start, duration, locked)
                     .unwrap_or_else(|| fresh_track(timeline, mint)),
             };
             let start = timeline.nearest_free_start(&track_id, start, duration, &[]);
@@ -241,9 +247,9 @@ pub(super) fn apply(
             let track_id = match track_id {
                 Some(id) if timeline.track(&id).is_some() => id,
                 Some(_) => return Err(CommandError::TrackGone),
-                None if above => first_free_track_above(timeline, start, duration)
+                None if above => first_free_track_above(timeline, start, duration, locked)
                     .unwrap_or_else(|| fresh_track(timeline, mint)),
-                None => first_free_track(timeline, start, duration)
+                None => first_free_track(timeline, start, duration, locked)
                     .unwrap_or_else(|| fresh_track(timeline, mint)),
             };
             let start = timeline.nearest_free_start(&track_id, start, duration, &[]);
@@ -281,7 +287,7 @@ pub(super) fn apply(
                 // beneath it, and the bottom-first walk put one under the
                 // footage whenever a lower lane was free, where it treated
                 // nothing.
-                None => first_free_track_above(timeline, start, duration)
+                None => first_free_track_above(timeline, start, duration, locked)
                     .unwrap_or_else(|| fresh_track(timeline, mint)),
             };
             let start = timeline.nearest_free_start(&track_id, start, duration, &[]);
@@ -935,11 +941,11 @@ pub(super) fn clip_length(media: &MediaItem) -> f64 {
 /// The lowest track with nothing occupying `[start, start + duration)`.
 /// `None` when every lane is taken there: the caller opens a new one
 /// rather than covering a clip.
-fn first_free_track(timeline: &Timeline, start: f64, duration: f64) -> Option<String> {
+fn first_free_track(timeline: &Timeline, start: f64, duration: f64, locked: &[String]) -> Option<String> {
     timeline
         .tracks
         .iter()
-        .find(|track| timeline.is_free(&track.id, start, duration, &[]))
+        .find(|track| !locked.contains(&track.id) && timeline.is_free(&track.id, start, duration, &[]))
         .map(|track| track.id.clone())
 }
 
@@ -962,7 +968,7 @@ fn fresh_track(timeline: &mut Timeline, mint: &mut IdMint) -> String {
 /// Captions and titles go through this so they sit over the video, not
 /// under it. The plain `first_free_track` still walks from the bottom,
 /// which is what a sound or a picture wants.
-fn first_free_track_above(timeline: &Timeline, start: f64, duration: f64) -> Option<String> {
+fn first_free_track_above(timeline: &Timeline, start: f64, duration: f64, locked: &[String]) -> Option<String> {
     let end = start + duration;
     let occupied = |track_id: &str| {
         timeline.clips.iter().any(|clip| {
@@ -981,7 +987,7 @@ fn first_free_track_above(timeline: &Timeline, start: f64, duration: f64) -> Opt
         .tracks
         .iter()
         .skip(floor)
-        .find(|track| !occupied(&track.id))
+        .find(|track| !locked.contains(&track.id) && !occupied(&track.id))
         .map(|track| track.id.clone())
 }
 
