@@ -1067,7 +1067,13 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         app.global::<CanvasPresets>().set_favourites(ModelRc::new(VecModel::from(stars)));
         canvas_publish(&app, &remembered);
     });
-    app.on_start_c_builder(on_window!(|studio| {studio.builder_home();}));
+    app.on_start_c_builder(on_window!(|studio| {
+        studio.builder_home();
+        if studio.cb_home && !studio.c_builder.scanning && !studio.c_builder.folder.is_empty() {
+            let folder=std::path::PathBuf::from(studio.c_builder.folder.clone());
+            c_builder_scan(&mut studio,folder);
+        }
+    }));
     app.on_c_builder_return_home(on_window!(|studio,profile:SharedString| {studio.builder_return_home(&profile);}));
     app.on_c_builder_open_generated(on_window!(|studio| {studio.builder_open_generated();}));
     app.on_c_builder_cancel_generation(on_window!(|studio| {studio.builder_cancel_generation();}));
@@ -1082,7 +1088,12 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         host::after_dialog(
             || rfd::FileDialog::new().set_title("C Builder - Import Media Folder").pick_folder(),
-            |studio, _, _, folder| c_builder_scan(studio, folder),
+            |studio, _, _, folder| {
+                if studio.c_builder.scanning {return;}
+                studio.prefs.c_builder_media_folder=Some(folder.to_string_lossy().into_owned());
+                studio.prefs.save(&studio.host.dirs);
+                c_builder_scan(studio, folder);
+            },
         );
     });
     editor.on_cb_refresh_folder(on_window!(|studio| {
@@ -3476,6 +3487,11 @@ fn c_builder_scan(studio: &mut Studio, folder: std::path::PathBuf) {
     if studio.c_builder.scanning { return; }
     let folder_label = folder.to_string_lossy().into_owned();
     studio.c_builder.folder = folder_label.clone();
+    studio.c_builder.assets.clear();
+    studio.c_builder.keyword_summary.clear();
+    studio.c_builder.preview.clear();
+    studio.c_builder.preview_shots.clear();
+    studio.c_builder.probed=0;studio.c_builder.reused=0;studio.c_builder.removed=0;
     studio.c_builder.scanning = true;
     studio.c_builder.scan_done = 0;
     studio.c_builder.scan_total = 0;
