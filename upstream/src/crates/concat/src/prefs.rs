@@ -28,6 +28,8 @@ pub struct Preferences {
     pub dark: Option<bool>,
     /// The parent folder of the last project created successfully.
     pub last_project_location: Option<String>,
+    /// Remember the C Builder media library even when the drive is unavailable.
+    pub c_builder_media_folder: Option<String>,
     /// The accent, by the lower-cased name the theme lists it under —
     /// "lime", "sky", ... — or as "#rrggbb" for a colour picked by hand.
     /// `None`, or a name no longer on the list, is the first one, which is
@@ -356,6 +358,14 @@ mod tests {
         assert_eq!(prefs.dark, Some(false));
         assert_eq!(prefs.last_project_location, None);
         assert_eq!(prefs.project_location(), None);
+    }
+    #[test]
+    fn builder_folder_roundtrip_keeps_unavailable_path() {
+        let mut prefs=Preferences::default();
+        prefs.c_builder_media_folder=Some("unavailable/media".into());
+        let decoded:Preferences=serde_json::from_str(&serde_json::to_string(&prefs).unwrap()).unwrap();
+        assert_eq!(decoded.c_builder_media_folder,prefs.c_builder_media_folder);
+        assert!(serde_json::from_str::<Preferences>("{}").unwrap().c_builder_media_folder.is_none());
     }
     const NAMES: [&str; 3] = ["Lime", "Sky", "Violet"];
 

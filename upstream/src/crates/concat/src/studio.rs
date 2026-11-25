@@ -2356,6 +2356,7 @@ impl Studio {
         let transition_draft_intensity = prefs.transition_default_intensity
             .filter(|value| value.is_finite() && (0.0..=1.0).contains(value))
             .or(Some(0.7));
+        let cb_saved_folder=prefs.c_builder_media_folder.clone().unwrap_or_default();
         let mut studio = Self {
             prefs,
             transition_draft_duration,
@@ -2375,6 +2376,7 @@ impl Studio {
             cb_generation_cancel:None,cb_pending_used:None,
             cb_home:false, cb_generated_project:String::new(), cb_output_folder,
             c_builder: crate::c_builder::State {
+                folder: cb_saved_folder,
                 stored_profiles: crate::c_builder::load_profiles(&host.dirs.config.join("c-builder-profiles")),
                 ..Default::default()
             },

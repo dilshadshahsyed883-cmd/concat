@@ -484,7 +484,7 @@ mod tests {
         let project=write_native(&shots,&voice,1.0,&outputs,"Story").unwrap();
         crate::c_builder_used::relocate_used(&library,&project,&[PathBuf::from(&sources[0].path)]).unwrap();
         let report=scan(&library,&cache_path,|_,_|{}).unwrap();assert_eq!(report.assets.len(),1);assert_eq!(report.probed,0);assert_eq!(report.reused,1);
-        assert_eq!(report.assets[0].path,sources[1].path);assert!(Path::new(&sources[0].path).is_file());
+        assert_eq!(report.assets[0].path,sources[1].path);assert!(!Path::new(&sources[0].path).exists());
         fs::remove_dir_all(root).unwrap();
     }
 

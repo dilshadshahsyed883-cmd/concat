@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! Transactional used-media archival. Original compatibility hardlinks keep every older project valid.
+//! Transactional project-wise used-media moves with recovery.
 #![allow(missing_docs, dead_code)]
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -30,6 +30,7 @@ struct Pending {
     before_sha: String,
     after_sha: String,
     entries: Vec<Entry>,
+    #[serde(default)] moved: bool,
 }
 #[derive(Default, Serialize, Deserialize)]
 struct Journal {
@@ -97,10 +98,11 @@ fn secure_parent(root:&Path,parent:&Path)->Result<(),String>{
         match fs::symlink_metadata(&at){Ok(m) if m.is_dir()&&!m.file_type().is_symlink()=>{},Ok(_)=>return Err(format!("Unsafe used-media directory: {}",at.display())),Err(e) if e.kind()==std::io::ErrorKind::NotFound=>fs::create_dir(&at).map_err(error)?,Err(e)=>return Err(error(e))}
     }Ok(())
 }
-fn destination(root:&Path,source:&Path,reserved:&mut HashSet<PathBuf>)->Result<PathBuf,String>{
+fn destination(root:&Path,project:&Path,source:&Path,reserved:&mut HashSet<PathBuf>)->Result<PathBuf,String>{
     let rel=source.strip_prefix(root).map_err(|_|"Used source is outside its imported library".to_owned())?;
     if rel.components().any(|p|!matches!(p,Component::Normal(_))) || rel.components().any(|p|p.as_os_str().to_string_lossy().eq_ignore_ascii_case("used")){return Err("Source is already in a used area".into());}
-    let base=root.join("used").join(rel);let stem=base.file_stem().unwrap_or_default().to_string_lossy();let ext=base.extension().map(|s|format!(".{}",s.to_string_lossy())).unwrap_or_default();
+    let name=project.file_name().ok_or("Project must have a directory name")?;
+    let base=root.join("used").join(name).join(rel);let stem=base.file_stem().unwrap_or_default().to_string_lossy();let ext=base.extension().map(|s|format!(".{}",s.to_string_lossy())).unwrap_or_default();
     for n in 1u32..100000 {let candidate=if n==1{base.clone()}else{base.with_file_name(format!("{stem} ({n}){ext}"))};
         if !candidate.exists() && !candidate.is_symlink() && reserved.insert(candidate.clone()){return Ok(candidate);}}
     Err("Too many filename collisions in used media".into())
@@ -113,11 +115,17 @@ fn verify_document(bytes:&[u8])->Result<concat_project::Project,String>{
     Ok(project)
 }
 fn validate_entry_paths(root:&Path,e:&Entry)->Result<(),String>{
-    if !e.original.starts_with(root) || !e.relocated.starts_with(root.join("used")) || e.original.canonicalize().map_err(error)?!=e.original {
+    if !e.original.starts_with(root) || !e.relocated.starts_with(root.join("used")) || e.original.components().any(|c|matches!(c,Component::ParentDir)) || e.relocated.components().any(|c|matches!(c,Component::ParentDir)) {
         return Err("Unsafe used-media recovery path; files preserved".into());
     }
-    stamp(&e.original)?;
+    let parent=e.original.parent().ok_or("No original parent")?;
+    if parent.canonicalize().map_err(error)?!=parent {return Err("Unsafe original parent; files preserved".into());}
+    if e.original.exists() && e.original.canonicalize().map_err(error)?!=e.original {return Err("Unsafe original path; files preserved".into());}
     secure_parent(root,e.relocated.parent().ok_or("No recovery parent")?)
+}
+fn move_file(source:&Path,target:&Path)->Result<(),String>{
+    if fs::symlink_metadata(target).is_ok(){return Err(format!("Move destination already exists: {}",target.display()));}
+    fs::rename(source,target).map_err(error)
 }
 fn rollback_links(root:&Path,p:&Pending)->Result<usize,String>{
     let cancel=AtomicBool::new(false);let mut removed=0;
@@ -125,9 +133,15 @@ fn rollback_links(root:&Path,p:&Pending)->Result<usize,String>{
         validate_entry_paths(root,entry)?;
         if entry.relocated.exists(){
             if !entry.relocated.is_file() || entry.relocated.is_symlink() || hash(&entry.relocated,&cancel)?!=entry.sha256 {return Err(format!("Changed recovery destination preserved: {}",entry.relocated.display()));}
-            if hash(&entry.original,&cancel)?!=entry.sha256 {return Err(format!("Original compatibility reference changed: {}",entry.original.display()));}
-            fs::remove_file(&entry.relocated).map_err(error)?;removed+=1;
-        }
+            if p.moved {
+                if entry.original.exists() || entry.original.is_symlink(){return Err("Original path occupied during rollback; both files preserved".into());}
+                move_file(&entry.relocated,&entry.original)?;
+            } else {
+                if hash(&entry.original,&cancel)?!=entry.sha256 {return Err(format!("Original compatibility reference changed: {}",entry.original.display()));}
+                fs::remove_file(&entry.relocated).map_err(error)?;
+            }
+            removed+=1;
+        } else if p.moved && (stamp(&entry.original).ok()!=Some((entry.size,entry.modified_ns)) || hash(&entry.original,&cancel)?!=entry.sha256) {return Err("Original media changed or missing during rollback".into());}
     }Ok(removed)
 }
 fn recover_locked(root:&Path,j:&mut Journal)->Result<RecoveryReport,String>{
@@ -140,7 +154,7 @@ fn recover_locked(root:&Path,j:&mut Journal)->Result<RecoveryReport,String>{
     let current=hash_bytes(&bytes);let mut report=RecoveryReport::default();
     if current==p.after_sha {
         verify_document(&bytes)?;let no_cancel=AtomicBool::new(false);
-        for e in &p.entries {if hash(&e.relocated,&no_cancel)?!=e.sha256 || hash(&e.original,&no_cancel)?!=e.sha256 {return Err("Used-media recovery hash mismatch; all files preserved".into());}}
+        for e in &p.entries {if hash(&e.relocated,&no_cancel)?!=e.sha256 || if p.moved {e.original.exists() || e.original.is_symlink()} else {hash(&e.original,&no_cancel)?!=e.sha256} {return Err("Used-media recovery hash mismatch; all files preserved".into());}}
         for e in p.entries {j.committed.insert(e.original.clone(),e);report.committed+=1;}
     } else if current==p.before_sha {report.rolled_back=rollback_links(root,&p)?;}
     else {return Err(format!("Generated project changed during recovery; no files overwritten: {}",p.project.display()));}
@@ -171,38 +185,41 @@ fn relocate_inner(library:&Path,project:&Path,consumed:&[PathBuf],cancel:&Atomic
     let before=fs::read(&manifest).map_err(error)?;let native=verify_document(&before)?;
     let ids:HashSet<_>=native.timelines.iter().flat_map(|t|&t.clips).filter(|c|c.kind.is_visual()).map(|c|c.media_id.as_str()).collect();
     let actual:HashSet<PathBuf>=native.media.iter().filter(|m|ids.contains(m.id.as_str()) && matches!(m.kind,concat_project::model::MediaKind::Image|concat_project::model::MediaKind::Video)).map(|m|PathBuf::from(&m.path)).collect();
-    let mut unique=std::collections::BTreeSet::new();for path in consumed {unique.insert(path.canonicalize().map_err(error)?);}
+    let mut unique=std::collections::BTreeSet::new();for path in consumed {
+        let absolute=if path.exists(){path.canonicalize().map_err(error)?}else{path.clone()};
+        unique.insert(absolute);
+    }
     if unique.is_empty(){return Err("No actually consumed picture media to archive".into());}
     let mut entries=Vec::new();let mut reserved=HashSet::new();let mut already_archived=0;
     for source in unique {
         check_cancel(cancel)?;
         if let Some(old)=j.committed.get(&source) {
-            let current=hash(&source,cancel)?;
             if old.project==project && actual.contains(&old.relocated) {
-                if current!=old.sha256 || hash(&old.relocated,cancel)?!=old.sha256 {return Err("Previously archived project media changed; files preserved".into());}
+                if (source.exists() && hash(&source,cancel)?!=old.sha256) || hash(&old.relocated,cancel)?!=old.sha256 {return Err("Previously archived project media changed; files preserved".into());}
                 already_archived+=1;continue;
             }
-            if current==old.sha256 {return Err(format!("Source was already consumed; refresh the library: {}",source.display()));}
+            if source.exists() && hash(&source,cancel)?==old.sha256 {return Err(format!("Source was already consumed; refresh the library: {}",source.display()));}
         }
         if !actual.contains(&source){return Err(format!("Refusing to archive unused media or narration: {}",source.display()));}
         let (size,modified_ns)=stamp(&source)?;let sha256=hash(&source,cancel)?;
         if stamp(&source)?!=(size,modified_ns){return Err("Media changed during archival preflight; refresh library".into());}
-        let relocated=destination(&root,&source,&mut reserved)?;
+        let relocated=destination(&root,&project,&source,&mut reserved)?;
         secure_parent(&root,relocated.parent().ok_or("No destination parent")?)?;
         entries.push(Entry{original:source,relocated,size,modified_ns,sha256,project:project.clone()});
     }
-    if entries.is_empty(){return Ok(RelocationReport{entries,compatibility_links:already_archived,already_archived});}
+    if entries.is_empty(){return Ok(RelocationReport{entries,compatibility_links:0,already_archived});}
     let map:BTreeMap<_,_>=entries.iter().map(|e|(e.original.to_string_lossy().into_owned(),e.relocated.to_string_lossy().into_owned())).collect();
     let mut document:serde_json::Value=serde_json::from_slice(&before).map_err(error)?;rewrite(&mut document,&map);
     let after=serde_json::to_vec_pretty(&document).map_err(error)?;
-    let pending=Pending{project:project.clone(),before_sha:hash_bytes(&before),after_sha:hash_bytes(&after),entries:entries.clone()};
+    let pending=Pending{project:project.clone(),before_sha:hash_bytes(&before),after_sha:hash_bytes(&after),entries:entries.clone(),moved:true};
     j.pending=Some(pending.clone());save(&root,&j)?;
     let outcome=(||->Result<(),String>{
         for (index,e) in entries.iter().enumerate(){check_cancel(cancel)?;
             if fail_after==Some(index){return Err("Injected archival failure".into());}
             secure_parent(&root,e.relocated.parent().ok_or("No destination parent")?)?;
-            fs::hard_link(&e.original,&e.relocated).map_err(|error|format!("Used-media relocation blocked; original preserved: {}: {error}",e.original.display()))?;
-            if stamp(&e.original)?!=(e.size,e.modified_ns) || hash(&e.relocated,cancel)?!=e.sha256 {return Err("Media changed during archival; transaction rolled back".into());}
+            if stamp(&e.original)?!=(e.size,e.modified_ns) || hash(&e.original,cancel)?!=e.sha256 {return Err("Media changed before move".into());}
+            move_file(&e.original,&e.relocated)?;
+            if stamp(&e.relocated)?!=(e.size,e.modified_ns) || hash(&e.relocated,cancel)?!=e.sha256 {return Err("Media changed during archival; transaction rolled back".into());}
         }
         check_cancel(cancel)?;if hash_bytes(&fs::read(&manifest).map_err(error)?)!=pending.before_sha{return Err("Generated project was edited during archival".into());}
         let reopened=verify_document(&after)?;
@@ -217,7 +234,7 @@ fn relocate_inner(library:&Path,project:&Path,consumed:&[PathBuf],cancel:&Atomic
     for e in &entries {j.committed.insert(e.original.clone(),e.clone());}j.pending=None;
     // If this final journal write is interrupted, recovery recognizes the committed manifest hash.
     save(&root,&j).map_err(|e|format!("Project sources are safe at {}; journal recovery required: {e}",project.display()))?;
-    Ok(RelocationReport{compatibility_links:entries.len()+already_archived,entries,already_archived})
+    Ok(RelocationReport{compatibility_links:0,entries,already_archived})
 }
 
 #[cfg(test)]
@@ -247,17 +264,17 @@ mod tests {
         Fixture{root,project,paths,audio}
     }
     #[test]
-    fn thirteen_unique_consumed_files_are_archived_and_old_projects_stay_readable(){
+    fn thirteen_unique_consumed_files_move_and_generated_project_reopens(){
         let f=fixture(13);let old=fs::read(f.project.join("concat.json")).unwrap();
         let unused=f.root.join("unused.jpg");fs::write(&unused,b"unused").unwrap();
         let mut consumed=f.paths.clone();consumed.extend(f.paths.clone());
-        let report=relocate_used(&f.root,&f.project,&consumed).unwrap();assert_eq!(report.entries.len(),13);assert_eq!(report.compatibility_links,13);
+        let report=relocate_used(&f.root,&f.project,&consumed).unwrap();assert_eq!(report.entries.len(),13);assert_eq!(report.compatibility_links,0);
         let new=verify_document(&fs::read(f.project.join("concat.json")).unwrap()).unwrap();
-        let old=verify_document(&old).unwrap();assert_eq!(new.active().clips,old.active().clips);
-        for e in &report.entries {assert!(e.relocated.starts_with(f.root.join("used/Match/Éala")));assert_eq!(fs::read(&e.original).unwrap(),fs::read(&e.relocated).unwrap());}
+        let old=concat_project::doc::from_document(&serde_json::from_slice(&old).unwrap()).unwrap();assert_eq!(new.active().clips,old.active().clips);
+        for e in &report.entries {assert!(e.relocated.starts_with(f.root.join("used/generated/Match/Éala")));assert!(!e.original.exists());assert!(e.relocated.is_file());}
         assert!(new.media.iter().filter(|m|m.kind!=MediaKind::Audio).all(|m|Path::new(&m.path).starts_with(f.root.join("used"))));
         assert_eq!(new.media.iter().find(|m|m.kind==MediaKind::Audio).unwrap().path,f.audio.to_string_lossy());
-        let excluded=excluded_paths(&f.root).unwrap();assert_eq!(excluded.len(),13);assert!(!excluded.contains(&unused));assert!(!excluded.contains(&f.audio));
+        let excluded=excluded_paths(&f.root).unwrap();assert_eq!(excluded.len(),0);assert!(!excluded.contains(&unused));assert!(!excluded.contains(&f.audio));
         let repeated=relocate_used(&f.root,&f.project,&f.paths).unwrap();assert!(repeated.entries.is_empty());
     }
     #[test]
@@ -271,7 +288,7 @@ mod tests {
     }
     #[test]
     fn collisions_never_overwrite_and_cancel_never_archives(){
-        let f=fixture(1);let dest=f.root.join("used/Match/Éala/shot 0.mp4");fs::create_dir_all(dest.parent().unwrap()).unwrap();fs::write(&dest,b"existing user file").unwrap();
+        let f=fixture(1);let dest=f.root.join("used/generated/Match/Éala/shot 0.mp4");fs::create_dir_all(dest.parent().unwrap()).unwrap();fs::write(&dest,b"existing user file").unwrap();
         assert!(relocate_with_cancel(&f.root,&f.project,&f.paths,&AtomicBool::new(true)).is_err());assert!(excluded_paths(&f.root).unwrap().is_empty());
         let report=relocate_used(&f.root,&f.project,&f.paths).unwrap();assert!(report.entries[0].relocated.to_string_lossy().contains("(2)"));assert_eq!(fs::read(&dest).unwrap(),b"existing user file");
     }
@@ -284,17 +301,17 @@ mod tests {
     #[test]
     fn interrupted_committed_manifest_recovers_forward_without_duplicate_files(){
         let f=fixture(1);let manifest=f.project.join("concat.json");let before=fs::read(&manifest).unwrap();
-        let destination=f.root.join("used/Match/Éala/shot 0.mp4");secure_parent(&f.root,destination.parent().unwrap()).unwrap();fs::hard_link(&f.paths[0],&destination).unwrap();
-        let (size,modified_ns)=stamp(&f.paths[0]).unwrap();let entry=Entry{original:f.paths[0].clone(),relocated:destination.clone(),size,modified_ns,sha256:hash(&destination,&AtomicBool::new(false)).unwrap(),project:f.project.clone()};
+        let destination=f.root.join("used/generated/Match/Éala/shot 0.mp4");secure_parent(&f.root,destination.parent().unwrap()).unwrap();move_file(&f.paths[0],&destination).unwrap();
+        let (size,modified_ns)=stamp(&destination).unwrap();let entry=Entry{original:f.paths[0].clone(),relocated:destination.clone(),size,modified_ns,sha256:hash(&destination,&AtomicBool::new(false)).unwrap(),project:f.project.clone()};
         let mut value:serde_json::Value=serde_json::from_slice(&before).unwrap();rewrite(&mut value,&BTreeMap::from([(entry.original.to_string_lossy().into_owned(),entry.relocated.to_string_lossy().into_owned())]));let after=serde_json::to_vec_pretty(&value).unwrap();
-        let j=Journal{version:1,pending:Some(Pending{project:f.project.clone(),before_sha:hash_bytes(&before),after_sha:hash_bytes(&after),entries:vec![entry]}),..Default::default()};save(&f.root,&j).unwrap();replace(&manifest,&after).unwrap();
-        assert_eq!(recover(&f.root).unwrap().committed,1);assert_eq!(excluded_paths(&f.root).unwrap().len(),1);assert!(destination.is_file());assert!(f.paths[0].is_file());
+        let j=Journal{version:1,pending:Some(Pending{project:f.project.clone(),before_sha:hash_bytes(&before),after_sha:hash_bytes(&after),entries:vec![entry],moved:true}),..Default::default()};save(&f.root,&j).unwrap();replace(&manifest,&after).unwrap();
+        assert_eq!(recover(&f.root).unwrap().committed,1);assert_eq!(excluded_paths(&f.root).unwrap().len(),0);assert!(destination.is_file());assert!(!f.paths[0].exists());
     }
     #[test]
     fn interrupted_precommit_links_recover_back_and_readers_keep_valid_paths(){
-        let f=fixture(1);let before=fs::read(f.project.join("concat.json")).unwrap();let target=f.root.join("used/recover.mp4");secure_parent(&f.root,target.parent().unwrap()).unwrap();fs::hard_link(&f.paths[0],&target).unwrap();let(size,modified_ns)=stamp(&f.paths[0]).unwrap();
+        let f=fixture(1);let before=fs::read(f.project.join("concat.json")).unwrap();let target=f.root.join("used/recover.mp4");secure_parent(&f.root,target.parent().unwrap()).unwrap();move_file(&f.paths[0],&target).unwrap();let(size,modified_ns)=stamp(&target).unwrap();
         let e=Entry{original:f.paths[0].clone(),relocated:target.clone(),size,modified_ns,sha256:hash(&target,&AtomicBool::new(false)).unwrap(),project:f.project.clone()};
-        save(&f.root,&Journal{version:1,pending:Some(Pending{project:f.project.clone(),before_sha:hash_bytes(&before),after_sha:"not committed".into(),entries:vec![e]}),..Default::default()}).unwrap();
+        save(&f.root,&Journal{version:1,pending:Some(Pending{project:f.project.clone(),before_sha:hash_bytes(&before),after_sha:"not committed".into(),entries:vec![e],moved:true}),..Default::default()}).unwrap();
         assert_eq!(recover(&f.root).unwrap().rolled_back,1);assert!(!target.exists());assert!(f.paths[0].exists());verify_document(&before).unwrap();
     }
     #[test]
@@ -309,7 +326,7 @@ mod tests {
         let refreshed=finish.refresh.unwrap();assert_eq!(refreshed.failures.len(),1);
         assert!(finish.cache_warning.unwrap().contains("1 remaining media could not be refreshed"));
         assert!(remaining.is_file());
-        assert_eq!(excluded_paths(&f.root).unwrap().len(),1);
+        assert_eq!(excluded_paths(&f.root).unwrap().len(),0);
         verify_document(&fs::read(f.project.join("concat.json")).unwrap()).unwrap();
     }
     #[test]

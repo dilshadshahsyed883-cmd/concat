@@ -49,7 +49,7 @@ impl Studio {
                     self.c_builder.assets=scan.assets;self.c_builder.probed=scan.probed;self.c_builder.reused=scan.reused;self.c_builder.removed=scan.removed;
                 }
                 self.cb_pending_used=None;
-                self.c_builder.status=format!("{} media ready in used/ ({} archived now, {} already completed); {} remaining; 0 archival failures. {} original compatibility links retained for older projects.{}",
+                self.c_builder.status=format!("{} media ready in used/ ({} archived now, {} already completed); {} remaining; 0 archival failures. {} compatibility links created.{}",
                     report.entries.len()+report.already_archived,report.entries.len(),report.already_archived,self.c_builder.assets.len(),report.compatibility_links,
                     finish.cache_warning.map(|e|format!(" Cache warning: {e}")).unwrap_or_default());
                 self.notify("C Builder project and used media verified. Open in Editor when ready.",false);
