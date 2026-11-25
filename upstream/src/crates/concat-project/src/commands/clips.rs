@@ -835,6 +835,30 @@ pub(super) fn apply_with_locks(
     }
 }
 
+/// A cut's incoming clip needs a contiguous preceding picture on its lane.
+/// Only topology is considered here; transition duration policy is unchanged.
+fn has_transition_neighbor(timeline: &Timeline, clip: &Clip) -> bool {
+    let previous = timeline.clips.iter().filter(|other| other.id != clip.id
+        && other.track_id == clip.track_id && other.start <= clip.start)
+        .max_by(|a, b| a.start.total_cmp(&b.start).then(a.id.cmp(&b.id)));
+    clip.kind.is_visual() && previous.is_some_and(|previous| previous.kind.is_visual()
+        && (previous.start + previous.duration - clip.start).abs() < 0.5 / timeline.video.rate())
+}
+
+pub(super) fn reconcile_transition_links(before: &Project, after: &mut Project) {
+    for timeline in &mut after.timelines {
+        let Some(old) = before.timelines.iter().find(|t| t.id == timeline.id) else { continue; };
+        let invalid: HashSet<_> = timeline.clips.iter().filter(|c| c.transition_in.is_some()
+            && !has_transition_neighbor(timeline, c)
+            && old.clip(&c.id).is_none_or(|previous| has_transition_neighbor(old, previous)))
+            .map(|c| c.id.clone()).collect();
+        for clip in Arc::make_mut(timeline).clips_where(|c| invalid.contains(&c.id)) {
+            clip.transition_in = None;
+            clip.extra.remove("concatRandomTransition");
+        }
+    }
+}
+
 /// How far apart two clips may sit and still count as touching, in seconds.
 const JOIN_EPSILON: f64 = 1e-6;
 
