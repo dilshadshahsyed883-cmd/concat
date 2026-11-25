@@ -59,7 +59,7 @@ export component CBuilderSelectionPanel inherits VerticalLayout {
     Text { text: "Overall Media Ratio · Images " + (100-Math.round(root.ratio-draft)) + "% · Videos " + Math.round(root.ratio-draft) + "%"; color: Theme.fg; font-weight: Theme.weight-title; }
     Param { label: "Video duration"; value <=> root.ratio-draft; rail: true; minimum:0; maximum:100; step:1; unit:"%"; fmt:ParamFormat.steps;
         enabled: !root.busy && root.videos-enabled; changed(v) => {if root.videos-enabled {root.ratio-changed(Math.round(v));}} }
-    Text { text:"Targets total timeline duration; opening/ending profile shapes placement."; color:Theme.fg-muted; font-size:Theme.fs-sm; }
+    Text { text:"Targets total timeline duration; opening/ending sliders shape placement."; color:Theme.fg-muted; font-size:Theme.fs-sm; }
     HorizontalLayout {
         spacing: 8px;
         Text { text: "Images · 100% budget"; color: Theme.fg; font-size: Theme.fs;

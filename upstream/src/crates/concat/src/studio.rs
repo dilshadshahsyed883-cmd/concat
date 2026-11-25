@@ -2357,6 +2357,7 @@ impl Studio {
             .filter(|value| value.is_finite() && (0.0..=1.0).contains(value))
             .or(Some(0.7));
         let cb_saved_folder=prefs.c_builder_media_folder.clone().unwrap_or_default();
+        let cb_saved_planning=serde_json::to_string_pretty(&crate::c_builder::load_planning_settings(&host.dirs.config)).unwrap_or_default();
         let mut studio = Self {
             prefs,
             transition_draft_duration,
@@ -2377,7 +2378,7 @@ impl Studio {
             cb_home:false, cb_generated_project:String::new(), cb_output_folder,
             c_builder: crate::c_builder::State {
                 folder: cb_saved_folder,
-                stored_profiles: crate::c_builder::load_profiles(&host.dirs.config.join("c-builder-profiles")),
+                profile_json: cb_saved_planning,
                 ..Default::default()
             },
             peaks: HashMap::new(),
@@ -9552,18 +9553,11 @@ impl Studio {
         editor.set_cb_project_name(self.c_builder.project_name.as_str().into());
         editor.set_cb_name_overridden(self.c_builder.name_overridden);
         editor.set_cb_name_preview(self.c_builder.naming_preview().into());
-        let planning = self.project().extra.get("cBuilderPlanning")
-            .and_then(|p| serde_json::to_string_pretty(p).ok())
-            .unwrap_or_else(|| self.c_builder.profile_json.clone());
-        editor.set_cb_profile(planning.into());
-        editor.set_cb_preview(self.c_builder.preview.clone().into());
-        let names: Vec<SharedString> = ["Balanced", "Video-Heavy Opening", "Image-Heavy Outro", "Fully Custom"]
-            .into_iter().map(SharedString::from).chain(self.c_builder.stored_profiles.iter().map(|p|SharedString::from(p.name.as_str()))).collect();
-        editor.set_cb_profile_names(slint::ModelRc::new(VecModel::from(names)));
         let selection_profile=self.c_builder_profile("").unwrap_or_default();
-        editor.set_cb_plan_name(selection_profile.name.as_str().into());
-        editor.set_cb_plan_opening(format!("{}",(selection_profile.curve.first().map_or(0.,|a|a.video)*100.).round() as i32).into());
-        editor.set_cb_plan_closing(format!("{}",(selection_profile.curve.last().map_or(0.,|a|a.video)*100.).round() as i32).into());
+        editor.set_cb_profile(serde_json::to_string_pretty(&selection_profile).unwrap_or_default().into());
+        editor.set_cb_preview(self.c_builder.preview.clone().into());
+        editor.set_cb_plan_opening((selection_profile.curve.first().map_or(0.65,|a|a.video)*100.).round() as f32);
+        editor.set_cb_plan_closing((selection_profile.curve.last().map_or(0.05,|a|a.video)*100.).round() as f32);
         editor.set_cb_plan_image_min(format!("{}",selection_profile.image_seconds[0]).into());
         editor.set_cb_plan_image_max(format!("{}",selection_profile.image_seconds[1]).into());
         editor.set_cb_plan_video_min(format!("{}",selection_profile.video_seconds[0]).into());
@@ -12280,11 +12274,9 @@ impl Studio {
 
     /// A row of a bin card's menu, for the media it was opened on.
     fn c_builder_profile(&self,json:&str)->Result<concat_project::planning::Profile,String> {
-        if !json.trim().is_empty(){concat_project::planning::Profile::from_json(json)}else{
-            self.session.as_ref().and_then(|session|session.project().extra.get("cBuilderPlanning"))
-                .map(|p|concat_project::planning::Profile::from_json(&p.to_string()))
-                .unwrap_or_else(||if self.c_builder.profile_json.trim().is_empty(){Ok(Default::default())}else{concat_project::planning::Profile::from_json(&self.c_builder.profile_json)})
-        }
+        let source=if json.trim().is_empty(){self.c_builder.profile_json.as_str()}else{json};
+        let mut p=if source.trim().is_empty(){Default::default()}else{concat_project::planning::Profile::from_json(source)?};
+        crate::c_builder::simplify_planning(&mut p);Ok(p)
     }
     pub fn set_c_builder_keyword(&mut self,json:&str,video:bool,keyword:&str,selected:bool,weight:i32) {
         if self.c_builder.scanning{return;}

@@ -1143,7 +1143,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         studio.equalize_c_builder_keywords(&json,video);
     }));
     editor.on_cb_tune_profile(on_window!(
-        |studio, json:SharedString, name:SharedString, opening:SharedString, closing:SharedString,
+        |studio, json:SharedString, opening:f32, closing:f32,
          image_min:SharedString, image_max:SharedString, video_min:SharedString, video_max:SharedString,
          max_videos:SharedString, max_images:SharedString, cooldown:SharedString, seed:SharedString| {
             if studio.c_builder.scanning { return; }
@@ -1157,15 +1157,13 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                 value.trim().parse::<usize>().map_err(|_|format!("{label} must be a non-negative integer"))
             };
             let result=(||->Result<(),String>{
-                let first=parse_float("Opening video %",&opening)?;
-                let last=parse_float("Ending video %",&closing)?;
+                let first=f64::from(opening);
+                let last=f64::from(closing);
                 if !(0.0..=100.0).contains(&first)||!(0.0..=100.0).contains(&last) {
                     return Err("Video mix percentages must be within 0–100".into());
                 }
-                profile.name=name.trim().to_owned();
-                // Preserve any custom intermediate curve anchors.
-                profile.curve.first_mut().expect("validated curve").video=first/100.;
-                profile.curve.last_mut().expect("validated curve").video=last/100.;
+                profile.curve=vec![concat_project::planning::Anchor{at:0.,video:first/100.},concat_project::planning::Anchor{at:1.,video:last/100.}];
+                c_builder::simplify_planning(&mut profile);
                 profile.image_seconds=[
                     parse_float("Image minimum seconds",&image_min)?,
                     parse_float("Image maximum seconds",&image_max)?,
@@ -1182,6 +1180,8 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                 profile.validate()
             })();
             if let Err(e)=result{studio.notify(&e,true);return;}
+            if let Err(e)=c_builder::save_planning_settings(&studio.host.dirs.config,&profile){studio.notify(&format!("Planning settings not saved: {e}"),true);return;}
+            studio.c_builder.status="Planning settings applied and saved.".into();
             studio.c_builder.profile_json=serde_json::to_string_pretty(&profile).unwrap_or_default();
             studio.c_builder.preview.clear();studio.c_builder.preview_shots.clear();
             studio.apply(concat_project::Command::SetPlanningProfile {
@@ -1199,91 +1199,20 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         studio.set_c_builder_videos_enabled(&json,on);
     }));
     editor.on_cb_plan_profile(on_window!(|studio, json: SharedString, images: SharedString, videos: SharedString, action: SharedString| {
-        let action = action.to_string();
-        if action == "load" {
-            host::pick_files_then("Import C Builder planning profile".into(), Some(("JSON".into(), &["json"])),
-                |studio, _, _, paths| {
-                    if let Some(path) = paths.first() {
-                        match std::fs::read_to_string(path).map_err(|e| e.to_string())
-                            .and_then(|s| concat_project::planning::Profile::from_json(&s)) {
-                            Ok(mut p) => {
-                                if let Some(s)=p.media_selection.as_mut(){s.normalize();}
-                                studio.c_builder.profile_json = serde_json::to_string_pretty(&p).unwrap_or_default();
-                                studio.apply(Command::SetPlanningProfile {profile:serde_json::to_value(p).unwrap_or_default()});
-                            },
-                            Err(e) => studio.notify(&e, true),
-                        }
-                    }
-                });
-            return;
+        if studio.c_builder.scanning{return;}
+        let action=action.to_string();
+        if !matches!(action.as_str(),"preview"|"reroll"){return;}
+        if studio.c_builder.duration.is_none(){studio.notify("Select narration first",true);return;}
+        let mut profile=match concat_project::planning::Profile::from_json(&json){Ok(p)=>p,Err(e)=>{studio.notify(&e,true);return;}};
+        c_builder::simplify_planning(&mut profile);
+        if action=="reroll"{
+            profile.seed=c_builder::random_seed();
+            if let Err(e)=c_builder::save_planning_settings(&studio.host.dirs.config,&profile){studio.notify(&format!("Planning seed not saved: {e}"),true);return;}
         }
-        let mut profile = match concat_project::planning::Profile::from_json(&json) {
-            Ok(p) => p,
-            Err(e) => { studio.notify(&e, true); return; }
-        };
         if let Some(selection)=profile.media_selection.as_mut(){selection.normalize();}
-        let folder=studio.host.dirs.config.join("c-builder-profiles");
-        if let Some(index) = action.strip_prefix("select:").and_then(|v|v.parse::<usize>().ok()) {
-            let selected = concat_project::planning::Profile::builtin(index)
-                .or_else(|| index.checked_sub(4).and_then(|i|studio.c_builder.stored_profiles.get(i).cloned()));
-            if let Some(mut selected) = selected {
-                if selected.media_selection.is_none(){selected.media_selection=profile.media_selection.clone();}
-                profile=selected;
-                if let Some(selection)=profile.media_selection.as_mut(){selection.normalize();}
-                studio.c_builder.active_profile_name=profile.name.clone();
-            }
-            else {studio.notify("Planning profile no longer exists",true);return;}
-        }
-        if action == "duplicate" {
-            let original=profile.name.clone();let mut n=1;
-            loop {let candidate=format!("{original} Copy {n}");if !studio.c_builder.stored_profiles.iter().any(|p|p.name==candidate){profile.name=candidate;break;}n+=1;}
-        }
-        if let Some(index) = action.strip_prefix("pin:").and_then(|v|v.trim().parse::<usize>().ok()) {
-            let Some(shot) = index.checked_sub(1).and_then(|i|studio.c_builder.preview_shots.get(i)) else {studio.notify("Preview a plan and choose its shot number first",true);return;};
-            profile.pins.retain(|p|p.start_us!=shot.start_us);
-            profile.pins.push(concat_project::planning::Pin {source_id:shot.asset.path.clone(),start_us:shot.start_us,duration_us:shot.duration_us,trim_us:shot.trim_us});
-            profile.pins.sort_by_key(|p|p.start_us);
-        }
-        if action == "clear-pins" {profile.pins.clear();}
-        if matches!(action.as_str(),"store"|"duplicate"|"rename") {
-            if let Err(e)=c_builder::store_profile(&folder,&serde_json::to_string(&profile).unwrap_or_default()){studio.notify(&e,true);return;}
-            if action=="rename" && !studio.c_builder.active_profile_name.is_empty() && studio.c_builder.active_profile_name!=profile.name {
-                let old=c_builder::profile_file(&folder,&studio.c_builder.active_profile_name);
-                if old.is_file()&&!old.is_symlink(){if let Err(e)=std::fs::remove_file(old){studio.notify(&e.to_string(),true);return;}}
-            }
-            studio.c_builder.active_profile_name=profile.name.clone();
-            studio.c_builder.stored_profiles=c_builder::load_profiles(&folder);
-        }
-        if action=="delete" {
-            let name=&studio.c_builder.active_profile_name;
-            if !studio.c_builder.stored_profiles.iter().any(|p|&p.name==name){studio.notify("Built-in profiles cannot be deleted; select a saved profile first",true);return;}
-            let path=c_builder::profile_file(&folder,name);
-            if path.is_symlink(){studio.notify("Managed profile cannot be a symbolic link",true);return;}
-            if let Err(e)=std::fs::remove_file(path){studio.notify(&e.to_string(),true);return;}
-            studio.c_builder.stored_profiles=c_builder::load_profiles(&folder);
-            studio.c_builder.active_profile_name.clear();
-            studio.c_builder.status="Saved profile deleted. Current project settings are preserved.".into();
-            return;
-        }
-        if action == "reroll" { profile.seed = c_builder::random_seed(); }
-        let encoded = serde_json::to_string_pretty(&profile).unwrap_or_default();
+        let encoded=serde_json::to_string_pretty(&profile).unwrap_or_default();
         studio.c_builder.profile_json = encoded.clone();
-        studio.apply(concat_project::Command::SetPlanningProfile {
-            profile: serde_json::to_value(&profile).unwrap_or_default(),
-        });
-        if action == "save" {
-            // A declarative profile is saved independently, so duplicates and renamed
-            // profiles can be shared without rebuilding the application.
-            #[cfg(not(any(target_os = "android", target_os = "ios")))]
-            host::after_dialog(
-                || rfd::FileDialog::new().set_title("Export planning profile").add_filter("JSON", &["json"]).save_file(),
-                move |studio, _, _, path| {
-                    let result = c_builder::save_profile(&path, &encoded);
-                    if let Err(e) = result { studio.notify(&format!("Profile save failed: {e}"), true); }
-                });
-            return;
-        }
-        if matches!(action.as_str(),"store"|"duplicate"|"rename")||action.starts_with("select:"){return;}
+        studio.c_builder.preview.clear();studio.c_builder.preview_shots.clear();
         let Some(duration) = studio.c_builder.duration else { studio.notify("Select narration first", true); return; };
         profile.media_selection.get_or_insert_with(Default::default).normalize();
         profile.overall_video_percent=Some(if profile.media_selection.as_ref().is_some_and(|s|s.videos_enabled){studio.prefs.c_builder_video_ratio.unwrap_or(30).min(100)}else{0});
@@ -1319,6 +1248,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             let mut profile = match concat_project::planning::Profile::from_json(&profile_json) {
                 Ok(p) => p, Err(e) => { studio.notify(&e, true); return; }
             };
+            c_builder::simplify_planning(&mut profile);
             profile.media_selection.get_or_insert_with(Default::default).normalize();
             profile.overall_video_percent=Some(if profile.media_selection.as_ref().is_some_and(|s|s.videos_enabled){studio.prefs.c_builder_video_ratio.unwrap_or(30).min(100)}else{0});
             let cache_path = studio.host.dirs.data.join("c-builder-media-cache.json");

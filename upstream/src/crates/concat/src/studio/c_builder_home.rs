@@ -7,9 +7,8 @@ impl Studio {
         if self.session.is_some() && self.close_project().is_err() {return;}
         self.on_start=true;self.cb_home=true;
     }
-    pub fn builder_return_home(&mut self,profile:&str) {
+    pub fn builder_return_home(&mut self,_profile:&str) {
         if self.c_builder.scanning {return;}
-        self.c_builder.profile_json=profile.to_owned();
         self.cb_home=false;self.on_start=true;
     }
     pub fn builder_open_generated(&mut self) {
