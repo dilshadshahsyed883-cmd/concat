@@ -4140,7 +4140,7 @@ impl Studio {
     pub fn apply_canvas_favourites_randomly(&mut self, images:bool,videos:bool,selected_only:bool) {
         if !images && !videos {self.notify("Choose Images or Video Clips first.",true);return;}
         let pool:Vec<_>=concat_project::canvas_preset::ACTIVE_PRESETS.into_iter().filter(|preset|self.prefs.canvas_preset_favourites.contains(&format!("canvas:{preset}")))
-            .filter_map(concat_project::canvas_preset::Config::preset).collect();
+            .filter_map(concat_project::canvas_preset::Config::editor_default).collect();
         if pool.is_empty() {self.notify("Star at least one Canvas preset first.",true);return;}
         let mut draw=bulk_presets::fresh_draw();
         let plans:Vec<_>=self.timeline().clips.iter().filter(|c|

@@ -427,6 +427,16 @@ impl Config {
         }
         Some(config)
     }
+    /// Default for newly selected active presets. Keep the unscaled factory
+    /// geometry as the percentage reference and legacy decoding baseline.
+    /// The picture-size setter clamps the 120% target to safe canvas bounds.
+    pub fn editor_default(number: u32) -> Option<Self> {
+        let mut config = Self::preset(number)?;
+        if ACTIVE_PRESETS.contains(&number) {
+            let _ = config.set_picture_size(120.0);
+        }
+        Some(config)
+    }
     pub fn validate(&self) -> Result<(), String> {
         if self.version != 1 || !DECODABLE_PRESETS.contains(&self.preset) || !self.foreground.validate() {
             return Err("Unsupported canvas version/preset or unsafe foreground bounds".into());
@@ -2327,6 +2337,24 @@ mod tests {
             let data=serde_json::json!({"document":crate::to_document(&settings,&project),"samples":samples,"coverage":coverage});
             std::fs::write(std::path::Path::new(&directory).join("viewport-contract.json"),serde_json::to_vec_pretty(&data).unwrap()).unwrap();
         }
+    }
+
+    #[test]
+    fn editor_defaults_target_120_with_existing_geometry_limits() {
+        for id in ACTIVE_PRESETS {
+            let mut expected = Config::preset(id).unwrap();
+            expected.set_picture_size(120.0).unwrap();
+            let actual = Config::editor_default(id).unwrap();
+            assert_eq!(actual.foreground, expected.foreground, "preset {id}");
+            assert!(actual.validate().is_ok(), "preset {id}");
+            assert!(actual.picture_size_percent() <= 120.0 + 1e-7);
+        }
+        // A narrow aperture has enough space for the full requested scale.
+        let orbital = Config::editor_default(17).unwrap();
+        assert!((orbital.picture_size_percent() - 120.0).abs() < 1e-7);
+        // A wide frame cannot grow past its safe geometry.
+        let sports = Config::editor_default(1).unwrap();
+        assert!(sports.picture_size_percent() < 120.0);
     }
 
     #[test]
