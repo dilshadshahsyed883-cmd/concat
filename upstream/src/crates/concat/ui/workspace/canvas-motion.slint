@@ -31,19 +31,19 @@ export component CanvasMotionPanel inherits VerticalLayout {
     }
     Param {
         label: "Start Scale"; value <=> root.settings.start-scale;
-        minimum: 0.4; maximum: 1; step: 0.01; default-value: 0.9; fmt: ParamFormat.fraction;
+        minimum: 0.4; maximum: 1; step: 0.01; default-value: 0.9; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction;
     }
     Param {
         label: "Middle / Peak Scale"; value <=> root.settings.middle-scale;
-        minimum: 0.5; maximum: 1; step: 0.01; fmt: ParamFormat.fraction;
+        minimum: 0.5; maximum: 1; step: 0.01; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction;
     }
     Param {
         label: "End Scale"; value <=> root.settings.end-scale;
-        minimum: 0.4; maximum: 1; step: 0.01; default-value: 0.9; fmt: ParamFormat.fraction;
+        minimum: 0.4; maximum: 1; step: 0.01; default-value: 0.9; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction;
     }
     Param {
         label: "Peak Time Position"; value <=> root.settings.peak-time;
-        minimum: 0.2; maximum: 0.8; step: 0.01; fmt: ParamFormat.fraction;
+        minimum: 0.2; maximum: 0.8; step: 0.01; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction;
     }
     HorizontalLayout {
         spacing: 8px;
@@ -55,53 +55,53 @@ export component CanvasMotionPanel inherits VerticalLayout {
     }
     if !root.settings.auto-fit: Param {
         label: "Manual Duration (seconds)"; value <=> root.settings.duration;
-        minimum: 0.05; maximum: 60; step: 0.1; fmt: ParamFormat.seconds2;
+        minimum: 0.05; maximum: 60; step: 0.1; unit: "s"; fmt: ParamFormat.seconds2;
     }
     if root.preset == 18 && root.settings.auto-fit: Param {
         label: "Breathing Cycle Length (seconds)";
         value <=> root.settings.duration;
-        minimum: 0.05; maximum: 60; step: 0.1; fmt: ParamFormat.seconds2;
+        minimum: 0.05; maximum: 60; step: 0.1; unit: "s"; fmt: ParamFormat.seconds2;
     }
     if !root.settings.auto-fit: Param {
         label: "Delay (seconds)"; value <=> root.settings.delay;
-        minimum: 0; maximum: 60; step: 0.1; fmt: ParamFormat.seconds2;
+        minimum: 0; maximum: 60; step: 0.1; unit: "s"; fmt: ParamFormat.seconds2;
     }
     if root.preset == 19 && !root.settings.auto-fit: VerticalLayout {
         spacing: 4px;
-        Param { label: "Entry (seconds)"; value <=> root.settings.entry-seconds; minimum: 0.05; maximum: 60; step: 0.05; fmt: ParamFormat.seconds2; }
-        Param { label: "Hold (0 = Auto)"; value <=> root.settings.hold-seconds; minimum: 0; maximum: 60; step: 0.1; fmt: ParamFormat.seconds2; }
-        Param { label: "Exit (seconds)"; value <=> root.settings.exit-seconds; minimum: 0.05; maximum: 60; step: 0.05; fmt: ParamFormat.seconds2; }
+        Param { label: "Entry (seconds)"; value <=> root.settings.entry-seconds; minimum: 0.05; maximum: 60; step: 0.05; unit: "s"; fmt: ParamFormat.seconds2; }
+        Param { label: "Hold (0 = Auto)"; value <=> root.settings.hold-seconds; minimum: 0; maximum: 60; step: 0.1; unit: "s"; fmt: ParamFormat.seconds2; }
+        Param { label: "Exit (seconds)"; value <=> root.settings.exit-seconds; minimum: 0.05; maximum: 60; step: 0.05; unit: "s"; fmt: ParamFormat.seconds2; }
     }
     Param {
         label: "Speed / Cadence"; value <=> root.settings.speed;
-        minimum: 0.25; maximum: 3; step: 0.05; fmt: ParamFormat.rate;
+        minimum: 0.25; maximum: 3; step: 0.05; unit: "x"; fmt: ParamFormat.rate;
     }
     Param {
         label: "Movement Strength"; value <=> root.settings.strength;
-        minimum: 0; maximum: 2; step: 0.05; fmt: ParamFormat.fraction;
+        minimum: 0; maximum: 2; step: 0.05; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction;
     }
     if root.preset == 14: Param {
         label: "Spring Intensity"; value <=> root.settings.intensity;
-        minimum: 0.2; maximum: 2; step: 0.05; fmt: ParamFormat.steps;
+        minimum: 0.2; maximum: 2; step: 0.05; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction;
     }
     Param {
         label: "Background Blur (normalized)"; value <=> root.settings.blur;
-        minimum: 0; maximum: 1; step: 0.05; fmt: ParamFormat.fraction;
+        minimum: 0; maximum: 1; step: 0.05; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction;
     }
     Param {
         label: "Foreground Corners (normalized)"; value <=> root.settings.corner-radius;
-        minimum: 0; maximum: 0.2; step: 0.005; fmt: ParamFormat.fraction;
+        minimum: 0; maximum: 0.2; step: 0.005; unit: "%"; unit-scale: 100; fmt: ParamFormat.fraction;
     }
     if root.preset == 20: VerticalLayout {
         spacing: 4px;
-        Param { label: "Middle X"; value <=> root.settings.focus-middle-x; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
-        Param { label: "Middle Y"; value <=> root.settings.focus-middle-y; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
-        Param { label: "Middle Hold (seconds)"; value <=> root.settings.focus-hold; minimum: 0; maximum: 60; step: 0.1; fmt: ParamFormat.seconds2; }
+        Param { label: "Middle X"; value <=> root.settings.focus-middle-x; minimum: -0.45; maximum: 0.45; step: 0.01; unit: "%"; unit-scale: 100; fmt: ParamFormat.centred; }
+        Param { label: "Middle Y"; value <=> root.settings.focus-middle-y; minimum: -0.45; maximum: 0.45; step: 0.01; unit: "%"; unit-scale: 100; fmt: ParamFormat.centred; }
+        Param { label: "Middle Hold (seconds)"; value <=> root.settings.focus-hold; minimum: 0; maximum: 60; step: 0.1; unit: "s"; fmt: ParamFormat.seconds2; }
     }
     if root.preset == 17: Param {
         label: "Random Seed"; value: root.settings.seed;
         changed(v) => { root.settings.seed = Math.round(v); }
-        minimum: 0; maximum: 65535; step: 1; fmt: ParamFormat.steps;
+        minimum: 0; maximum: 65535; step: 1; single-value: true; fmt: ParamFormat.steps;
     }
     if (root.preset < 21 && root.preset != 18 && root.preset != 4 &&
         root.preset != 6 && root.preset != 16) || root.preset == 24: HorizontalLayout {
@@ -115,10 +115,10 @@ export component CanvasMotionPanel inherits VerticalLayout {
     if root.settings.custom-anchors && ((root.preset < 21 && root.preset != 18 &&
         root.preset != 4 && root.preset != 6 && root.preset != 16) ||
         root.preset == 24): VerticalLayout {
-        Param { label: "Start X"; value <=> root.settings.start-x; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
-        Param { label: "Start Y"; value <=> root.settings.start-y; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
-        Param { label: "End X"; value <=> root.settings.end-x; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
-        Param { label: "End Y"; value <=> root.settings.end-y; minimum: -0.45; maximum: 0.45; step: 0.01; fmt: ParamFormat.steps; }
+        Param { label: "Start X"; value <=> root.settings.start-x; minimum: -0.45; maximum: 0.45; step: 0.01; unit: "%"; unit-scale: 100; fmt: ParamFormat.centred; }
+        Param { label: "Start Y"; value <=> root.settings.start-y; minimum: -0.45; maximum: 0.45; step: 0.01; unit: "%"; unit-scale: 100; fmt: ParamFormat.centred; }
+        Param { label: "End X"; value <=> root.settings.end-x; minimum: -0.45; maximum: 0.45; step: 0.01; unit: "%"; unit-scale: 100; fmt: ParamFormat.centred; }
+        Param { label: "End Y"; value <=> root.settings.end-y; minimum: -0.45; maximum: 0.45; step: 0.01; unit: "%"; unit-scale: 100; fmt: ParamFormat.centred; }
     }
     if root.preset != 25 && root.preset != 18 && root.preset != 4 && root.preset != 6 &&
         root.preset != 16: HorizontalLayout {
