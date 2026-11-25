@@ -494,11 +494,11 @@ fn default_auto_fit() -> bool { true }
 impl Default for CanvasMotionControls {
     fn default() -> Self {
         Self {
-            start_scale: 0.70,
+            start_scale: 0.90,
             middle_scale: 1.0,
             peak_time: 0.5,
             auto_fit: true,
-            end_scale: 0.70,
+            end_scale: 0.90,
             duration_seconds: 3.0,
             entry_seconds: 0.5,
             hold_seconds: 0.0,
@@ -600,8 +600,8 @@ mod tests {
         let keys=CanvasMotionPreset::TopLeft.keys(
             &clip,frame,CanvasMotionControls::default()).unwrap();
         let scale: Vec<_>=keys.iter().filter(|key|key.property==KeyProperty::Scale).collect();
-        assert_eq!(scale.first().unwrap().value,0.70);
-        assert_eq!(scale.last().unwrap().value,0.70);
+        assert_eq!(scale.first().unwrap().value,0.90);
+        assert_eq!(scale.last().unwrap().value,0.90);
         assert!(scale.iter().any(|key|key.value==1.0));
     }
 
@@ -614,8 +614,8 @@ mod tests {
             for preset in CanvasMotionPreset::ALL {
                 let keys=preset.keys(&clip,frame,CanvasMotionControls::default()).unwrap();
                 let scales: Vec<_>=keys.iter().filter(|k|k.property==KeyProperty::Scale).collect();
-                assert!((scales.first().unwrap().value-0.70).abs()<1e-8,"{:?}",preset);
-                assert!((scales.last().unwrap().value-0.70).abs()<1e-8,"{:?}",preset);
+                assert!((scales.first().unwrap().value-0.90).abs()<1e-8,"{:?}",preset);
+                assert!((scales.last().unwrap().value-0.90).abs()<1e-8,"{:?}",preset);
                 assert!(scales.iter().any(|k|(k.at*seconds/frame-(last*0.5).round()).abs()<1e-6
                     && (k.value-1.0).abs()<1e-8),"{:?}",preset);
                 assert!(scales.iter().all(|k|k.at>=0.0 && k.at<1.0));
@@ -685,8 +685,8 @@ mod tests {
         ).unwrap();
         let scale: Vec<_> = keys.iter().filter(|k| k.property == KeyProperty::Scale).collect();
         assert!(scale.len() > 64);
-        assert!((scale.first().unwrap().value - 0.70).abs() < 1e-8);
-        assert!((scale.last().unwrap().value - 0.70).abs() < 1e-8);
+        assert!((scale.first().unwrap().value - 0.90).abs() < 1e-8);
+        assert!((scale.last().unwrap().value - 0.90).abs() < 1e-8);
         assert!(scale.iter().any(|k| k.value > 0.95));
         assert!(scale.iter().all(|k| k.value <= 1.0 && k.value >= 0.05));
         assert_eq!(CanvasMotionPreset::from_index(18), Some(CanvasMotionPreset::BreathingLoop));
@@ -777,7 +777,7 @@ mod tests {
             )
             .unwrap();
         let clip = editor.project().active().clip("c1").unwrap();
-        assert!((clip.value_at(KeyProperty::Scale, 0.0) - 0.70).abs() < 1e-8);
+        assert!((clip.value_at(KeyProperty::Scale, 0.0) - 0.90).abs() < 1e-8);
         let saved = editor.to_document(&settings);
         let restored = Editor::from_document(&saved).unwrap();
         assert_eq!(
