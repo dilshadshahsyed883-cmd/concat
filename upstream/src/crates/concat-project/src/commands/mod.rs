@@ -425,6 +425,13 @@ pub enum Command {
         /// What the lane calls it.
         name: String,
     },
+    /// Copies complete clip snapshots atomically, minting identities and
+    /// remapping links within the copied group. Placement uses each snapshot's lane/start.
+    CopyClips {
+        /// Same-project clip snapshots at their requested destinations.
+        #[cfg_attr(feature = "schema", schemars(with = "Vec<serde_json::Value>"))]
+        copies: Vec<Clip>,
+    },
     /// Gives a clip a speed curve, or takes it away. The source covered is
     /// held constant, as a speed change does, so the clip's timeline length
     /// follows the curve's mean; `speed` is kept at that mean.
@@ -1073,6 +1080,11 @@ impl Command {
             })
         }
         match self {
+            Command::CopyClips { copies } => copies.iter().any(|c| {
+                bad([c.start, c.duration, c.source_start, c.speed, c.scale, c.opacity, c.volume])
+                    || bad_chain(&c.filters) || bad_chain(&c.video_effects)
+                    || c.keys.iter().any(|k| bad([k.at, k.value]) || bad(k.ease.0))
+            }),
             Command::Batch { commands } => commands.iter().any(Command::has_non_finite),
             Command::ProtectCanvasTracks {command,..} => command.has_non_finite(),
             Command::InsertMedia { time, .. } => bad([*time]),
@@ -1319,7 +1331,8 @@ fn apply_inner(project: &mut Project, mint: &mut IdMint, command: Command) -> Re
         | Command::RemoveFont { .. }
         | Command::UpdateMediaPath { .. }
         | Command::SetMediaColorRange { .. }) => media::apply(project, mint, command),
-        command @ (Command::AddClip { .. }
+        command @ (Command::CopyClips { .. }
+        | Command::AddClip { .. }
         | Command::AddClipAtFirstFree { .. }
         | Command::AddClipsInSequence { .. }
         | Command::AddTextClip { .. }
