@@ -438,6 +438,9 @@ pub(super) fn apply(
             }
             let tails: HashSet<_> = remap.values().cloned().collect();
             for tail in timeline.clips_where(|c|tails.contains(&c.id)) {
+                if let Some(parent) = tail.detached_from.as_ref().and_then(|id| remap.get(id)) {
+                    tail.detached_from = Some(parent.clone());
+                }
                 if let Some(owner) = tail.extra.get("canvasOwner").and_then(serde_json::Value::as_str)
                     .and_then(|id|remap.get(id)).cloned() {
                     tail.extra.insert("canvasOwner".into(),serde_json::json!(owner));

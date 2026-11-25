@@ -1249,10 +1249,20 @@ pub fn apply(
 ) -> Result<Outcome, CommandError> {
     // Whole-project snapshots share Arcs, so normal edits on Canvas groups
     // can reconcile dependent timing/deletion transactionally at this boundary.
-    if project.timelines.iter().any(|t|t.clips.iter().any(|c|c.extra.contains_key("canvasOwner"))) {
+    if project.timelines.iter().any(|t|t.clips.iter().any(|c|c.extra.contains_key("canvasOwner") || c.detached_from.is_some())) {
         let mut staged = project.clone();
         let outcome = apply_inner(&mut staged,mint,command)?;
-        if outcome.applied { crate::canvas_preset::reconcile_companions(project,&mut staged); }
+        if outcome.applied {
+            crate::canvas_preset::reconcile_companions(project,&mut staged);
+            // A surviving sound becomes independent when its parent is deleted.
+            // Keep its audio and caption metadata; only release the missing link.
+            for timeline in &mut staged.timelines {
+                let ids: HashSet<_> = timeline.clips.iter().map(|c| c.id.clone()).collect();
+                for clip in Arc::make_mut(timeline).clips_where(|c| c.detached_from.as_ref().is_some_and(|id| !ids.contains(id))) {
+                    clip.detached_from = None;
+                }
+            }
+        }
         *project = staged;
         Ok(outcome)
     } else { apply_inner(project,mint,command) }
