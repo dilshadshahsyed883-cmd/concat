@@ -160,3 +160,12 @@ and bulk-motion reroll regression; do not claim full source CI is green.
 Candidate builds only; no live Salad/VPS/Nginx/Drive Bridge/queue changes,
 production traffic switch or deletion of rollback artifacts. Real NVIDIA
 rendering and manual Windows DPI/preview parity remain NOT VERIFIED.
+
+REBUILD REQUEST — 2026-11-25 current main, C Builder tiles and reset
+User explicitly requested both Windows x64 portable EXE and Salad CUDA GPU
+candidate image from current main (parent 70a11dfcf2ccd614ad36e6af3f9d78d9cae4c9ae). Build both from this
+request commit's identical GITHUB_SHA, including merged PRs #184 and #185.
+Keep existing build, compatibility, smoke, checksums, immutable digest and
+matching-release gates, including publish-main-release. Do not claim pending
+native/Slint or Windows runtime checks passed. Candidate builds only: no live
+Salad deployment, VPS/queue changes or deletion of previous rollback releases.
