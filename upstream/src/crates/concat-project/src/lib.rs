@@ -36,6 +36,7 @@ pub mod caption_preview;
 pub mod gpu_captions;
 pub mod canvas_motion;
 pub mod animation_settings;
+pub mod particle_validation;
 pub mod canvas_preset;
 pub mod canvas_viewport;
 pub mod speed;
