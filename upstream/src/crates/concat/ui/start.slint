@@ -1758,7 +1758,6 @@ component WideHome inherits Rectangle {
     callback search-edited(query: string);
     callback sort-changed(sort: int);
     callback link(name: string);
-    callback open-gpu-queue();
     callback open-c-builder();
 
     /// The margin the page keeps from the window's edges.
@@ -1837,12 +1836,6 @@ component WideHome inherits Rectangle {
                             label: "C Builder";
                             enabled: !root.busy;
                             clicked => { root.open-c-builder(); }
-                        }
-                        Button {
-                            glyph: Glyph.export;
-                            label: I18n.t("cloudGpu.gpuQueue");
-                            enabled: !root.busy;
-                            clicked => { root.open-gpu-queue(); }
                         }
                     }
                 }
@@ -2049,7 +2042,6 @@ component NarrowHome inherits Rectangle {
     callback compose();
     callback open();
     callback open-settings();
-    callback open-gpu-queue();
     callback open-c-builder();
     callback open-recent(path: string);
     callback forget-recent(path: string);
@@ -2134,12 +2126,6 @@ component NarrowHome inherits Rectangle {
                     label: "C Builder";
                     enabled: !root.busy;
                     clicked => { root.open-c-builder(); }
-                }
-                Button {
-                    glyph: Glyph.export;
-                    label: I18n.t("cloudGpu.gpuQueue");
-                    enabled: !root.busy;
-                    clicked => { root.open-gpu-queue(); }
                 }
             }
 
@@ -2271,7 +2257,6 @@ export component StartScreen inherits Rectangle {
     callback rename-recent(path: string);
     callback delete-recent(path: string);
     callback open-settings();
-    callback open-gpu-queue();
     callback open-c-builder();
     callback search-edited(query: string);
     callback sort-changed(sort: int);
@@ -2303,7 +2288,6 @@ export component StartScreen inherits Rectangle {
         search-edited(query) => { root.search-edited(query); }
         sort-changed(sort) => { root.sort-changed(sort); }
         link(name) => { root.link(name); }
-        open-gpu-queue => { root.open-gpu-queue(); }
         open-c-builder => { root.open-c-builder(); }
     }
 
@@ -2319,7 +2303,6 @@ export component StartScreen inherits Rectangle {
         compose => { root.compose(); }
         open => { root.open(); }
         open-settings => { root.open-settings(); }
-        open-gpu-queue => { root.open-gpu-queue(); }
         open-c-builder => { root.open-c-builder(); }
         open-recent(path) => { root.open-recent(path); }
         forget-recent(path) => { root.forget-recent(path); }
