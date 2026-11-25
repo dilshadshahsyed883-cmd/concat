@@ -1,5 +1,5 @@
 """Real Windows integration gate. Uses compiled engine, never mocked rendering."""
-import argparse,json,sys,tempfile,subprocess,time,traceback
+import argparse,json,sys,tempfile,subprocess,time,traceback,shutil
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from host.transport import McpEngine
@@ -9,8 +9,9 @@ def main():
         value=fn();checks.append({'name':name,'status':'passed'});print('PASS',name,flush=True);return value
     def helper(value):
         p=subprocess.run([str(a.presets.resolve())],input=json.dumps(value),text=True,encoding='utf8',capture_output=True,check=True,timeout=30);r=json.loads(p.stdout);assert r['ok'],r;return r['data']
+    folder=tempfile.mkdtemp(prefix='concat-react-smoke-')
     try:
-        with tempfile.TemporaryDirectory(prefix='concat-react-smoke-') as folder:
+        if True:
             from PIL import Image,ImageDraw
             pic=Path(folder)/'source.png';im=Image.new('RGB',(640,360),'#eaf2ff');d=ImageDraw.Draw(im);d.rectangle((80,60,560,300),fill='#3979ef');d.text((160,160),'Concat native rendering',fill='white');im.save(pic)
             engine=check('native bridge initialize',lambda:McpEngine(a.engine.resolve(),timeout=180))
@@ -53,6 +54,9 @@ def main():
     except Exception as e:
         checks.append({'name':'integration','status':'failed','error':str(e)});traceback.print_exc();raise
     finally:
-        if engine:engine.close()
+        if engine:
+            for line in engine.logs:print(line,file=sys.stderr)
+            engine.close()
+        shutil.rmtree(folder,ignore_errors=True)
         a.report.parent.mkdir(parents=True,exist_ok=True);a.report.write_text(json.dumps({'real_tests':checks,'gpu_execution':'unverified without CUDA device','webview_ui':'separate smoke gate'},indent=2))
 if __name__=='__main__':main()

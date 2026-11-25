@@ -2831,7 +2831,7 @@ impl Studio {
         }
     }
 
-    fn protect_canvas_tracks(&self, command: Command) -> Command {
+    pub(crate) fn protect_canvas_tracks(&self, command: Command) -> Command {
         if command.is_view_state() || !self.timeline().clips.iter().any(|c|c.extra.contains_key("canvasOwner")) {
             return command;
         }

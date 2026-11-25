@@ -30,7 +30,7 @@ class Api:
         self.window=None;self.lock=threading.RLock();self.engine=engine;self.engine_path=None;self.preset_path=Path(presets) if presets else None;self.native=None;self.path='';self.view=None;self.dirty=False;self.revision=0;self.jobs={};self.thumb_cache={};self.settings_path=Path(settings) if settings else ROOT/'preferences.json'
         try:self.prefs=json.loads(self.settings_path.read_text(encoding='utf8'))
         except (OSError,ValueError):self.prefs={}
-        self.prefs.setdefault('favorites',{});self.prefs.setdefault('defaults',{});self.prefs.setdefault('lockedTracks',[])
+        self.prefs.setdefault('favorites',{});self.prefs.setdefault('defaults',{});self.prefs.setdefault('lockedTracks',[]);self.prefs.setdefault('lockedProjects',{})
     def _discover(self):
         base=Path(getattr(sys,'_MEIPASS',Path(__file__).resolve().parents[1]))
         path=os.environ.get('CONCAT_NATIVE_EXE') or self.prefs.get('engine')
@@ -63,11 +63,30 @@ class Api:
     def _state(self):return {'path':self.path,'view':self.view,'dirty':self.dirty,'revision':self.revision,'preferences':self.prefs,'nativeOpen':bool(self.native and self.native.poll() is None),'appearance':getattr(self,'appearance',{})}
     def _refresh(self,changed=False):
         if self.path:self.view=self._call('project_get',{'path':self.path})
+        key=self.path+'#'+(self.view['project']['activeTimelineId'] if self.view else '')
+        if key!=getattr(self,'_locks_key',None):
+            self._locks_key=key;self.prefs['lockedTracks']=self.prefs['lockedProjects'].get(key,[])
         if changed:self.dirty=True
         self.revision+=1;self.thumb_cache.clear();return self._state()
     def _edit(self,command):
         if not self.path:raise EngineError('Open a project first.')
+        self._check_locks(command)
         self._call('edit_apply',{'path':self.path,'command':command});return self._refresh(True)
+    def _check_locks(self,command):
+        locked=set(self.prefs.get('lockedTracks',[]))
+        if not locked:return
+        clips={c['id']:c for c in self._active()['clips']}
+        def visit(value):
+            if isinstance(value,list):
+                for v in value:visit(v)
+            elif isinstance(value,dict):
+                if value.get('trackId') in locked:raise ValueError('This track is locked.')
+                ids=[value.get('clipId')]+value.get('clipIds',[])+value.get('targets',[])
+                if any(clips.get(i,{}).get('trackId') in locked for i in ids):raise ValueError('The edit includes a locked clip.')
+                if value.get('ripple'):raise ValueError('Unlock tracks before applying a ripple edit.')
+                if value.get('op') in ['removeTimeline','clearTimeline']:raise ValueError('Unlock tracks before removing timeline content.')
+                for v in value.values():visit(v)
+        visit(command)
     @rpc
     def boot(self):
         self._discover();self.native_state();return {**self._state(),'version':self._call('concat_version'),'recents':self._call('project_list'),'catalogue':self._call('effects_list'),'motion':self._helper({'operation':'catalogue'}),'tools':[{'name':v['name'],'title':v.get('title',v['name']),'description':v.get('description',''),'inputSchema':v.get('inputSchema',{})} for v in self.engine.tools.values()]}
@@ -172,6 +191,11 @@ class Api:
     def preferences(self,changes):
         allowed={'favorites','defaults','lockedTracks'}
         if set(changes)-allowed:raise ValueError('Unknown preference.')
+        if 'lockedTracks' in changes and self.view:
+            tracks=self._active()['tracks'];locked=set(changes['lockedTracks'])
+            for i,t in enumerate(tracks):
+                self.engine.request('desktop/invoke',{'target':'Editor','callback':'track-flag-changed','arguments':[len(tracks)-1-i,t['visible'],t['muted'],t['id'] in locked]})
+        if 'lockedTracks' in changes:self.prefs['lockedProjects'][getattr(self,'_locks_key',self.path)]=changes['lockedTracks']
         self.prefs.update(changes);save_json(self.settings_path,self.prefs);return self._state()
     @rpc
     def native_state(self):

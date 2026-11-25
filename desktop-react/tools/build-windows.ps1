@@ -15,13 +15,17 @@ try {
   New-Item -ItemType Directory -Force native | Out-Null
   Copy-Item ../dist/Concat-0.2.8-GPU-Windows-x64/* native/ -Recurse -Force
   Copy-Item ../upstream/src/target/x86_64-pc-windows-msvc/quick/concat-ui-presets.exe native/
+  & ./tools/prepare-cpu-renderer.ps1
   $env:CONCAT_GPU = 'software'
   python tools/engine-smoke.py --engine native/concat.exe --presets native/concat-ui-presets.exe --report dist/engine-smoke.json
   if ($LASTEXITCODE) { throw 'Real native bridge integration test failed' }
   python -m pytest tests -q
   if ($LASTEXITCODE) { throw 'Desktop host tests failed' }
+  python tests/windows_ui.py
+  if ($LASTEXITCODE) { throw 'Real WebView2 integration failed' }
   python -m PyInstaller --noconfirm --clean --windowed --name Concat-React --add-data 'frontend/dist;frontend/dist' --add-data 'native;native' app.py
   if ($LASTEXITCODE) { throw 'Portable Windows packaging failed' }
+  & ./tools/smoke-portable.ps1
   Copy-Item ../upstream/LICENSE, ../upstream/THIRD_PARTY_NOTICES.md, README.md dist/Concat-React/
   $sha = $env:GITHUB_SHA
   if (!$sha) { $sha = (git rev-parse HEAD) }

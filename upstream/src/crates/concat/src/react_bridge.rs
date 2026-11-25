@@ -56,11 +56,12 @@ fn on_ui<T:Send+'static>(f:impl FnOnce()->Result<T,ApiError>+Send+'static)->Resu
     // Do not time out a mutation then pretend it failed: the stdio caller tracks unknown outcomes.
     rx.recv().map_err(|_|ApiError::failed("Desktop controller stopped"))?
 }
-fn engine(request:Request)->Result<Value,ApiError>{
+fn engine(mut request:Request)->Result<Value,ApiError>{
     let mut result=Err(ApiError::failed("Desktop not ready"));
     Shell::with(|shell,app|{
         let mut studio=shell.studio.borrow_mut();
         studio.flush_commit();
+        if studio.session.is_some() { if let Request::EditApply{path,command}=request { request=Request::EditApply{path,command:studio.protect_canvas_tracks(command)}; } }
         let lifecycle=match &request {
             Request::ProjectCreate{location,name,video}=>{
                 let v=video.unwrap_or_default();

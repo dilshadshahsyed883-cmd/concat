@@ -1,1 +1,1 @@
-Build candidate revision 2: read-only adapter fix, native playback, task-specific service panels. Existing CUDA worker; no Salad deployment.
+Candidate revision 3: bundle the same WGSL renderer on a pinned CPU Vulkan adapter, real WebView2 tests, resize controls and locked-track protection. No deployment.

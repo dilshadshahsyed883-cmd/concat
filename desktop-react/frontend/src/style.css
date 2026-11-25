@@ -12,3 +12,5 @@
 .native-service-image{max-width:100%;max-height:240px;object-fit:contain;border-radius:6px}
 
 .app.dark{background:#121b29;color:#dce5f4}.dark nav,.dark .panel-head,.dark .library,.dark .inspector,.dark .presets,.dark .timeline,.dark .timeline-head,.dark footer{background:#182438;color:#dce5f4;border-color:#2b3a53}.dark .scene-card,.dark .preset,.dark .track-label{background:#1f2d43;color:#dce5f4;border-color:#34455f}.dark .workspace,.dark .preview-area{background:#101827}.dark .inspector-content,.dark .preset-actions,.dark .track-row{border-color:#2b3a53}.dark .ruler{background:#182438;color:#a3b3cc}.dark .timeline-clip{color:#e6efff;background:#2b4771}
+
+.panel-divider{cursor:col-resize;background:#dfe5ef;touch-action:none}.panel-divider:hover,.panel-divider:focus{background:#3979ef}.workspace .library,.workspace .inspector{resize:none;max-width:none;min-width:0}

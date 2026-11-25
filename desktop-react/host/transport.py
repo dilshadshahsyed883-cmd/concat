@@ -1,5 +1,5 @@
 """Local stdio transport to Concat's existing engine. No alternate project writer."""
-import collections,json,queue,subprocess,threading,itertools
+import collections,json,queue,subprocess,threading,itertools,os
 from pathlib import Path
 
 class EngineError(RuntimeError):pass
@@ -7,7 +7,12 @@ class McpEngine:
     def __init__(self,executable,timeout=90):
         self.executable=Path(executable).resolve();self.timeout=timeout;self.pending={};self.guard=threading.Lock();self.serial=threading.RLock();self.ids=itertools.count(1);self.logs=collections.deque(maxlen=30)
         if not self.executable.is_file():raise EngineError('Concat engine is missing. Choose the bundled native/concat.exe in Settings.')
-        self.process=subprocess.Popen([str(self.executable),'--react-bridge'],cwd=self.executable.parent,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,encoding='utf8',errors='replace',bufsize=1,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        env=os.environ.copy();cpu=self.executable.parent/'cpu-vulkan';manifest=cpu/'lvp_icd.x86_64.json'
+        if os.name=='nt' and manifest.is_file():
+            env['PATH']=str(cpu)+os.pathsep+env.get('PATH','')
+            key='VK_DRIVER_FILES' if env.get('CONCAT_GPU','').lower()=='software' else 'VK_ADD_DRIVER_FILES'
+            env.setdefault(key,str(manifest))
+        self.process=subprocess.Popen([str(self.executable),'--react-bridge'],cwd=self.executable.parent,env=env,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,encoding='utf8',errors='replace',bufsize=1,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
         threading.Thread(target=self._read,daemon=True).start();threading.Thread(target=self._stderr,daemon=True).start()
         self.request('initialize',{'protocolVersion':'2025-11-25','capabilities':{},'clientInfo':{'name':'concat-react-desktop','version':'0.1.0'}})
         self.notify('notifications/initialized',{})

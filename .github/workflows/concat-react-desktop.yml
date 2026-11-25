@@ -240,6 +240,7 @@ jobs:
           path: |
             desktop-react/dist/*.zip
             desktop-react/dist/*.json
+            desktop-react/dist/*.png
             desktop-react/dist/SHA256SUMS
           if-no-files-found: warn
           retention-days: 30
