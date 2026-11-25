@@ -12228,6 +12228,7 @@ impl Studio {
         let mut profile=match self.c_builder_profile(json){Ok(p)=>p,Err(e)=>{self.notify(&e,true);return;}};
         let selection=profile.media_selection.get_or_insert_with(Default::default);
         selection.change_keyword(video,keyword,selected,weight.clamp(0,100) as u32);
+        if !selected { self.c_builder.forget_keyword_weight(video, keyword); }
         self.c_builder.profile_json=serde_json::to_string_pretty(&profile).unwrap_or_default();
         self.c_builder.preview.clear();self.c_builder.preview_shots.clear();
         self.apply_within("c-builder-media-selection",Command::SetPlanningProfile {profile:serde_json::to_value(profile).unwrap_or_default()});
@@ -12259,7 +12260,7 @@ impl Studio {
         let rows:Vec<_>=groups.into_iter().map(|(keyword,available)|{
             let selected=selections.get(keyword);
             crate::ui::CBuilderKeywordData {keyword:keyword.into(),available:available.min(i32::MAX as usize) as i32,
-                selected:selected.is_some_and(|s|s.selected),weight:selected.filter(|s|s.selected).map_or(0.,|s|s.weight as f32)}
+                selected:selected.is_some_and(|s|s.selected),weight:selected.filter(|s|s.selected).map_or_else(||self.c_builder.remembered_keyword_weight(video,keyword) as f32,|s|s.weight as f32)}
         }).collect();
         let count=rows.iter().filter(|r|r.selected&&r.weight>0.).count();
         let total:u32=rows.iter().filter(|r|r.selected&&r.weight>0.).map(|r|r.weight as u32).sum();

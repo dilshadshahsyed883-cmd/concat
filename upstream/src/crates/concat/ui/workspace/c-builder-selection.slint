@@ -26,7 +26,7 @@ component KeywordRow inherits VerticalLayout {
             toggled(on) => { root.changed(on, Math.round(root.weight)); } }
         Text { text: root.entry.keyword; color: Theme.fg; font-size: Theme.fs;
             wrap: word-wrap; vertical-alignment: center; horizontal-stretch: 1; }
-        Text { text: Math.round(root.entry.weight) + "%  ·  " + root.entry.available + " available";
+        Text { text: Math.round(root.entry.weight) + "%" + (!root.entry.selected && root.entry.weight > 0 ? " saved" : "") + "  ·  " + root.entry.available + " available";
             color: Theme.fg-muted; font-size: Theme.fs-sm; vertical-alignment: center; }
     }
     Param { label: "Share"; value <=> root.weight; rail: true;

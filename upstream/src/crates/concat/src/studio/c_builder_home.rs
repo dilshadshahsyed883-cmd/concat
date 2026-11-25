@@ -63,6 +63,9 @@ impl Studio {
                     self.c_builder.assets=scan.assets;self.c_builder.probed=scan.probed;self.c_builder.reused=scan.reused;self.c_builder.removed=scan.removed;
                 }
                 self.cb_pending_used=None;
+                if let Err(error) = self.c_builder.reset_keyword_selections_after_build() {
+                    self.notify(&format!("Project saved; keyword selection reset failed: {error}"), true);
+                }
                 self.c_builder.status=format!("{} media ready in used/ ({} archived now, {} already completed); {} remaining; 0 archival failures. {} compatibility links created.{}",
                     report.entries.len()+report.already_archived,report.entries.len(),report.already_archived,self.c_builder.assets.len(),report.compatibility_links,
                     finish.cache_warning.map(|e|format!(" Cache warning: {e}")).unwrap_or_default());
