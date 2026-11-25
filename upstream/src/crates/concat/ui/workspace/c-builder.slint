@@ -102,6 +102,8 @@ export component CBuilderPane inherits VerticalLayout {
     in property <[CBuilderKeywordData]> image-keywords;
     in property <[CBuilderKeywordData]> video-keywords;
     in property <bool> videos-enabled;
+    in property <float> overall-video-ratio: 30;
+    callback ratio-changed(value:int);
     in property <string> image-selection-summary;
     in property <string> video-selection-summary;
     callback keyword-changed(json: string, video: bool, keyword: string, selected: bool, weight: int);
@@ -217,6 +219,7 @@ export component CBuilderPane inherits VerticalLayout {
     }
     if root.page == 2: CBuilderSelectionPanel {
         images: root.image-keywords; videos: root.video-keywords; videos-enabled: root.videos-enabled;
+        overall-video-ratio:root.overall-video-ratio; ratio-changed(value)=>{root.ratio-changed(value);}
         busy: root.busy; image-summary: root.image-selection-summary; video-summary: root.video-selection-summary;
         changed(video, keyword, selected, weight) => { root.keyword-changed(root.edited-profile, video, keyword, selected, weight); }
         equalize(video) => { root.equalize-keywords(root.edited-profile, video); }

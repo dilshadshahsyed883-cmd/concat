@@ -30,6 +30,8 @@ pub struct Preferences {
     pub last_project_location: Option<String>,
     /// Remember the C Builder media library even when the drive is unavailable.
     pub c_builder_media_folder: Option<String>,
+    /// Overall C Builder video duration share; default 30 percent.
+    pub c_builder_video_ratio: Option<u32>,
     /// The accent, by the lower-cased name the theme lists it under —
     /// "lime", "sky", ... — or as "#rrggbb" for a colour picked by hand.
     /// `None`, or a name no longer on the list, is the first one, which is

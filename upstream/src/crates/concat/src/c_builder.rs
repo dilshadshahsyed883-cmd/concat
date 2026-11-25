@@ -241,6 +241,7 @@ pub fn plan_profile(assets: &[Asset], seconds: f64, image_weights: &str, video_w
     let count = stats.images+stats.videos;
     let mut summary = format!("{} shots; video {:.1}% by count / {:.1}% by seconds. Seed {}.",
         count, stats.videos as f64/count as f64*100.0, stats.video_us as f64/(seconds*1e6)*100.0, profile.seed);
+    if let Some(target)=profile.overall_video_percent {summary.push_str(&format!("\nOverall video duration target: {target}%"));}
     for pair in profile.curve.windows(2) {
         let lo=(pair[0].at*seconds*1e6).round() as u64;let hi=(pair[1].at*seconds*1e6).round() as u64;
         let(mut video_us,mut image_us,mut videos,mut images)=(0_u64,0_u64,0_u64,0_u64);

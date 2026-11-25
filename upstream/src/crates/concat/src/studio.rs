@@ -9581,6 +9581,7 @@ impl Studio {
         editor.set_cb_video_keywords(models.cb_video_keywords.clone().into());
         editor.set_cb_image_selection_summary(image_summary.into());editor.set_cb_video_selection_summary(video_summary.into());
         editor.set_cb_videos_enabled(selection_profile.media_selection.as_ref().is_some_and(|s|s.videos_enabled));
+        editor.set_cb_overall_video_ratio(self.prefs.c_builder_video_ratio.unwrap_or(30).min(100) as f32);
         editor.set_keys_undo(hint("undo").into());
         editor.set_keys_redo(hint("redo").into());
         editor.set_keys_split(hint("split").into());
@@ -12324,7 +12325,7 @@ impl Studio {
         let rows:Vec<_>=groups.into_iter().map(|(keyword,available)|{
             let selected=selections.get(keyword);
             crate::ui::CBuilderKeywordData {keyword:keyword.into(),available:available.min(i32::MAX as usize) as i32,
-                selected:selected.is_some_and(|s|s.selected),weight:selected.map_or(0.,|s|s.weight as f32)}
+                selected:selected.is_some_and(|s|s.selected),weight:selected.filter(|s|s.selected).map_or(0.,|s|s.weight as f32)}
         }).collect();
         let count=rows.iter().filter(|r|r.selected&&r.weight>0.).count();
         let total:u32=rows.iter().filter(|r|r.selected&&r.weight>0.).map(|r|r.weight as u32).sum();

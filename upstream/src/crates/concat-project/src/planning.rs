@@ -49,6 +49,9 @@ pub struct Profile {
     pub allow_repeats: bool,
     /// Correct probabilities for differing shot durations when targeting seconds.
     pub ratio_by_seconds: bool,
+    /// Optional overall video-duration target (0–100 percent).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overall_video_percent: Option<u32>,
     pub seed: u64,
     #[serde(default)]
     pub pins: Vec<Pin>,
@@ -57,8 +60,7 @@ pub struct Profile {
 }
 
 /// Shared integer-percentage budget for one kind of C Builder keyword.
-/// Disabled entries retain their last share as a re-enable hint, but do not
-/// participate in the budget or sampling. BTreeMap ordering breaks ties.
+/// Disabled entries have zero share. BTreeMap ordering breaks ties.
 fn allocate_keyword_budget(
     entries: &mut std::collections::BTreeMap<String, KeywordSelection>,
     keys: &[String],
@@ -100,10 +102,10 @@ fn allocate_keyword_budget(
 }
 
 impl MediaSelection {
-    /// Canonicalize legacy independent 0-100 slider values without modifying
-    /// disabled rows. Only enabled keyword groups consume a 100% budget.
+    /// Canonicalize legacy shares; disabled rows are always zero.
     pub fn normalize(&mut self) {
         for entries in [&mut self.images, &mut self.videos] {
+            for row in entries.values_mut() {if !row.selected {row.weight=0;}}
             let keys: Vec<String> = entries
                 .iter()
                 .filter(|(_, row)| row.selected)
@@ -127,12 +129,12 @@ impl MediaSelection {
         };
         let old = entries.get(keyword).cloned().unwrap_or_default();
         if !selected {
-            // Remember the old value so toggling on can restore a useful share.
+            // Deselected rows immediately release their entire share.
             entries.insert(
                 keyword.into(),
                 KeywordSelection {
                     selected: false,
-                    weight: old.weight,
+                    weight: 0,
                 },
             );
             let peers: Vec<String> = entries
@@ -151,9 +153,8 @@ impl MediaSelection {
         let desired = if peers.is_empty() {
             100
         } else if !old.selected && (requested == 0 || requested == old.weight) {
-            // Re-enabled rows regain up to their remembered percentage, but
-            // at most an equal portion, never silently wiping peers.
-            old.weight.max(1).min(100 / (peers.len() as u32 + 1))
+            // A newly enabled row receives an equal initial share.
+            100 / (peers.len() as u32 + 1)
         } else {
             requested.min(100)
         };
@@ -174,6 +175,7 @@ impl MediaSelection {
         } else {
             &mut self.images
         };
+        for row in entries.values_mut(){if !row.selected{row.weight=0;}}
         let peers: Vec<String> = entries
             .iter()
             .filter(|(_, v)| v.selected)
@@ -216,6 +218,7 @@ impl Default for Profile {
             cooldown: 3,
             allow_repeats: true,
             ratio_by_seconds: true,
+            overall_video_percent: None,
             seed: 1,
             pins: Vec::new(),
             media_selection: None,
@@ -298,6 +301,7 @@ impl Profile {
                 return Err("Invalid shot duration range (0.1–3600s)".into());
             }
         }
+        if self.overall_video_percent.is_some_and(|v| v > 100) {return Err("Overall video ratio must be 0–100".into());}
         if self.cooldown > 10000 || self.max_videos > 10000 || self.max_images > 10000 {
             return Err("Sequence controls exceed safety limits".into());
         }
@@ -435,6 +439,19 @@ pub fn generate(sources: &[Source], total_us: u64, profile: &Profile) -> Result<
             return Err("Pinned shot exceeds timeline or source bounds".into());
         }
     }
+    let target=profile.overall_video_percent.map(|v|total_us*v as u64/100);
+    let curve_mean: f64=profile.curve.windows(2).map(|p|(p[1].at-p[0].at)*(p[0].video+p[1].video)/2.0).sum();
+    let adjusted=|v:f64,t:f64| if t<=curve_mean {if curve_mean>0.0 {v*t/curve_mean}else{0.0}} else if curve_mean<1.0 {v+(1.0-v)*(t-curve_mean)/(1.0-curve_mean)}else{1.0};
+    // Integrate the rescaled distribution to retain opening/ending shape.
+    let cumulative=|x:f64,t:f64|->f64{
+        profile.curve.windows(2).map(|p|{
+            let end=x.min(p[1].at);let span=(end-p[0].at).max(0.0);
+            let a=adjusted(p[0].video,t);let b=adjusted(p[1].video,t);
+            span*(a+(b-a)*span/(p[1].at-p[0].at)/2.0)
+        }).sum()
+    };
+    let mut video_us=0_u64;
+    let single_kind=target.filter(|v|*v==0||*v==total_us).map(|v|v==total_us);
     let mut rng = Random(if profile.seed == 0 {
         0x9e3779b97f4a7c15
     } else {
@@ -458,9 +475,9 @@ pub fn generate(sources: &[Source], total_us: u64, profile: &Profile) -> Result<
                 .position(|s| s.id == pin.source_id)
                 .ok_or("Pinned source missing")?;
             let video = sources[index].video;
-            if (!profile.allow_repeats && uses[index] > 0)
-                || (video && profile.max_videos > 0 && video_run >= profile.max_videos)
-                || (!video && profile.max_images > 0 && image_run >= profile.max_images)
+            if single_kind.is_some_and(|kind|kind!=video) || (!profile.allow_repeats && uses[index] > 0)
+                || (single_kind.is_none() && video && profile.max_videos > 0 && video_run >= profile.max_videos)
+                || (single_kind.is_none() && !video && profile.max_images > 0 && image_run >= profile.max_images)
             {
                 return Err(
                     "Pinned shot violates hard repetition/run limits; adjust profile".into(),
@@ -475,6 +492,7 @@ pub fn generate(sources: &[Source], total_us: u64, profile: &Profile) -> Result<
             at += pin.duration_us;
             uses[index] += 1;
             if video {
+                video_us += pin.duration_us;
                 video_run += 1;
                 image_run = 0;
             } else {
@@ -489,6 +507,7 @@ pub fn generate(sources: &[Source], total_us: u64, profile: &Profile) -> Result<
                 .enumerate()
                 .filter(|(i, s)| {
                     s.video == video
+                        && single_kind.is_none_or(|kind|kind==video)
                         && s.weight > 0.0
                         && (!video || s.duration_us >= (profile.video_seconds[0] * 1e6) as u64)
                         && (profile.allow_repeats || uses[*i] == 0)
@@ -499,9 +518,9 @@ pub fn generate(sources: &[Source], total_us: u64, profile: &Profile) -> Result<
         let images = available(false);
         let videos = available(true);
         let can_image =
-            !images.is_empty() && (profile.max_images == 0 || image_run < profile.max_images);
+            !images.is_empty() && (single_kind.is_some() || profile.max_images == 0 || image_run < profile.max_images);
         let can_video =
-            !videos.is_empty() && (profile.max_videos == 0 || video_run < profile.max_videos);
+            !videos.is_empty() && (single_kind.is_some() || profile.max_videos == 0 || video_run < profile.max_videos);
         if !can_image && !can_video {
             return Err(format!(
                 "Hard sequence/repeat constraints exhausted at {:.3}s; adjust profile",
@@ -514,7 +533,15 @@ pub fn generate(sources: &[Source], total_us: u64, profile: &Profile) -> Result<
             let video_mean = (profile.video_seconds[0] + profile.video_seconds[1]) / 2.0;
             weight = (weight / video_mean) / (weight / video_mean + (1.0 - weight) / image_mean);
         }
-        let want_video = rng.unit() < weight;
+        let want_video = if let Some(target)=target {
+            let t=target as f64/total_us as f64;
+            let mean=((profile.image_seconds[0]+profile.image_seconds[1]+profile.video_seconds[0]+profile.video_seconds[1])/4.0*1e6).max(1.0);
+            let expected=cumulative(((at as f64+mean/2.0)/total_us as f64).min(1.0),t)*total_us as f64;
+            let deficit=expected-video_us as f64;
+            let local=adjusted(profile.video_weight(at as f64/total_us as f64),t);
+            let probability=(local+deficit/mean).clamp(0.0,1.0);
+            if video_us>=target {false} else if at.saturating_sub(video_us)>=total_us-target {true} else {rng.unit()<probability}
+        }else{rng.unit()<weight};
         let video = if want_video { can_video } else { !can_image };
         if video != want_video {
             let warning = "Requested distribution constrained by source availability or run limits"
@@ -601,6 +628,10 @@ pub fn generate(sources: &[Source], total_us: u64, profile: &Profile) -> Result<
             duration = remaining / 2;
         }
         duration = duration.min(remaining).max(1);
+        if let Some(target)=target {
+            let budget=if video {target.saturating_sub(video_us)} else {(total_us-target).saturating_sub(at-video_us)};
+            if budget>=min_us && duration>budget {duration=budget;}
+        }
         let trim = if video {
             (rng.unit() * (sources[picked].duration_us - duration) as f64) as u64
         } else {
@@ -615,11 +646,17 @@ pub fn generate(sources: &[Source], total_us: u64, profile: &Profile) -> Result<
         uses[picked] += 1;
         at += duration;
         if video {
+            video_us += duration;
             video_run += 1;
             image_run = 0;
         } else {
             image_run += 1;
             video_run = 0;
+        }
+    }
+    if let Some(target)=target {
+        if video_us.abs_diff(target)>total_us/200 {
+            plan.warnings.push(format!("Overall video target {:.1}% could not be met within shot/source/run constraints; actual {:.1}%",target as f64/total_us as f64*100.0,video_us as f64/total_us as f64*100.0));
         }
     }
     Ok(plan)
@@ -673,6 +710,16 @@ mod tests {
                 .windows(2)
                 .any(|p| s[p[0].source].video && s[p[1].source].video)
         );
+    }
+    #[test]
+    fn overall_duration_target_rescales_curve_and_honors_extremes() {
+        let pool=sources();
+        for ratio in [0,30,65,100] {
+            let mut p=Profile::default();p.overall_video_percent=Some(ratio);p.max_videos=0;p.max_images=0;
+            let plan=generate(&pool,600_000_000,&p).unwrap();let actual=plan.stats(&pool).video_us as f64/600_000_000.0;
+            assert!((actual-ratio as f64/100.0).abs()<0.02,"ratio {ratio}: {actual}");
+            if ratio==0||ratio==100 {assert_eq!(actual,ratio as f64/100.0);}
+        }
     }
     #[test]
     fn extreme_ratios_and_single_media_kinds() {
@@ -843,7 +890,7 @@ mod keyword_budget_tests {
         }
         s.change_keyword(false, "a", false, 25);
         assert_eq!(shares(&s, false), vec![34, 33, 33]);
-        assert_eq!(s.images["a"].weight, 25);
+        assert_eq!(s.images["a"].weight, 0);
         s.change_keyword(false, "a", true, 25);
         assert_eq!(shares(&s, false), vec![25, 25, 25, 25]);
         s.change_keyword(false, "a", true, 100);
@@ -859,8 +906,8 @@ mod keyword_budget_tests {
         s.change_keyword(false, "a", true, 0);
         assert_eq!(shares(&s, false), vec![100]);
         s.change_keyword(false, "b", true, 0);
-        // b's remembered 34% is restored, without wiping a.
-        assert_eq!(shares(&s, false), vec![66, 34]);
+        // A re-enabled group receives an equal initial share.
+        assert_eq!(shares(&s, false), vec![50, 50]);
     }
     #[test]
     fn all_zero_selection_stays_excluded_until_explicit_drag_or_equalize() {
@@ -900,7 +947,7 @@ mod keyword_budget_tests {
         );
         assert_eq!(
             loaded.media_selection.as_ref().unwrap().videos["unused"].weight,
-            87
+            0
         );
     }
 }
