@@ -109,6 +109,8 @@ export global Editor {
     in-out property <[CBuilderKeywordData]> cb-image-keywords;
     in-out property <[CBuilderKeywordData]> cb-video-keywords;
     in-out property <bool> cb-videos-enabled;
+    in-out property <float> cb-overall-video-ratio:30;
+    callback cb-overall-video-ratio-changed(value:int);
     in-out property <string> cb-image-selection-summary;
     in-out property <string> cb-video-selection-summary;
     in-out property <string> cb-plan-name;

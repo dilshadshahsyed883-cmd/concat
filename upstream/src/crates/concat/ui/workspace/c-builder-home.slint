@@ -54,6 +54,7 @@ export component CBuilderHome inherits Rectangle {
                 }
                 equalize-keywords(json,video) => { Editor.cb-equalize-keywords(json,video); }
                 image-keywords:Editor.cb-image-keywords;video-keywords:Editor.cb-video-keywords;videos-enabled:Editor.cb-videos-enabled;
+                overall-video-ratio:Editor.cb-overall-video-ratio; ratio-changed(value)=>{Editor.cb-overall-video-ratio-changed(value);}
                 image-selection-summary:Editor.cb-image-selection-summary;video-selection-summary:Editor.cb-video-selection-summary;
                 keyword-changed(json,video,keyword,selected,weight)=>{Editor.cb-keyword-changed(json,video,keyword,selected,weight);}
                 videos-toggled(json,on)=>{Editor.cb-videos-toggled(json,on);}

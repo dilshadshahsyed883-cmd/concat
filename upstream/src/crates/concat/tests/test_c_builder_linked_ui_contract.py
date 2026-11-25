@@ -36,6 +36,13 @@ class CBuilderLinkedUiContracts(unittest.TestCase):
         self.assertIn("selection.normalize()", self.studio)
         self.assertIn("editor.on_cb_equalize_keywords", self.lib)
 
+    def test_overall_ratio_and_unchecked_rails(self):
+        self.assertIn("Overall Media Ratio", self.selection)
+        self.assertIn("enabled: !root.busy && root.entry.selected", self.selection)
+        self.assertIn("Editor.cb-overall-video-ratio-changed(value)", self.home)
+        self.assertIn("editor.on_cb_overall_video_ratio_changed", self.lib)
+        self.assertEqual(self.lib.count("profile.overall_video_percent=Some("), 2)
+
     def test_compact_form_and_advanced_json_are_wired_to_backend(self):
         for label in (
             "Media Library", "Timeline Builder", "Media Selection", "Preview Plan", "Reroll",

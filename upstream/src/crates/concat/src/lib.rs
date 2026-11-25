@@ -1189,6 +1189,12 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             });
         }
     ));
+    editor.on_cb_overall_video_ratio_changed(on_window!(|studio,value:i32| {
+        if studio.c_builder.scanning{return;}
+        studio.prefs.c_builder_video_ratio=Some(value.clamp(0,100) as u32);
+        studio.prefs.save(&studio.host.dirs);
+        studio.c_builder.preview.clear();studio.c_builder.preview_shots.clear();
+    }));
     editor.on_cb_videos_toggled(on_window!(|studio,json:SharedString,on:bool| {
         studio.set_c_builder_videos_enabled(&json,on);
     }));
@@ -1280,6 +1286,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         if matches!(action.as_str(),"store"|"duplicate"|"rename")||action.starts_with("select:"){return;}
         let Some(duration) = studio.c_builder.duration else { studio.notify("Select narration first", true); return; };
         profile.media_selection.get_or_insert_with(Default::default).normalize();
+        profile.overall_video_percent=Some(if profile.media_selection.as_ref().is_some_and(|s|s.videos_enabled){studio.prefs.c_builder_video_ratio.unwrap_or(30).min(100)}else{0});
         let assets = studio.c_builder.assets.clone();
         let iw = images.to_string(); let vw = videos.to_string();
         studio.c_builder.scanning = true;
@@ -1313,6 +1320,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                 Ok(p) => p, Err(e) => { studio.notify(&e, true); return; }
             };
             profile.media_selection.get_or_insert_with(Default::default).normalize();
+            profile.overall_video_percent=Some(if profile.media_selection.as_ref().is_some_and(|s|s.videos_enabled){studio.prefs.c_builder_video_ratio.unwrap_or(30).min(100)}else{0});
             let cache_path = studio.host.dirs.data.join("c-builder-media-cache.json");
             let library=std::path::PathBuf::from(studio.c_builder.folder.clone());
             let cancel=std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));studio.cb_generation_cancel=Some(cancel.clone());
@@ -1322,7 +1330,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                 move || {
                     if cancel.load(std::sync::atomic::Ordering::Relaxed){return Err("Generation cancelled before saving any project".into());}
                     std::fs::create_dir_all(&output).map_err(|e|format!("Could not create output folder: {e}"))?;
-                    let (shots, _) = c_builder::plan_profile(&assets, duration, &image_weights,
+                    let (shots, summary) = c_builder::plan_profile(&assets, duration, &image_weights,
                         &video_weights, &profile)?;
                     let folder = c_builder::write_native_with_profile(&shots, &audio, duration, &output,
                         &project_name, Some(&profile))?;
@@ -1334,11 +1342,11 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                     let sources=used.into_iter().map(std::path::PathBuf::from).collect::<Vec<_>>();
                     let pending=crate::studio::c_builder_home::PendingUsed{library,project:folder,sources,cache:cache_path};
                     let finish=c_builder_used::finish(&pending.library,&pending.project,&pending.sources,&pending.cache,&cancel);
-                    Ok::<_, String>((pending,finish))
+                    Ok::<_, String>((pending,finish,summary))
                 },
                 |studio, _, _, result| {
                     match result {
-                        Ok((pending,finish))=>studio.builder_archive_finished(pending,finish),
+                        Ok((pending,finish,summary))=>{studio.builder_archive_finished(pending,finish); studio.c_builder.preview=summary;},
                         Err(error)=>{studio.c_builder.scanning=false;studio.cb_generation_cancel=None;studio.c_builder.status=format!("Generation failed: {error}");studio.notify(&error,true);}
                     }
                 },

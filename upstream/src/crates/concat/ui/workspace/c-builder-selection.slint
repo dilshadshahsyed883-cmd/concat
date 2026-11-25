@@ -31,8 +31,8 @@ component KeywordRow inherits VerticalLayout {
     }
     Param { label: "Share"; value <=> root.weight; rail: true;
         minimum: 0; maximum: 100; step: 1; unit: "%"; fmt: ParamFormat.steps;
-        enabled: !root.busy;
-        changed(v) => { root.changed(v > 0 ? true : root.entry.selected, Math.round(v)); } }
+        enabled: !root.busy && root.entry.selected;
+        changed(v) => { if root.entry.selected {root.changed(true, Math.round(v));} } }
     Rectangle { height: 1px; background: Theme.line; }
 }
 
@@ -40,6 +40,11 @@ export component CBuilderSelectionPanel inherits VerticalLayout {
     in property <[CBuilderKeywordData]> images;
     in property <[CBuilderKeywordData]> videos;
     in property <bool> videos-enabled;
+    in property <float> overall-video-ratio: 30;
+    property <float> ratio-draft: root.videos-enabled ? root.overall-video-ratio : 0;
+    changed overall-video-ratio => {root.ratio-draft=root.videos-enabled ? root.overall-video-ratio : 0;}
+    changed videos-enabled => {root.ratio-draft=root.videos-enabled ? root.overall-video-ratio : 0;}
+    callback ratio-changed(value:int);
     in property <bool> busy;
     in property <string> image-summary;
     in property <string> video-summary;
@@ -51,6 +56,10 @@ export component CBuilderSelectionPanel inherits VerticalLayout {
     Text { text: "Media Selection"; color: Theme.fg; font-size: Theme.fs-lg; font-weight: Theme.weight-title; }
     Text { text: "Each enabled keyword shares one 100% budget within Images or Videos. Moving one slider redistributes the rest proportionally. These are sampling probabilities, not fixed shot counts.";
         color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
+    Text { text: "Overall Media Ratio · Images " + (100-Math.round(root.ratio-draft)) + "% · Videos " + Math.round(root.ratio-draft) + "%"; color: Theme.fg; font-weight: Theme.weight-title; }
+    Param { label: "Video duration"; value <=> root.ratio-draft; rail: true; minimum:0; maximum:100; step:1; unit:"%"; fmt:ParamFormat.steps;
+        enabled: !root.busy && root.videos-enabled; changed(v) => {if root.videos-enabled {root.ratio-changed(Math.round(v));}} }
+    Text { text:"Targets total timeline duration; opening/ending profile shapes placement."; color:Theme.fg-muted; font-size:Theme.fs-sm; }
     HorizontalLayout {
         spacing: 8px;
         Text { text: "Images · 100% budget"; color: Theme.fg; font-size: Theme.fs;
