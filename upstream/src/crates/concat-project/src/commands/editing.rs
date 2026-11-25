@@ -195,13 +195,26 @@ pub(super) fn apply(
             }
             if overwrite {
                 let end = time + duration;
-                let end_ids = staged
+                let end_ids: Vec<_> = staged
                     .active()
                     .clips
                     .iter()
                     .filter(|c| c.track_id == track_id && c.start < end && c.end() > end)
                     .map(|c| c.id.clone())
                     .collect();
+                // SplitClips skips tiny fragments. Refuse before deletion rather
+                // than treating an unsplit, mostly uncovered clip as overwritten.
+                for id in &end_ids {
+                    let clip = staged.active().clip(id).ok_or(CommandError::MediaGone)?;
+                    if clip.speed_curve.is_some()
+                        || end - clip.start <= MIN_CLIP_DURATION
+                        || clip.end() - end <= MIN_CLIP_DURATION
+                    {
+                        return Err(refused(
+                            "Overwrite touches a speed curve or a sub-frame fragment; split/adjust the clip first",
+                        ));
+                    }
+                }
                 super::apply(
                     &mut staged,
                     mint,
@@ -859,6 +872,67 @@ mod tests {
         assert!(e.redo());
     }
     #[test]
+    fn overwrite_rejects_subminimum_end_fragments_atomically() {
+        for end in [2.01, 9.99] {
+            let mut project = Project::new();
+            project.media.push(MediaItem {
+                id: "incoming".into(),
+                path: "incoming.mp4".into(),
+                kind: MediaKind::Video,
+                duration: Some(end),
+                ..Default::default()
+            });
+            let mut existing = Clip::blank("existing", "T1", ClipKind::Video, "Existing", 2.0, 8.0);
+            existing.media_id = "incoming".into();
+            project.active_mut().clips.push(Arc::new(existing));
+            let mut editor =
+                Editor::from_document(&crate::doc::to_document(&settings(), &project)).unwrap();
+            let before = editor.to_document(&settings());
+            let result = editor.apply(Command::InsertMedia {
+                media_id: "incoming".into(),
+                track_id: "T1".into(),
+                tracks: vec!["T1".into()],
+                locked_tracks: vec![],
+                time: 0.0,
+                overwrite: true,
+                linked_audio: false,
+            });
+            assert!(result.is_err(), "unsafe end {end} must be refused");
+            assert_eq!(before, editor.to_document(&settings()));
+            assert!(!editor.undo());
+        }
+    }
+
+    #[test]
+    fn overwrite_preserves_suffix_and_undo_at_valid_end() {
+        let mut editor = fixture();
+        let before = editor.to_document(&settings());
+        editor
+            .apply(Command::InsertMedia {
+                media_id: "m2".into(),
+                track_id: "T1".into(),
+                tracks: vec!["T1".into()],
+                locked_tracks: vec![],
+                time: 0.0,
+                overwrite: true,
+                linked_audio: false,
+            })
+            .unwrap();
+        let tail = editor
+            .project()
+            .active()
+            .clips
+            .iter()
+            .find(|c| c.start == 5.0)
+            .unwrap();
+        assert_eq!(tail.duration, 5.0);
+        assert_eq!(tail.source_start, 5.0);
+        assert!(editor.undo());
+        assert_eq!(before, editor.to_document(&settings()));
+        assert!(editor.redo());
+    }
+
+    #[test]
     fn rejected_edits_are_atomic() {
         let mut e = fixture();
         let before = e.to_document(&settings());
@@ -1085,20 +1159,18 @@ mod safety_tests {
             let before = p.clone();
             let mut mint = IdMint::default();
             mint.adopt_project(&p);
-            assert!(apply(
-                &mut p,
-                &mut mint,
-                Command::CloseTrackGaps {
-                    track_id: "T1".into(),
-                    locked_tracks: if locked {
-                        vec!["T2".into()]
-                    } else {
-                        vec![]
+            assert!(
+                apply(
+                    &mut p,
+                    &mut mint,
+                    Command::CloseTrackGaps {
+                        track_id: "T1".into(),
+                        locked_tracks: if locked { vec!["T2".into()] } else { vec![] },
+                        at: None,
                     },
-                    at: None,
-                },
-            )
-            .is_err());
+                )
+                .is_err()
+            );
             assert_eq!(p.active().clips, before.active().clips);
         }
     }
