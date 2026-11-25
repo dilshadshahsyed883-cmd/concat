@@ -60,9 +60,10 @@ class SharedLayoutContractTests(unittest.TestCase):
         self.assertIn("if LibraryFocus.page == 6 && GpuCompatibility.enabled && CaptionPresetPreview.chosen != \"\": CaptionPresetApplyBar", self.inspector)
         self.assertIn('label: "Apply Selected"', self.canvas)
         self.assertIn('label: "Apply All"', self.canvas)
-        for label in ("Apply Selected", "Apply All", "Random All",
-                      "Random Selected", "Favorites Randomly"):
+        for label in ("Apply Selected", "Apply All"):
             self.assertIn('label: "' + label + '"', self.particle)
+        for label in ("Random All", "Random Selected", "Favorites Randomly"):
+            self.assertNotIn('label: "' + label + '"', self.particle)
         self.assertIn("if root.tab == 6: VerticalLayout {", self.media)
         self.assertNotIn("if root.tab == 6: PaneScroll {", self.media)
 
@@ -193,11 +194,15 @@ class SharedLayoutContractTests(unittest.TestCase):
     def test_stable_canvas_and_particle_target_scopes(self):
         self.assertIn("CanvasPresets.apply(CanvasPresets.profile, false, root.images, root.videos);", self.canvas)
         self.assertIn("CanvasPresets.apply(CanvasPresets.profile, true, root.images, root.videos);", self.canvas)
-        for mode, selected in ((0, "true"), (0, "false"),
-                               (1, "true"), (1, "false")):
-            call = "ParticleBulk.apply(root.preset, {}, {}, root.images, root.videos);".format(mode, selected)
+        for selected in ("true", "false"):
+            call = "ParticleBulk.apply(root.preset, {}, root.images, root.videos);".format(selected)
             self.assertIn(call, self.particle)
-        self.assertIn("ParticleBulk.apply(root.preset, 2, Keyframes.animation-scope == 1", self.particle)
+        bulk = source(SRC / "studio/particle_bulk.rs")
+        self.assertNotIn("mode: i32", bulk)
+        self.assertNotIn("self.prefs.favourites", bulk)
+        self.assertIn("IDS.get(preset as usize)", bulk)
+        self.assertIn("self.effect_application(&id)", bulk)
+        self.assertIn("ParticleBulk.apply(ParticleBulk.index-of(entry.id), true,", self.media)
 
 
 if __name__ == "__main__":
