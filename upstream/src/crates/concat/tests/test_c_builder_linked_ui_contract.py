@@ -16,6 +16,7 @@ class CBuilderLinkedUiContracts(unittest.TestCase):
         cls.editor = (UI / "editor.slint").read_text(encoding="utf-8")
         cls.studio = (SRC / "studio.rs").read_text(encoding="utf-8")
         cls.lib = (SRC / "lib.rs").read_text(encoding="utf-8")
+        cls.builder_home = (SRC / "studio/c_builder_home.rs").read_text(encoding="utf-8")
 
     def test_c_builder_remains_home_only_and_keeps_output_actions(self):
         self.assertIn("CBuilderPane {", self.home)
@@ -70,6 +71,16 @@ class CBuilderLinkedUiContracts(unittest.TestCase):
         self.assertIn("callback cb-tune-profile(", self.editor)
         self.assertIn("editor.on_cb_tune_profile(", self.lib)
         self.assertIn("profile.validate()", self.lib)
+
+    def test_keyword_reset_only_after_verified_archive(self):
+        finished = self.builder_home.split("pub fn builder_archive_finished", 1)[1].split("pub fn builder_retry_used", 1)[0]
+        success, failure = finished.split("match finish.result", 1)[1].split("Err(error)=>", 1)
+        self.assertIn("reset_keyword_selections_after_build()", success)
+        self.assertNotIn("reset_keyword_selections_after_build()", failure)
+        self.assertIn("remembered_keyword_weight(video,keyword)", self.studio)
+        self.assertIn("forget_keyword_weight(video, keyword)", self.studio)
+        self.assertIn('" saved"', self.selection)
+        self.assertIn("enabled: !root.busy && root.entry.selected", self.selection)
 
     def test_legacy_and_generation_paths_use_canonical_shares(self):
         self.assertIn("if let Some(selection)=profile.media_selection.as_mut(){selection.normalize();}", self.lib)
