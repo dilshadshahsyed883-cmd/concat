@@ -526,6 +526,45 @@ pub fn recents(config: &Path) -> Vec<Recent> {
         .collect()
 }
 
+/// Adds valid projects found immediately inside the configured project folders.
+/// Discovery never opens an editing session or changes project files. Newly
+/// found projects join the registry so the existing card actions also work.
+pub fn recents_in_folders(config: &Path, folders: &[PathBuf]) -> Vec<Recent> {
+    let mut entries = recents(config);
+    let previous_len = entries.len();
+    let mut scanned = Vec::<PathBuf>::new();
+    for folder in folders {
+        let key = folder.canonicalize().unwrap_or_else(|_| folder.clone());
+        if scanned.contains(&key) { continue; }
+        scanned.push(key);
+        let Ok(children) = std::fs::read_dir(folder) else { continue; };
+        for child in children.flatten() {
+            let path = child.path();
+            // Only direct project directories; never crawl media or used/ trees.
+            if !path.is_dir() || !is_project(&path) { continue; }
+            let path = path.to_string_lossy();
+            if entries.iter().any(|entry| same_path(&entry.info.path, &path)) { continue; }
+            let Ok(mut info) = open(&path) else { continue; };
+            let edited_at = std::fs::metadata(manifest_path(Path::new(path.as_ref())))
+                .ok().and_then(|meta| meta.modified().ok())
+                .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+                .map(|elapsed| elapsed.as_millis() as u64);
+            // Discovery must not make old projects look freshly opened.
+            info.opened_at = edited_at.unwrap_or(0);
+            entries.push(Recent { info, present: true, edited_at });
+        }
+    }
+    entries.sort_by(|a, b| b.info.opened_at.cmp(&a.info.opened_at)
+        .then_with(|| a.info.path.cmp(&b.info.path)));
+    if entries.len() != previous_len {
+        let infos: Vec<_> = entries.iter().map(|entry| entry.info.clone()).collect();
+        if let Err(error) = write_recents(config, &infos) {
+            log::warn!("Project discovery could not update recent history: {error}");
+        }
+    }
+    entries
+}
+
 /// Removes one project from the list. The folder itself is left alone.
 pub fn forget(config: &Path, path: &str) -> Result<(), String> {
     let mut entries = read_recents(config);
@@ -668,6 +707,54 @@ fn count_files(dir: &Path) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn home_discovers_and_registers_saved_projects_without_changing_manifests() {
+        let temp = tempfile::tempdir().unwrap();
+        let config = temp.path().join("config");
+        let output = temp.path().join("Concat");
+        let custom = temp.path().join("custom-output");
+        let known = create(output.to_str().unwrap(), "Known", 1920, 1080, 30, 1).unwrap();
+        remember(&config, &known).unwrap();
+        let generated = create(output.to_str().unwrap(), "Builder project", 1920, 1080, 30, 1).unwrap();
+        let elsewhere = create(custom.to_str().unwrap(), "Custom builder", 1080, 1920, 60, 1).unwrap();
+        let manifest = std::fs::read(manifest_path(Path::new(&generated.path))).unwrap();
+        let known_opened_at = known.opened_at;
+        let invalid = output.join("Broken");
+        std::fs::create_dir_all(&invalid).unwrap();
+        std::fs::write(invalid.join(MANIFEST), b"not JSON").unwrap();
+        create(output.join("media").to_str().unwrap(), "Nested media project", 1920, 1080, 30, 1).unwrap();
+        let roots = [output.clone(), output, custom, temp.path().join("unavailable")];
+        for _ in 0..2 {
+            let found = recents_in_folders(&config, &roots);
+            assert_eq!(found.len(), 3);
+            for project in [&known, &generated, &elsewhere] {
+                assert_eq!(found.iter().filter(|r| same_path(&r.info.path, &project.path)).count(), 1);
+            }
+            assert!(found.iter().all(|r| r.present));
+        }
+        let registered = recents(&config);
+        assert_eq!(registered.len(), 3);
+        assert_eq!(registered.iter().find(|r| r.info.path == known.path).unwrap().info.opened_at, known_opened_at);
+        let history = std::fs::read(config.join(RECENTS)).unwrap();
+        recents_in_folders(&config, &roots);
+        assert_eq!(std::fs::read(config.join(RECENTS)).unwrap(), history);
+        assert_eq!(std::fs::read(manifest_path(Path::new(&generated.path))).unwrap(), manifest);
+        std::fs::remove_dir_all(&generated.path).unwrap();
+        let found = recents_in_folders(&config, &roots);
+        assert_eq!(found.len(), 3);
+        assert!(!found.iter().find(|r| r.info.path == generated.path).unwrap().present);
+    }
+
+    #[test]
+    fn home_discovers_projects_without_a_recent_history_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let output = temp.path().join("Concat");
+        create(output.to_str().unwrap(), "Builder", 1920, 1080, 30, 1).unwrap();
+        let config = temp.path().join("new-config");
+        assert_eq!(recents_in_folders(&config, &[output]).len(), 1);
+        assert_eq!(recents(&config).len(), 1);
+    }
 
     #[test]
     fn sanitises_names_windows_would_reject() {

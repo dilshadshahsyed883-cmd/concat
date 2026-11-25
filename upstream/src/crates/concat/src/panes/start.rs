@@ -190,7 +190,7 @@ impl Default for StartPane {
 /// Where a new project goes unless told otherwise; see [`location_on`].
 /// On an iPhone the folder is made here, so that the Files app shows it
 /// from the first launch and not only from the first project.
-fn default_location() -> String {
+pub(crate) fn default_location() -> String {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     let desktop = dirs::desktop_dir();
     #[cfg(any(target_os = "android", target_os = "ios"))]

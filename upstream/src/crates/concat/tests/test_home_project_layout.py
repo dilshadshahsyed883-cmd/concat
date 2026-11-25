@@ -105,7 +105,7 @@ class HomeProjectLayoutRegression(unittest.TestCase):
         )[0]
         for page in (wide, narrow):
             self.assertIn('label: "C Builder";', page)
-            self.assertIn('I18n.t("cloudGpu.gpuQueue")', page)
+            self.assertNotIn('I18n.t("cloudGpu.gpuQueue")', page)
 
 
 if __name__ == "__main__":
