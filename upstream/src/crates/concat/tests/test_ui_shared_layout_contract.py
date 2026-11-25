@@ -87,6 +87,22 @@ class SharedLayoutContractTests(unittest.TestCase):
         self.assertIn("draft.extend(values.into_iter()", colour)
         self.assertIn("self.request_preview();", colour)
 
+    def test_effect_browser_single_field_preserves_manifest_values(self):
+        settings = self.particle.split("export component EffectSettings", 1)[1].split("export component EffectDefaultBar", 1)[0]
+        for token in ('single-value: true;', 'ParticleBulk.index-of(ParticleBulk.draft-id) >= 0',
+                      'p.key == "size" || p.key == "opacity" || p.key == "glow"',
+                      'unit-scale: parent.particle-percent ? 100 : 1;',
+                      'root.particle && p.key == "direction" ? "°" : p.unit',
+                      'minimum-precision: root.particle && p.key == "speed" ? 3 : 0;',
+                      'value: p.value;', 'minimum: p.min;', 'maximum: p.max;',
+                      'step: p.step;', 'default-value: p.default-value;',
+                      'ParticleBulk.change-param(ParticleBulk.draft-id, p.key, value)'):
+            self.assertIn(token, settings)
+        controls = source(ROOT / "ui/inspector/controls.slint")
+        self.assertIn('if root.unit == "" && !root.single-value: Text', controls)
+        self.assertIn('minimum-precision: 0;', controls)
+        self.assertIn('t.to-float() / root.unit-scale', controls)
+
     def test_caption_favourites_do_not_stage_or_apply(self):
         self.assertIn("callback toggle-favourite(id: string);", self.caption)
         self.assertIn("callback filter-favourites(on: bool);", self.caption)
