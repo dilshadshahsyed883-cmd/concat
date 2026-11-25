@@ -7,9 +7,8 @@ export struct CBuilderKeywordData {
     keyword: string, available: int, selected: bool, weight: float,
 }
 
-// Stable keyword identity is supplied by the backend's alphabetically ordered
-// VecModel; only this row owns its transient rail value during pointer drag.
-component KeywordRow inherits VerticalLayout {
+// The tile body and percentage chip have separate, non-overlapping hit areas.
+component KeywordTile inherits Rectangle {
     in property <CBuilderKeywordData> entry;
     in property <bool> busy;
     property <float> weight: root.entry.weight;
@@ -18,22 +17,127 @@ component KeywordRow inherits VerticalLayout {
         if (Math.round(root.weight) != Math.round(root.entry.weight)) {
             root.weight = root.entry.weight;
         }
+        if !root.entry.selected { share-popup.close(); }
     }
-    spacing: 2px;
-    HorizontalLayout {
-        spacing: 8px;
-        Check { checked: root.entry.selected; enabled: !root.busy;
-            toggled(on) => { root.changed(on, Math.round(root.weight)); } }
-        Text { text: root.entry.keyword; color: Theme.fg; font-size: Theme.fs;
-            wrap: word-wrap; vertical-alignment: center; horizontal-stretch: 1; }
-        Text { text: Math.round(root.entry.weight) + "%" + (!root.entry.selected && root.entry.weight > 0 ? " saved" : "") + "  ·  " + root.entry.available + " available";
-            color: Theme.fg-muted; font-size: Theme.fs-sm; vertical-alignment: center; }
+    changed busy => { if root.busy { share-popup.close(); } }
+
+    height: 48px;
+    border-radius: Theme.r-sm;
+    background: root.entry.selected ? Theme.accent-soft : body-touch.has-hover ? Theme.field-hover : Theme.field;
+    border-width: 1px;
+    border-color: root.entry.selected ? Theme.accent : Theme.line;
+
+    body-touch := TouchArea {
+        x: 0px; y: 0px;
+        width: root.width - chip.width - 8px;
+        height: root.height;
+        enabled: !root.busy;
+        mouse-cursor: pointer;
+        clicked => { root.changed(!root.entry.selected, Math.round(root.entry.weight)); }
     }
-    Param { label: "Share"; value <=> root.weight; rail: true;
-        minimum: 0; maximum: 100; step: 1; unit: "%"; fmt: ParamFormat.steps;
-        enabled: !root.busy && root.entry.selected;
-        changed(v) => { if root.entry.selected {root.changed(true, Math.round(v));} } }
-    Rectangle { height: 1px; background: Theme.line; }
+    Rectangle {
+        x: 8px; y: 8px;
+        width: 14px; height: 14px;
+        border-radius: 7px;
+        border-width: 1px;
+        border-color: root.entry.selected ? Theme.accent : Theme.line-strong;
+        background: root.entry.selected ? Theme.accent : Colors.transparent;
+        Text {
+            text: root.entry.selected ? "✓" : "";
+            color: Theme.on-accent; font-size: Theme.fs-xs;
+            horizontal-alignment: center; vertical-alignment: center;
+        }
+    }
+    Text {
+        x: 28px; y: 6px;
+        width: Math.max(0px, chip.x - self.x - 5px);
+        height: 18px;
+        text: root.entry.keyword;
+        color: Theme.fg; font-size: Theme.fs; font-weight: Theme.weight-title;
+        overflow: elide; vertical-alignment: center;
+    }
+    Text {
+        x: 28px; y: 25px;
+        width: Math.max(0px, chip.x - self.x - 5px);
+        height: 16px;
+        text: root.entry.available + " available";
+        color: Theme.fg-muted; font-size: Theme.fs-sm;
+        overflow: elide; vertical-alignment: center;
+    }
+    chip := Rectangle {
+        x: root.width - self.width - 8px;
+        y: (root.height - self.height) / 2;
+        width: 76px; height: 26px;
+        border-radius: Theme.r-sm;
+        border-width: 1px;
+        border-color: root.entry.selected ? Theme.accent : Theme.line;
+        background: percent-touch.has-hover ? Theme.field-hover : Theme.well;
+        Text {
+            text: Math.round(root.entry.weight) + "%" + (!root.entry.selected && root.entry.weight > 0 ? " saved" : "");
+            color: root.entry.selected ? Theme.accent : Theme.fg-muted;
+            font-size: Theme.fs-sm; font-weight: Theme.weight-title;
+            horizontal-alignment: center; vertical-alignment: center;
+        }
+        percent-touch := TouchArea {
+            enabled: !root.busy && root.entry.selected;
+            mouse-cursor: pointer;
+            clicked => { root.weight = root.entry.weight; share-popup.show(); }
+        }
+    }
+    share-popup := PopupWindow {
+        x: Math.max(0px, root.width - self.width);
+        y: root.height + 4px;
+        width: 280px;
+        height: 152px;
+        close-policy: close-on-click-outside;
+        Rectangle {
+            background: Theme.raised;
+            border-radius: Theme.r;
+            border-width: 1px;
+            border-color: Theme.accent;
+            VerticalLayout {
+                padding: 10px; spacing: 6px;
+                Text {
+                    text: root.entry.keyword; color: Theme.fg; font-size: Theme.fs-lg;
+                    font-weight: Theme.weight-title; overflow: elide;
+                }
+                Param {
+                    label: "Keyword share"; value <=> root.weight; rail: true;
+                    minimum: 0; maximum: 100; step: 1; unit: "%"; fmt: ParamFormat.steps;
+                    enabled: !root.busy && root.entry.selected;
+                    changed(v) => { if root.entry.selected && !root.busy { root.changed(true, Math.round(v)); } }
+                }
+                Text {
+                    text: "Other selected groups adjust proportionally.";
+                    color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
+                }
+                HorizontalLayout {
+                    Rectangle { horizontal-stretch: 1; }
+                    Button { label: "Done"; primary: true; clicked => { share-popup.close(); } }
+                }
+            }
+        }
+    }
+}
+
+// Keep one stable model repeater; geometry reflows without slicing or copying
+// the model, so keyword callbacks always use the actual row identity.
+component KeywordGrid inherits Rectangle {
+    in property <[CBuilderKeywordData]> entries;
+    in property <bool> busy;
+    callback changed(keyword: string, selected: bool, weight: int);
+    property <int> columns: root.width >= 720px ? 3 : root.width >= 480px ? 2 : 1;
+    property <int> rows: Math.floor((root.entries.length + root.columns - 1) / root.columns);
+    property <length> tile-width: (root.width - (root.columns - 1) * 6px) / root.columns;
+    height: root.rows > 0 ? root.rows * 48px + (root.rows - 1) * 6px : 0px;
+    for entry[index] in root.entries: KeywordTile {
+        x: Math.mod(index, root.columns) * (root.tile-width + 6px);
+        y: Math.floor(index / root.columns) * 54px;
+        width: root.tile-width;
+        entry: entry;
+        busy: root.busy;
+        changed(selected, weight) => { root.changed(entry.keyword, selected, weight); }
+    }
 }
 
 export component CBuilderSelectionPanel inherits VerticalLayout {
@@ -54,7 +158,7 @@ export component CBuilderSelectionPanel inherits VerticalLayout {
     spacing: 8px;
 
     Text { text: "Media Selection"; color: Theme.fg; font-size: Theme.fs-lg; font-weight: Theme.weight-title; }
-    Text { text: "Each enabled keyword shares one 100% budget within Images or Videos. Moving one slider redistributes the rest proportionally. These are sampling probabilities, not fixed shot counts.";
+    Text { text: "Click a tile to select or deselect. Click its percentage to adjust. Each enabled keyword shares one 100% budget within Images or Videos.";
         color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
     Text { text: "Overall Media Ratio · Images " + (100-Math.round(root.ratio-draft)) + "% · Videos " + Math.round(root.ratio-draft) + "%"; color: Theme.fg; font-weight: Theme.weight-title; }
     Param { label: "Video duration"; value <=> root.ratio-draft; rail: true; minimum:0; maximum:100; step:1; unit:"%"; fmt:ParamFormat.steps;
@@ -68,8 +172,8 @@ export component CBuilderSelectionPanel inherits VerticalLayout {
             clicked => { root.equalize(false); } }
     }
     Text { text: root.image-summary; color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
-    for entry in root.images: KeywordRow { entry: entry; busy: root.busy;
-        changed(selected, weight) => { root.changed(false, entry.keyword, selected, weight); } }
+    KeywordGrid { entries: root.images; busy: root.busy;
+        changed(keyword, selected, weight) => { root.changed(false, keyword, selected, weight); } }
     if root.images.length == 0: Text { text: "Import a folder to list image keywords."; color: Theme.fg-muted; wrap: word-wrap; }
     Rectangle { height: 1px; background: Theme.line; }
     HorizontalLayout {
@@ -87,8 +191,8 @@ export component CBuilderSelectionPanel inherits VerticalLayout {
     if root.videos-enabled: Text { text: root.video-summary; color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap; }
     if root.videos-enabled: VerticalLayout {
         spacing: 6px;
-        for entry in root.videos: KeywordRow { entry: entry; busy: root.busy;
-            changed(selected, weight) => { root.changed(true, entry.keyword, selected, weight); } }
+        KeywordGrid { entries: root.videos; busy: root.busy;
+            changed(keyword, selected, weight) => { root.changed(true, keyword, selected, weight); } }
         if root.videos.length == 0: Text { text: "No video keywords are available in this folder."; color: Theme.fg-muted; wrap: word-wrap; }
     }
 }

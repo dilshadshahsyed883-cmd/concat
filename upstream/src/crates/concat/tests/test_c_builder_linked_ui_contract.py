@@ -29,13 +29,33 @@ class CBuilderLinkedUiContracts(unittest.TestCase):
     def test_linked_rails_are_atomically_persisted_for_both_media_types(self):
         self.assertIn("rail: true", self.selection)
         self.assertIn("Each enabled keyword shares one 100% budget", self.selection)
-        self.assertIn("root.changed(false, entry.keyword, selected, weight)", self.selection)
-        self.assertIn("root.changed(true, entry.keyword, selected, weight)", self.selection)
+        self.assertIn("root.changed(false, keyword, selected, weight)", self.selection)
+        self.assertIn("root.changed(true, keyword, selected, weight)", self.selection)
         self.assertIn("root.equalize(false)", self.selection)
         self.assertIn("root.equalize(true)", self.selection)
         self.assertIn("selection.change_keyword(video,keyword,selected", self.studio)
         self.assertIn("selection.normalize()", self.studio)
         self.assertIn("editor.on_cb_equalize_keywords", self.lib)
+
+    def test_compact_tiles_separate_toggle_from_percentage_popup(self):
+        tile = self.selection.split("component KeywordTile", 1)[1].split("component KeywordGrid", 1)[0]
+        body = tile.split("body-touch := TouchArea", 1)[1].split("chip := Rectangle", 1)[0]
+        chip = tile.split("percent-touch := TouchArea", 1)[1].split("share-popup := PopupWindow", 1)[0]
+        self.assertIn("root.changed(!root.entry.selected", body)
+        self.assertNotIn("share-popup.show()", body)
+        self.assertIn("share-popup.show()", chip)
+        self.assertNotIn("root.changed(", chip)
+        self.assertIn("Theme.accent-soft", tile)
+        self.assertIn("root.entry.available", tile)
+        self.assertIn("if !root.entry.selected { share-popup.close(); }", tile)
+        self.assertIn("changed busy", tile)
+        self.assertIn('label: "Done"', tile)
+        self.assertIn("close-on-click-outside", tile)
+        self.assertIn("root.width >= 720px ? 3 : root.width >= 480px ? 2 : 1", self.selection)
+        self.assertIn("for entry[index] in root.entries: KeywordTile", self.selection)
+        self.assertIn("KeywordGrid { entries: root.images", self.selection)
+        self.assertIn("KeywordGrid { entries: root.videos", self.selection)
+        self.assertNotIn("component KeywordRow", self.selection)
 
     def test_overall_ratio_and_unchecked_rails(self):
         self.assertIn("Overall Media Ratio", self.selection)
