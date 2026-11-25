@@ -26,12 +26,12 @@ export component CanvasMotionPanel inherits VerticalLayout {
         clicked => { Keyframes.toggle-physics-favourite(9 + root.preset); }
     }
     Text {
-        text: "Full-frame picture scale • 70% start / 100% peak / 70% end by default";
+        text: "Full-frame picture scale • 90% start / 100% peak / 90% end by default";
         color: Theme.fg-muted; font-size: Theme.fs-sm; wrap: word-wrap;
     }
     Param {
         label: "Start Scale"; value <=> root.settings.start-scale;
-        minimum: 0.4; maximum: 1; step: 0.01; fmt: ParamFormat.fraction;
+        minimum: 0.4; maximum: 1; step: 0.01; default-value: 0.9; fmt: ParamFormat.fraction;
     }
     Param {
         label: "Middle / Peak Scale"; value <=> root.settings.middle-scale;
@@ -39,7 +39,7 @@ export component CanvasMotionPanel inherits VerticalLayout {
     }
     Param {
         label: "End Scale"; value <=> root.settings.end-scale;
-        minimum: 0.4; maximum: 1; step: 0.01; fmt: ParamFormat.fraction;
+        minimum: 0.4; maximum: 1; step: 0.01; default-value: 0.9; fmt: ParamFormat.fraction;
     }
     Param {
         label: "Peak Time Position"; value <=> root.settings.peak-time;
