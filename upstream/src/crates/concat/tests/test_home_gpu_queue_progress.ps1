@@ -3,7 +3,7 @@
 # 1. Byte formatting and progress accuracy in concat_gpu_client.ps1
 # 2. Calculation of actual transferred bytes from chunks (not estimated)
 # 3. Report outputting transferred_bytes, total_bytes, and formatted readout
-# 4. Slint UI definitions for Home GPU Queue button (WideHome & NarrowHome) and GpuQueueDialog
+# 4. Retired Home GPU Queue remains disconnected; offline ZIP dialog stays available
 
 $ErrorActionPreference = "Stop"
 
@@ -13,7 +13,7 @@ $cloudGpuSlint = (Resolve-Path (Join-Path $scriptDir "..\ui\dialogs\cloud-gpu.sl
 $startSlint = (Resolve-Path (Join-Path $scriptDir "..\ui\start.slint")).ProviderPath
 $appSlint = (Resolve-Path (Join-Path $scriptDir "..\ui\app.slint")).ProviderPath
 
-Write-Host "Running Home GPU Queue & Real Upload Progress Regression Tests..."
+Write-Host "Running GPU Queue Retirement & Real Upload Progress Regression Tests..."
 
 # -------------------------------------------------------------------------
 # Test 1: Byte formatting and upload progress format
@@ -83,9 +83,9 @@ if (-not $parsedEvent.message.Contains("12.50 MB / 45.20 MB (27%)")) {
 Write-Host "  [PASS] Report properly emits structured transferred_bytes, total_bytes, and message."
 
 # -------------------------------------------------------------------------
-# Test 3: Slint UI contract verification (Home GPU Queue button & dialog)
+# Test 3: Slint UI retirement and offline ZIP contract verification
 # -------------------------------------------------------------------------
-Write-Host "Test 3: Slint UI Home Queue button and GpuQueueDialog contract..."
+Write-Host "Test 3: Retired Home Queue and supported offline ZIP dialog..."
 
 $cloudGpuContent = [IO.File]::ReadAllText($cloudGpuSlint)
 if (-not $cloudGpuContent.Contains("export component GpuQueueDialog inherits Modal")) {
@@ -102,30 +102,27 @@ if (-not $cloudGpuContent.Contains("export component GpuQueueSection inherits Di
 }
 
 $startContent = [IO.File]::ReadAllText($startSlint)
-if (-not $startContent.Contains("component WideHome inherits Rectangle")) {
-    throw "WideHome missing from start.slint"
+foreach ($component in @("component WideHome inherits Rectangle", "component NarrowHome inherits Rectangle", "export component StartScreen inherits Rectangle")) {
+    if (-not $startContent.Contains($component)) {
+        throw "$component missing from start.slint"
+    }
 }
-if (-not ($startContent -match "WideHome[\s\S]*?open-gpu-queue")) {
-    throw "WideHome missing open-gpu-queue callback or binding"
-}
-if (-not ($startContent -match "NarrowHome[\s\S]*?open-gpu-queue")) {
-    throw "NarrowHome missing open-gpu-queue callback or binding"
-}
-if (-not ($startContent -match "StartScreen[\s\S]*?open-gpu-queue")) {
-    throw "StartScreen missing open-gpu-queue callback or binding"
+# PR #170 intentionally retired the desktop GPU queue launcher and callbacks.
+if ($startContent -match 'open-gpu-queue|label:\s*"GPU Queue"') {
+    throw "Retired Home GPU Queue launcher or callback reintroduced"
 }
 
 $appContent = [IO.File]::ReadAllText($appSlint)
-if (-not $appContent.Contains("GpuQueueDialog")) {
-    throw "GpuQueueDialog missing from app.slint"
+if ($appContent -match 'open-gpu-queue|CloudGpu\.queue-open|\bGpuQueueDialog\s*\{') {
+    throw "Retired desktop GPU Queue dialog or callback reintroduced"
 }
-if (-not ($appContent -match "sheet-open:[\s\S]*?CloudGpu\.queue-open")) {
-    throw "CloudGpu.queue-open not bound to sheet-open in app.slint"
+if ($appContent -notmatch 'OfflineZipDialog\s*\{[\s\S]*?open:\s*CloudGpu\.zip-open\s*;') {
+    throw "Supported offline ZIP dialog or open binding missing"
 }
-if (-not ($appContent -match "open-gpu-queue => \{ CloudGpu\.queue-open = true; \}")) {
-    throw "StartScreen.open-gpu-queue not wired to CloudGpu.queue-open in app.slint"
+if ($appContent -notmatch 'closed\s*=>\s*\{\s*CloudGpu\.zip-open\s*=\s*false\s*;\s*\}') {
+    throw "Offline ZIP close binding missing"
 }
 
-Write-Host "  [PASS] Slint UI components, bindings, and Modal dialog contract verified."
+Write-Host "  [PASS] Retired GPU Queue remains disconnected; offline ZIP dialog and legacy helper contracts verified."
 
-Write-Host "`nAll Home GPU Queue & Real Upload Progress Tests PASS!"
+Write-Host "`nAll GPU Queue Retirement & Real Upload Progress Tests PASS!"
