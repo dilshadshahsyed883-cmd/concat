@@ -180,8 +180,15 @@ class SharedLayoutContractTests(unittest.TestCase):
                 self.assertIn('unit:"%";', compact)
                 self.assertIn("unit-scale:100;", compact)
         self.assertNotIn("property <float> content-zoom", layout)
-        self.assertIn("property <float> scale: 1;", layout)
-        self.assertIn("property <float> position-y: 0;", layout)
+        self.assertIn("property <float> scale: 1.2;", layout)
+        self.assertIn("property <float> position-y: 0.09;", layout)
+        self.assertIn("property <float> position-x: 0;", layout)
+        for label, default in (("Video Zoom", "1.2"), ("Content X", "0"), ("Content Y", "0.09")):
+            row = next(line for line in layout.splitlines() if f'label:"{label}"' in line)
+            self.assertIn(f"default-value:{default};", row)
+        self.assertIn("scale = selected.scale; position-x = selected.offset-x; position-y = selected.offset-y;", layout)
+        self.assertIn("Keyframes.animation-scope == 1,1,0,0,Adjustment.rotation", layout)
+
 
     def test_stable_canvas_and_particle_target_scopes(self):
         self.assertIn("CanvasPresets.apply(CanvasPresets.profile, false, root.images, root.videos);", self.canvas)
