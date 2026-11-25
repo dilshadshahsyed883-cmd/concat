@@ -8599,7 +8599,7 @@ impl Studio {
             .filter(|clip| !self.locked(&clip.track_id))
             .collect();
         #[allow(clippy::collapsible_if)]
-        if sources.is_empty() {
+        if sources.is_empty() && self.selection.is_empty() {
             if let Some(id) = self.menu_target.clone() {
                 if let Some(clip) = self.clip(&id).cloned() {
                     if !self.locked(&clip.track_id) {
@@ -12840,7 +12840,10 @@ impl Studio {
             "ripple-delete" => self.ripple_delete_selected(),
             // Copy takes the whole selection; see `copy_clips`.
             "copy" => self.copy_clips(None),
-            "duplicate" | "mute" => {
+            "duplicate" => {
+                if !self.selection.is_empty() { self.duplicate_selected(); }
+            }
+            "mute" => {
                 if let Some(id) = self.sole_selection() {
                     self.clip_action(&id, action);
                 }
