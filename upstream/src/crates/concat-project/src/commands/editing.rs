@@ -59,6 +59,20 @@ fn scope(project: &Project, tracks: &[String], locked: &[String]) -> Result<(), 
     }
     Ok(())
 }
+fn gap_link_parents(clip: &Clip) -> impl Iterator<Item = &str> {
+    [
+        clip.detached_from.as_deref(),
+        clip.extra
+            .get("gpuCaptionSource")
+            .and_then(serde_json::Value::as_str),
+        clip.extra
+            .get("canvasOwner")
+            .and_then(serde_json::Value::as_str),
+    ]
+    .into_iter()
+    .flatten()
+}
+
 fn links(project: &Project, tracks: &[String], from: f64) -> Result<(), CommandError> {
     let timeline = project.active();
     for clip in &timeline.clips {
@@ -373,8 +387,6 @@ pub(super) fn apply(
             at,
         } => {
             scope(&staged, std::slice::from_ref(&track_id), &locked_tracks)?;
-            // Gap closing is a visual lane operation. Linked audio needs an explicit multi-track edit.
-            links(&staged, std::slice::from_ref(&track_id), 0.0)?;
             let mut ordered: Vec<_> = staged
                 .active()
                 .clips
@@ -401,6 +413,79 @@ pub(super) fn apply(
                         start: pair[1].start - shift,
                     });
                 }
+            }
+            // Only clips that actually move can affect linked companions.
+            // Expand source moves by their exact delta, not by whole track.
+            let timeline = staged.active();
+            let mut deltas: std::collections::HashMap<String, f64> = commands
+                .iter()
+                .map(|m| {
+                    (
+                        m.clip_id.clone(),
+                        m.start - timeline.clip(&m.clip_id).unwrap().start,
+                    )
+                })
+                .collect();
+            loop {
+                let mut added = false;
+                for clip in &timeline.clips {
+                    for parent_id in gap_link_parents(clip) {
+                        if let Some(&delta) = deltas.get(parent_id) {
+                            if let Some(&existing) = deltas.get(&clip.id) {
+                                if (existing - delta).abs() > 1e-6 {
+                                    return Err(refused(
+                                        "Linked clips require different gap shifts",
+                                    ));
+                                }
+                            } else {
+                                deltas.insert(clip.id.clone(), delta);
+                                commands.push(ClipMove {
+                                    clip_id: clip.id.clone(),
+                                    track_id: clip.track_id.clone(),
+                                    start: clip.start + delta,
+                                });
+                                added = true;
+                            }
+                        }
+                    }
+                }
+                if !added {
+                    break;
+                }
+            }
+            // A companion selected as part of the primary lane must not
+            // move independently of a stationary source.
+            for clip in &timeline.clips {
+                let delta = deltas.get(&clip.id).copied().unwrap_or(0.0);
+                for parent_id in gap_link_parents(clip) {
+                    if timeline.clip(parent_id).is_some()
+                        && (delta - deltas.get(parent_id).copied().unwrap_or(0.0)).abs() > 1e-6
+                    {
+                        return Err(refused("Gap close would desynchronize linked clips"));
+                    }
+                }
+            }
+            for wanted in &commands {
+                if locked_tracks.contains(&wanted.track_id) {
+                    return Err(refused("A linked gap-close track is locked"));
+                }
+                if wanted.start < 0.0 || timeline.track(&wanted.track_id).is_none() {
+                    return Err(refused("Invalid linked gap-close destination"));
+                }
+            }
+            // Generic drag placement may choose a nearby free position.
+            // Gap close must land at the exact planned positions or fail.
+            let resolved = timeline
+                .resolve_moves(&commands)
+                .ok_or_else(|| refused("Gap close would overlap a clip"))?;
+            if resolved.len() != commands.len()
+                || resolved.iter().zip(&commands).any(|(actual, wanted)| {
+                    actual.clip_id != wanted.clip_id
+                        || actual.track_id != wanted.track_id
+                        || (actual.start - wanted.start).abs() > 1e-6
+                })
+            {
+                return Err(refused("Gap close would overlap a linked track"));
             }
             super::apply(&mut staged, mint, Command::MoveClips { moves: commands })?
         }
@@ -887,6 +972,137 @@ mod safety_tests {
         assert_eq!(vt.source_start, 4.0);
         assert_eq!(at.source_start, 4.0);
     }
+    fn linked_gap_fixture() -> Project {
+        let mut p = Project::new();
+        for (id, track, kind, start, duration, link) in [
+            ("first", "T1", ClipKind::Video, 0.0, 5.0, None),
+            ("second", "T1", ClipKind::Image, 7.0, 3.0, None),
+            ("third", "T1", ClipKind::Video, 12.0, 2.0, None),
+            (
+                "frame1",
+                "T2",
+                ClipKind::Layer,
+                0.0,
+                5.0,
+                Some(("canvasOwner", "first")),
+            ),
+            (
+                "frame2",
+                "T2",
+                ClipKind::Layer,
+                7.0,
+                3.0,
+                Some(("canvasOwner", "second")),
+            ),
+            (
+                "caption",
+                "T3",
+                ClipKind::Text,
+                8.0,
+                1.0,
+                Some(("gpuCaptionSource", "second")),
+            ),
+            ("narration", "T4", ClipKind::Audio, 0.0, 15.0, None),
+        ] {
+            let mut clip = Clip::blank(id, track, kind, id, start, duration);
+            if let Some((key, owner)) = link {
+                clip.extra
+                    .insert(key.into(), serde_json::Value::String(owner.into()));
+            }
+            p.active_mut().clips.push(Arc::new(clip));
+        }
+        p
+    }
+
+    #[test]
+    fn gap_close_moves_only_affected_canvas_and_caption_links() {
+        for at in [None, Some(6.0)] {
+            let mut p = linked_gap_fixture();
+            let mut mint = IdMint::default();
+            mint.adopt_project(&p);
+            apply(
+                &mut p,
+                &mut mint,
+                Command::CloseTrackGaps {
+                    track_id: "T1".into(),
+                    locked_tracks: vec!["T4".into()],
+                    at,
+                },
+            )
+            .unwrap();
+            let timeline = p.active();
+            for (id, start) in [
+                ("first", 0.0),
+                ("frame1", 0.0),
+                ("second", 5.0),
+                ("frame2", 5.0),
+                ("caption", 6.0),
+                ("third", if at.is_none() { 8.0 } else { 10.0 }),
+                ("narration", 0.0),
+            ] {
+                assert_eq!(timeline.clip(id).unwrap().start, start, "{id}");
+            }
+        }
+    }
+
+    #[test]
+    fn stationary_canvas_on_locked_track_does_not_block_gap_close() {
+        let mut p = linked_gap_fixture();
+        p.active_mut()
+            .clips
+            .retain(|c| c.id != "frame2" && c.id != "caption");
+        let mut mint = IdMint::default();
+        mint.adopt_project(&p);
+        apply(
+            &mut p,
+            &mut mint,
+            Command::CloseTrackGaps {
+                track_id: "T1".into(),
+                locked_tracks: vec!["T2".into()],
+                at: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(p.active().clip("frame1").unwrap().start, 0.0);
+        assert_eq!(p.active().clip("second").unwrap().start, 5.0);
+        assert_eq!(p.active().clip("third").unwrap().start, 8.0);
+    }
+
+    #[test]
+    fn gap_close_with_locked_or_obstructed_companion_is_atomic() {
+        for locked in [true, false] {
+            let mut p = linked_gap_fixture();
+            if !locked {
+                p.active_mut().clips.push(Arc::new(Clip::blank(
+                    "obstacle",
+                    "T2",
+                    ClipKind::Layer,
+                    "obstacle",
+                    5.0,
+                    2.0,
+                )));
+            }
+            let before = p.clone();
+            let mut mint = IdMint::default();
+            mint.adopt_project(&p);
+            assert!(apply(
+                &mut p,
+                &mut mint,
+                Command::CloseTrackGaps {
+                    track_id: "T1".into(),
+                    locked_tracks: if locked {
+                        vec!["T2".into()]
+                    } else {
+                        vec![]
+                    },
+                    at: None,
+                },
+            )
+            .is_err());
+            assert_eq!(p.active().clips, before.active().clips);
+        }
+    }
+
     #[test]
     fn selected_gap_and_many_clips_are_non_destructive() {
         let mut p = Project::new();
