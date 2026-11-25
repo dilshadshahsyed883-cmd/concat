@@ -165,6 +165,24 @@ class SharedLayoutContractTests(unittest.TestCase):
         self.assertIn("model::upsert_effect(&mut effects,entry)", studio)
         self.assertIn("model::upsert_effect(&mut flat.effects, draft)", studio)
 
+    def test_content_crop_uses_transform_percentage_units_and_shared_values(self):
+        layout = source(UI / "media-layout.slint")
+        for transform, crop, shared in (
+            ("Scale", "Video Zoom", "scale"),
+            ("Position X", "Content X", "position-x"),
+            ("Position Y", "Content Y", "position-y"),
+        ):
+            for label in (transform, crop):
+                row = next(line for line in layout.splitlines()
+                           if f'label:"{label.replace(" ", "")}"' in line.replace(" ", ""))
+                compact = row.replace(" ", "")
+                self.assertIn(f"value<=>Adjustment.{shared};", compact)
+                self.assertIn('unit:"%";', compact)
+                self.assertIn("unit-scale:100;", compact)
+        self.assertNotIn("property <float> content-zoom", layout)
+        self.assertIn("property <float> scale: 1;", layout)
+        self.assertIn("property <float> position-y: 0;", layout)
+
     def test_stable_canvas_and_particle_target_scopes(self):
         self.assertIn("CanvasPresets.apply(CanvasPresets.profile, false, root.images, root.videos);", self.canvas)
         self.assertIn("CanvasPresets.apply(CanvasPresets.profile, true, root.images, root.videos);", self.canvas)
