@@ -102,6 +102,16 @@ class CBuilderLinkedUiContracts(unittest.TestCase):
         self.assertIn('" saved"', self.selection)
         self.assertIn("enabled: !root.busy && root.entry.selected", self.selection)
 
+    def test_generation_does_not_publish_detailed_plan_preview(self):
+        preview = self.lib.split("editor.on_cb_plan_profile(", 1)[1].split("editor.on_cb_generate_project(", 1)[0]
+        generate = self.lib.split("editor.on_cb_generate_project(", 1)[1].split("// ── the bin", 1)[0]
+        self.assertIn("studio.c_builder.preview=summary", preview)
+        self.assertIn("studio.c_builder.preview_shots=shots", preview)
+        self.assertLess(generate.index("studio.c_builder.preview.clear()"), generate.index("host::spawn("))
+        self.assertLess(generate.index("studio.c_builder.preview_shots.clear()"), generate.index("host::spawn("))
+        self.assertNotIn("studio.c_builder.preview=", generate)
+        self.assertIn("studio.builder_archive_finished(pending,finish)", generate)
+
     def test_legacy_and_generation_paths_use_canonical_shares(self):
         self.assertIn("if let Some(selection)=profile.media_selection.as_mut(){selection.normalize();}", self.lib)
         self.assertIn("profile.media_selection.get_or_insert_with(Default::default).normalize();", self.lib)
