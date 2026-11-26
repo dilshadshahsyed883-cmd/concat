@@ -15,7 +15,7 @@ export struct ConfirmData {
     message: string,
     /// The button that goes ahead, in the danger tone: "Delete".
     action: string,
-    // Empty for existing confirmations; destructive Home deletion requires typing.
+    // Optional typed confirmation; empty for ordinary Yes/Cancel dialogs.
     required-name: string,
 }
 

@@ -2663,10 +2663,10 @@ impl Studio {
                 open: true,
                 title: "Delete Project from disk".into(),
                 message: format!(
-                    "Project: {name}\\nFolder: {resolved_path}\\n\\nMove this entire folder to the Windows Recycle Bin? Original media outside this folder will be left alone. Type the exact project name below to confirm. Remove from Recent is a separate, list-only action."
+                    "Project: {name}\\nFolder: {resolved_path}\\n\\nMove this entire folder to the Windows Recycle Bin? Original media outside this folder will be left alone."
                 ).replace("\\n", "\n").into(),
-                action: "Move to Recycle Bin".into(),
-                required_name: name.as_str().into(),
+                action: "Yes".into(),
+                required_name: "".into(),
             },
         }
     }

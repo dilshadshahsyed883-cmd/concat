@@ -59,15 +59,21 @@ class HomeProjectManagement(unittest.TestCase):
         self.assertIn("root.width - 2 * root.inset - 103px", card)
         self.assertIn("root.width - 94px", card)
 
-    def test_typed_name_and_resolved_path_required_before_recycle(self):
-        self.assertIn("required-name: string,", CONFIRM)
-        self.assertIn("root.typed-name == root.data.required-name", CONFIRM)
-        self.assertIn("enabled: root.authorized;", CONFIRM)
+    def test_yes_cancel_and_resolved_path_before_recycle(self):
+        self.assertIn('root.data.required-name == "" || root.typed-name == root.data.required-name', CONFIRM)
+        self.assertIn('if root.data.required-name != ""', CONFIRM)
+        self.assertIn('label: I18n.t("common.cancel")', CONFIRM)
         self.assertIn("if (root.authorized) { root.confirmed(); }", CONFIRM)
         self.assertIn("resolved_path: target.path.to_string_lossy()", PANE)
-        self.assertIn('title: "Delete Project from disk"', STUDIO)
-        self.assertIn('required_name: name.as_str().into()', STUDIO)
+        dialog = STUDIO.split("Confirm::DeleteRecent { name, resolved_path, .. } =>", 1)[1].split("pub fn row_track", 1)[0]
+        self.assertIn('title: "Delete Project from disk"', dialog)
+        self.assertIn('action: "Yes".into()', dialog)
+        self.assertIn('required_name: "".into()', dialog)
+        self.assertIn("Windows Recycle Bin?", dialog)
+        self.assertIn("{resolved_path}", dialog)
+        self.assertNotIn("Type the exact project name", dialog)
         self.assertIn('concat_host::project_delete::recycle(', STUDIO)
+        self.assertIn("let target = prepare(config, selected_path, expected_name, active_path)?;", BACKEND)
 
     def test_delete_vs_remove_is_not_an_alias(self):
         self.assertIn("projects::forget(&studio.host.dirs.config, &path)", PANE)
