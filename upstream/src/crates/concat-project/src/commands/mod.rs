@@ -1291,13 +1291,13 @@ pub fn apply(
 }
 
 // Only these commands leave clip identities, placement, source timing,
-// transition links and Canvas ownership unchanged. Keep structural and mixed
+// transition adjacency and Canvas ownership unchanged. Keep structural and mixed
 // batches on the original per-command reconciliation path.
 fn is_visual_property_edit(command: &Command) -> bool {
     match command {
-        Command::UpdateClip { patch, .. } =>
-            patch.transition_in.is_none() && patch.random_transition_signature.is_none(),
-        Command::ApplyGeneratedMotion { .. }
+        // A transition parameter patch does not move the cut or its neighbor.
+        Command::UpdateClip { .. }
+        | Command::ApplyGeneratedMotion { .. }
         | Command::ClearGeneratedMotion { .. }
         | Command::SetClipTransform { .. }
         | Command::FrameClip { .. } => true,
@@ -1457,7 +1457,7 @@ mod bulk_property_reconciliation_tests {
         let mut before = Project::new();
         for i in 0..4 {
             let mut clip = Clip::blank(
-                &format!("c{i}"), "T1", ClipKind::Image, "image",
+                format!("c{i}"), "T1", ClipKind::Image, "image",
                 f64::from(i) * 3.0, 3.0,
             );
             // Exercise the reconciliation boundary even without a Canvas preset.
