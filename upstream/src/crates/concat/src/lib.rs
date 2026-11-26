@@ -1260,13 +1260,16 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             let cache_path = studio.host.dirs.data.join("c-builder-media-cache.json");
             let library=std::path::PathBuf::from(studio.c_builder.folder.clone());
             let cancel=std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));studio.cb_generation_cancel=Some(cancel.clone());
+            // The full shot list belongs to Preview Plan / Reroll only.
+            studio.c_builder.preview.clear();
+            studio.c_builder.preview_shots.clear();
             studio.c_builder.scanning = true;
             studio.c_builder.status = "Planning and verifying native Concat timeline...".into();
             host::spawn(
                 move || {
                     if cancel.load(std::sync::atomic::Ordering::Relaxed){return Err("Generation cancelled before saving any project".into());}
                     std::fs::create_dir_all(&output).map_err(|e|format!("Could not create output folder: {e}"))?;
-                    let (shots, summary) = c_builder::plan_profile(&assets, duration, &image_weights,
+                    let (shots, _) = c_builder::plan_profile(&assets, duration, &image_weights,
                         &video_weights, &profile)?;
                     let folder = c_builder::write_native_with_profile(&shots, &audio, duration, &output,
                         &project_name, Some(&profile))?;
@@ -1278,11 +1281,11 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                     let sources=used.into_iter().map(std::path::PathBuf::from).collect::<Vec<_>>();
                     let pending=crate::studio::c_builder_home::PendingUsed{library,project:folder,sources,cache:cache_path};
                     let finish=c_builder_used::finish(&pending.library,&pending.project,&pending.sources,&pending.cache,&cancel);
-                    Ok::<_, String>((pending,finish,summary))
+                    Ok::<_, String>((pending,finish))
                 },
                 |studio, _, _, result| {
                     match result {
-                        Ok((pending,finish,summary))=>{studio.builder_archive_finished(pending,finish); studio.c_builder.preview=summary;},
+                        Ok((pending,finish))=>studio.builder_archive_finished(pending,finish),
                         Err(error)=>{studio.c_builder.scanning=false;studio.cb_generation_cancel=None;studio.c_builder.status=format!("Generation failed: {error}");studio.notify(&error,true);}
                     }
                 },
