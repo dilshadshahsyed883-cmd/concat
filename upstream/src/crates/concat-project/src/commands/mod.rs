@@ -1290,11 +1290,30 @@ pub fn apply(
     } else { apply_inner(project,mint,command) }
 }
 
+// Only these commands leave clip identities, placement, source timing,
+// transition links and Canvas ownership unchanged. Keep structural and mixed
+// batches on the original per-command reconciliation path.
+fn is_visual_property_edit(command: &Command) -> bool {
+    match command {
+        Command::UpdateClip { patch, .. } =>
+            patch.transition_in.is_none() && patch.random_transition_signature.is_none(),
+        Command::ApplyGeneratedMotion { .. }
+        | Command::ClearGeneratedMotion { .. }
+        | Command::SetClipTransform { .. }
+        | Command::FrameClip { .. } => true,
+        _ => false,
+    }
+}
+
 // Carry locks into automatic lane choice; all other indirect changes are
 // checked against the original locked-lane snapshot by the outer wrapper.
 fn apply_with_track_locks(project: &mut Project, mint: &mut IdMint, command: Command, locked: &[String]) -> Result<Outcome, CommandError> {
     match command {
         Command::Batch { commands } => {
+            if commands.iter().all(is_visual_property_edit) {
+                // The outer lock wrapper still verifies every protected lane.
+                return apply(project, mint, Command::Batch { commands });
+            }
             let mut outcome = Outcome::default();
             for command in commands {
                 let next = apply_with_track_locks(project, mint, command, locked)?;
@@ -1323,8 +1342,17 @@ fn apply_inner(project: &mut Project, mint: &mut IdMint, command: Command) -> Re
             let mut staged = project.clone();
             let mut created = None;
             let mut applied = false;
+            // Property-only edits cannot change relationships. Reconcile once
+            // at the surrounding apply boundary instead of cloning and scanning
+            // the entire project for every clip. Structural/mixed edits retain
+            // their original per-command semantics and rollback.
+            let property_only = commands.iter().all(is_visual_property_edit);
             for command in commands {
-                let outcome = apply(&mut staged, mint, command)?;
+                let outcome = if property_only {
+                    apply_inner(&mut staged, mint, command)?
+                } else {
+                    apply(&mut staged, mint, command)?
+                };
                 if outcome.created_id.is_some() {
                     created = outcome.created_id;
                 }
@@ -1417,5 +1445,45 @@ fn apply_inner(project: &mut Project, mint: &mut IdMint, command: Command) -> Re
         | Command::RenameTimeline { .. }
         | Command::SelectTimeline { .. }
         | Command::MoveTimeline { .. }) => timelines::apply(project, mint, command),
+    }
+}
+
+#[cfg(test)]
+mod bulk_property_reconciliation_tests {
+    use super::*;
+
+    #[test]
+    fn property_batch_matches_sequential_reconciliation_and_rejects_invalid_patch() {
+        let mut before = Project::new();
+        for i in 0..4 {
+            let mut clip = Clip::blank(
+                &format!("c{i}"), "T1", ClipKind::Image, "image",
+                f64::from(i) * 3.0, 3.0,
+            );
+            // Exercise the reconciliation boundary even without a Canvas preset.
+            if i == 0 { clip.detached_from = Some("missing-parent".into()); }
+            before.active_mut().clips.push(Arc::new(clip));
+        }
+        let commands: Vec<_> = (0..4).map(|i| Command::UpdateClip {
+            clip_id: format!("c{i}"),
+            patch: ClipPatch { opacity: Some(0.5), ..Default::default() },
+        }).collect();
+        let mut sequential = before.clone();
+        let mut batch = before;
+        let mut mint = IdMint::default();
+        for command in commands.clone() {
+            apply(&mut sequential, &mut mint, command).unwrap();
+        }
+        apply(&mut batch, &mut mint, Command::Batch { commands: commands.clone() }).unwrap();
+        assert_eq!(sequential.active().clips, batch.active().clips);
+
+        let snapshot = batch.clone();
+        let mut invalid = commands;
+        invalid.push(Command::UpdateClip {
+            clip_id: "c0".into(),
+            patch: ClipPatch { opacity: Some(f64::NAN), ..Default::default() },
+        });
+        assert!(apply(&mut batch, &mut mint, Command::Batch { commands: invalid }).is_err());
+        assert_eq!(snapshot.active().clips, batch.active().clips);
     }
 }
