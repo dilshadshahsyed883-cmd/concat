@@ -831,10 +831,19 @@ pub(crate) fn reconcile_companions(before: &Project, after: &mut Project) {
         // The saved restoration snapshot supplies source data on reapply too.
         // Advance its source identity when the owner is replaced/reversed, while
         // keeping the pre-preset authored styling intact.
-        for owner in Arc::make_mut(timeline).clips_where(|c| !c.extra.contains_key("canvasOwner")) {
-            let changed = old.clip(&owner.id).is_some_and(|previous|
-                previous.media_id != owner.media_id || previous.kind != owner.kind);
-            if !changed { continue; }
+        // Index the old timeline once and copy only owners whose source
+        // actually changed. Copying every owner also copies its motion keys,
+        // filters and metadata, even for a single opacity/background edit.
+        let mut old_by_id: HashMap<&str, &Clip> = HashMap::with_capacity(old.clips.len());
+        for clip in &old.clips {
+            old_by_id.entry(clip.id.as_str()).or_insert(clip.as_ref());
+        }
+        for owner in Arc::make_mut(timeline).clips_where(|c| {
+            !c.extra.contains_key("canvasOwner")
+                && c.extra.contains_key("canvasOriginal")
+                && old_by_id.get(c.id.as_str()).is_some_and(|previous|
+                    previous.media_id != c.media_id || previous.kind != c.kind)
+        }) {
             let Some(saved) = owner.extra.get("canvasOriginal").cloned() else { continue; };
             let Ok(mut base) = serde_json::from_value::<Clip>(saved) else { continue; };
             base.media_id = owner.media_id.clone();
@@ -853,11 +862,11 @@ pub(crate) fn reconcile_companions(before: &Project, after: &mut Project) {
         let timeline = Arc::make_mut(timeline);
         timeline.clips.retain(|piece| {
             let Some(owner) = piece.extra.get("canvasOwner").and_then(Value::as_str) else { return true; };
-            !(old.clip(owner).is_some() && !owners.contains_key(owner))
+            !(old_by_id.contains_key(owner) && !owners.contains_key(owner))
         });
         for piece in &mut timeline.clips {
             let Some(owner_id) = piece.extra.get("canvasOwner").and_then(Value::as_str) else { continue; };
-            let (Some(owner),Some(previous)) = (owners.get(owner_id),old.clip(owner_id)) else { continue; };
+            let (Some(owner),Some(previous)) = (owners.get(owner_id),old_by_id.get(owner_id).copied()) else { continue; };
             let source_changed = owner.media_id != previous.media_id || owner.kind != previous.kind;
             let owner_changed = source_changed || owner.start != previous.start || owner.duration != previous.duration
                 || owner.source_start != previous.source_start || owner.speed != previous.speed
@@ -1648,6 +1657,14 @@ mod tests {
         m.adopt_project(&p);
         (p, m)
     }
+    #[test]
+    fn reconciliation_preserves_unchanged_owner_arc() {
+        let (before, _) = fixture();
+        let mut after = before.clone();
+        reconcile_companions(&before, &mut after);
+        assert!(Arc::ptr_eq(&before.active().clips[0], &after.active().clips[0]));
+    }
+
     #[test]
     fn replacement_updates_source_layers_and_baseline_but_preserves_custom_media() {
         for custom in [false, true] {
