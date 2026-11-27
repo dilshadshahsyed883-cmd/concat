@@ -621,6 +621,7 @@ pub struct DropPlan {
 pub struct Models {
     pub cb_image_keywords: Rc<VecModel<crate::ui::CBuilderKeywordData>>,
     pub cb_video_keywords: Rc<VecModel<crate::ui::CBuilderKeywordData>>,
+    pub cb_intro_keywords:Rc<VecModel<crate::ui::CBuilderKeywordData>>,
     pub tabs: Rc<VecModel<TimelineTabData>>,
     pub tracks: Rc<VecModel<TrackData>>,
     pub clips: Rc<VecModel<ClipData>>,
@@ -717,6 +718,7 @@ impl Models {
         Self {
             cb_image_keywords: Rc::new(VecModel::default()),
             cb_video_keywords: Rc::new(VecModel::default()),
+            cb_intro_keywords:Rc::new(VecModel::default()),
             tabs: Rc::new(VecModel::default()),
             tracks: Rc::new(VecModel::default()),
             clips: Rc::new(VecModel::default()),
@@ -2361,6 +2363,7 @@ impl Studio {
             .filter(|value| value.is_finite() && (0.0..=1.0).contains(value))
             .or(Some(0.7));
         let cb_saved_folder=prefs.c_builder_media_folder.clone().unwrap_or_default();
+        let cb_saved_intro_folder=prefs.c_builder_intro_folder.clone().unwrap_or_default();
         let cb_saved_planning=serde_json::to_string_pretty(&crate::c_builder::load_planning_settings(&host.dirs.config)).unwrap_or_default();
         let mut studio = Self {
             prefs,
@@ -2382,6 +2385,7 @@ impl Studio {
             cb_home:false, cb_generated_project:String::new(), cb_output_folder,
             c_builder: crate::c_builder::State {
                 folder: cb_saved_folder,
+                intro_folder:cb_saved_intro_folder,
                 profile_json: cb_saved_planning,
                 ..Default::default()
             },
@@ -9481,6 +9485,11 @@ impl Studio {
         app.global::<crate::ui::CanvasPresets>()
             .set_favourites(ModelRc::new(VecModel::from(canvas_stars)));
         editor.set_cb_media_folder(self.c_builder.folder.clone().into());
+        editor.set_cb_intro_folder(self.c_builder.intro_folder.clone().into());
+        editor.set_cb_intro_count(self.c_builder.intro_assets.len().min(i32::MAX as usize) as i32);
+        editor.set_cb_intro_summary(self.c_builder.intro_summary.clone().into());
+        editor.set_cb_intro_probed(self.c_builder.intro_probed.min(i32::MAX as usize) as i32);
+        editor.set_cb_intro_reused(self.c_builder.intro_reused.min(i32::MAX as usize) as i32);
         editor.set_cb_narration(self.c_builder.narration.clone().into());
         editor.set_cb_duration(self.c_builder.duration.unwrap_or_default() as f32);
         editor.set_cb_status(self.c_builder.status.clone().into());
@@ -9514,6 +9523,10 @@ impl Studio {
         let(videos,video_summary)=self.c_builder_keyword_rows(true,&selection_profile);
         sync(&models.cb_image_keywords, images);
         sync(&models.cb_video_keywords, videos);
+        let(intro,intro_summary)=self.c_builder_intro_rows(&selection_profile);
+        sync(&models.cb_intro_keywords,intro);
+        editor.set_cb_intro_keywords(models.cb_intro_keywords.clone().into());
+        editor.set_cb_intro_selection_summary(intro_summary.into());
         editor.set_cb_image_keywords(models.cb_image_keywords.clone().into());
         editor.set_cb_video_keywords(models.cb_video_keywords.clone().into());
         editor.set_cb_image_selection_summary(image_summary.into());editor.set_cb_video_selection_summary(video_summary.into());
@@ -12241,6 +12254,36 @@ impl Studio {
         self.c_builder.profile_json=serde_json::to_string_pretty(&profile).unwrap_or_default();
         self.c_builder.preview.clear();self.c_builder.preview_shots.clear();
         self.apply_within("c-builder-media-selection",Command::SetPlanningProfile {profile:serde_json::to_value(profile).unwrap_or_default()});
+    }
+    pub fn set_c_builder_intro_keyword(&mut self,json:&str,keyword:&str,selected:bool,weight:i32){
+        if self.c_builder.scanning{return;}
+        if !self.c_builder.intro_assets.iter().any(|a|a.keyword==keyword){self.notify("Intro keyword is no longer available; refresh the intro library",true);return;}
+        let mut profile=match self.c_builder_profile(json){Ok(p)=>p,Err(e)=>{self.notify(&e,true);return;}};
+        profile.intro_selection.get_or_insert_with(Default::default).change_keyword(true,keyword,selected,weight.clamp(0,100) as u32);
+        if !selected{self.c_builder.remembered_intro_weights.remove(keyword);}
+        self.c_builder.profile_json=serde_json::to_string_pretty(&profile).unwrap_or_default();
+        self.c_builder.preview.clear();self.c_builder.preview_shots.clear();
+        self.apply_within("c-builder-media-selection",Command::SetPlanningProfile{profile:serde_json::to_value(profile).unwrap_or_default()});
+    }
+    pub fn equalize_c_builder_intro(&mut self,json:&str){
+        if self.c_builder.scanning{return;}
+        let mut profile=match self.c_builder_profile(json){Ok(p)=>p,Err(e)=>{self.notify(&e,true);return;}};
+        profile.intro_selection.get_or_insert_with(Default::default).equalize(true);
+        self.c_builder.profile_json=serde_json::to_string_pretty(&profile).unwrap_or_default();
+        self.c_builder.preview.clear();self.c_builder.preview_shots.clear();
+        self.apply_within("c-builder-media-selection",Command::SetPlanningProfile{profile:serde_json::to_value(profile).unwrap_or_default()});
+    }
+    fn c_builder_intro_rows(&self,profile:&concat_project::planning::Profile)->(Vec<crate::ui::CBuilderKeywordData>,String){
+        let mut groups=std::collections::BTreeMap::<&str,usize>::new();
+        for a in &self.c_builder.intro_assets{*groups.entry(&a.keyword).or_default()+=1;}
+        let mut selection=profile.intro_selection.clone().unwrap_or_default();selection.normalize();
+        let rows:Vec<_>=groups.into_iter().map(|(keyword,available)|{
+            let selected=selection.videos.get(keyword);
+            crate::ui::CBuilderKeywordData{keyword:keyword.into(),available:available.min(i32::MAX as usize) as i32,selected:selected.is_some_and(|s|s.selected),weight:selected.filter(|s|s.selected).map_or_else(||self.c_builder.remembered_intro_weights.get(keyword).copied().unwrap_or(0) as f32,|s|s.weight as f32)}
+        }).collect();
+        let count=rows.iter().filter(|r|r.selected&&r.weight>0.).count();
+        let total:u32=rows.iter().filter(|r|r.selected&&r.weight>0.).map(|r|r.weight as u32).sum();
+        (rows,format!("{count} active intro groups · {total}% allocated"))
     }
     pub fn set_c_builder_videos_enabled(&mut self,json:&str,on:bool) {
         if self.c_builder.scanning{return;}

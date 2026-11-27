@@ -35,6 +35,7 @@ pub struct PendingUsed {
     pub project:std::path::PathBuf,
     pub sources:Vec<std::path::PathBuf>,
     pub cache:std::path::PathBuf,
+    pub intro:Option<(std::path::PathBuf,Vec<std::path::PathBuf>,std::path::PathBuf)>,
 }
 impl Studio {
     pub fn builder_cancel_generation(&mut self) {
@@ -54,10 +55,12 @@ impl Studio {
             Err(error) => self.notify(&format!("Project saved; recent history update failed: {error}"), true),
         }
         self.refresh_home_projects();
+        if let Some(scan)=finish.intro_refresh {self.c_builder.intro_folder=scan.root.to_string_lossy().into_owned();self.c_builder.intro_summary=scan.keywords();self.c_builder.intro_probed=scan.probed;self.c_builder.intro_reused=scan.reused;self.c_builder.intro_assets=scan.assets;}
         match finish.result {
             Ok(report)=>{
                 let used:std::collections::HashSet<_>=pending.sources.iter().map(|p|p.to_string_lossy().into_owned()).collect();
                 self.c_builder.assets.retain(|a|!used.contains(&a.path));
+                if let Some((_,sources,_))=&pending.intro{let used:std::collections::HashSet<_>=sources.iter().map(|p|p.to_string_lossy().into_owned()).collect();self.c_builder.intro_assets.retain(|a|!used.contains(&a.path));}
                 if let Some(scan)=finish.refresh {
                     self.c_builder.folder=scan.root.to_string_lossy().into_owned();self.c_builder.keyword_summary=scan.keywords();
                     self.c_builder.assets=scan.assets;self.c_builder.probed=scan.probed;self.c_builder.reused=scan.reused;self.c_builder.removed=scan.removed;
@@ -74,7 +77,7 @@ impl Studio {
             Err(error)=>{
                 let cancelled=error.to_ascii_lowercase().contains("cancelled");
                 self.c_builder.status=format!("Project retained at {}. Used-media completion is not confirmed; {} cached media entries; {} sources require retry or recovery. {error}",pending.project.display(),self.c_builder.assets.len(),pending.sources.len());
-                self.cb_pending_used=if cancelled{None}else{Some(pending)};
+                self.cb_pending_used=if cancelled && pending.intro.is_none(){None}else{Some(pending)};
                 self.notify(&error,true);
             }
         }
@@ -85,7 +88,7 @@ impl Studio {
         let cancel=std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));self.cb_generation_cancel=Some(cancel.clone());
         self.c_builder.scanning=true;self.c_builder.status="Retrying used-media transaction and refreshing inventory...".into();
         let work=pending.clone();
-        crate::host::spawn(move||crate::c_builder_used::finish(&work.library,&work.project,&work.sources,&work.cache,&cancel),
+        crate::host::spawn(move||crate::c_builder_used::finish_libraries(&work.library,&work.project,&work.sources,&work.cache,work.intro.as_ref(),&cancel),
             move|studio,_,_,result|studio.builder_archive_finished(pending,result));
     }
 }

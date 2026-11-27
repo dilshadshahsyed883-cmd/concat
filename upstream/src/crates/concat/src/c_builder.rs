@@ -112,11 +112,16 @@ fn collect(folder: &Path) -> Result<Vec<PathBuf>, String> {
     files.sort();
     Ok(files)
 }
-pub fn scan(folder: &Path, cache_path: &Path, mut progress: impl FnMut(usize, usize))
-    -> Result<ScanReport, String> {
+pub fn scan(folder: &Path, cache_path: &Path, progress: impl FnMut(usize, usize)) -> Result<ScanReport, String> {
+    scan_filtered(folder,cache_path,progress,false)
+}
+pub fn scan_intro(folder: &Path, cache_path: &Path, progress: impl FnMut(usize, usize)) -> Result<ScanReport, String> {
+    scan_filtered(folder,cache_path,progress,true)
+}
+fn scan_filtered(folder: &Path, cache_path: &Path, mut progress: impl FnMut(usize, usize), videos_only:bool) -> Result<ScanReport, String> {
     let root = folder.canonicalize().map_err(|e| e.to_string())?;
     let excluded=crate::c_builder_used::excluded_paths(&root)?;
-    let files:Vec<_>=collect(&root)?.into_iter().filter(|p|!excluded.contains(p)).collect();
+    let files:Vec<_>=collect(&root)?.into_iter().filter(|p|!excluded.contains(p) && (!videos_only || matches!(p.extension().unwrap_or_default().to_string_lossy().to_ascii_lowercase().as_str(),"mp4"|"m4v"|"mov"|"mkv"|"webm"|"avi"))).collect();
     let mut cache = read_cache(cache_path)?;
     let mut assets = Vec::with_capacity(files.len());
     let mut seen = HashSet::new();
@@ -155,7 +160,7 @@ pub fn scan(folder: &Path, cache_path: &Path, mut progress: impl FnMut(usize, us
                 Err(e) => { failures.push(format!("{}: {e}", absolute.display())); None }
             }
         };
-        if let Some(asset) = asset { assets.push(asset); }
+        if let Some(asset) = asset { if !videos_only||asset.kind=="video" {assets.push(asset);} }
         progress(index + 1, files.len());
     }
     let before = cache.entries.len();
@@ -214,6 +219,12 @@ pub fn plan(assets: &[Asset], seconds: f64, image_weights: &str, video_weights: 
 }
 pub fn plan_profile(assets: &[Asset], seconds: f64, image_weights: &str, video_weights: &str,
     profile: &concat_project::planning::Profile) -> Result<(Vec<Shot>, String), String> {
+    plan_profile_with_intro(assets,None,seconds,image_weights,video_weights,profile)
+}
+pub fn plan_profile_with_intro(normal_assets: &[Asset], intro_assets:Option<&[Asset]>, seconds:f64,image_weights:&str,video_weights:&str,
+    profile:&concat_project::planning::Profile)->Result<(Vec<Shot>,String),String>{
+    let intro_assets=intro_assets.filter(|_|profile.video_intro_seconds>0);
+    let assets=normal_assets;
     if !seconds.is_finite() || seconds <= 0.0 || seconds > 86_400.0 {
         return Err("Narration duration must be between 0 and 24 hours".into());
     }
@@ -227,7 +238,7 @@ pub fn plan_profile(assets: &[Asset], seconds: f64, image_weights: &str, video_w
     };
     let mut group_totals=HashMap::<(String,String),f64>::new();
     for asset in assets { *group_totals.entry((asset.kind.clone(),asset.keyword.clone())).or_default()+=1.0/(1.0+f64::from(asset.used_count)); }
-    let sources: Vec<_> = assets.iter().map(|a| concat_project::planning::Source {
+    let mut sources: Vec<_> = assets.iter().map(|a| concat_project::planning::Source {
         id: a.path.clone(), group:a.keyword.clone(), video: a.kind == "video",
         duration_us: a.duration.filter(|d| d.is_finite() && *d > 0.0)
             .map(|d| (d*1e6) as u64).unwrap_or(0),
@@ -236,7 +247,24 @@ pub fn plan_profile(assets: &[Asset], seconds: f64, image_weights: &str, video_w
     }).collect();
     if !sources.iter().any(|s|s.weight>0.) {return Err("Select at least one image keyword with a positive slider weight, or enable and select videos".into());}
     if profile.pins.iter().any(|p|sources.iter().find(|s|s.id==p.source_id).is_none_or(|s|s.weight<=0.)){return Err("A pinned shot belongs to an excluded keyword; clear that pin or enable its media group".into());}
-    let result = concat_project::planning::generate(&sources, (seconds*1e6).round() as u64, profile)?;
+    let split=intro_assets.map(|_|sources.len());
+    let mut combined=normal_assets.to_vec();
+    if let Some(intro)=intro_assets {
+        let mut selection=profile.intro_selection.clone().unwrap_or_default();
+        selection.normalize();
+        let mut totals=HashMap::<String,f64>::new();
+        for a in intro.iter().filter(|a|a.kind=="video"){*totals.entry(a.keyword.clone()).or_default()+=1.0/(1.0+f64::from(a.used_count));}
+        for a in intro.iter().filter(|a|a.kind=="video"){
+            let weight=selection.videos.get(&a.keyword).filter(|row|row.selected).map_or(0,|row|row.weight);
+            sources.push(concat_project::planning::Source{id:a.path.clone(),group:a.keyword.clone(),video:true,
+                duration_us:a.duration.filter(|d|d.is_finite()&&*d>0.0).map(|d|(d*1e6) as u64).unwrap_or(0),
+                weight:f64::from(weight)/(1.0+f64::from(a.used_count))/totals[&a.keyword]});
+            combined.push(a.clone());
+        }
+        if !sources[split.unwrap()..].iter().any(|s|s.weight>0.0){return Err("Select at least one available intro video keyword with positive weight".into());}
+    }
+    let assets=&combined;
+    let result = concat_project::planning::generate_with_intro_pool(&sources, (seconds*1e6).round() as u64, profile,split)?;
     let stats = result.stats(&sources);
     let count = stats.images+stats.videos;
     let mut summary = format!("{} shots; video {:.1}% by count / {:.1}% by seconds. Seed {}.",
@@ -395,6 +423,22 @@ mod tests {
             size: 10, modified_ns: 1, duration: None, width: Some(1920), height: Some(1080),
             frame_rate: None, frame_rate_fraction: None, video_codec: None, audio_codec: None,
             has_audio: false, used_count: 0 }
+    }
+    #[test]
+    fn intro_keyword_budget_uses_only_selected_dedicated_clips(){
+        use concat_project::planning::{KeywordSelection,Profile};
+        let normal=image("body");
+        let mut a=image("intro");a.kind="video".into();a.duration=Some(20.0);
+        let mut b=a.clone();b.path="/fake/other.mp4".into();b.keyword="Other".into();
+        let mut p=Profile::default();p.video_intro_seconds=5;p.overall_video_percent=Some(0);
+        let intro=p.intro_selection.get_or_insert_with(Default::default);
+        intro.videos.insert("Eala".into(),KeywordSelection{selected:true,weight:100});
+        let (shots,_)=plan_profile_with_intro(&[normal.clone()],Some(&[a.clone(),b]),30.,"","",&p).unwrap();
+        assert!(shots.iter().filter(|s|s.start_us<5_000_000).all(|s|s.asset.path==a.path));
+        assert!(shots.iter().filter(|s|s.start_us>=5_000_000).all(|s|s.asset.path==normal.path));
+        assert!(plan_profile_with_intro(&[normal.clone()],Some(&[]),30.,"","",&p).is_err());
+        p.video_intro_seconds=0;
+        assert!(plan_profile_with_intro(&[normal],Some(&[]),30.,"","",&p).is_ok());
     }
     #[test]
     fn successful_build_reset_keeps_preferences_but_excludes_every_keyword() {
@@ -645,6 +689,12 @@ pub struct State {
     pub auto_name:String,
     pub folder: String,
     pub assets: Vec<Asset>,
+    pub intro_folder:String,
+    pub intro_assets:Vec<Asset>,
+    pub intro_summary:String,
+    pub intro_probed:usize,
+    pub intro_reused:usize,
+    pub remembered_intro_weights:BTreeMap<String,u32>,
     pub keyword_summary: String,
     pub narration: String,
     pub duration: Option<f64>,
@@ -685,6 +735,7 @@ impl State {
         selection.normalize();
         let images = std::mem::take(&mut selection.images);
         let videos = std::mem::take(&mut selection.videos);
+        if let Some(intro)=profile.intro_selection.as_mut(){intro.normalize();self.remembered_intro_weights.extend(std::mem::take(&mut intro.videos).into_iter().filter(|(_,row)|row.selected).map(|(k,row)|(k,row.weight)));}
         let encoded = serde_json::to_string_pretty(&profile).map_err(|e| e.to_string())?;
         self.remembered_image_weights.extend(images.into_iter().filter(|(_, row)| row.selected).map(|(key, row)| (key, row.weight)));
         self.remembered_video_weights.extend(videos.into_iter().filter(|(_, row)| row.selected).map(|(key, row)| (key, row.weight)));
@@ -730,10 +781,10 @@ pub fn load_planning_settings(config:&Path)->concat_project::planning::Profile {
     let path=config.join(PLANNING_SETTINGS);
     let mut p=[path.clone(),path.with_extension("json.backup")].iter().filter_map(|p|fs::read_to_string(p).ok())
         .find_map(|s|concat_project::planning::Profile::from_json(&s).ok()).unwrap_or_default();
-    simplify_planning(&mut p);p.media_selection=None;p.overall_video_percent=None;p
+    simplify_planning(&mut p);p.media_selection=None;p.intro_selection=None;p.overall_video_percent=None;p
 }
 pub fn save_planning_settings(config:&Path,p:&concat_project::planning::Profile)->Result<(),String>{
-    let mut p=p.clone();simplify_planning(&mut p);p.media_selection=None;p.overall_video_percent=None;p.validate()?;
+    let mut p=p.clone();simplify_planning(&mut p);p.media_selection=None;p.intro_selection=None;p.overall_video_percent=None;p.validate()?;
     fs::create_dir_all(config).map_err(|e|e.to_string())?;
     let path=config.join(PLANNING_SETTINGS);
     let bytes=serde_json::to_vec_pretty(&p).map_err(|e|e.to_string())?;
