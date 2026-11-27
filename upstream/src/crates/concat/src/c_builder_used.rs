@@ -278,6 +278,31 @@ mod tests {
         let repeated=relocate_used(&f.root,&f.project,&f.paths).unwrap();assert!(repeated.entries.is_empty());
     }
     #[test]
+    fn separate_library_archive_retries_after_intro_lock_without_reconsuming_body(){
+        let f=fixture(2);
+        let normal=f.root.join("normal");let intro=f.root.join("intro");
+        fs::create_dir(&normal).unwrap();fs::create_dir(&intro).unwrap();
+        let ip=intro.join("shot.mp4");let np=normal.join("shot.jpg");
+        fs::rename(&f.paths[0],&ip).unwrap();fs::rename(&f.paths[1],&np).unwrap();
+        let manifest=f.project.join("concat.json");
+        let mut doc:serde_json::Value=serde_json::from_slice(&fs::read(&manifest).unwrap()).unwrap();
+        let map=BTreeMap::from([(f.paths[0].to_string_lossy().into_owned(),ip.to_string_lossy().into_owned()),(f.paths[1].to_string_lossy().into_owned(),np.to_string_lossy().into_owned())]);
+        rewrite(&mut doc,&map);fs::write(&manifest,serde_json::to_vec_pretty(&doc).unwrap()).unwrap();
+        let cache=f.root.join("normal-cache.json");let icache=f.root.join("intro-cache.json");
+        let second=(intro.clone(),vec![ip.clone()],icache);
+        let lease=lock(&intro).unwrap();let cancel=AtomicBool::new(false);
+        let first=finish_libraries(&normal,&f.project,&[np.clone()],&cache,Some(&second),&cancel);
+        assert!(first.result.is_err());assert!(!np.exists());assert!(ip.exists());
+        assert!(verify_document(&fs::read(&manifest).unwrap()).is_ok());
+        drop(lease);
+        let result=finish_libraries(&normal,&f.project,&[np.clone()],&cache,Some(&second),&cancel).result.unwrap();
+        assert_eq!(result.already_archived,1);assert_eq!(result.entries.len(),1);assert!(!ip.exists());
+        let p=verify_document(&fs::read(&manifest).unwrap()).unwrap();
+        assert!(p.media.iter().any(|m|Path::new(&m.path).starts_with(normal.join("used"))));
+        assert!(p.media.iter().any(|m|Path::new(&m.path).starts_with(intro.join("used"))));
+        assert!(f.audio.exists());
+    }
+    #[test]
     fn failed_link_sequence_rolls_back_and_preserves_project_and_originals(){
         let f=fixture(3);let before=fs::read(f.project.join("concat.json")).unwrap();
         let result=relocate_inner(&f.root,&f.project,&f.paths,&AtomicBool::new(false),Some(1));assert!(result.is_err());
