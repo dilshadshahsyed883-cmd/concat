@@ -180,7 +180,9 @@ jobs:
           # terminated with Windows 0xc0000005 under unconstrained parallel
           # dependency builds. Limit simultaneous builds and incremental
           # memory usage; retain the pinned FFmpeg and LLVM versions.
-          CARGO_BUILD_JOBS: '2'
+          # The generated Slint GUI exhausted LLVM memory with 2 jobs and 256
+          # codegen units. Serialize compilation and cap the GUI units in CI.
+          CARGO_BUILD_JOBS: '1'
           CARGO_INCREMENTAL: '0'
           # The unoptimized GUI retains Whisper symbols only present in its static CPU library.
           GGML_BACKEND_DL: "OFF"
@@ -189,7 +191,7 @@ jobs:
         timeout-minutes: 95
         shell: pwsh
         run: |
-          cargo build --locked --profile quick -p concat --target x86_64-pc-windows-msvc
+          cargo --config 'profile.quick.package.concat.codegen-units=64' build --locked --profile quick -p concat --target x86_64-pc-windows-msvc
           if ($LASTEXITCODE -ne 0) { throw "Native Concat GUI build failed" }
       - name: Package portable edited Concat EXE and required DLLs
         shell: pwsh
