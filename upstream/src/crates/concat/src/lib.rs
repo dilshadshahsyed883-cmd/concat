@@ -739,9 +739,6 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     app.on_start_open_recent(on_window!(|state, path: SharedString| {
         state.handle(Msg::Start(StartMsg::OpenRecent(path.to_string())));
     }));
-    app.on_start_forget_recent(on_window!(|state, path: SharedString| {
-        state.handle(Msg::Start(StartMsg::ForgetRecent(path.to_string())));
-    }));
     app.on_start_reveal_recent(on_window!(|state, path: SharedString| {
         state.handle(Msg::Start(StartMsg::RevealRecent(path.to_string())));
     }));

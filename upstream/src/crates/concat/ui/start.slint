@@ -27,7 +27,7 @@ import { SegmentedControl } from "primitives/segmented-control.slint";
 //   folder opens, media starts a new project with it;
 // - the projects: every one this machine has opened, as a grid of posters
 //   with their running time, edit time and frame, hover actions to show
-//   one in its folder or forget it, a missing folder shown as missing, and
+//   one in its folder, a missing folder shown as missing, and
 //   a search and a sort once there are more than a page of them;
 // - learn and community: the guides, the first edit, the shortcuts, the
 //   repository, the Discord and how to report a problem, as cards that
@@ -53,7 +53,7 @@ import { SegmentedControl } from "primitives/segmented-control.slint";
 //   beside the projects once the column is 1100px wide, under them before;
 // - narrow, a phone held upright: stacked the way a phone's own apps are -
 //   New project across the width, the projects as a list of rows with the
-//   forget cross on every one, since there is no hover to reveal it with,
+//   explicit Delete action on every one,
 //   and the learn cards as one grouped list at the foot. The sheet's labels
 //   sit over their values there, with its chip rows across the width.
 //
@@ -85,8 +85,7 @@ export struct ChipOption {
 /// the numbers are than in an expression language with no printf and no
 /// clock.
 export struct RecentProjectData {
-    /// The folder, and the card's identity — what reopening and forgetting
-    /// name.
+    /// The folder and the card’s identity — the path used to reopen it.
     path: string,
     name: string,
     /// "1080 × 1920 · 30 fps"
@@ -673,7 +672,7 @@ component BarAction inherits Rectangle {
 // hover and press, Enter or Space once Tab has put the ring on it, and the
 // ring. The look is the caller's, read from `lit`, `down` and `ring`; the
 // content is its children, drawn over the touch area, so a button inside
-// one - a card's Remove - still takes its own press.
+// one - a card's Delete - still takes its own press.
 component Pressable inherits Rectangle {
     in property <bool> enabled: true;
     in property <length> radius: Theme.r-lg;
@@ -685,8 +684,6 @@ component Pressable inherits Rectangle {
     out property <bool> ring;
 
     callback clicked();
-    /// Delete or Backspace with the ring on it.
-    callback deleted();
 
     border-radius: root.radius;
     accessible-role: button;
@@ -707,10 +704,6 @@ component Pressable inherits Rectangle {
         key-pressed(event) => {
             if (event.text == Key.Return || event.text == "\n" || event.text == " ") {
                 root.clicked();
-                return accept;
-            }
-            if (event.text == Key.Delete || event.text == Key.Backspace) {
-                root.deleted();
                 return accept;
             }
             return reject;
@@ -898,7 +891,7 @@ component RecentMenuRow inherits Rectangle {
     }
 }
 
-// A small round button over a poster: Show in folder, Remove from list.
+// A small round button over a poster: Show in folder, More options.
 // Dark glass under a white mark whatever the theme, because what is under
 // it is a picture, not the page.
 component PosterAction inherits Rectangle {
@@ -939,9 +932,8 @@ component PosterAction inherits Rectangle {
 
 // One project: its poster, inset in the card like a print on a mount, its
 // running time over the poster's corner, and its name and what it is
-// under it. Show in folder and Remove come up over the poster on hover - or
-// stay there, where there is no hover. A project whose folder has gone
-// keeps its card, greyed, saying so, with Remove always up.
+// under it. Show in folder and More options appear on hover or focus.
+// A missing project keeps its greyed card and its missing-folder status.
 component PosterCard inherits Pressable {
     in property <RecentProjectData> project;
     /// No pointer to hover with, so the actions stay out.
@@ -950,7 +942,6 @@ component PosterCard inherits Pressable {
     in property <bool> can-reveal;
 
     callback opened();
-    callback forgotten();
     callback revealed();
     callback rename-requested();
     callback delete-requested();
@@ -962,7 +953,6 @@ component PosterCard inherits Pressable {
 
     label: root.project.name;
     clicked => { root.opened(); }
-    deleted => { root.forgotten(); }
     background: root.lit ? Theme.launch-raised : Theme.launch-panel;
     border-width: 1px;
     border-color: root.lit ? Theme.line-strong : Theme.line;
@@ -1049,12 +1039,6 @@ component PosterCard inherits Pressable {
                 glyph: Glyph.folder;
                 label: I18n.t("start.showInFolder");
                 clicked => { root.revealed(); }
-            }
-
-            PosterAction {
-                glyph: Glyph.close;
-                label: I18n.t("start.removeFromList");
-                clicked => { root.forgotten(); }
             }
 
             PosterAction {
@@ -1181,7 +1165,6 @@ component ProjectsGrid inherits Rectangle {
     in property <bool> can-reveal;
 
     callback opened(path: string);
-    callback forgotten(path: string);
     callback revealed(path: string);
     callback rename-requested(path: string);
     callback delete-requested(path: string);
@@ -1207,7 +1190,6 @@ component ProjectsGrid inherits Rectangle {
         touchy: root.touchy;
         can-reveal: root.can-reveal;
         opened => { root.opened(project.path); }
-        forgotten => { root.forgotten(project.path); }
         revealed => { root.revealed(project.path); }
         rename-requested => { root.rename-requested(project.path); }
         delete-requested => { root.delete-requested(project.path); }
@@ -1216,18 +1198,16 @@ component ProjectsGrid inherits Rectangle {
 
 // One project as a row of a list: the narrow page's shape, where a grid of
 // posters a thumb wide is a column of stamps. The poster small at the
-// start, the name and what it is beside it, Remove at the end.
+// start, the name and what it is beside it, Delete at the end.
 component ProjectRow inherits Pressable {
     in property <RecentProjectData> project;
 
     callback opened();
-    callback forgotten();
     callback delete-requested();
 
     label: root.project.name;
     radius: Theme.r;
     clicked => { root.opened(); }
-    deleted => { root.forgotten(); }
     height: 68px;
     background: root.lit || root.down ? Theme.launch-raised : Colors.transparent;
 
@@ -1301,14 +1281,7 @@ component ProjectRow inherits Pressable {
             }
         }
 
-        // Two distinct hit targets: Remove only hides the card, Delete
-        // asks permission to recycle the actual project folder.
-        Button {
-            glyph: Glyph.close;
-            square: true;
-            label: I18n.t("start.removeFromList");
-            clicked => { root.forgotten(); }
-        }
+        // Delete asks permission to recycle the actual project folder.
         Button {
             glyph: Glyph.trash;
             label: "Delete";
@@ -1751,7 +1724,6 @@ component WideHome inherits Rectangle {
     callback compose();
     callback open();
     callback open-recent(path: string);
-    callback forget-recent(path: string);
     callback reveal-recent(path: string);
     callback rename-recent(path: string);
     callback delete-recent(path: string);
@@ -1928,7 +1900,6 @@ component WideHome inherits Rectangle {
                     enabled: !root.busy;
                     can-reveal: true;
                     opened(path) => { root.open-recent(path); }
-                    forgotten(path) => { root.forget-recent(path); }
                     revealed(path) => { root.reveal-recent(path); }
                     rename-requested(path) => { root.rename-recent(path); }
                     delete-requested(path) => { root.delete-recent(path); }
@@ -2044,7 +2015,6 @@ component NarrowHome inherits Rectangle {
     callback open-settings();
     callback open-c-builder();
     callback open-recent(path: string);
-    callback forget-recent(path: string);
     callback delete-recent(path: string);
     callback search-edited(query: string);
     callback link(name: string);
@@ -2177,7 +2147,6 @@ component NarrowHome inherits Rectangle {
                 project: project;
                 enabled: !root.busy;
                 opened => { root.open-recent(project.path); }
-                forgotten => { root.forget-recent(project.path); }
                 delete-requested => { root.delete-recent(project.path); }
             }
 
@@ -2252,7 +2221,6 @@ export component StartScreen inherits Rectangle {
     /// Open a project that already exists, picked from disk.
     callback open();
     callback open-recent(path: string);
-    callback forget-recent(path: string);
     callback reveal-recent(path: string);
     callback rename-recent(path: string);
     callback delete-recent(path: string);
@@ -2281,7 +2249,6 @@ export component StartScreen inherits Rectangle {
         compose => { root.compose(); }
         open => { root.open(); }
         open-recent(path) => { root.open-recent(path); }
-        forget-recent(path) => { root.forget-recent(path); }
         reveal-recent(path) => { root.reveal-recent(path); }
         rename-recent(path) => { root.rename-recent(path); }
         delete-recent(path) => { root.delete-recent(path); }
@@ -2305,7 +2272,6 @@ export component StartScreen inherits Rectangle {
         open-settings => { root.open-settings(); }
         open-c-builder => { root.open-c-builder(); }
         open-recent(path) => { root.open-recent(path); }
-        forget-recent(path) => { root.forget-recent(path); }
         delete-recent(path) => { root.delete-recent(path); }
         search-edited(query) => { root.search-edited(query); }
         link(name) => { root.link(name); }
