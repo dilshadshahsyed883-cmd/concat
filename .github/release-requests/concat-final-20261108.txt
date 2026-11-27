@@ -177,3 +177,10 @@ and Salad CUDA candidate from this exact request commit's identical GITHUB_SHA.
 Preserve all release and smoke gates; no production deployment or rollback
 artifact deletion. The previous GPU image succeeded but must not be paired
 with a different source SHA for the matching release.
+
+REBUILD REQUEST — 2026-11-27 Canvas/C Builder and Recent Projects fixes
+User approved both candidate builds after auditing main parent 0eaea24de3ca6886c4a0d15d55f2bfeeea1957c8.
+Build portable Windows x64 EXE and Salad CUDA GPU candidate from this exact
+request commit's identical GITHUB_SHA. Preserve all existing release gates,
+shared motion generator, source SHA, immutable digest and rollback artifacts.
+Candidate builds only: no live Salad deployment, VPS changes or queue changes.
