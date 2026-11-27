@@ -39,7 +39,7 @@ class HomeProjectManagement(unittest.TestCase):
         self.assertIn("glyph: Glyph.trash;", card)
         self.assertIn("root.delete-requested();", card)
         self.assertIn("clicked => { root.opened(); }", card)
-        self.assertIn("root.forgotten();", card)
+        self.assertNotIn("root.forgotten();", card)
         delete = card.split('// This is a child hit target', 1)[1]
         self.assertNotIn("root.opened()", delete)
         narrow = HOME.split("component ProjectRow inherits Pressable {", 1)[1].split(
@@ -47,7 +47,7 @@ class HomeProjectManagement(unittest.TestCase):
         )[0]
         self.assertIn("callback delete-requested();", narrow)
         self.assertIn("root.delete-requested();", narrow)
-        self.assertIn("root.forgotten();", narrow)
+        self.assertNotIn("root.forgotten();", narrow)
         self.assertIn("delete-recent(path) => { root.delete-recent(path); }", HOME)
 
     def test_card_metadata_has_own_rows_and_delete_space(self):
@@ -75,8 +75,22 @@ class HomeProjectManagement(unittest.TestCase):
         self.assertIn('concat_host::project_delete::recycle(', STUDIO)
         self.assertIn("let target = prepare(config, selected_path, expected_name, active_path)?;", BACKEND)
 
-    def test_delete_vs_remove_is_not_an_alias(self):
-        self.assertIn("projects::forget(&studio.host.dirs.config, &path)", PANE)
+    def test_remove_from_list_is_not_exposed(self):
+        app = (ROOT / "concat/ui/app.slint").read_text(encoding="utf-8")
+        lib = (ROOT / "concat/src/lib.rs").read_text(encoding="utf-8")
+        for token in ("start.removeFromList", "forget-recent", "callback forgotten", "root.forgotten", "root.deleted", "Key.Backspace", "Key.Delete"):
+            self.assertNotIn(token, HOME)
+        self.assertNotIn("start-forget-recent", app)
+        self.assertNotIn("on_start_forget_recent", lib)
+        self.assertNotIn("ForgetRecent", PANE)
+        self.assertNotIn("projects::forget(&studio.host.dirs.config, &path)", PANE)
+
+    def test_tooltip_clears_on_screen_changes(self):
+        app = (ROOT / "concat/ui/app.slint").read_text(encoding="utf-8")
+        for trigger in ("changed on-start", "changed c-builder-home", "changed sheet-open"):
+            self.assertIn("Tips.close();", app.split(trigger + " => {", 1)[1].split("}", 1)[0])
+
+    def test_delete_still_recycles_safely(self):
         self.assertIn("concat_host::project_delete::recycle(", STUDIO)
         self.assertNotIn("concat_host::projects::forget(&self.host.dirs.config, &path)", STUDIO)
         self.assertIn("pub fn forget(", HOST_PROJECTS)
