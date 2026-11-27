@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light"><title>Sign in · Concat Web</title>
+<style>
+:root{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color-scheme:light}
+*{box-sizing:border-box}
+body{min-height:100dvh;display:grid;place-items:center;background:linear-gradient(145deg,#eef0ff,#f8fafc 55%,#eef3fc);color:#101828;margin:0;padding:22px}
+form{width:100%;max-width:430px;padding:36px;background:#fff;border:1px solid #dfe5ef;border-radius:19px;box-shadow:0 18px 55px #2732531e}
+h1{font-size:28px;letter-spacing:-.03em;margin:0 0 8px;color:#101828}
+p{font-size:14px;line-height:1.55;color:#64748b;margin:0 0 22px}
+label{display:block;font-size:13px;font-weight:700;color:#475467;margin:16px 0 8px}
+input:not([type=hidden]){width:100%;padding:12px 14px;border:1px solid #cdd5e2;border-radius:10px;background:#fff;color:#101828;font:inherit;font-size:15px}
+input:focus-visible,button:focus-visible{outline:3px solid #9e91ff;outline-offset:2px}
+button{width:100%;min-height:46px;margin-top:24px;border:0;border-radius:10px;background:#4f46e5;color:#fff;font:inherit;font-weight:750;cursor:pointer}
+button:hover{background:#4238c7}button:disabled{opacity:.6;cursor:wait}
+small{display:block;margin-top:20px;color:#64748b;font-size:12px;line-height:1.55}
+#login-status{color:#b42338!important}
+@media(max-width:480px){form{padding:25px 22px}}
+</style></head><body>
+<form action="/auth/login" method="post" autocomplete="on">
+<h1>Concat Web</h1><p>Secure, independent administrator sign-in</p>
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<label for="username">Username</label>
+<input id="username" name="username" required autocomplete="username" maxlength="64" autofocus>
+<label for="password">Password</label>
+<input id="password" name="password" type="password" required autocomplete="current-password" maxlength="1024">
+<button type="submit">Sign in</button>
+<p id="login-status" role="status" aria-live="polite" style="margin:14px 0 0;color:#fda4af" hidden></p>
+<small>Private admin access. Your credentials stay on this server.</small>
+</form>
+<script>
+(() => {
+  const form = document.querySelector("form");
+  const status = document.getElementById("login-status");
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    status.hidden = true;
+    const button = form.querySelector("button");
+    button.disabled = true;
+    try {
+      const response = await fetch("/auth/login", {
+        method: "POST", body: new FormData(form), credentials: "same-origin",
+        headers: {"Origin": location.origin}, redirect: "manual", cache: "no-store"
+      });
+      if (response.status === 303 || response.type === "opaqueredirect") {
+        location.assign("/dashboard");
+        return;
+      }
+      status.textContent = response.status === 429
+        ? "Too many attempts. Try again later."
+        : "Username or password incorrect, or session verification failed.";
+      status.hidden = false;
+      form.querySelector("#password").value = "";
+      form.querySelector("#password").focus();
+    } catch (error) {
+      status.textContent = "Could not connect. Please try again.";
+      status.hidden = false;
+    } finally {
+      button.disabled = false;
+    }
+  });
+})();
+</script></body></html>

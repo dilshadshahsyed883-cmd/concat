@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light"><title>{{ page.title }} · Concat Web</title>
+<link rel="stylesheet" href="/static/app.css?v=20261119-three-tab-1">
+<style>
+.content.uploader-workspace{max-width:none;min-width:0;width:100%;padding:24px clamp(14px,2vw,32px)}
+.uploader-frame{display:block;width:100%;height:calc(100dvh - 140px);min-height:480px;border:1px solid #dfe5ef;border-radius:12px;background:#fff}
+@media(max-width:760px){.content.uploader-workspace{padding:18px 12px}.uploader-frame{height:calc(100dvh - 210px);min-height:420px;border-radius:9px}}
+</style></head>
+<body><a class="skip" href="#content">Skip to content</a>
+<header class="mobile-bar"><button id="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar">☰</button><strong>Concat Web</strong></header>
+<div id="nav-backdrop" class="nav-backdrop" aria-hidden="true"></div>
+<div class="layout"><nav id="sidebar" class="sidebar" aria-label="Main navigation">
+<a class="brand" href="/dashboard" aria-label="Concat Web dashboard"><span class="brand-mark" aria-hidden="true">C</span><span>Concat <b>Web</b></span></a>
+<div class="nav-group"><a class="nav-top" href="/dashboard">Dashboard</a></div>
+<div class="nav-group"><a class="nav-top current" href="/concat/production" aria-current="page">Concat Studio</a></div>
+<div class="nav-group"><a class="nav-top" href="/admin">Admin {% if not principal.is_admin %}<span class="lock">Restricted</span>{% endif %}</a></div>
+<div class="identity"><span>Signed in as</span><strong>{{ principal.username }}</strong><button id="nav-logout" class="sign-out" type="button">Sign out</button><span id="nav-logout-feedback" class="logout-feedback" role="status" hidden></span></div></nav>
+<main id="content" class="content uploader-workspace" tabindex="-1">
+<h1 class="visually-hidden">{{ page.title }} workspace</h1>
+<nav class="studio-tabs" aria-label="Concat Studio modules">
+  <a href="/concat/production">Production</a>
+  <a href="/concat/media">Media</a>
+  <a href="/concat/gpu-config">GPU Config</a>
+  <a class="active" href="/concat-uploader/sheets-sync" aria-current="page">Uploader</a>
+</nav>
+<iframe class="uploader-frame" title="{{ page.title }} workspace" src="/concat-uploader/app?tab={{ tab | urlencode }}" loading="eager" referrerpolicy="same-origin"></iframe>
+</main></div>
+<script defer src="/static/app.js?v=20261119-three-tab-1"></script>
+</body></html>

@@ -1,0 +1,292 @@
+/* LUM_GLOBAL_CLARITY_V3
+   Global UI clarity layer. Visual-only: no feature/control/backend changes. */
+
+:root{color-scheme:dark}
+html,body{
+  margin:0!important;width:100%!important;max-width:none!important;
+  background:#07111f!important;color:#e8eef7!important;
+}
+body,button,input,select,textarea{
+  font-family:"Segoe UI Variable","Segoe UI",Inter,Roboto,Arial,sans-serif!important;
+  -webkit-font-smoothing:antialiased!important;
+  text-rendering:optimizeLegibility!important;
+}
+body{font-size:15px!important;font-weight:400!important;line-height:1.48!important}
+
+.lum-shell{
+  --bg:#07111f;
+  --surface:#0c1828;
+  --surface2:#0f1d2f;
+  --surface3:#122239;
+  --line:#23364d;
+  --line-soft:rgba(125,155,190,.15);
+  --text:#e8eef7;
+  --muted:#91a4ba;
+  --muted2:#71859e;
+  --purple:#6658f4;
+  --purple2:#7b70ff;
+  --blue:#39a9ff;
+  --cyan:#43d3e8;
+  --green:#35d28b;
+  --amber:#f4bd4f;
+  --red:#ff6f84;
+  width:100%!important;max-width:none!important;min-width:0!important;
+  margin:0!important;padding:8px 12px 34px!important;
+  color:var(--text)!important;background:var(--bg)!important;
+  font-size:15px!important;line-height:1.48!important;
+}
+.lum-shell *{box-sizing:border-box;min-width:0}
+.lum-shell h1,.lum-shell h2,.lum-shell h3,.lum-shell h4{color:#f5f8fc!important;letter-spacing:-.012em!important}
+.lum-shell h2{font-size:19px!important;line-height:1.28!important;font-weight:700!important}
+.lum-shell h3{font-size:16.5px!important;line-height:1.32!important;font-weight:650!important}
+.lum-shell p{font-size:14px!important;line-height:1.52!important;color:var(--muted)!important;font-weight:400!important}
+
+/* First-level surfaces: similar clarity to main dashboard */
+.lum-statusbar,.lum-tabs,.lum-card,.lum-ae-head,.lum-channel-summary>div,.lum-metrics>div{
+  background:var(--surface)!important;
+  border:1px solid var(--line)!important;
+  box-shadow:none!important;
+}
+.lum-statusbar{border-radius:11px!important;padding:14px 16px!important;margin-bottom:10px!important}
+.lum-statusbar strong{font-size:14.5px!important;font-weight:650!important;color:#f1f5fa!important}
+.lum-statusbar span{font-size:13px!important;font-weight:400!important;color:var(--muted)!important}
+
+/* Main tabs */
+.lum-tabs{
+  display:flex!important;gap:3px!important;align-items:center!important;
+  padding:4px!important;margin:0 0 12px!important;border-radius:10px!important;
+  background:#0a1626!important;overflow-x:auto!important;scrollbar-width:thin!important;
+}
+.lum-tabs a{
+  flex:0 0 auto!important;padding:10px 15px!important;border:0!important;border-radius:7px!important;
+  color:#a9b7c9!important;background:transparent!important;
+  font-size:14px!important;font-weight:600!important;text-decoration:none!important;
+}
+.lum-tabs a:hover{background:#14243a!important;color:#fff!important}
+.lum-tabs a.active{background:var(--purple)!important;color:#fff!important;box-shadow:none!important}
+
+/* Cards: one border level only */
+.lum-card{
+  border-radius:11px!important;padding:16px!important;margin-bottom:12px!important;
+  background:var(--surface)!important;
+}
+.lum-card.inset{
+  background:var(--surface2)!important;
+  border:1px solid var(--line-soft)!important;
+  border-radius:9px!important;
+}
+.lum-card-head{
+  display:flex!important;align-items:flex-start!important;justify-content:space-between!important;gap:14px!important;
+  padding:0 0 12px!important;margin:0 0 13px!important;
+  border-bottom:1px solid var(--line-soft)!important;
+}
+.lum-card-head h2{margin:0 0 3px!important}
+.lum-card-head p{margin:0!important;max-width:900px!important}
+
+/* Dashboard-style KPI clarity */
+.lum-metrics,.lum-channel-summary{
+  display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;
+  gap:10px!important;margin:0 0 12px!important;
+}
+.lum-metrics>div,.lum-channel-summary>div{
+  border-radius:10px!important;padding:15px 16px!important;min-height:88px!important;
+  display:flex!important;flex-direction:column!important;justify-content:center!important;
+}
+.lum-metrics span,.lum-channel-summary span{
+  font-size:12.5px!important;font-weight:500!important;color:#8fa2b8!important;
+  text-transform:none!important;letter-spacing:0!important;
+}
+.lum-metrics strong{margin-top:5px!important;font-size:28px!important;line-height:1!important;font-weight:700!important;color:#f8fbff!important}
+.lum-channel-summary strong{margin-top:5px!important;font-size:22px!important;line-height:1.05!important;font-weight:700!important;color:#f8fbff!important}
+
+/* Form readability */
+.lum-field{gap:5px!important}
+.lum-field>span{font-size:13px!important;font-weight:600!important;color:#b7c3d1!important}
+.lum-field small{font-size:12.5px!important;line-height:1.42!important;color:#7f92aa!important;font-weight:400!important}
+.lum-field input,.lum-field select,.lum-field textarea,.lum-confirm,
+.lum-oauth input,.user-inline select,.user-password input,.lum-ae-concurrency-form select{
+  min-height:42px!important;padding:9px 11px!important;border-radius:8px!important;
+  border:1px solid #2b4059!important;background:#091522!important;color:#e9eff7!important;
+  font-size:14px!important;font-weight:400!important;
+}
+.lum-field input::placeholder,.lum-field textarea::placeholder,.lum-confirm::placeholder{color:#627992!important}
+.lum-field input:focus,.lum-field select:focus,.lum-field textarea:focus,.lum-confirm:focus{
+  border-color:#786cff!important;outline:0!important;box-shadow:0 0 0 3px rgba(102,88,244,.15)!important;
+}
+.lum-check{font-size:14px!important;font-weight:500!important;color:#c4cfdb!important}
+
+/* Buttons: clear hierarchy */
+.lum-button,.lum-row-actions>summary,.lum-pagination button{
+  min-height:39px!important;padding:9px 13px!important;border-radius:8px!important;
+  border:1px solid #2b4059!important;background:#13233a!important;color:#dce6f1!important;
+  font-size:13.5px!important;font-weight:600!important;line-height:1.2!important;box-shadow:none!important;
+}
+.lum-button:hover,.lum-row-actions>summary:hover,.lum-pagination button:hover{background:#1a2e49!important;color:#fff!important}
+.lum-button.primary{background:var(--purple)!important;border-color:var(--purple)!important;color:#fff!important}
+.lum-button.primary:hover{background:var(--purple2)!important}
+.lum-button.secondary{background:#13233a!important;color:#d2dce8!important}
+.lum-button.danger{background:#321722!important;border-color:#6b3246!important;color:#ff9caf!important}
+.lum-button.tiny{min-height:34px!important;padding:7px 10px!important;font-size:12.5px!important}
+button:disabled,.lum-button:disabled{opacity:.54!important;cursor:not-allowed!important}
+
+/* Badges */
+.lum-badge,.lum-health,.lum-state{
+  padding:5px 9px!important;border-radius:999px!important;
+  font-size:11.5px!important;font-weight:650!important;line-height:1.2!important;
+  box-shadow:none!important;
+}
+.lum-badge{background:#14243a!important;border:1px solid #29415f!important;color:#c0ccda!important}
+.lum-badge.good,.lum-health.ok,.lum-state.s-completed,.lum-state.s-active{background:#0f3326!important;border-color:#215d45!important;color:#78e2ae!important}
+.lum-badge.warn,.lum-health.warn,.lum-state.s-waiting_slot,.lum-state.s-scheduled,.lum-state.s-paused{background:#382a10!important;border-color:#6a5122!important;color:#f8d174!important}
+.lum-badge.bad,.lum-state.s-failed,.lum-state.s-review_required{background:#351722!important;border-color:#6f3147!important;color:#ff9cad!important}
+.lum-badge.brand,.lum-state.s-uploading,.lum-state.s-verifying_remote,.lum-state.s-cleaning{background:#211d4c!important;border-color:#4d4397!important;color:#bbb3ff!important}
+
+/* Alerts: compact, readable, technical detail does not dominate */
+.lum-alert{
+  border-radius:9px!important;padding:10px 12px!important;margin:8px 0!important;
+  font-size:13px!important;line-height:1.45!important;font-weight:400!important;
+}
+.lum-alert.success{background:#0d2e23!important;color:#91e9bd!important;border:1px solid #20573f!important}
+.lum-alert.warn{background:#34270f!important;color:#f1cd77!important;border:1px solid #654c21!important}
+.lum-alert.error{background:#321721!important;color:#ffb0bd!important;border:1px solid #6a3042!important}
+.lum-shell>.lum-alert:first-child{margin-top:0!important}
+
+/* Tables */
+.lum-table-wrap,.lum-channel-table-wrap{
+  width:100%!important;max-width:100%!important;overflow:auto!important;
+  border:1px solid var(--line)!important;border-radius:9px!important;background:#091522!important;
+}
+.lum-table,.lum-channel-table{width:100%!important;background:#091522!important;color:#dfe8f2!important}
+.lum-table th,.lum-channel-table th{
+  position:sticky!important;top:0!important;z-index:2!important;
+  background:#102038!important;color:#9db0c6!important;border-color:var(--line-soft)!important;
+  font-size:12px!important;font-weight:650!important;letter-spacing:.015em!important;padding:11px 12px!important;
+}
+.lum-table td,.lum-channel-table td{
+  background:#0a1726!important;color:#dbe5ef!important;border-color:rgba(125,155,190,.10)!important;
+  font-size:13.5px!important;font-weight:400!important;line-height:1.42!important;padding:10px 12px!important;
+}
+.lum-table td small{font-size:12px!important;color:#7f92aa!important;font-weight:400!important}
+.lum-table tbody tr:hover td,.lum-channel-table tr[data-channel-row]:hover td{background:#102139!important}
+.lum-table code{font-size:12.5px!important;color:#9dd8ff!important;font-weight:400!important}
+code,.lum-shell code{font-family:"Cascadia Mono","Segoe UI Mono",Consolas,monospace!important;overflow-wrap:anywhere!important}
+
+/* Secondary utility rows: flatten instead of box-inside-box */
+.lum-channel-filters,.lum-channel-bulk,.lum-channel-tools,.lum-table-meta,
+.lum-ae-toolbar,.lum-ae-savebar,.lum-ae-thumb-selectbar,.lum-ae-queue-summary,
+.lum-ae-pc-row,.lum-ae-facts{
+  background:transparent!important;box-shadow:none!important;
+}
+.lum-channel-filters,.lum-channel-bulk,.lum-channel-tools,.lum-table-meta,
+.lum-ae-toolbar,.lum-ae-savebar,.lum-ae-thumb-selectbar,.lum-ae-queue-summary{
+  border-color:var(--line-soft)!important;
+}
+.lum-channel-filters{padding:11px 0!important}
+.lum-channel-bulk,.lum-channel-tools{padding:10px 0!important}
+.lum-table-meta{padding:10px 0!important;color:var(--muted)!important;font-size:13px!important}
+
+/* Channel workspace */
+.lum-channel-subnav,.lum-ae-tabs{
+  display:flex!important;gap:3px!important;overflow-x:auto!important;
+  padding:4px!important;margin:0 0 12px!important;border:1px solid var(--line)!important;
+  border-radius:10px!important;background:#091522!important;scrollbar-width:thin!important;
+}
+.lum-channel-subnav button,.lum-ae-tabs button{
+  flex:0 0 auto!important;min-height:40px!important;padding:9px 14px!important;border:0!important;border-radius:7px!important;
+  background:transparent!important;color:#a8b8ca!important;font-size:13.5px!important;font-weight:600!important;box-shadow:none!important;
+}
+.lum-channel-subnav button:hover,.lum-ae-tabs button:hover{background:#14243a!important;color:#fff!important}
+.lum-channel-subnav button.active,.lum-ae-tabs button.active{background:var(--purple)!important;color:#fff!important}
+
+.lum-channel-manager{padding:16px!important}
+.lum-channel-filters input,.lum-channel-filters select{font-size:14px!important}
+.lum-selection-info strong{font-size:13px!important;font-weight:650!important}
+.lum-link-button{font-size:13px!important;font-weight:600!important;color:#aba1ff!important}
+
+/* OAuth/cards */
+.lum-dual-auth-hero{background:#0e1b31!important;border:1px solid #30336a!important}
+.lum-dual-methods>div,.lum-dual-channel,.lum-connection-card{
+  background:#0c1929!important;border:1px solid var(--line)!important;box-shadow:none!important;border-radius:10px!important;
+}
+.lum-dual-methods strong,.lum-connection-title strong{font-size:15px!important;font-weight:650!important}
+.lum-dual-methods small,.lum-connection-title small{font-size:12.5px!important;color:#8296ad!important;font-weight:400!important}
+.lum-dual-channel>header strong{font-size:17px!important;font-weight:700!important}
+.lum-dual-channel>header small,.lum-dual-channel>header code{font-size:13px!important;font-weight:400!important}
+.lum-connection-card.active{border-color:#6558ee!important;box-shadow:inset 3px 0 0 #6558ee!important}
+
+/* Auto Engine: strong section hierarchy, less toolbar noise */
+.lum-ae-head{
+  border-radius:11px!important;padding:16px!important;margin-bottom:10px!important;
+  display:flex!important;align-items:flex-start!important;justify-content:space-between!important;gap:18px!important;
+}
+.lum-ae-head h2{margin:2px 0 4px!important;font-size:20px!important;font-weight:700!important}
+.lum-ae-head p{margin:0!important;font-size:13.5px!important;max-width:900px!important}
+.lum-eyebrow{font-size:11.5px!important;font-weight:650!important;letter-spacing:.055em!important;color:#a79cff!important}
+.lum-ae-toolbar{padding:12px 0!important;margin-bottom:8px!important}
+.lum-ae-pc-controls .lum-card-head{margin-bottom:10px!important}
+.lum-ae-pc-row{padding:8px 0!important;border-bottom:1px solid var(--line-soft)!important}
+.lum-ae-pc-row:last-child{border-bottom:0!important}
+.lum-ae-queue-summary{font-size:12.5px!important;line-height:1.45!important;color:#8296ad!important;padding:9px 0!important}
+.lum-ae-facts{gap:6px!important;margin-top:9px!important}
+.lum-ae-facts span{background:#0d1a2b!important;border:1px solid var(--line-soft)!important;color:#8fa3ba!important;font-size:12px!important;font-weight:400!important}
+.lum-ae-facts strong{font-size:13px!important;font-weight:650!important;color:#e5edf6!important}
+.lum-ae-result-grid>div,.lum-ae-record-stats>div{
+  background:#0d1a2b!important;border:1px solid var(--line-soft)!important;border-radius:9px!important;padding:10px!important;
+}
+.lum-ae-result-grid span,.lum-ae-record-stats span{font-size:11.5px!important;font-weight:500!important;color:#8498af!important;text-transform:none!important;letter-spacing:0!important}
+.lum-ae-result-grid strong,.lum-ae-record-stats strong{font-size:18px!important;font-weight:700!important;color:#eef4fa!important}
+.lum-ae-thumb-card{background:#0d1a2b!important;border:1px solid var(--line)!important;box-shadow:none!important}
+.lum-ae-thumb-meta strong{font-size:13.5px!important;font-weight:650!important;color:#edf3f9!important}
+.lum-ae-thumb-meta span{font-size:12px!important;color:#8397ae!important}
+.lum-ae-trash-list>div,.lum-ae-confirm-grid form{background:#0d1a2b!important;border-color:var(--line-soft)!important;color:#dbe5ef!important}
+
+/* Lists / KV */
+.lum-kv dt{font-size:13px!important;color:#879aaf!important;font-weight:400!important}
+.lum-kv dd{font-size:13.5px!important;color:#e5edf6!important;font-weight:600!important}
+.lum-list strong,.lum-submit-card>div>strong,.lum-switch span strong{font-size:14px!important;font-weight:650!important;color:#edf3f9!important}
+.lum-list span,.lum-switch span small{font-size:12.5px!important;color:#8497ad!important;font-weight:400!important}
+
+/* Logs */
+.lum-log{background:#050d18!important;border:1px solid var(--line)!important;color:#cad6e4!important;font-size:13px!important;line-height:1.6!important}
+.lum-log b{font-size:12px!important;font-weight:650!important;color:#9fb0c4!important}
+
+/* No artificial inner width constraints */
+.lum-shell>*,.lum-shell section,.lum-shell .lum-grid,.lum-shell .lum-card{max-width:none!important}
+.lum-grid,.lum-two,.lum-three{width:100%!important}
+
+/* Accessibility */
+.lum-shell a:focus-visible,.lum-shell button:focus-visible,.lum-shell input:focus-visible,
+.lum-shell select:focus-visible,.lum-shell textarea:focus-visible{
+  outline:2px solid #8c82ff!important;outline-offset:2px!important;
+}
+
+/* Laptop */
+@media(max-width:1365px){
+  .lum-shell{padding:8px 9px 28px!important;font-size:14.5px!important}
+  .lum-metrics,.lum-channel-summary{gap:8px!important}
+  .lum-card{padding:14px!important}
+  .lum-button{padding:8px 11px!important;font-size:13px!important}
+  .lum-table td,.lum-channel-table td{font-size:13px!important;padding:9px 10px!important}
+}
+/* Tablet */
+@media(max-width:980px){
+  .lum-metrics,.lum-channel-summary{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+  .lum-two,.lum-three,.lum-dual-methods,.lum-dual-connection-grid,.lum-perm-setup-grid{grid-template-columns:1fr!important}
+  .lum-ae-head,.lum-ae-toolbar{flex-direction:column!important;align-items:stretch!important}
+}
+/* Mobile */
+@media(max-width:760px){
+  .lum-shell{padding:5px 6px 22px!important}
+  .lum-statusbar{padding:12px!important}
+  .lum-tabs,.lum-channel-subnav,.lum-ae-tabs{flex-wrap:nowrap!important;overflow-x:auto!important}
+  .lum-tabs a,.lum-channel-subnav button,.lum-ae-tabs button{min-height:42px!important;font-size:13.5px!important}
+  .lum-card{padding:13px!important;border-radius:9px!important}
+  .lum-card-head{flex-direction:column!important;align-items:stretch!important}
+  .lum-card-head h2{font-size:17px!important}
+  .lum-card-head p{font-size:13px!important}
+  .lum-metrics,.lum-channel-summary{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .lum-metrics>div,.lum-channel-summary>div{min-height:78px!important;padding:12px!important}
+  .lum-metrics strong{font-size:24px!important}
+  .lum-field input,.lum-field select,.lum-field textarea,.lum-confirm{font-size:16px!important}
+  .lum-button{min-height:42px!important}
+}

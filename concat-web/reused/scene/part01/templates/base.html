@@ -1,0 +1,292 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Scene Builder</title><link rel="stylesheet" href="/static/styles.css"><link rel="stylesheet" href="/static/deployment2.css?v=1"><link rel="stylesheet" href="/static/user_management_redesign.css?v=1"><link rel="stylesheet" href="/static/scene_builder_workspace_v175.css?v=175d-r6"><link rel="stylesheet" href="/static/responsive_system_v1.css?v=20260824-r1"><link rel="stylesheet" href="/static/dashboard_control_center.css?v=20260825-v1">
+<style>
+.story-suite-main{max-width:none;padding:26px 34px 42px}
+.story-suite-main.acs-main{padding:26px 34px 42px}
+.story-suite-main>.story-suite-header,.story-suite-main>.story-work-tabs,.story-suite-main>.acs-suite-tabs,.story-suite-main>.sw-shell,.story-suite-main>#algrow-app,.story-suite-main>.acs-shell{width:100%;max-width:1400px;margin-left:auto;margin-right:auto}
+.story-suite-main>.story-suite-header{margin-bottom:18px}
+.story-work-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;padding:6px;margin-bottom:16px;border:1px solid #dce4ef;border-radius:13px;background:#e9eef7;box-shadow:0 4px 14px rgba(31,45,74,.04)}
+.story-work-tabs a{display:flex;align-items:center;justify-content:center;min-height:42px;padding:9px 14px;border-radius:9px;color:#475467;font-size:13px;font-weight:800;text-align:center;text-decoration:none;transition:background .16s ease,color .16s ease,box-shadow .16s ease}
+.story-work-tabs a:hover{background:#f5f7fb;color:#344054}.story-work-tabs a.active{background:#fff;color:#2457d6;box-shadow:0 3px 10px rgba(31,45,74,.11)}
+@media(max-width:760px){.story-suite-main,.story-suite-main.acs-main{padding:18px 14px 30px}.story-work-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}.story-work-tabs a{min-height:40px;padding:8px 9px}}
+
+/* VIDEO_STUDIO_UI_UNIFIED_V1 */
+[data-video-studio-subnav="1"]{width:100%!important;max-width:1400px!important;margin-left:auto!important;margin-right:auto!important;box-sizing:border-box!important}
+.story-suite-main.acs-main{max-width:none!important;padding:26px 34px 42px!important}
+.story-suite-main.acs-main>.story-suite-header{width:100%!important;max-width:1400px!important;margin-left:auto!important;margin-right:auto!important;margin-bottom:18px!important}
+.story-suite-main.acs-main>.acs-shell{width:100%!important;max-width:1400px!important;height:calc(100vh - 250px)!important;min-height:680px!important;margin:0 auto 30px!important;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;overflow:hidden!important}
+.story-suite-main.acs-main #acs-studio-frame{display:block!important;width:100%!important;height:100%!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important}
+@media(max-width:760px){.story-suite-main.acs-main{padding:72px 14px 30px!important}.story-suite-main.acs-main>.acs-shell{height:calc(100dvh - 190px)!important;min-height:560px!important;margin-bottom:16px!important}}
+
+</style>
+<style id="universal-theme-v3">
+:root {
+  --sb-bg: #f8fafc;
+  --sb-card: #ffffff;
+  --sb-border: #e2e8f0;
+  --sb-accent: #4f46e5;
+  --sb-text: #0f172a;
+  --sb-muted: #64748b;
+  --sb-spacing-sm: 8px;
+  --sb-spacing-md: 16px;
+  --sb-spacing-lg: 24px;
+  --sb-radius: 12px;
+  --sb-radius-sm: 8px;
+}
+body { background-color: var(--sb-bg) !important; color: var(--sb-text) !important; font-family: 'Inter', system-ui, -apple-system, sans-serif !important; margin: 0; }
+.card, .panel, .live-control-card, #title-to-publish-panel { background-color: var(--sb-card) !important; border: 1px solid var(--sb-border) !important; border-radius: var(--sb-radius) !important; box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1), 0 1px 2px 0 rgba(0,0,0,0.06) !important; padding: var(--sb-spacing-lg) !important; margin-bottom: var(--sb-spacing-lg) !important; }
+h1, h2, h3, h4, h5, h6 { margin-top: 0 !important; margin-bottom: var(--sb-spacing-md) !important; color: var(--sb-text) !important; }
+label { display: block !important; margin-bottom: var(--sb-spacing-sm) !important; font-weight: 600 !important; font-size: 13px !important; color: var(--sb-muted) !important; }
+.form-control, input[type="text"], input[type="number"], input[type="password"], select, textarea { background-color: #ffffff !important; border: 1px solid var(--sb-border) !important; border-radius: var(--sb-radius-sm) !important; padding: 10px 14px !important; box-sizing: border-box !important; margin-bottom: var(--sb-spacing-md) !important; width: 100%; max-width: 100%; color: var(--sb-text) !important; transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out; font-family: inherit !important; font-size: 14px !important; }
+.form-control:focus, input[type="text"]:focus, input[type="password"]:focus, select:focus, textarea:focus { border-color: var(--sb-accent) !important; outline: none !important; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1) !important; }
+.btn-primary, button.primary { background-color: var(--sb-accent) !important; border-color: var(--sb-accent) !important; color: #ffffff !important; border-radius: var(--sb-radius-sm) !important; font-weight: 600 !important; padding: 10px 20px !important; cursor: pointer; display: inline-block; margin-top: 4px; border: none !important; }
+.btn-secondary, button.secondary { background-color: #ffffff !important; border: 1px solid var(--sb-border) !important; color: var(--sb-text) !important; border-radius: var(--sb-radius-sm) !important; font-weight: 600 !important; padding: 10px 20px !important; cursor: pointer; display: inline-block; margin-top: 4px; }
+.btn-primary:hover, button.primary:hover { opacity: 0.9 !important; }
+.row, .form-group, .mb-3, .mt-3 { margin-bottom: var(--sb-spacing-md) !important; }
+</style>
+
+<style id="acs-ui-overrides">
+/* Force ACS wrapper to flow naturally without inner scrollbar */
+.acs-shell, .acs-workspace, #acs-scroll-wrapper, div[style*="overflow-y: auto"] {
+    height: auto !important;
+    max-height: none !important;
+    overflow-y: visible !important;
+}
+/* Hide specific big headers in ACS if they use a class */
+.acs-header-block, .page-header { display: none !important; }
+/* Normalize ACS subtabs to Scene Builder standard */
+.acs-subnav a.active, .sub-tabs a.active, .acs-tabs a.active, .nav-pills .nav-link.active, .story-work-tabs a.active {
+    background-color: #ffffff !important;
+    color: #2457d6 !important;
+    box-shadow: 0 3px 10px rgba(31,45,74,0.11) !important;
+    border: 1px solid #dce4ef !important;
+}
+.acs-subnav a, .sub-tabs a, .acs-tabs a {
+    color: #475467 !important;
+    font-weight: 800 !important;
+}
+/* Standardize worker card borders */
+.worker-card, .status-card, .acs-card, .card {
+    border-left: 1px solid var(--sb-border) !important;
+}
+</style>
+
+
+<style id="acs-ui-overrides-v2">
+/* Universal Theme Integration */
+:root {
+  --sb-bg: #f8fafc;
+  --sb-card: #ffffff;
+  --sb-border: #e2e8f0;
+  --sb-accent: #4f46e5;
+  --sb-text: #0f172a;
+  --sb-muted: #64748b;
+  --sb-spacing-sm: 8px;
+  --sb-spacing-md: 16px;
+  --sb-spacing-lg: 24px;
+  --sb-radius: 12px;
+  --sb-radius-sm: 8px;
+  --bg: #f8fafc;
+  --panel: #ffffff;
+  --line: #e2e8f0;
+}
+body, .acs-shell { background-color: var(--sb-bg) !important; color: var(--sb-text) !important; font-family: 'Inter', system-ui, -apple-system, sans-serif !important; }
+
+/* 1. Remove forced heights and double scrollbars in ACS */
+.acs-shell, .acs-workspace, #acs-scroll-wrapper, .scroll-container, .main-scroll, div[style*="overflow-y: auto"], div[style*="overflow-y: scroll"], div[style*="height: 100vh"] {
+    height: auto !important;
+    max-height: none !important;
+    overflow-y: visible !important;
+}
+
+/* 2. Hide Auto Caption Studio Headers */
+.head h2, .head p, .acs-header-block, .page-header { display: none !important; }
+.head { margin-bottom: 0 !important; }
+
+/* 3. Normalize ACS subtabs to Scene Builder standard */
+.acs-subnav a.active, .sub-tabs a.active, .acs-tabs a.active, .nav-pills .nav-link.active, .story-work-tabs a.active, .tabs a.active {
+    background-color: #ffffff !important;
+    color: #2457d6 !important;
+    box-shadow: 0 3px 10px rgba(31,45,74,0.11) !important;
+    border: 1px solid #dce4ef !important;
+}
+.acs-subnav a, .sub-tabs a, .acs-tabs a, .tabs a {
+    color: #475467 !important;
+    font-weight: 800 !important;
+    background-color: transparent !important;
+}
+
+/* 4. Standardize worker card borders and margins */
+.worker-card, .status-card, .acs-card, .card {
+    border-left: 1px solid var(--sb-border) !important;
+    background-color: var(--sb-card) !important; 
+    border: 1px solid var(--sb-border) !important; 
+    border-radius: var(--sb-radius) !important; 
+    box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1), 0 1px 2px 0 rgba(0,0,0,0.06) !important; 
+    padding: var(--sb-spacing-lg) !important;
+}
+</style>
+
+<link rel="stylesheet" href="/static/vps1_native_site_shell.css?v=20261020-sidebar-stable-v4&song=20261029&studio-permissions=20261031&concat-studio=20261118">
+<link rel="stylesheet" href="/static/vps1_video_studio_geometry.css?v=20261020-geometry-v1&layout=video-v2">
+{% if page in ['cloud_render', 'heygen_studio', 'imagen_studio', 'voice_clone_studio'] %}<link rel="stylesheet" href="/static/experiment_four_studio_layout.css?v=20261116-1">{% endif %}
+<script defer src="/static/vps1_native_site_shell.js?v=20261020-sidebar-stable-v4&shell-contract=2-canonical&nav=auto-script-v1&song=20261029&copyright=20261030&copyright-nav=20261030-v3&studio-permissions=20261031&experiment-hide=20261109&heygen=20261115&experiment-ai=20261116&concat-studio=20261118" data-unify-sidebar="1"></script>
+{% if page in ['queue','settings','audit_media','scene_media_library'] %}<link rel="stylesheet" href="/static/scene_builder_kokoro_parity_20261020.css?v=1">{% endif %}
+</head>
+<body{% if page in ['queue','settings','audit_media'] and (request.query_params|default({})).get('acs_audio_embed') != '1' %} data-scene-ui="sml-compact"{% endif %} class="{% if page=='dashboard' %}dashboard-page{% endif %}{% if page in ['queue','settings','audit_media','scene_media_library'] %} vps1-scene-parity{% endif %}">
+<button id="mobile-nav-toggle" class="mobile-nav-toggle" type="button"
+  aria-label="Open navigation menu" aria-controls="app-sidebar" aria-expanded="false">
+  <span></span><span></span><span></span>
+</button>
+<div id="mobile-nav-overlay" class="mobile-nav-overlay" hidden></div>
+<aside id="app-sidebar" class="sidebar" aria-label="Scene Builder navigation">
+  <div class="brand"><div class="logo">S</div><div><strong>Scene Builder</strong><small>Team Studio</small></div></div>
+  <nav>
+    <a class="{% if page=='dashboard' %}active{% endif %}" href="/">Dashboard</a>
+
+{% if request.session.get("is_admin") or "song" in request.session.get("studio_access", ()) %}<a class="{% if page=='song_studio' %}active{% endif %}" href="/song-studio/">Song Studio</a>{% endif %}
+{% if request.session.get("is_admin") or "short" in request.session.get("studio_access", ()) %}<a class="{% if page=='short_studio' %}active{% endif %}" href="/short-maker">Short Studio</a>{% endif %}
+{% if request.session.get("is_admin") or "copyright" in request.session.get("studio_access", ()) %}<a href="/video-merger/">Copyright Studio</a>{% endif %}
+{% if request.session.get("is_admin") or "voice" in request.session.get("studio_access", ()) %}<a class="{% if page=='voice_studio' %}active{% endif %}" href="/voice-studio/app#vps1-production">Voice Studio</a>{% endif %}
+{% if request.session.get("username") %}<a class="{% if page in ['cloud_render','concat_uploader'] %}active{% endif %}" href="/concat-studio/">Concat Studio</a>{% endif %}
+{% if request.session.get("is_admin") %}<a class="{% if page in ['experiment_studio','auto_script','local_upload_manager','queue','settings','audit_media','scene_media_library','auto_caption_studio','auto_caption_live','video_studio_embedded','heygen_studio','imagen_studio','voice_clone_studio'] %}active{% endif %}" href="/experiment-studio/">Experiment Studio</a>{% endif %}
+{% if not request.session.get("is_admin") %}<a class="{% if page=='heygen_studio' %}active{% endif %}" href="/heygen-studio/">HeyGen Studio</a>{% endif %}
+<!-- Experiment Studio tabs are presentation-only; hidden tools and their routes are preserved. -->
+
+    <!-- YOUTUBE_NICHE_RESEARCH_V1_NAV -->
+<!-- STORY_WORK_V1_NAV -->
+    {% if request.session.get("app_access") == "all" or request.session.get("is_admin") %}
+    {% endif %}
+
+    {% if request.session.get("app_access") in ["scene_builder","both","all"] or request.session.get("is_admin") %}
+    {% endif %}
+
+
+
+    {# SCENE_AUDIO_ENGINE_NAV_REMOVED_V1: Audio Engine lives inside Scene Builder Settings #}
+
+    {% if request.session.get("app_access") in ["lum","all"] or request.session.get("is_admin") %}
+    {% endif %}
+
+
+
+    {% if request.session.get("is_admin") %}
+    <a class="{% if page in ['admin','storage_manager','user_management'] %}active{% endif %}" href="/admin">Admin</a>
+    {% endif %}
+  </nav>
+  <div class="sidebar-account" data-vps1-server-identity="1">
+    <div class="sidebar-account-name">{{ username or 'team' }}</div>
+    <form action="/logout" method="post"><button type="submit">Log out</button></form>
+  </div>
+  <div class="server-dot"><span></span> VPS Connected</div>
+</aside>
+<main class="{% if page in ['cloud_render','heygen_studio','imagen_studio','voice_clone_studio'] %}vps1-experiment-four-main {% endif %}{% if page in ['auto_caption_studio','auto_caption_live'] %}acs-main {% endif %}{% if page in ['script_work','algrow_voice','auto_caption_studio','auto_caption_live'] %}story-suite-main {% endif %}{% if page=='atomic_flow' %}atomic-flow-main{% endif %}{% if page=='youtube_niche_research' %} ynr-main{% endif %}">
+{% if page=='song_studio' %}<nav class="vps1-native-video-tabs vps1-song-studio-tabs" aria-label="Song Studio"><a href="/audio-downloader/">Audio Downloader</a><a {% if studio_app=='song-maker' %}class="active" aria-current="page"{% endif %} href="/song-studio/song-maker/">Song Maker</a><a {% if studio_app=='song-uploader' %}class="active" aria-current="page"{% endif %} href="/song-uploader">Song Uploader</a></nav>{% endif %}
+{% if request.session.get('username') and page in ['cloud_render','concat_uploader'] %}
+<nav class="vps1-experiment-tabs vps1-concat-studio-tabs" aria-label="Concat Studio">
+  <a {% if page=='cloud_render' %}class="active" aria-current="page"{% endif %} href="/concat-studio/concat/">Concat</a>
+  <a {% if page=='concat_uploader' %}class="active" aria-current="page"{% endif %} href="/concat-studio/concat-uploader/">Concat Uploader</a>
+</nav>{% endif %}
+{% if request.session.get('is_admin') and page in ['experiment_studio','auto_script','local_upload_manager','queue','settings','audit_media','scene_media_library','auto_caption_studio','auto_caption_live','video_studio_embedded','heygen_studio','imagen_studio','voice_clone_studio'] %}
+<nav class="vps1-experiment-tabs" aria-label="Experiment Studio">
+  <a {% if page=='experiment_studio' %}class="active" aria-current="page"{% endif %} href="/experiment-studio/antidetect-browser/">Antidetect Browser</a>
+  <a {% if page=='local_upload_manager' %}class="active" aria-current="page"{% endif %} href="/local-upload-manager/app?embedded=1&amp;tab=dashboard">Upload Studio</a>
+  <a {% if page=='heygen_studio' %}class="active" aria-current="page"{% endif %} href="/heygen-studio/">HeyGen Studio</a>
+  <a {% if page=='voice_clone_studio' %}class="active" aria-current="page"{% endif %} href="/voice-clone-studio/">Voice Clone</a>
+  <a {% if page=='imagen_studio' %}class="active" aria-current="page"{% endif %} href="/imagen-studio/">Imagen</a>
+</nav>{% endif %}
+{% if page in ['queue','settings','audit_media','scene_media_library','auto_caption_studio','auto_caption_live','video_studio_embedded'] %}<nav data-video-studio-subnav="1" aria-label="Video Studio" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 12px;margin:0 0 18px;background:#f8faff;border:1px solid #dfe5ef;border-radius:11px;box-shadow:0 2px 8px rgba(28,44,78,.03)"><a href="/scene-builder/" style="text-decoration:none;padding:9px 14px;border-radius:8px;font-size:13px;font-weight:750;border:1px solid #d6ddea;white-space:nowrap;{% if page in ['queue','settings','audit_media'] %}background:#315edb;color:#fff;border-color:#315edb{% else %}background:#fff;color:#34415b{% endif %}">Scene Builder</a><a href="/auto-caption-studio/" style="text-decoration:none;padding:9px 14px;border-radius:8px;font-size:13px;font-weight:750;border:1px solid #d6ddea;white-space:nowrap;{% if page in ['auto_caption_studio','auto_caption_live'] %}background:#315edb;color:#fff;border-color:#315edb{% else %}background:#fff;color:#34415b{% endif %}">Auto Caption Studio</a></nav>{% endif %}
+
+{% if page in ['queue','settings','audit_media','scene_media_library'] %}
+<header class="scene-workspace-header">
+  <nav class="scene-workspace-tabs" aria-label="Scene Builder">
+    <a class="{% if page=='queue' %}active{% endif %}"{% if page=='queue' %} aria-current="page"{% endif %} href="/queue">Queue</a>
+    <a class="{% if page=='settings' %}active{% endif %}"{% if page=='settings' %} aria-current="page"{% endif %} href="/settings">Settings</a>
+    <a class="{% if page=='audit_media' %}active{% endif %}"{% if page=='audit_media' %} aria-current="page"{% endif %} href="/audit-media">Audit Media{% if audit_waiting_count|default(0) %}<span class="scene-audit-count">{{ audit_waiting_count }}</span>{% endif %}</a>
+    <a class="{% if page=='scene_media_library' %}active{% endif %}"{% if page=='scene_media_library' %} aria-current="page"{% endif %} href="/scene-builder/media-library/">Media Library</a>
+  </nav>
+  
+</header>
+{% elif page=='user_management' %}
+<header><div><h1>User Management</h1></div></header>
+{% elif page not in ['cloud_render', 'heygen_studio', 'imagen_studio', 'voice_clone_studio'] %}
+<header class="{% if page in ['script_work','algrow_voice','auto_caption_studio','auto_caption_live'] %}story-suite-header{% endif %}"><div><h1>{% block title %}{% endblock %}</h1><p>{% block subtitle %}{% endblock %}</p></div></header>
+{% endif %}
+{% if page in ['script_work','algrow_voice'] %}
+<!-- STORY_WORK_SUITE_TABS_V2 -->
+<nav class="story-work-tabs" aria-label="Auto Caption Studio">
+<a href="/auto-caption-studio/">Auto Caption Studio</a>
+</nav>
+{% endif %}
+{% block content %}{% endblock %}{% if page=='auto_script' %}<link rel="stylesheet" href="/static/auto_script_kokoro_20261026.css?v=1">{% endif %}{% if page in ['queue','settings','audit_media'] and (request.query_params|default({})).get('acs_audio_embed') != '1' %}<link rel="stylesheet" href="/static/scene_compact_ui.css?v=20261022-1">{% endif %}</main>{% block scripts %}{% endblock %}
+<script>
+/* MOBILE_NAVIGATION_CONTROLLER */
+(() => {
+  const toggle = document.getElementById('mobile-nav-toggle');
+  const sidebar = document.getElementById('app-sidebar');
+  const overlay = document.getElementById('mobile-nav-overlay');
+  if (!toggle || !sidebar || !overlay) return;
+
+  const openMenu = () => {
+    document.body.classList.add('mobile-nav-open');
+    sidebar.classList.add('mobile-open');
+    overlay.hidden = false;
+    requestAnimationFrame(() => overlay.classList.add('visible'));
+    toggle.setAttribute('aria-expanded', 'true');
+    toggle.setAttribute('aria-label', 'Close navigation menu');
+  };
+
+  const closeMenu = () => {
+    document.body.classList.remove('mobile-nav-open');
+    sidebar.classList.remove('mobile-open');
+    overlay.classList.remove('visible');
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.setAttribute('aria-label', 'Open navigation menu');
+    window.setTimeout(() => {
+      if (!overlay.classList.contains('visible')) overlay.hidden = true;
+    }, 220);
+  };
+
+  toggle.addEventListener('click', () => {
+    sidebar.classList.contains('mobile-open') ? closeMenu() : openMenu();
+  });
+  overlay.addEventListener('click', closeMenu);
+  // Delegate to the sidebar: shared navigation can rebuild its links after load.
+  sidebar.addEventListener('click', event => {
+    if (event.target.closest('nav a')) closeMenu();
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') closeMenu();
+  });
+  window.addEventListener('resize', () => {
+    if (window.innerWidth > 760) closeMenu();
+  });
+})();
+</script>
+
+<script>
+/* WHOLE_WEB_MOBILE_NAV_GUARD_V2 */
+(() => {
+  const body=document.body;
+  const toggle=document.getElementById('mobile-nav-toggle');
+  const sidebar=document.getElementById('app-sidebar');
+  const overlay=document.getElementById('mobile-nav-overlay');
+  if(!body||!toggle||!sidebar||!overlay)return;
+  const hardClose=()=>{
+    body.classList.remove('mobile-nav-open');
+    sidebar.classList.remove('mobile-open');
+    overlay.classList.remove('visible');
+    overlay.hidden=true;
+    toggle.setAttribute('aria-expanded','false');
+    toggle.setAttribute('aria-label','Open navigation menu');
+  };
+  window.addEventListener('pageshow',hardClose);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!sidebar.classList.contains('mobile-open'))hardClose();});
+  sidebar.addEventListener('click',event=>{
+    if(!event.target.closest('nav a'))return;
+    body.classList.remove('mobile-nav-open');
+    overlay.classList.remove('visible');
+    overlay.hidden=true;
+  },{capture:true});
+})();
+</script>
+</body></html>

@@ -14,6 +14,7 @@ The upstream editor retains its AGPL-3.0-or-later licence and third-party notice
 | --- | --- | --- |
 | Windows editor | `upstream/src/` | Rust tests and frozen Windows smoke in `.github/workflows/concat-windows.yml` |
 | Project bundle and GPU worker | `cloud_render/concat/` | `.github/workflows/concat-linux.yml` and component tests |
+| Concat Web | `concat-web/` | Independent Web essential/security CI; manual VPS deployment only. See [Web README](concat-web/README.md). |
 | Desktop GPU client | `concat_gpu/` | Offline packaging and queue-contract checks in the Windows workflow |
 
 Main Windows publishing checks for a matching GPU candidate before creating a commit-specific prerelease. Read that release's acceptance notes: a successful build or container startup is not real-GPU acceptance. Preserve `upstream/LICENSE` and third-party notices when distributing the editor.
@@ -21,3 +22,5 @@ Main Windows publishing checks for a matching GPU candidate before creating a co
 ## Repository maintenance
 
 See the [repository guide](docs/REPOSITORY_GUIDE.md) for source ownership, validation and release/storage policy, and [CONTRIBUTING.md](CONTRIBUTING.md) for changes and review.
+
+Web-only changes trigger only the Web verification workflows. The existing matched EXE/GPU release-request workflows are unchanged; Web deployment packages only `concat-web/` and retains the existing service and runtime state. The former standalone Web repository is retained for rollback during migration.

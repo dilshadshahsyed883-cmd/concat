@@ -1,0 +1,11 @@
+{
+  "title": "Your Scheduled Video Title Here",
+  "description": "Your common description for app-side scheduled uploads here.",
+  "tags": "story, facts, motivation",
+  "category_id": "22",
+  "privacy_status": "public",
+  "app_upload_at": "2026-07-02T20:00:00+05:00",
+  "made_for_kids": false,
+  "playlist_id": "",
+  "channel_group": "Scheduled Story Channels"
+}

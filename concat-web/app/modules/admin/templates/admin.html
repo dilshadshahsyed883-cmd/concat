@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light"><title>Admin · Concat Web</title>
+<link rel="stylesheet" href="/static/app.css?v=20261119-three-tab-1">
+<style>
+.panel{display:grid;gap:17px;max-width:960px}
+.panel-card{background:#fff;border:1px solid #dfe5ef;border-radius:14px;padding:23px;box-shadow:0 5px 20px #18283c0a}
+.panel-card h2{margin:0 0 12px;color:#101828;font-size:18px}
+.panel-card p{font-size:13px;line-height:1.6;color:#475467}
+.panel-card strong{color:#101828}
+.panel button{border:1px solid #d6ddea;background:#f5f6ff;color:#423bb6;padding:10px 14px;border-radius:9px;cursor:pointer;font-weight:700}
+.panel button:hover{border-color:#a5a1ef;background:#ecebff}
+.panel button:disabled{opacity:.5;cursor:not-allowed}
+.muted{color:#64748b!important}.status{min-height:22px;color:#475467;font-size:13px}.error{color:#b42338!important}
+@media(max-width:480px){.panel-card{padding:18px}.controls{align-items:stretch}}
+</style></head><body>
+<a class="skip" href="#content">Skip to content</a>
+<header class="mobile-bar"><button id="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar">☰</button><strong>Concat Web</strong></header>
+<div id="nav-backdrop" class="nav-backdrop" aria-hidden="true"></div>
+<div class="layout"><nav id="sidebar" class="sidebar" aria-label="Main navigation">
+<a class="brand" href="/dashboard" aria-label="Concat Web dashboard"><span class="brand-mark" aria-hidden="true">C</span><span>Concat <b>Web</b></span></a>
+<div class="nav-group"><a class="nav-top" href="/dashboard">Dashboard</a></div>
+<div class="nav-group"><a class="nav-top" href="/concat/production">Concat Studio</a></div>
+<div class="nav-group"><a class="nav-top current" aria-current="page" href="/admin">Admin</a></div>
+<div class="identity"><span>Signed in as</span><strong>{{ principal.username }}</strong><button id="nav-logout" class="sign-out" type="button">Sign out</button><span id="nav-logout-feedback" class="logout-feedback" role="status" hidden></span></div>
+</nav><main id="content" class="content" tabindex="-1">
+<div class="eyebrow">Concat Web / Admin</div>
+<h1>Admin &amp; Security</h1>
+<p class="lead">Standalone administrator login. Scene accounts and SSO are not used. Media, GPU and upload queues remain bound to your Concat owner identity.</p>
+<div class="panel">
+<p role="status" class="status" id="status">Loading local settings…</p>
+<section class="panel-card"><h2>Administrator</h2>
+<p>Current account: <strong>{{ principal.username }}</strong></p>
+<p class="muted">Only one configured administrator can sign in. Existing foreign or ownerless records are never imported.</p>
+<button id="revoke-all" type="button">Sign out all sessions</button>
+<button id="logout" type="button">Sign out</button></section>
+<section class="panel-card"><h2>Recent security activity</h2><div id="audit" class="muted">Loading…</div></section>
+</div></main></div>
+<script defer src="/static/app.js?v=20261119-three-tab-1"></script>
+<script>
+(() => {
+  "use strict";
+  const $ = name => document.getElementById(name);
+  let csrf = "";
+  function status(value, isError=false) {
+    $("status").textContent=value;$("status").className="status"+(isError?" error":"");
+  }
+  async function api(path,method="GET",body) {
+    const headers={"Accept":"application/json"};
+    if(method!=="GET") {headers["X-CSRF-Token"]=csrf;headers["Content-Type"]="application/json";}
+    const res=await fetch(path,{method,credentials:"same-origin",headers,
+      body:body===undefined?undefined:JSON.stringify(body),cache:"no-store"});
+    if(!res.ok) throw new Error("Request failed ("+res.status+")");
+    return res.json();
+  }
+  async function initialize() {
+    try {
+      csrf=(await api("/api/v1/auth/csrf")).csrf_token;
+      const events=(await api("/api/v1/admin/audit")).events;
+      $("audit").replaceChildren();
+      for(const event of events.slice(0,30)) {
+        const p=document.createElement("p");
+        p.textContent=new Date(event.created_at*1000).toLocaleString()+" · "+event.action;
+        $("audit").append(p);
+      }
+      if(!events.length)$("audit").textContent="No security events.";
+      status("Secure local admin session active");
+    } catch(error) {status(error.message,true);}
+  }
+  $("revoke-all").addEventListener("click",async()=>{
+    try {await api("/api/v1/admin/sessions/revoke-all","POST");location.assign("/auth/login");}
+    catch(error){status(error.message,true);}
+  });
+  $("logout").addEventListener("click",async()=>{
+    try {
+      const result=await fetch("/auth/logout",{method:"POST",credentials:"same-origin",
+        headers:{"X-CSRF-Token":csrf,"Origin":location.origin},redirect:"manual"});
+      if(result.status===303||result.status===0)location.assign("/auth/login");
+      else status("Sign out failed ("+result.status+")",true);
+    } catch(error){status(error.message,true);}
+  });
+  initialize();
+})();
+</script></body></html>

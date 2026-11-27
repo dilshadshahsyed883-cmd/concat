@@ -1,0 +1,24 @@
+# INERT example. Do not install until verified VPS_1 host discovery and authorization.
+[Unit]
+Description=Concat Web dedicated ASGI process
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=concatweb
+Group=concatweb
+WorkingDirectory=/srv/concat-web/current
+EnvironmentFile=/etc/concat-web/concat-web.env
+ExecStart=/srv/concat-web/venv/bin/python run.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/concat-web
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

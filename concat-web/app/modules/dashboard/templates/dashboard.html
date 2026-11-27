@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light"><title>Dashboard · Concat Web</title>
+<link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}?v=20261119-three-tab-1">
+<link rel="stylesheet" href="/dashboard/assets/dashboard.css?v=vps1-monitor-20261119">
+</head>
+<body class="dashboard-page">
+<a class="skip" href="#content">Skip to content</a>
+<header class="mobile-bar"><button id="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar">☰</button><strong>Concat Web</strong></header>
+<div id="nav-backdrop" class="nav-backdrop" aria-hidden="true"></div>
+<div class="layout">
+<nav id="sidebar" class="sidebar" aria-label="Main navigation">
+<a class="brand" href="/dashboard" aria-label="Concat Web dashboard"><span class="brand-mark" aria-hidden="true">C</span><span>Concat <b>Web</b></span></a>
+<div class="nav-group"><a class="nav-top current" href="/dashboard" aria-current="page">Dashboard</a></div>
+<div class="nav-group"><a class="nav-top" href="/concat/production">Concat Studio</a></div>
+<div class="nav-group"><a class="nav-top" href="/admin">Admin {% if not principal.is_admin %}<span class="lock">Restricted</span>{% endif %}</a></div>
+<div class="identity"><span>Signed in as</span><strong>{{ principal.username }}</strong><button id="nav-logout" class="sign-out" type="button">Sign out</button><span id="nav-logout-feedback" class="logout-feedback" role="status" hidden></span></div>
+</nav>
+<main id="content" class="content" tabindex="-1">
+<h1>Dashboard</h1>
+<div class="control-dashboard" id="control-dashboard">
+  <div class="dashboard-toolbar dashboard-toolbar-single">
+    <div></div>
+    <div class="dashboard-refresh">
+      <label><input id="dashboard-auto-refresh" type="checkbox" checked> Auto Refresh</label>
+      <select id="dashboard-refresh-rate"><option value="5">5 sec</option><option value="10" selected>10 sec</option><option value="30">30 sec</option><option value="60">60 sec</option></select>
+      <button id="dashboard-refresh-now" class="icon-button" type="button" title="Refresh now">↻</button>
+    </div>
+  </div>
+
+  <section class="dashboard-panel active" data-panel="overview">
+    <div class="health-grid">
+      <article class="health-card"><span>VPS Status</span><strong id="vps-status">Loading…</strong><small id="vps-status-note">Checking system</small></article>
+      <article class="health-card"><span>CPU Usage</span><strong id="cpu-percent">—</strong><small id="cpu-cores">—</small></article>
+      <article class="health-card"><span>RAM Usage</span><strong id="ram-percent">—</strong><small id="ram-detail">—</small></article>
+      <article class="health-card"><span>Storage Usage</span><strong id="disk-percent">—</strong><small id="disk-detail">—</small></article>
+      <article class="health-card"><span>Services Health</span><strong id="services-ratio">—</strong><small id="services-note">Checking services</small></article>
+    </div>
+    <div class="dashboard-bottom-grid">
+      <article class="dashboard-card resource-card">
+        <h2>System Resources</h2>
+        <div class="resource-row"><span>CPU Usage</span><b id="resource-cpu-label">—</b><div class="resource-bar"><i id="resource-cpu-bar"></i></div></div>
+        <div class="resource-row"><span>RAM Usage</span><b id="resource-ram-label">—</b><div class="resource-bar"><i id="resource-ram-bar"></i></div></div>
+        <div class="resource-row"><span>Storage Usage</span><b id="resource-disk-label">—</b><div class="resource-bar"><i id="resource-disk-bar"></i></div></div>
+        <div class="resource-mini">
+          <div><span>Load Average</span><strong id="load-average">—</strong></div>
+          <div><span>Uptime</span><strong id="uptime">—</strong></div>
+          <div><span>Free Storage</span><strong id="free-storage">—</strong></div>
+        </div>
+      </article>
+    </div>
+  </section>
+
+
+  <div class="dashboard-footer"><span id="dashboard-updated">Waiting for first refresh…</span><span>Read-only dashboard · Controls remain inside each app</span></div>
+</div>
+</main></div>
+<script defer src="{{ url_for('static', path='/app.js') }}?v=20261119-three-tab-1"></script>
+<script type="module" src="/dashboard/assets/dashboard.js?v=vps1-monitor-20261119"></script>
+</body></html>

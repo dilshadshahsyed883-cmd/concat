@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Login · Local Upload Manager{% endblock %}
+{% block subtitle %}Standalone VPS uploader{% endblock %}
+{% block content %}
+<div class="auth-wrap"><section class="auth-card"><div class="auth-title"><div class="brand-mark large">LU</div><div><h1>Welcome back</h1><p>Sign in to Local Upload Manager.</p></div></div>
+{% if message %}<div class="lum-alert success">{{ message }}</div>{% endif %}{% if error %}<div class="lum-alert error">{{ error }}</div>{% endif %}
+<form method="post" action="{{ base_path }}/login"><input type="hidden" name="csrf_token" value="{{ csrf }}"><label class="lum-field"><span>Username</span><input name="username" autocomplete="username" required autofocus></label><label class="lum-field"><span>Password</span><input name="password" type="password" autocomplete="current-password" required></label><button class="lum-button primary full" type="submit">Sign in</button></form>
+</section></div>
+{% endblock %}
