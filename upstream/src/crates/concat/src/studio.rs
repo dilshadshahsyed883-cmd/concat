@@ -9500,6 +9500,7 @@ impl Studio {
         editor.set_cb_preview(self.c_builder.preview.clone().into());
         editor.set_cb_plan_opening((selection_profile.curve.first().map_or(0.65,|a|a.video)*100.).round() as f32);
         editor.set_cb_plan_closing((selection_profile.curve.last().map_or(0.05,|a|a.video)*100.).round() as f32);
+        editor.set_cb_plan_intro(selection_profile.video_intro_seconds as f32);
         editor.set_cb_plan_image_min(format!("{}",selection_profile.image_seconds[0]).into());
         editor.set_cb_plan_image_max(format!("{}",selection_profile.image_seconds[1]).into());
         editor.set_cb_plan_video_min(format!("{}",selection_profile.video_seconds[0]).into());

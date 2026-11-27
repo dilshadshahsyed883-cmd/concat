@@ -75,14 +75,14 @@ class HomeProjectLayoutRegression(unittest.TestCase):
                     self.assertLessEqual(action_y + 28, card_h - 9 + 0.001)
                     self.assertLessEqual(12 + (card_w - 12 - 103), action_x - 9 + 0.001)
 
-    def test_missing_folder_disables_delete_but_keeps_remove(self):
+    def test_missing_folder_disables_delete_without_remove(self):
         self.assertIn("enabled: !root.project.missing;", DELETE_BUTTON)
         self.assertIn("enabled: !root.project.missing;", ROW)
         self.assertIn("enabled: !root.project.missing;", CARD.split("menu := PopupWindow", 1)[1])
         self.assertIn("in property <bool> enabled: true;", MENU)
         self.assertIn("enabled: root.enabled;", MENU)
-        self.assertIn("root.forgotten();", CARD)
-        self.assertIn("root.forgotten();", ROW)
+        self.assertNotIn("root.forgotten();", CARD)
+        self.assertNotIn("root.forgotten();", ROW)
         # Stale model data is also rejected again at the backend boundary.
         self.assertIn("concat_host::project_delete::prepare(", PANE)
         self.assertIn("Err(error) => studio.notify(&error, true)", PANE)
@@ -91,7 +91,10 @@ class HomeProjectLayoutRegression(unittest.TestCase):
         self.assertIn("clicked => { root.opened(); }", CARD)
         self.assertNotIn("root.opened();", DELETE_BUTTON)
         self.assertIn("clicked => { root.delete-requested(); }", DELETE_BUTTON)
-        self.assertIn("callback forgotten();", CARD)
+        self.assertNotIn("callback forgotten();", CARD)
+        self.assertNotIn("callback forgotten();", ROW)
+        self.assertIn("callback delete-requested();", CARD)
+        self.assertIn("callback delete-requested();", ROW)
         self.assertIn('label: "Delete Project";', CARD)
         self.assertIn("menu.close();", CARD)
         self.assertIn("root.delete-requested();", ROW)

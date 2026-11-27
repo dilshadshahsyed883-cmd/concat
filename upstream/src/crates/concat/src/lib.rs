@@ -1146,7 +1146,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         studio.equalize_c_builder_keywords(&json,video);
     }));
     editor.on_cb_tune_profile(on_window!(
-        |studio, json:SharedString, opening:f32, closing:f32,
+        |studio, json:SharedString, opening:f32, closing:f32, intro:f32,
          image_min:SharedString, image_max:SharedString, video_min:SharedString, video_max:SharedString,
          max_videos:SharedString, max_images:SharedString, cooldown:SharedString, seed:SharedString| {
             if studio.c_builder.scanning { return; }
@@ -1167,6 +1167,10 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                 }
                 profile.curve=vec![concat_project::planning::Anchor{at:0.,video:first/100.},concat_project::planning::Anchor{at:1.,video:last/100.}];
                 c_builder::simplify_planning(&mut profile);
+                if let Some(duration)=studio.c_builder.duration {
+                    if !intro.is_finite()||intro<0.0||f64::from(intro)> (duration/3.0).floor(){return Err("Video-only intro must be within one third of narration duration".into());}
+                    profile.video_intro_seconds=intro.round() as u32;
+                }
                 profile.image_seconds=[
                     parse_float("Image minimum seconds",&image_min)?,
                     parse_float("Image maximum seconds",&image_max)?,
@@ -1208,6 +1212,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         if studio.c_builder.duration.is_none(){studio.notify("Select narration first",true);return;}
         let mut profile=match concat_project::planning::Profile::from_json(&json){Ok(p)=>p,Err(e)=>{studio.notify(&e,true);return;}};
         c_builder::simplify_planning(&mut profile);
+        profile.video_intro_seconds=profile.video_intro_seconds.min((studio.c_builder.duration.unwrap_or(0.0)/3.0).floor() as u32);
         if action=="reroll"{
             profile.seed=c_builder::random_seed();
             if let Err(e)=c_builder::save_planning_settings(&studio.host.dirs.config,&profile){studio.notify(&format!("Planning seed not saved: {e}"),true);return;}
@@ -1252,6 +1257,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                 Ok(p) => p, Err(e) => { studio.notify(&e, true); return; }
             };
             c_builder::simplify_planning(&mut profile);
+            profile.video_intro_seconds=profile.video_intro_seconds.min((duration/3.0).floor() as u32);
             profile.media_selection.get_or_insert_with(Default::default).normalize();
             profile.overall_video_percent=Some(if profile.media_selection.as_ref().is_some_and(|s|s.videos_enabled){studio.prefs.c_builder_video_ratio.unwrap_or(30).min(100)}else{0});
             let cache_path = studio.host.dirs.data.join("c-builder-media-cache.json");

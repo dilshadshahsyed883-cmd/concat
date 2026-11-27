@@ -148,6 +148,7 @@ jobs:
         working-directory: upstream/src
         run: |
           cargo test -p concat-project --lib --locked -j 2 keyword_budget_tests
+          cargo test -p concat-project --lib --locked -j 2 video_only_intro_exact_boundary_and_remaining_ratio
           cargo test -p concat --lib --locked -j 2 c_builder::tests
           cargo test -p concat --lib --locked -j 2 studio::bulk_presets::tests
           cargo test -p concat --lib --locked -j 2 studio::backdrop::tests

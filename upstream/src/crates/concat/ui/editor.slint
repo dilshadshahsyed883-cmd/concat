@@ -114,6 +114,7 @@ export global Editor {
     in-out property <string> cb-video-selection-summary;
     in-out property <float> cb-plan-opening:65;
     in-out property <float> cb-plan-closing:5;
+    in-out property <float> cb-plan-intro:0;
     in-out property <string> cb-plan-image-min;
     in-out property <string> cb-plan-image-max;
     in-out property <string> cb-plan-video-min;
@@ -122,7 +123,7 @@ export global Editor {
     in-out property <string> cb-plan-max-images;
     in-out property <string> cb-plan-cooldown;
     in-out property <string> cb-plan-seed;
-    callback cb-tune-profile(json:string, opening:float, closing:float,
+    callback cb-tune-profile(json:string, opening:float, closing:float, intro:float,
         image-min:string, image-max:string, video-min:string, video-max:string,
         max-videos:string, max-images:string, cooldown:string, seed:string);
     callback cb-equalize-keywords(json:string, video:bool);
