@@ -45,7 +45,6 @@ pub enum StartMsg {
     /// The folder the Open picker answered with.
     OpenChosen(PathBuf),
     OpenRecent(String),
-    ForgetRecent(String),
     /// Show a project's folder in the file manager.
     RevealRecent(String),
     /// Prompt to rename a recent project.
@@ -330,12 +329,6 @@ impl StartPane {
                 {
                     studio.notify(&error, true);
                 }
-            }
-            StartMsg::ForgetRecent(path) => {
-                if let Err(error) = projects::forget(&studio.host.dirs.config, &path) {
-                    studio.notify(&error, true);
-                }
-                studio.recents = projects::recents(&studio.host.dirs.config);
             }
             StartMsg::RevealRecent(path) => {
                 if let Err(error) = platform::reveal(&path) {
