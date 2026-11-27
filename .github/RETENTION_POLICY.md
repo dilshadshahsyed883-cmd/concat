@@ -1,0 +1,3 @@
+# Build storage retention
+
+Owner-approved 2026-11-28: Windows EXE/distributable ZIP artifacts: 3 days; temporary report/source/test artifacts: 1 day; workflow logs: 7 days (repository Actions settings). Publish verified stable releases only; retain latest and previous stable per application. GHCR: retain latest verified working and previous stable per package, plus every deployed/pinned digest. Never delete active-build artifacts or deployed/rollback dependencies. Failed/test builds cannot replace stable versions. Automatic release/package deletion must fail closed until deployment inventory and rollback safety are verified. Repository settings are configured separately.
