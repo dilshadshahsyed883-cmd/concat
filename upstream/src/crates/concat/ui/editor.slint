@@ -88,6 +88,18 @@ export global Editor {
 
     // C Builder lives alongside the ordinary Concat media bin.
     in-out property <string> cb-media-folder;
+    in-out property <string> cb-intro-folder;
+    in-out property <int> cb-intro-count;
+    in-out property <int> cb-intro-probed;
+    in-out property <int> cb-intro-reused;
+    in-out property <string> cb-intro-summary;
+    in-out property <[CBuilderKeywordData]> cb-intro-keywords;
+    in-out property <string> cb-intro-selection-summary;
+    callback cb-import-intro-folder();
+    callback cb-refresh-intro-folder();
+    callback cb-clear-intro-folder();
+    callback cb-intro-keyword-changed(json:string,keyword:string,selected:bool,weight:int);
+    callback cb-equalize-intro-keywords(json:string);
     in-out property <string> cb-narration;
     in-out property <float> cb-duration;
     in-out property <string> cb-status;

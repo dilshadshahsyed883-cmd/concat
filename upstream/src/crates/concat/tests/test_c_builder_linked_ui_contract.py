@@ -92,6 +92,16 @@ class CBuilderLinkedUiContracts(unittest.TestCase):
         self.assertIn("editor.on_cb_tune_profile(", self.lib)
         self.assertIn("profile.validate()", self.lib)
 
+    def test_dedicated_intro_library_parity(self):
+        self.assertIn('Intro Clips Library', self.pane)
+        self.assertIn('Editor.cb-import-intro-folder()', self.home)
+        self.assertIn('KeywordGrid {entries:root.intro-videos', self.selection)
+        self.assertIn('Equalize Intro Videos', self.selection)
+        self.assertIn('c_builder::plan_profile_with_intro', self.lib)
+        self.assertIn('finish_libraries', self.lib)
+        self.assertIn('c_builder-intro-cache.json', self.lib)
+        self.assertIn('profile.intro_selection.get_or_insert_with', self.studio)
+
     def test_video_only_intro_is_wired(self):
         self.assertIn('Param { label: "Video-only intro (0 = off)"', self.pane)
         self.assertIn('Math.floor(root.narration-duration / 3)', self.pane)

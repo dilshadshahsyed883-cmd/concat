@@ -143,6 +143,11 @@ component KeywordGrid inherits Rectangle {
 export component CBuilderSelectionPanel inherits VerticalLayout {
     in property <[CBuilderKeywordData]> images;
     in property <[CBuilderKeywordData]> videos;
+    in property <bool> intro-configured;
+    in property <[CBuilderKeywordData]> intro-videos;
+    in property <string> intro-summary;
+    callback intro-changed(keyword:string,selected:bool,weight:int);
+    callback equalize-intro();
     in property <bool> videos-enabled;
     in property <float> overall-video-ratio: 30;
     property <float> ratio-draft: root.videos-enabled ? root.overall-video-ratio : 0;
@@ -195,4 +200,14 @@ export component CBuilderSelectionPanel inherits VerticalLayout {
             changed(keyword, selected, weight) => { root.changed(true, keyword, selected, weight); } }
         if root.videos.length == 0: Text { text: "No video keywords are available in this folder."; color: Theme.fg-muted; wrap: word-wrap; }
     }
+    if root.intro-configured: Rectangle {height:1px;background:Theme.line;}
+    if root.intro-configured: HorizontalLayout {
+        spacing:8px;
+        Text {text:"Intro Videos · independent 100% budget";color:Theme.fg;font-size:Theme.fs;font-weight:Theme.weight-title;vertical-alignment:center;horizontal-stretch:1;}
+        Button {label:"Equalize Intro Videos";enabled:!root.busy&&root.intro-videos.length>0;clicked=>{root.equalize-intro();}}
+    }
+    if root.intro-configured: Text {text:root.intro-summary;color:Theme.fg-muted;font-size:Theme.fs-sm;wrap:word-wrap;}
+    if root.intro-configured: KeywordGrid {entries:root.intro-videos;busy:root.busy;changed(keyword,selected,weight)=>{root.intro-changed(keyword,selected,weight);}}
+    if root.intro-configured && root.intro-videos.length==0: Text {text:"No intro video keywords available. Refresh the intro folder.";color:Theme.fg-muted;wrap:word-wrap;}
+
 }

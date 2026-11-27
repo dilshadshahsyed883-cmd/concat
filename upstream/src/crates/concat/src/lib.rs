@@ -1072,9 +1072,9 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     });
     app.on_start_c_builder(on_window!(|studio| {
         studio.builder_home();
-        if studio.cb_home && !studio.c_builder.scanning && !studio.c_builder.folder.is_empty() {
-            let folder=std::path::PathBuf::from(studio.c_builder.folder.clone());
-            c_builder_scan(&mut studio,folder);
+        if studio.cb_home && !studio.c_builder.scanning && studio.cb_pending_used.is_none() {
+            if !studio.c_builder.folder.is_empty(){let folder=std::path::PathBuf::from(studio.c_builder.folder.clone());c_builder_scan(&mut studio,folder);}
+            else if !studio.c_builder.intro_folder.is_empty(){let folder=std::path::PathBuf::from(studio.c_builder.intro_folder.clone());c_builder_intro_scan(&mut studio,folder);}
         }
     }));
     app.on_c_builder_return_home(on_window!(|studio,profile:SharedString| {studio.builder_return_home(&profile);}));
@@ -1092,7 +1092,8 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         host::after_dialog(
             || rfd::FileDialog::new().set_title("C Builder - Import Media Folder").pick_folder(),
             |studio, _, _, folder| {
-                if studio.c_builder.scanning {return;}
+                if studio.c_builder.scanning || studio.cb_pending_used.is_some() {return;}
+                if let Err(e)=check_cb_libraries(&folder,&std::path::PathBuf::from(&studio.c_builder.intro_folder)){studio.notify(&e,true);return;}
                 studio.prefs.c_builder_media_folder=Some(folder.to_string_lossy().into_owned());
                 studio.prefs.save(&studio.host.dirs);
                 c_builder_scan(studio, folder);
@@ -1100,11 +1101,33 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         );
     });
     editor.on_cb_refresh_folder(on_window!(|studio| {
-        if !studio.c_builder.folder.is_empty() && !studio.c_builder.scanning {
+        if !studio.c_builder.folder.is_empty() && !studio.c_builder.scanning && studio.cb_pending_used.is_none() {
             let folder = std::path::PathBuf::from(studio.c_builder.folder.clone());
             c_builder_scan(&mut studio, folder);
         }
     }));
+    editor.on_cb_import_intro_folder(||{
+        #[cfg(not(any(target_os="android",target_os="ios")))]
+        host::after_dialog(||rfd::FileDialog::new().set_title("C Builder - Import Intro Clips Folder").pick_folder(),|studio,_,_,folder|{
+            if studio.c_builder.scanning||studio.cb_pending_used.is_some(){return;}
+            if let Err(e)=check_cb_libraries(&std::path::PathBuf::from(&studio.c_builder.folder),&folder){studio.notify(&e,true);return;}
+            studio.prefs.c_builder_intro_folder=Some(folder.to_string_lossy().into_owned());studio.prefs.save(&studio.host.dirs);
+            c_builder_intro_scan(studio,folder);
+        });
+    });
+    editor.on_cb_refresh_intro_folder(on_window!(|studio|{
+        if !studio.c_builder.scanning&&studio.cb_pending_used.is_none()&&!studio.c_builder.intro_folder.is_empty(){
+            let folder=std::path::PathBuf::from(&studio.c_builder.intro_folder);c_builder_intro_scan(&mut studio,folder);
+        }
+    }));
+    editor.on_cb_clear_intro_folder(on_window!(|studio|{
+        if studio.c_builder.scanning||studio.cb_pending_used.is_some(){return;}
+        studio.prefs.c_builder_intro_folder=None;studio.prefs.save(&studio.host.dirs);
+        studio.c_builder.intro_folder.clear();studio.c_builder.intro_assets.clear();studio.c_builder.intro_summary.clear();
+        studio.c_builder.intro_probed=0;studio.c_builder.intro_reused=0;studio.c_builder.preview.clear();studio.c_builder.preview_shots.clear();
+    }));
+    editor.on_cb_intro_keyword_changed(on_window!(|studio,json:SharedString,keyword:SharedString,selected:bool,weight:i32|{studio.set_c_builder_intro_keyword(&json,&keyword,selected,weight);}));
+    editor.on_cb_equalize_intro_keywords(on_window!(|studio,json:SharedString|{studio.equalize_c_builder_intro(&json);}));
     editor.on_cb_project_name_edited(on_window!(|studio,name:SharedString|{studio.c_builder.edit_project_name(&name);}));
     editor.on_cb_reset_project_name(on_window!(|studio|{studio.c_builder.reset_project_name();}));
     editor.on_cb_choose_narration(|| {
@@ -1225,9 +1248,10 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         profile.media_selection.get_or_insert_with(Default::default).normalize();
         profile.overall_video_percent=Some(if profile.media_selection.as_ref().is_some_and(|s|s.videos_enabled){studio.prefs.c_builder_video_ratio.unwrap_or(30).min(100)}else{0});
         let assets = studio.c_builder.assets.clone();
+        let intro_assets=(!studio.c_builder.intro_folder.is_empty()).then(||studio.c_builder.intro_assets.clone());
         let iw = images.to_string(); let vw = videos.to_string();
         studio.c_builder.scanning = true;
-        host::spawn(move || c_builder::plan_profile(&assets, duration, &iw, &vw, &profile),
+        host::spawn(move || c_builder::plan_profile_with_intro(&assets,intro_assets.as_deref(), duration, &iw, &vw, &profile),
             |studio, _, _, result| {
                 studio.c_builder.scanning = false;
                 match result {
@@ -1262,6 +1286,10 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             profile.overall_video_percent=Some(if profile.media_selection.as_ref().is_some_and(|s|s.videos_enabled){studio.prefs.c_builder_video_ratio.unwrap_or(30).min(100)}else{0});
             let cache_path = studio.host.dirs.data.join("c-builder-media-cache.json");
             let library=std::path::PathBuf::from(studio.c_builder.folder.clone());
+            let intro_library=std::path::PathBuf::from(&studio.c_builder.intro_folder);
+            let intro_assets=(!studio.c_builder.intro_folder.is_empty()).then(||studio.c_builder.intro_assets.clone());
+            let intro_cache=studio.host.dirs.data.join("c-builder-intro-cache.json");
+            if profile.video_intro_seconds>0{if let Err(e)=check_cb_libraries(&library,&intro_library){studio.notify(&e,true);return;}}
             let cancel=std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));studio.cb_generation_cancel=Some(cancel.clone());
             // The full shot list belongs to Preview Plan / Reroll only.
             studio.c_builder.preview.clear();
@@ -1272,7 +1300,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                 move || {
                     if cancel.load(std::sync::atomic::Ordering::Relaxed){return Err("Generation cancelled before saving any project".into());}
                     std::fs::create_dir_all(&output).map_err(|e|format!("Could not create output folder: {e}"))?;
-                    let (shots, _) = c_builder::plan_profile(&assets, duration, &image_weights,
+                    let (shots, _) = c_builder::plan_profile_with_intro(&assets,intro_assets.as_deref(), duration, &image_weights,
                         &video_weights, &profile)?;
                     let folder = c_builder::write_native_with_profile(&shots, &audio, duration, &output,
                         &project_name, Some(&profile))?;
@@ -1281,9 +1309,12 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                         .map_err(|e| format!("Project created but profile snapshot failed: {e}"))?;
                     let used: Vec<String> = shots.iter().map(|s| s.asset.path.clone())
                         .collect::<std::collections::HashSet<_>>().into_iter().collect();
-                    let sources=used.into_iter().map(std::path::PathBuf::from).collect::<Vec<_>>();
-                    let pending=crate::studio::c_builder_home::PendingUsed{library,project:folder,sources,cache:cache_path};
-                    let finish=c_builder_used::finish(&pending.library,&pending.project,&pending.sources,&pending.cache,&cancel);
+                    let intro_paths:std::collections::HashSet<_>=intro_assets.iter().flatten().map(|a|a.path.as_str()).collect();
+                    let (intro_used,normal_used):(Vec<_>,Vec<_>)=used.into_iter().partition(|p|profile.video_intro_seconds>0&&intro_paths.contains(p.as_str()));
+                    let sources=normal_used.into_iter().map(std::path::PathBuf::from).collect::<Vec<_>>();
+                    let intro=(!intro_used.is_empty()).then(||(intro_library,intro_used.into_iter().map(std::path::PathBuf::from).collect(),intro_cache));
+                    let pending=crate::studio::c_builder_home::PendingUsed{library,project:folder,sources,cache:cache_path,intro};
+                    let finish=c_builder_used::finish_libraries(&pending.library,&pending.project,&pending.sources,&pending.cache,pending.intro.as_ref(),&cancel);
                     Ok::<_, String>((pending,finish))
                 },
                 |studio, _, _, result| {
@@ -3430,7 +3461,8 @@ mod tests {
 /// Import or refresh a folder using Concat's own probe. Work stays off the UI thread;
 /// saved metadata is reused for every unchanged file, and completed scans are durable.
 fn c_builder_scan(studio: &mut Studio, folder: std::path::PathBuf) {
-    if studio.c_builder.scanning { return; }
+    if studio.c_builder.scanning || studio.cb_pending_used.is_some() { return; }
+    if let Err(e)=check_cb_libraries(&folder,&std::path::PathBuf::from(&studio.c_builder.intro_folder)){studio.c_builder.assets.clear();studio.c_builder.intro_assets.clear();studio.notify(&e,true);return;}
     let folder_label = folder.to_string_lossy().into_owned();
     studio.c_builder.folder = folder_label.clone();
     studio.c_builder.assets.clear();
@@ -3483,6 +3515,38 @@ fn c_builder_scan(studio: &mut Studio, folder: std::path::PathBuf) {
                     studio.notify(&error, true);
                 }
             }
+            if !studio.c_builder.intro_folder.is_empty(){let folder=std::path::PathBuf::from(&studio.c_builder.intro_folder);c_builder_intro_scan(studio,folder);}
         },
     );
+}
+
+fn check_cb_libraries(normal:&std::path::Path,intro:&std::path::Path)->Result<(),String>{
+    if normal.as_os_str().is_empty()||intro.as_os_str().is_empty(){return Ok(());}
+    if let (Ok(n),Ok(i))=(normal.canonicalize(),intro.canonicalize()){
+        if n.starts_with(&i)||i.starts_with(&n){return Err("Normal and intro libraries must be distinct, non-overlapping folders".into());}
+    }
+    Ok(())
+}
+fn c_builder_intro_scan(studio:&mut Studio,folder:std::path::PathBuf){
+    if studio.c_builder.scanning||studio.cb_pending_used.is_some(){return;}
+    studio.c_builder.intro_folder=folder.to_string_lossy().into_owned();
+    studio.c_builder.intro_assets.clear();studio.c_builder.intro_summary.clear();studio.c_builder.intro_probed=0;studio.c_builder.intro_reused=0;
+    studio.c_builder.preview.clear();studio.c_builder.preview_shots.clear();
+    if let Err(e)=check_cb_libraries(&std::path::PathBuf::from(&studio.c_builder.folder),&folder){studio.notify(&e,true);return;}
+    studio.c_builder.scanning=true;studio.c_builder.scan_done=0;studio.c_builder.scan_total=0;studio.c_builder.status="Scanning intro videos...".into();
+    let cache=studio.host.dirs.data.join("c-builder-intro-cache.json");
+    host::spawn(move||c_builder::scan_intro(&folder,&cache,|done,total|{
+        if done==0||done==total||done%8==0{host::on_ui(move|studio,_,_|{if studio.c_builder.scanning{studio.c_builder.scan_done=done;studio.c_builder.scan_total=total;}});}
+    }),|studio,_,_,result|{
+        studio.c_builder.scanning=false;
+        match result{
+            Ok(report)=>{studio.c_builder.intro_folder=report.root.to_string_lossy().into_owned();studio.c_builder.intro_summary=report.keywords();
+                studio.c_builder.intro_probed=report.probed;studio.c_builder.intro_reused=report.reused;
+                studio.c_builder.intro_assets=report.assets;studio.c_builder.scan_done=studio.c_builder.intro_assets.len()+report.failures.len();studio.c_builder.scan_total=studio.c_builder.scan_done;
+                studio.c_builder.status=format!("Intro library ready: {} videos; {} probed, {} cached, {} errors",studio.c_builder.intro_assets.len(),report.probed,report.reused,report.failures.len());
+                if let Some(e)=report.failures.first(){studio.notify(&format!("Intro import: {e}"),true);}
+            },
+            Err(e)=>{studio.c_builder.status=format!("Intro scan failed: {e}");studio.notify(&e,true);}
+        }
+    });
 }

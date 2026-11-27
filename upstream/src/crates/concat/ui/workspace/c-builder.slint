@@ -45,6 +45,18 @@ component TuneField inherits VerticalLayout {
 
 export component CBuilderPane inherits VerticalLayout {
     in property <string> media-folder;
+    in property <string> intro-folder;
+    in property <int> intro-count;
+    in property <int> intro-probed;
+    in property <int> intro-reused;
+    in property <string> intro-summary;
+    in property <[CBuilderKeywordData]> intro-keywords;
+    in property <string> intro-selection-summary;
+    callback import-intro-folder();
+    callback refresh-intro-folder();
+    callback clear-intro-folder();
+    callback intro-keyword-changed(json:string,keyword:string,selected:bool,weight:int);
+    callback equalize-intro-keywords(json:string);
     in property <string> narration;
     in property <string> status;
     in property <string> keywords;
@@ -135,6 +147,10 @@ export component CBuilderPane inherits VerticalLayout {
 
     if root.page == 0: VerticalLayout {
         spacing: 10px;
+        HorizontalLayout {
+        spacing:16px;
+        VerticalLayout {
+        horizontal-stretch:1;spacing:10px;
         Text { text: "Media Library"; color: Theme.fg; font-size: Theme.fs-lg; font-weight: Theme.weight-title; }
         HorizontalLayout {
             spacing: 6px;
@@ -193,6 +209,25 @@ export component CBuilderPane inherits VerticalLayout {
             font-size: Theme.fs-sm;
             wrap: word-wrap;
         }
+        }
+        Rectangle { width:1px; background:Theme.line; }
+        VerticalLayout {
+            horizontal-stretch:1;spacing:10px;
+            Text { text:"Intro Clips Library";color:Theme.fg;font-size:Theme.fs-lg;font-weight:Theme.weight-title; }
+            HorizontalLayout {
+                spacing:6px;
+                Button {label:"Import Folder";enabled:!root.busy;clicked=>{root.import-intro-folder();}}
+                Button {label:"Refresh";enabled:!root.busy&&root.intro-folder!="";clicked=>{root.refresh-intro-folder();}}
+                Button {label:"Clear";enabled:!root.busy&&root.intro-folder!="";clicked=>{root.clear-intro-folder();}}
+            }
+            Text {text:root.intro-folder==""?"Optional intro-only folder. Otherwise normal media supplies the intro.":root.intro-folder;color:Theme.fg-muted;font-size:Theme.fs-sm;wrap:word-wrap;}
+            Text {text:"Videos: "+root.intro-count;color:Theme.fg;font-size:Theme.fs;}
+            Text {text:"New/changed probed: "+root.intro-probed+"    Reused from cache: "+root.intro-reused;color:Theme.fg-muted;font-size:Theme.fs-sm;wrap:word-wrap;}
+            Text {text:"Keyword groups";color:Theme.fg;font-weight:Theme.weight-title;}
+            Text {text:root.intro-summary==""?"Import a folder to view intro video groups.":root.intro-summary;color:Theme.fg-muted;font-size:Theme.fs-sm;wrap:word-wrap;}
+            Text {text:"Consumed intro clips move into this library's used/Project Name/.";color:Theme.fg-muted;font-size:Theme.fs-sm;wrap:word-wrap;}
+        }
+        }
         Text {
             text: "Media previews remain available in Concat's existing Media tab.";
             color: Theme.fg-dim;
@@ -202,6 +237,9 @@ export component CBuilderPane inherits VerticalLayout {
     }
     if root.page == 2: CBuilderSelectionPanel {
         images: root.image-keywords; videos: root.video-keywords; videos-enabled: root.videos-enabled;
+        intro-configured:root.intro-folder!="";intro-videos:root.intro-keywords;intro-summary:root.intro-selection-summary;
+        intro-changed(keyword,selected,weight)=>{root.intro-keyword-changed(root.edited-profile,keyword,selected,weight);}
+        equalize-intro=>{root.equalize-intro-keywords(root.edited-profile);}
         overall-video-ratio:root.overall-video-ratio; ratio-changed(value)=>{root.ratio-changed(value);}
         busy: root.busy; image-summary: root.image-selection-summary; video-summary: root.video-selection-summary;
         changed(video, keyword, selected, weight) => { root.keyword-changed(root.edited-profile, video, keyword, selected, weight); }

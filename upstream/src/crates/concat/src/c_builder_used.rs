@@ -346,15 +346,20 @@ pub struct Finish {
     pub result:Result<RelocationReport,String>,
     pub refresh:Option<crate::c_builder::ScanReport>,
     pub cache_warning:Option<String>,
+    pub intro_refresh:Option<crate::c_builder::ScanReport>,
 }
 /// Complete relocation, cache updates and visible inventory before the UI reports completion.
 pub fn finish(library:&Path,project:&Path,consumed:&[PathBuf],cache:&Path,cancel:&AtomicBool)->Finish {
+    finish_kind(library,project,consumed,cache,cancel,false)
+}
+fn finish_kind(library:&Path,project:&Path,consumed:&[PathBuf],cache:&Path,cancel:&AtomicBool,intro:bool)->Finish {
     let result=relocate_with_cancel(library,project,consumed,cancel);
     let mut refresh=None;let mut warnings=Vec::new();
-    if result.is_ok(){
-        let names:Vec<_>=consumed.iter().map(|p|p.to_string_lossy().into_owned()).collect();
+    if let Ok(report)=&result{
+        let names:Vec<_>=report.entries.iter().map(|e|e.original.to_string_lossy().into_owned()).collect();
         if let Err(e)=crate::c_builder::mark_used(cache,&names){warnings.push(e);}
-        match crate::c_builder::scan(library,cache,|_,_|{}) {
+        let scan=if intro{crate::c_builder::scan_intro(library,cache,|_,_|{})}else{crate::c_builder::scan(library,cache,|_,_|{})};
+        match scan {
             Ok(report)=>{
                 if !report.failures.is_empty(){warnings.push(format!("{} remaining media could not be refreshed: {}",report.failures.len(),report.failures.join("; ")));}
                 refresh=Some(report);
@@ -362,5 +367,21 @@ pub fn finish(library:&Path,project:&Path,consumed:&[PathBuf],cache:&Path,cancel
             Err(e)=>warnings.push(e),
         }
     }
-    Finish {result,refresh,cache_warning:(!warnings.is_empty()).then(||warnings.join("; "))}
+    Finish {result,refresh,cache_warning:(!warnings.is_empty()).then(||warnings.join("; ")),intro_refresh:None}
+}
+
+pub fn finish_libraries(library:&Path,project:&Path,consumed:&[PathBuf],cache:&Path,
+    intro:Option<&(PathBuf,Vec<PathBuf>,PathBuf)>,cancel:&AtomicBool)->Finish {
+    let mut normal=finish(library,project,consumed,cache,cancel);
+    if normal.result.is_err(){return normal;}
+    if let Some((root,sources,cache))=intro.filter(|(_,s,_)|!s.is_empty()){
+        let other=finish_kind(root,project,sources,cache,cancel,true);
+        normal.intro_refresh=other.refresh;
+        if let Some(w)=other.cache_warning{normal.cache_warning=Some(normal.cache_warning.map_or(w.clone(),|old|format!("{old}; {w}")));}
+        match other.result{
+            Ok(mut r)=>{if let Ok(n)=&mut normal.result{n.entries.append(&mut r.entries);n.already_archived+=r.already_archived;n.compatibility_links+=r.compatibility_links;}},
+            Err(e)=>normal.result=Err(format!("Intro library archival incomplete: {e}")),
+        }
+    }
+    normal
 }

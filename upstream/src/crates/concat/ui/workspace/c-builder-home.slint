@@ -50,6 +50,11 @@ export component CBuilderHome inherits Rectangle {
                 can-generate:!root.used-pending;generating:root.generating;
                 project-name:Editor.cb-project-name;name-overridden:Editor.cb-name-overridden;name-preview:Editor.cb-name-preview;
                 project-name-edited(name)=>{Editor.cb-project-name-edited(name);}reset-project-name=>{Editor.cb-reset-project-name();}
+                intro-folder:Editor.cb-intro-folder;intro-count:Editor.cb-intro-count;intro-probed:Editor.cb-intro-probed;intro-reused:Editor.cb-intro-reused;intro-summary:Editor.cb-intro-summary;
+                intro-keywords:Editor.cb-intro-keywords;intro-selection-summary:Editor.cb-intro-selection-summary;
+                import-intro-folder=>{Editor.cb-import-intro-folder();}refresh-intro-folder=>{Editor.cb-refresh-intro-folder();}clear-intro-folder=>{Editor.cb-clear-intro-folder();}
+                intro-keyword-changed(json,keyword,selected,weight)=>{Editor.cb-intro-keyword-changed(json,keyword,selected,weight);}
+                equalize-intro-keywords(json)=>{Editor.cb-equalize-intro-keywords(json);}
                 media-folder:Editor.cb-media-folder;narration:Editor.cb-narration;narration-duration:Editor.cb-duration;
                 status:Editor.cb-status;keywords:Editor.cb-keywords;image-count:Editor.cb-image-count;video-count:Editor.cb-video-count;
                 cache-probed:Editor.cb-probed;cache-reused:Editor.cb-reused;scan-done:Editor.cb-scan-done;scan-total:Editor.cb-scan-total;

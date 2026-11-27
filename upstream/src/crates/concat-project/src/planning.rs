@@ -55,6 +55,9 @@ pub struct Profile {
     /// Guaranteed video-only prefix; overall ratio applies to the remainder.
     #[serde(default)]
     pub video_intro_seconds: u32,
+    /// Independent video keyword budget for a dedicated intro library.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intro_selection: Option<MediaSelection>,
     pub seed: u64,
     #[serde(default)]
     pub pins: Vec<Pin>,
@@ -223,6 +226,7 @@ impl Default for Profile {
             ratio_by_seconds: true,
             overall_video_percent: None,
             video_intro_seconds: 0,
+            intro_selection: None,
             seed: 1,
             pins: Vec::new(),
             media_selection: None,
@@ -309,7 +313,7 @@ impl Profile {
         if self.cooldown > 10000 || self.max_videos > 10000 || self.max_images > 10000 {
             return Err("Sequence controls exceed safety limits".into());
         }
-        if let Some(selection) = &self.media_selection {
+        for selection in self.media_selection.iter().chain(self.intro_selection.iter()) {
             if selection.images.len() + selection.videos.len() > 20000
                 || selection
                     .images
@@ -416,7 +420,12 @@ impl Random {
 }
 /// Exhausted hard constraints return an error; availability/cooldown relaxations are reported.
 pub fn generate(sources: &[Source], total_us: u64, profile: &Profile) -> Result<Plan, String> {
+    generate_with_intro_pool(sources,total_us,profile,None)
+}
+/// With a dedicated library, indexes at or after the split are intro-only.
+pub fn generate_with_intro_pool(sources: &[Source], total_us: u64, profile: &Profile, intro_split:Option<usize>) -> Result<Plan,String> {
     profile.validate()?;
+    if intro_split.is_some_and(|i|i>sources.len()){return Err("Invalid intro source pool".into());}
     if total_us == 0 || total_us > 86_400_000_000 {
         return Err("Duration must be 0–24 hours".into());
     }
@@ -475,6 +484,7 @@ pub fn generate(sources: &[Source], total_us: u64, profile: &Profile) -> Result<
     let mut image_run = 0;
     while at < total_us {
         let in_intro=at<intro_us;
+        let in_pool=|i:usize|intro_split.is_none_or(|split|(i>=split)==in_intro);
         let single_kind=if in_intro{Some(true)}else{body_single_kind};
         let target=if in_intro{None}else{target};
         let local_at=at.saturating_sub(intro_us);
@@ -518,7 +528,7 @@ pub fn generate(sources: &[Source], total_us: u64, profile: &Profile) -> Result<
                 .iter()
                 .enumerate()
                 .filter(|(i, s)| {
-                    s.video == video
+                    in_pool(*i) && s.video == video
                         && single_kind.is_none_or(|kind|kind==video)
                         && s.weight > 0.0
                         && (!video || s.duration_us >= (profile.video_seconds[0] * 1e6) as u64)
@@ -590,9 +600,9 @@ pub fn generate(sources: &[Source], total_us: u64, profile: &Profile) -> Result<
             .map(|i| sources[*i].group.as_str())
             .collect();
         let mut groups = std::collections::BTreeMap::<&str, f64>::new();
-        for source in sources
-            .iter()
-            .filter(|s| s.video == video && available_groups.contains(s.group.as_str()))
+        for (_,source) in sources
+            .iter().enumerate()
+            .filter(|(i,s)| in_pool(*i) && s.video == video && available_groups.contains(s.group.as_str()))
         {
             *groups.entry(&source.group).or_default() += source.weight;
         }
@@ -689,6 +699,21 @@ mod tests {
                 weight: 1.0,
             })
             .collect()
+    }
+    #[test]
+    fn dedicated_intro_pool_isolated_from_body_even_with_same_keyword() {
+        let s=sources();
+        let mut p=Profile::default();
+        p.video_intro_seconds=20;p.overall_video_percent=Some(50);
+        let a=generate_with_intro_pool(&s,90_000_000,&p,Some(50)).unwrap();
+        assert_eq!(a.shots,generate_with_intro_pool(&s,90_000_000,&p,Some(50)).unwrap().shots);
+        for shot in a.shots {
+            assert_eq!(shot.source>=50,shot.start_us<20_000_000);
+            if shot.source>=50{assert!(s[shot.source].video);assert!(shot.start_us+shot.duration_us<=20_000_000);}
+        }
+        assert!(generate_with_intro_pool(&s,90_000_000,&p,Some(s.len())).is_err());
+        p.video_intro_seconds=0;
+        assert!(generate_with_intro_pool(&s,90_000_000,&p,Some(50)).unwrap().shots.iter().all(|s|s.source<50));
     }
     #[test]
     fn video_only_intro_exact_boundary_and_remaining_ratio() {
