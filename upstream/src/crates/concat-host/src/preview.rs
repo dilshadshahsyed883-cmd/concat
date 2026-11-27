@@ -99,6 +99,17 @@ impl Monitor {
         }
     }
 
+    /// A bounded scratch monitor whose readers and frames are not shared with the editor.
+    pub fn isolated(cache_bytes:usize,max_readers:usize)->Self {
+        Self {
+            pool:Arc::new(concat_media::ReaderPool::new(cache_bytes,max_readers)),
+            plan:Arc::new(Mutex::new(None)),
+            early:Arc::new(Mutex::new(Vec::new())),
+            #[cfg(feature="gpu")]
+            gpu:None,
+        }
+    }
+
     /// A monitor that composites on `device` - the window's - so
     /// [`Monitor::texture_of`] yields textures the window shows as they
     /// are.

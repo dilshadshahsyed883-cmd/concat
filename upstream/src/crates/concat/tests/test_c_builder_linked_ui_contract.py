@@ -102,6 +102,16 @@ class CBuilderLinkedUiContracts(unittest.TestCase):
         self.assertIn('c-builder-intro-cache.json', self.lib)
         self.assertIn('profile.intro_selection.get_or_insert_with', self.studio)
 
+    def test_playback_preview_buttons_and_shared_plan(self):
+        labels=['label: "Preview Plan"','label: "Preview Intro"','label: "Preview Video"','label: "Reroll"']
+        self.assertEqual(sorted(self.pane.index(label) for label in labels),[self.pane.index(label) for label in labels])
+        self.assertIn('root.plan-intro > 0',self.pane)
+        self.assertIn('open:Editor.cb-preview-open',self.home)
+        self.assertIn('c_builder::preview_range',self.lib)
+        self.assertIn('c_builder::build_native_project',self.lib)
+        self.assertIn('key==studio.c_builder.preview_plan_key',self.lib)
+        self.assertIn('studio.builder_preview_close()',self.lib)
+
     def test_video_only_intro_is_wired(self):
         self.assertIn('Param { label: "Video-only intro (0 = off)"', self.pane)
         self.assertIn('Math.floor(root.narration-duration / 3)', self.pane)

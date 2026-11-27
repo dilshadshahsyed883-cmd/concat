@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { Theme } from "../theme/theme.slint";
-import { Button } from "../primitives/modal.slint";
+import { Button, Modal } from "../primitives/modal.slint";
+import { Glyph } from "../icons.slint";
+import { Param, ParamFormat } from "../inspector/controls.slint";
 import { PaneScroll } from "pane.slint";
 import { Editor } from "../editor.slint";
 import { CBuilderPane } from "c-builder.slint";
@@ -80,4 +82,47 @@ export component CBuilderHome inherits Rectangle {
             }
         }
     }
+    property <bool> preview-expanded:false;
+    property <bool> preview-visible:Editor.cb-preview-open;
+    changed preview-visible => {root.preview-expanded=false;}
+    Modal {
+        open:Editor.cb-preview-open;
+        title:Editor.cb-preview-title;
+        glyph:Glyph.film;
+        surface-width:900px;
+        surface-height:620px;
+        fill:root.preview-expanded;
+        closed=>{Editor.cb-preview-close();}
+        VerticalLayout {
+            padding:12px;spacing:8px;vertical-stretch:1;
+            Rectangle {
+                background:#000000;
+                vertical-stretch:1;
+                min-height:80px;
+                Image {width:parent.width;height:parent.height;source:Editor.cb-preview-image;image-fit:contain;}
+            }
+            Text {text:Editor.cb-preview-status;color:Theme.fg-muted;font-size:Theme.fs-sm;wrap:word-wrap;}
+            Param {
+                label:"Position";
+                rail:true;
+                value:Editor.cb-preview-time;
+                minimum:0;maximum:Math.max(0.1,Editor.cb-preview-duration);
+                step:0.1;unit:"s";fmt:ParamFormat.steps;
+                enabled:Editor.cb-preview-ready;
+                changed(v)=>{Editor.cb-preview-seek(v);}
+            }
+            HorizontalLayout {
+                spacing:6px;
+                Button {label:Editor.cb-preview-playing?"Pause":"Play";primary:true;enabled:Editor.cb-preview-ready;clicked=>{Editor.cb-preview-toggle();}}
+                Button {label:"Replay";enabled:Editor.cb-preview-ready;clicked=>{Editor.cb-preview-seek(0);}}
+                Button {label:Editor.cb-preview-muted?"Unmute":"Mute";enabled:Editor.cb-preview-ready;clicked=>{Editor.cb-preview-mute();}}
+                Text {text:Math.round(Editor.cb-preview-time*10)/10+" / "+Math.round(Editor.cb-preview-duration*10)/10+" s";color:Theme.fg;vertical-alignment:center;}
+                Rectangle {horizontal-stretch:1;}
+                Button {label:root.preview-expanded?"Restore":"Expand";clicked=>{root.preview-expanded=!root.preview-expanded;}}
+                Button {label:"Close";clicked=>{Editor.cb-preview-close();}}
+            }
+            Text {text:"Original timeline starts at "+Editor.cb-preview-start+"s · 480p · Narration only";color:Theme.fg-muted;font-size:Theme.fs-sm;}
+        }
+    }
+
 }

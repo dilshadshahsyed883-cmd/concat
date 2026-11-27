@@ -316,6 +316,8 @@ export component CBuilderPane inherits VerticalLayout {
         HorizontalLayout {
             spacing: 8px;
             Button { label: "Preview Plan"; enabled: !root.busy && root.narration != "" && (root.image-count+root.video-count)>0; clicked => { root.plan-profile(root.edited-profile, root.images-weights, root.videos-weights, "preview"); } }
+            Button { label: "Preview Intro"; enabled: !root.busy && root.plan-intro > 0 && root.narration != "" && (root.image-count+root.video-count)>0; clicked => { root.plan-profile(root.edited-profile,root.images-weights,root.videos-weights,"intro"); } }
+            Button { label: "Preview Video"; enabled: !root.busy && root.narration != "" && (root.image-count+root.video-count)>0; clicked => { root.plan-profile(root.edited-profile,root.images-weights,root.videos-weights,"video"); } }
             Button { label: "Reroll"; enabled: !root.busy && root.narration != "" && (root.image-count+root.video-count)>0; clicked => { root.plan-profile(root.edited-profile, root.images-weights, root.videos-weights, "reroll"); } }
             Rectangle { horizontal-stretch: 1; }
         }

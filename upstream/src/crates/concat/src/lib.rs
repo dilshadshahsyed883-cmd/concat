@@ -1150,6 +1150,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                                 studio.c_builder.choose_narration_name(&path);
                                 studio.c_builder.narration = path.to_string_lossy().into_owned();
                                 studio.c_builder.duration = Some(duration);
+                                studio.c_builder.preview.clear();studio.c_builder.preview_shots.clear();studio.c_builder.preview_plan_key.clear();
                                 studio.c_builder.status = format!("Narration ready: {duration:.2}s");
                             }
                             Err(error) => {
@@ -1231,7 +1232,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
     editor.on_cb_plan_profile(on_window!(|studio, json: SharedString, images: SharedString, videos: SharedString, action: SharedString| {
         if studio.c_builder.scanning{return;}
         let action=action.to_string();
-        if !matches!(action.as_str(),"preview"|"reroll"){return;}
+        if !matches!(action.as_str(),"preview"|"reroll"|"intro"|"video"){return;}
         if studio.c_builder.duration.is_none(){studio.notify("Select narration first",true);return;}
         let mut profile=match concat_project::planning::Profile::from_json(&json){Ok(p)=>p,Err(e)=>{studio.notify(&e,true);return;}};
         c_builder::simplify_planning(&mut profile);
@@ -1243,23 +1244,43 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
         if let Some(selection)=profile.media_selection.as_mut(){selection.normalize();}
         let encoded=serde_json::to_string_pretty(&profile).unwrap_or_default();
         studio.c_builder.profile_json = encoded.clone();
-        studio.c_builder.preview.clear();studio.c_builder.preview_shots.clear();
         let Some(duration) = studio.c_builder.duration else { studio.notify("Select narration first", true); return; };
         profile.media_selection.get_or_insert_with(Default::default).normalize();
         profile.overall_video_percent=Some(if profile.media_selection.as_ref().is_some_and(|s|s.videos_enabled){studio.prefs.c_builder_video_ratio.unwrap_or(30).min(100)}else{0});
         let assets = studio.c_builder.assets.clone();
         let intro_assets=(!studio.c_builder.intro_folder.is_empty()).then(||studio.c_builder.intro_assets.clone());
         let iw = images.to_string(); let vw = videos.to_string();
+        let narration=studio.c_builder.narration.clone();
+        let key=c_builder::preview_plan_key(&assets,intro_assets.as_deref(),duration,&narration,&iw,&vw,&profile);
+        let cached=(!key.is_empty()&&key==studio.c_builder.preview_plan_key&&!studio.c_builder.preview_shots.is_empty()&&action!="reroll")
+            .then(||(studio.c_builder.preview_shots.clone(),studio.c_builder.preview.clone()));
+        let playback=matches!(action.as_str(),"intro"|"video");
+        let intro_only=action=="intro";
         studio.c_builder.scanning = true;
-        host::spawn(move || c_builder::plan_profile_with_intro(&assets,intro_assets.as_deref(), duration, &iw, &vw, &profile),
-            |studio, _, _, result| {
-                studio.c_builder.scanning = false;
-                match result {
-                    Ok((shots, summary)) => {studio.c_builder.preview_shots=shots;studio.c_builder.preview=summary;},
-                    Err(e) => { studio.c_builder.preview = format!("Plan rejected: {e}"); studio.notify(&e, true); }
-                }
-            });
+        host::spawn(move || {
+            let (shots,summary)=match cached{Some(plan)=>plan,None=>c_builder::plan_profile_with_intro(&assets,intro_assets.as_deref(),duration,&iw,&vw,&profile)?};
+            let prepared=if playback{
+                let (start,end)=c_builder::preview_range(duration,profile.video_intro_seconds,intro_only)?;
+                let project=c_builder::build_native_project(&shots,std::path::Path::new(&narration),duration,"Preview",Some(&profile))?;
+                let clips=std::sync::Arc::new(concat_export::flatten::flatten_timeline(&project,None));
+                Some((clips,start,end,intro_only))
+            }else{None};
+            Ok::<_,String>((shots,summary,key,prepared))
+        }, |studio, _, _, result| {
+            studio.c_builder.scanning = false;
+            match result {
+                Ok((shots,summary,key,prepared))=>{
+                    studio.c_builder.preview_shots=shots;studio.c_builder.preview=summary;studio.c_builder.preview_plan_key=key;
+                    if let Some((clips,start,end,intro_only))=prepared{studio.builder_start_preview(clips,start,end,intro_only);}
+                },
+                Err(e)=>{studio.c_builder.preview_shots.clear();studio.c_builder.preview_plan_key.clear();studio.c_builder.preview=format!("Plan rejected: {e}");studio.notify(&e,true);}
+            }
+        });
     }));
+    editor.on_cb_preview_toggle(on_window!(|studio|{studio.builder_preview_toggle();}));
+    editor.on_cb_preview_seek(on_window!(|studio,seconds:f32|{studio.builder_preview_seek(f64::from(seconds));}));
+    editor.on_cb_preview_mute(on_window!(|studio|{studio.builder_preview_mute();}));
+    editor.on_cb_preview_close(on_window!(|studio|{studio.builder_preview_close();}));
     editor.on_cb_generate_project(on_window!(
         |studio, name: SharedString, images: SharedString, videos: SharedString, coverage: i32, profile_json: SharedString| {
             if studio.c_builder.scanning { return; }
@@ -1291,7 +1312,10 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
             let intro_cache=studio.host.dirs.data.join("c-builder-intro-cache.json");
             if profile.video_intro_seconds>0{if let Err(e)=check_cb_libraries(&library,&intro_library){studio.notify(&e,true);return;}}
             let cancel=std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));studio.cb_generation_cancel=Some(cancel.clone());
-            // The full shot list belongs to Preview Plan / Reroll only.
+            let key=c_builder::preview_plan_key(&assets,intro_assets.as_deref(),duration,&studio.c_builder.narration,&image_weights,&video_weights,&profile);
+            let cached=(!key.is_empty()&&key==studio.c_builder.preview_plan_key&&!studio.c_builder.preview_shots.is_empty()).then(||studio.c_builder.preview_shots.clone());
+            // Reuse the reviewed plan if its exact planning inputs still match.
+            studio.c_builder.preview_plan_key.clear();
             studio.c_builder.preview.clear();
             studio.c_builder.preview_shots.clear();
             studio.c_builder.scanning = true;
@@ -1300,8 +1324,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                 move || {
                     if cancel.load(std::sync::atomic::Ordering::Relaxed){return Err("Generation cancelled before saving any project".into());}
                     std::fs::create_dir_all(&output).map_err(|e|format!("Could not create output folder: {e}"))?;
-                    let (shots, _) = c_builder::plan_profile_with_intro(&assets,intro_assets.as_deref(), duration, &image_weights,
-                        &video_weights, &profile)?;
+                    let shots=match cached{Some(shots)=>shots,None=>c_builder::plan_profile_with_intro(&assets,intro_assets.as_deref(),duration,&image_weights,&video_weights,&profile)?.0};
                     let folder = c_builder::write_native_with_profile(&shots, &audio, duration, &output,
                         &project_name, Some(&profile))?;
                     std::fs::write(folder.join("planning-profile.json"),

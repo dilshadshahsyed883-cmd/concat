@@ -350,53 +350,7 @@ pub fn write_native_with_profile(shots:&[Shot],narration:&Path,duration:f64,pare
     }
     let (root,name)=chosen.ok_or("Too many project name collisions")?;
     let outcome = (|| -> Result<(), String> {
-        let mut project = Project::new();
-        if let Some(profile)=profile {project.extra.insert("cBuilderPlanning".into(),serde_json::to_value(profile).map_err(|e|e.to_string())?);}
-        let mut media_ids: HashMap<String, String> = HashMap::new();
-        for shot in shots {
-            let source = Path::new(&shot.asset.path);
-            let metadata = fs::metadata(source)
-                .map_err(|_| format!("Missing source: {}", shot.asset.path))?;
-            if metadata.len() != shot.asset.size || stamp(&metadata) != shot.asset.modified_ns {
-                return Err(format!("Media changed since scanning; refresh library: {}", shot.asset.path));
-            }
-            if !media_ids.contains_key(&shot.asset.path) {
-                let id = format!("m{}", project.media.len() + 1);
-                project.media.push(media_item(&shot.asset, id.clone()));
-                media_ids.insert(shot.asset.path.clone(), id);
-            }
-        }
-        let audio_path = narration.canonicalize().map_err(|e| e.to_string())?;
-        let audio_name = audio_path.to_string_lossy().into_owned();
-        let audio_id = format!("m{}", project.media.len() + 1);
-        project.media.push(MediaItem {
-            id: audio_id.clone(), path: audio_name.clone(),
-            name: audio_path.file_name().unwrap_or_default().to_string_lossy().into_owned(),
-            duration: Some(duration), kind: MediaKind::Audio,
-            audio_codec: None,
-            has_audio: true, ..MediaItem::default()
-        });
-        let timeline = project.active_mut();
-        timeline.name = name.to_owned();
-        for (i, shot) in shots.iter().enumerate() {
-            let is_image = shot.asset.kind == "image";
-            // The visual track is intentionally shared: the planned image/video
-            // sequence is one contiguous picture lane. Narration stays on T3.
-            let mut clip = Clip::blank(format!("c{}", i + 1),
-                "T1",
-                if is_image { ClipKind::Image } else { ClipKind::Video },
-                Path::new(&shot.asset.path).file_name().unwrap_or_default().to_string_lossy(),
-                shot.start_us as f64 / 1e6, shot.duration_us as f64 / 1e6);
-            clip.media_id = media_ids[&shot.asset.path].clone();
-            clip.source_start = shot.trim_us as f64 / 1e6;
-            if !is_image { clip.muted = Some(true); clip.volume = 0.0; }
-            timeline.clips.push(Arc::new(clip));
-        }
-        let mut voice = Clip::blank(format!("c{}", shots.len() + 1), "T3",
-            ClipKind::Audio, audio_path.file_name().unwrap_or_default().to_string_lossy(),
-            0.0, duration);
-        voice.media_id = audio_id;
-        timeline.clips.push(Arc::new(voice));
+        let project=build_native_project(shots,narration,duration,&name,profile)?;
         let settings = DocumentSettings {
             name: name.to_owned(), width: 1920, height: 1080, rate_num: 30, rate_den: 1
         };
@@ -412,6 +366,72 @@ pub fn write_native_with_profile(shots:&[Shot],narration:&Path,duration:f64,pare
     if outcome.is_err() { let _ = fs::remove_dir_all(&root); }
     outcome.map(|()| root)
 }
+/// Construct exactly the same native timeline for preview and save, with no filesystem writes.
+pub fn build_native_project(shots:&[Shot],narration:&Path,duration:f64,name:&str,
+    profile:Option<&concat_project::planning::Profile>)->Result<Project,String>{
+    validate(shots,(duration*1e6).round() as u64)?;
+    if let Some(profile)=profile{profile.validate()?;}
+    let mut project = Project::new();
+    if let Some(profile)=profile {project.extra.insert("cBuilderPlanning".into(),serde_json::to_value(profile).map_err(|e|e.to_string())?);}
+    let mut media_ids: HashMap<String, String> = HashMap::new();
+    for shot in shots {
+        let source = Path::new(&shot.asset.path);
+        let metadata = fs::metadata(source)
+            .map_err(|_| format!("Missing source: {}", shot.asset.path))?;
+        if metadata.len() != shot.asset.size || stamp(&metadata) != shot.asset.modified_ns {
+            return Err(format!("Media changed since scanning; refresh library: {}", shot.asset.path));
+        }
+        if !media_ids.contains_key(&shot.asset.path) {
+            let id = format!("m{}", project.media.len() + 1);
+            project.media.push(media_item(&shot.asset, id.clone()));
+            media_ids.insert(shot.asset.path.clone(), id);
+        }
+    }
+    let audio_path = narration.canonicalize().map_err(|e| e.to_string())?;
+    let audio_name = audio_path.to_string_lossy().into_owned();
+    let audio_id = format!("m{}", project.media.len() + 1);
+    project.media.push(MediaItem {
+        id: audio_id.clone(), path: audio_name.clone(),
+        name: audio_path.file_name().unwrap_or_default().to_string_lossy().into_owned(),
+        duration: Some(duration), kind: MediaKind::Audio,
+        audio_codec: None,
+        has_audio: true, ..MediaItem::default()
+    });
+    let timeline = project.active_mut();
+    timeline.name = name.to_owned();
+    for (i, shot) in shots.iter().enumerate() {
+        let is_image = shot.asset.kind == "image";
+        // The visual track is intentionally shared: the planned image/video
+        // sequence is one contiguous picture lane. Narration stays on T3.
+        let mut clip = Clip::blank(format!("c{}", i + 1),
+            "T1",
+            if is_image { ClipKind::Image } else { ClipKind::Video },
+            Path::new(&shot.asset.path).file_name().unwrap_or_default().to_string_lossy(),
+            shot.start_us as f64 / 1e6, shot.duration_us as f64 / 1e6);
+        clip.media_id = media_ids[&shot.asset.path].clone();
+        clip.source_start = shot.trim_us as f64 / 1e6;
+        if !is_image { clip.muted = Some(true); clip.volume = 0.0; }
+        timeline.clips.push(Arc::new(clip));
+    }
+    let mut voice = Clip::blank(format!("c{}", shots.len() + 1), "T3",
+        ClipKind::Audio, audio_path.file_name().unwrap_or_default().to_string_lossy(),
+        0.0, duration);
+    voice.media_id = audio_id;
+    timeline.clips.push(Arc::new(voice));
+    Ok(project)
+}
+/// Key includes every deterministic planning input and inventory, not just the seed.
+pub fn preview_plan_key(assets:&[Asset],intro:Option<&[Asset]>,duration:f64,narration:&str,iw:&str,vw:&str,
+    profile:&concat_project::planning::Profile)->String{
+    use sha2::{Digest,Sha256};
+    serde_json::to_vec(&(assets,intro,duration,narration,iw,vw,profile)).map(|bytes|format!("{:x}",Sha256::digest(bytes))).unwrap_or_default()
+}
+pub fn preview_range(duration:f64,intro:u32,intro_only:bool)->Result<(f64,f64),String>{
+    let boundary=f64::from(intro);
+    if !duration.is_finite()||duration<=0.0||boundary>duration/3.0{return Err("Invalid preview duration".into());}
+    if intro_only{if intro==0{return Err("Enable Video-only Intro first".into());}Ok((0.0,boundary))}
+    else{Ok((boundary,duration))}
+}
 pub fn random_seed() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(1)
 }
@@ -423,6 +443,25 @@ mod tests {
             size: 10, modified_ns: 1, duration: None, width: Some(1920), height: Some(1080),
             frame_rate: None, frame_rate_fraction: None, video_codec: None, audio_codec: None,
             has_audio: false, used_count: 0 }
+    }
+    #[test]
+    fn playback_ranges_exclude_intro_and_zero_means_full_video(){
+        assert_eq!(preview_range(600.,30,true).unwrap(),(0.,30.));
+        assert_eq!(preview_range(600.,30,false).unwrap(),(30.,600.));
+        assert_eq!(preview_range(600.,0,false).unwrap(),(0.,600.));
+        assert!(preview_range(600.,0,true).is_err());
+        assert!(preview_range(600.,201,false).is_err());
+    }
+    #[test]
+    fn plan_cache_key_changes_with_narration_seed_and_intro_inventory(){
+        let assets=[image("one")];
+        let intro=[image("two")];
+        let mut p=concat_project::planning::Profile::default();
+        let key=preview_plan_key(&assets,None,60.,"voice.wav","","",&p);
+        assert_ne!(key,preview_plan_key(&assets,None,60.,"other.wav","","",&p));
+        assert_ne!(key,preview_plan_key(&assets,Some(&intro),60.,"voice.wav","","",&p));
+        p.seed+=1;
+        assert_ne!(key,preview_plan_key(&assets,None,60.,"voice.wav","","",&p));
     }
     #[test]
     fn intro_keyword_budget_uses_only_selected_dedicated_clips(){
@@ -711,6 +750,7 @@ pub struct State {
     pub remembered_video_weights: BTreeMap<String, u32>,
     pub preview: String,
     pub preview_shots: Vec<Shot>,
+    pub preview_plan_key:String,
 }
 impl State {
     pub fn remembered_keyword_weight(&self, video: bool, keyword: &str) -> u32 {

@@ -592,6 +592,19 @@ impl Playback {
         self.sweep_disk(project);
     }
 
+    /// True when the current clip set is decoded and safe to start.
+    pub fn clips_ready(&self)->bool {
+        let specs=locked(&self.specs);
+        let cache=locked(&self.cache);
+        !specs.is_empty() && specs.iter().all(|spec|cache.contains_key(&decode_key(spec)))
+    }
+    /// Current clips still have a decode job holding source handles.
+    pub fn clips_preparing(&self)->bool {
+        let specs=locked(&self.specs);
+        let decoding=locked(&self.decoding);
+        specs.iter().any(|spec|decoding.contains(&decode_key(spec)))
+    }
+
     /// Sends the mix callback everything currently wanted *and* decoded, and
     /// remembers the set so a rebuilt stream can be seeded with it.
     fn resync(&self) {
