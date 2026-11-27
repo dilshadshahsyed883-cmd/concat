@@ -92,6 +92,15 @@ class CBuilderLinkedUiContracts(unittest.TestCase):
         self.assertIn("editor.on_cb_tune_profile(", self.lib)
         self.assertIn("profile.validate()", self.lib)
 
+    def test_video_only_intro_is_wired(self):
+        self.assertIn('Param { label: "Video-only intro (0 = off)"', self.pane)
+        self.assertIn('Math.floor(root.narration-duration / 3)', self.pane)
+        self.assertIn('root.tune-closing, root.tune-intro,', self.pane)
+        self.assertIn('plan-intro: Editor.cb-plan-intro', self.home)
+        self.assertIn('cb-plan-intro:0', self.editor)
+        self.assertIn('set_cb_plan_intro', self.studio)
+        self.assertIn('profile.video_intro_seconds=intro.round()', self.lib)
+
     def test_keyword_reset_only_after_verified_archive(self):
         finished = self.builder_home.split("pub fn builder_archive_finished", 1)[1].split("pub fn builder_retry_used", 1)[0]
         success, failure = finished.split("match finish.result", 1)[1].split("Err(error)=>", 1)

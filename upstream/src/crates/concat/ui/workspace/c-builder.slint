@@ -59,6 +59,11 @@ export component CBuilderPane inherits VerticalLayout {
     in property <string> profile;
     in property <float> plan-opening:65;
     in property <float> plan-closing:5;
+    in property <float> plan-intro:0;
+    property <float> intro-max: Math.floor(root.narration-duration / 3);
+    property <float> tune-intro: Math.min(root.plan-intro, root.intro-max);
+    changed plan-intro => { root.tune-intro = Math.min(root.plan-intro,root.intro-max); }
+    changed intro-max => { root.tune-intro = Math.min(root.plan-intro,root.intro-max); }
     in property <string> plan-image-min;
     in property <string> plan-image-max;
     in property <string> plan-video-min;
@@ -87,7 +92,7 @@ export component CBuilderPane inherits VerticalLayout {
     changed plan-max-images => { root.tune-max-images = root.plan-max-images; }
     changed plan-cooldown => { root.tune-cooldown = root.plan-cooldown; }
     changed plan-seed => { root.tune-seed = root.plan-seed; }
-    callback tune-profile(json:string, opening:float, closing:float,
+    callback tune-profile(json:string, opening:float, closing:float, intro:float,
         image-min:string, image-max:string, video-min:string, video-max:string,
         max-videos:string, max-images:string, cooldown:string, seed:string);
     callback equalize-keywords(json:string, video:bool);
@@ -234,6 +239,7 @@ export component CBuilderPane inherits VerticalLayout {
             spacing: 16px;
             Param { label: "Opening video %"; value <=> root.tune-opening; rail: true; minimum:0; maximum:100; step:1; unit:"%"; fmt:ParamFormat.steps; enabled: !root.busy; horizontal-stretch:1; }
             Param { label: "Ending video %"; value <=> root.tune-closing; rail: true; minimum:0; maximum:100; step:1; unit:"%"; fmt:ParamFormat.steps; enabled: !root.busy; horizontal-stretch:1; }
+            Param { label: "Video-only intro (0 = off)"; value <=> root.tune-intro; rail: true; minimum:0; maximum:Math.max(1,root.intro-max); step:1; unit:"s"; fmt:ParamFormat.steps; enabled: !root.busy && root.intro-max > 0; horizontal-stretch:1; }
         }
         Text { text: "Shot duration range · seconds"; color: Theme.fg-muted; font-size: Theme.fs-sm; }
         HorizontalLayout {
@@ -257,7 +263,7 @@ export component CBuilderPane inherits VerticalLayout {
             spacing: 8px;
             Button { label: "Apply Planning Settings"; primary: true; enabled: !root.busy;
                 clicked => {
-                    root.tune-profile(root.edited-profile, root.tune-opening, root.tune-closing,
+                    root.tune-profile(root.edited-profile, root.tune-opening, root.tune-closing, root.tune-intro,
                         root.tune-image-min, root.tune-image-max, root.tune-video-min, root.tune-video-max,
                         root.tune-max-videos, root.tune-max-images, root.tune-cooldown, root.tune-seed);
                 }

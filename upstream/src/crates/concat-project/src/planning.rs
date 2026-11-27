@@ -52,6 +52,9 @@ pub struct Profile {
     /// Optional overall video-duration target (0–100 percent).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub overall_video_percent: Option<u32>,
+    /// Guaranteed video-only prefix; overall ratio applies to the remainder.
+    #[serde(default)]
+    pub video_intro_seconds: u32,
     pub seed: u64,
     #[serde(default)]
     pub pins: Vec<Pin>,
@@ -219,6 +222,7 @@ impl Default for Profile {
             allow_repeats: true,
             ratio_by_seconds: true,
             overall_video_percent: None,
+            video_intro_seconds: 0,
             seed: 1,
             pins: Vec::new(),
             media_selection: None,
@@ -439,7 +443,11 @@ pub fn generate(sources: &[Source], total_us: u64, profile: &Profile) -> Result<
             return Err("Pinned shot exceeds timeline or source bounds".into());
         }
     }
-    let target=profile.overall_video_percent.map(|v|total_us*v as u64/100);
+    let intro_us=u64::from(profile.video_intro_seconds)*1_000_000;
+    if intro_us>total_us/3 {return Err("Video-only intro cannot exceed one third of narration duration".into());}
+    if intro_us>0 && !profile.pins.is_empty(){return Err("Video-only intro cannot be combined with pinned shots".into());}
+    let body_us=total_us-intro_us;
+    let target=profile.overall_video_percent.map(|v|body_us*v as u64/100);
     let curve_mean: f64=profile.curve.windows(2).map(|p|(p[1].at-p[0].at)*(p[0].video+p[1].video)/2.0).sum();
     let adjusted=|v:f64,t:f64| if t<=curve_mean {if curve_mean>0.0 {v*t/curve_mean}else{0.0}} else if curve_mean<1.0 {v+(1.0-v)*(t-curve_mean)/(1.0-curve_mean)}else{1.0};
     // Integrate the rescaled distribution to retain opening/ending shape.
@@ -451,7 +459,7 @@ pub fn generate(sources: &[Source], total_us: u64, profile: &Profile) -> Result<
         }).sum()
     };
     let mut video_us=0_u64;
-    let single_kind=target.filter(|v|*v==0||*v==total_us).map(|v|v==total_us);
+    let body_single_kind=target.filter(|v|*v==0||*v==body_us).map(|v|v==body_us);
     let mut rng = Random(if profile.seed == 0 {
         0x9e3779b97f4a7c15
     } else {
@@ -466,6 +474,10 @@ pub fn generate(sources: &[Source], total_us: u64, profile: &Profile) -> Result<
     let mut video_run = 0;
     let mut image_run = 0;
     while at < total_us {
+        let in_intro=at<intro_us;
+        let single_kind=if in_intro{Some(true)}else{body_single_kind};
+        let target=if in_intro{None}else{target};
+        let local_at=at.saturating_sub(intro_us);
         if plan.shots.len() >= 1_000_000 {
             return Err("Plan exceeds one million shots".into());
         }
@@ -522,25 +534,26 @@ pub fn generate(sources: &[Source], total_us: u64, profile: &Profile) -> Result<
         let can_video =
             !videos.is_empty() && (single_kind.is_some() || profile.max_videos == 0 || video_run < profile.max_videos);
         if !can_image && !can_video {
+            if in_intro{return Err("Video-only intro requires eligible selected video sources for its entire duration".into());}
             return Err(format!(
                 "Hard sequence/repeat constraints exhausted at {:.3}s; adjust profile",
                 at as f64 / 1e6
             ));
         }
-        let mut weight = profile.video_weight(at as f64 / total_us as f64);
+        let mut weight = profile.video_weight(local_at as f64 / body_us as f64);
         if profile.ratio_by_seconds {
             let image_mean = (profile.image_seconds[0] + profile.image_seconds[1]) / 2.0;
             let video_mean = (profile.video_seconds[0] + profile.video_seconds[1]) / 2.0;
             weight = (weight / video_mean) / (weight / video_mean + (1.0 - weight) / image_mean);
         }
-        let want_video = if let Some(target)=target {
-            let t=target as f64/total_us as f64;
+        let want_video = if in_intro {true} else if let Some(target)=target {
+            let t=target as f64/body_us as f64;
             let mean=((profile.image_seconds[0]+profile.image_seconds[1]+profile.video_seconds[0]+profile.video_seconds[1])/4.0*1e6).max(1.0);
-            let expected=cumulative(((at as f64+mean/2.0)/total_us as f64).min(1.0),t)*total_us as f64;
+            let expected=cumulative(((local_at as f64+mean/2.0)/body_us as f64).min(1.0),t)*body_us as f64;
             let deficit=expected-video_us as f64;
-            let local=adjusted(profile.video_weight(at as f64/total_us as f64),t);
+            let local=adjusted(profile.video_weight(local_at as f64/body_us as f64),t);
             let probability=(local+deficit/mean).clamp(0.0,1.0);
-            if video_us>=target {false} else if at.saturating_sub(video_us)>=total_us-target {true} else {rng.unit()<probability}
+            if video_us>=target {false} else if local_at.saturating_sub(video_us)>=body_us-target {true} else {rng.unit()<probability}
         }else{rng.unit()<weight};
         let video = if want_video { can_video } else { !can_image };
         if video != want_video {
@@ -621,7 +634,7 @@ pub fn generate(sources: &[Source], total_us: u64, profile: &Profile) -> Result<
             .find(|p| p.start_us > at)
             .map(|p| p.start_us)
             .unwrap_or(total_us);
-        let remaining = next_pin - at;
+        let remaining = (if in_intro{next_pin.min(intro_us)}else{next_pin}) - at;
         // Avoid a tiny final sliver by splitting the last two shots evenly.
         let min_us = (range[0] * 1e6) as u64;
         if remaining > duration && remaining - duration < min_us {
@@ -629,7 +642,7 @@ pub fn generate(sources: &[Source], total_us: u64, profile: &Profile) -> Result<
         }
         duration = duration.min(remaining).max(1);
         if let Some(target)=target {
-            let budget=if video {target.saturating_sub(video_us)} else {(total_us-target).saturating_sub(at-video_us)};
+            let budget=if video {target.saturating_sub(video_us)} else {(body_us-target).saturating_sub(local_at-video_us)};
             if budget>=min_us && duration>budget {duration=budget;}
         }
         let trim = if video {
@@ -646,17 +659,18 @@ pub fn generate(sources: &[Source], total_us: u64, profile: &Profile) -> Result<
         uses[picked] += 1;
         at += duration;
         if video {
-            video_us += duration;
+            if !in_intro {video_us += duration;}
             video_run += 1;
             image_run = 0;
         } else {
             image_run += 1;
             video_run = 0;
         }
+        if in_intro && at==intro_us {video_run=0;image_run=0;}
     }
     if let Some(target)=target {
-        if video_us.abs_diff(target)>total_us/200 {
-            plan.warnings.push(format!("Overall video target {:.1}% could not be met within shot/source/run constraints; actual {:.1}%",target as f64/total_us as f64*100.0,video_us as f64/total_us as f64*100.0));
+        if video_us.abs_diff(target)>body_us/200 {
+            plan.warnings.push(format!("Overall video target {:.1}% could not be met within shot/source/run constraints; actual {:.1}%",target as f64/body_us as f64*100.0,video_us as f64/body_us as f64*100.0));
         }
     }
     Ok(plan)
@@ -675,6 +689,32 @@ mod tests {
                 weight: 1.0,
             })
             .collect()
+    }
+    #[test]
+    fn video_only_intro_exact_boundary_and_remaining_ratio() {
+        let s=sources();
+        let mut p=Profile::default();
+        p.video_intro_seconds=30;
+        p.overall_video_percent=Some(0);
+        p.max_videos=1;
+        let a=generate(&s,120_000_000,&p).unwrap();
+        assert_eq!(a.shots,generate(&s,120_000_000,&p).unwrap().shots);
+        let mut end=0;
+        for shot in &a.shots {
+            assert_eq!(shot.start_us,end);
+            end+=shot.duration_us;
+            if shot.start_us<30_000_000 {
+                assert!(s[shot.source].video);
+                assert!(end<=30_000_000);
+            }else{assert!(!s[shot.source].video);}
+        }
+        assert_eq!(end,120_000_000);
+        assert_eq!(a.stats(&s).video_us,30_000_000);
+        p.video_intro_seconds=41;
+        assert!(generate(&s,120_000_000,&p).is_err());
+        p.video_intro_seconds=30;
+        let images:Vec<_>=s.into_iter().filter(|s|!s.video).collect();
+        assert!(matches!(generate(&images,120_000_000,&p),Err(e) if e.contains("Video-only intro")));
     }
     #[test]
     fn deterministic_exact_fit_and_opening_bias() {

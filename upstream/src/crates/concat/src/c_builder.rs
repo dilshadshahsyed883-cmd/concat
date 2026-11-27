@@ -241,9 +241,12 @@ pub fn plan_profile(assets: &[Asset], seconds: f64, image_weights: &str, video_w
     let count = stats.images+stats.videos;
     let mut summary = format!("{} shots; video {:.1}% by count / {:.1}% by seconds. Seed {}.",
         count, stats.videos as f64/count as f64*100.0, stats.video_us as f64/(seconds*1e6)*100.0, profile.seed);
-    if let Some(target)=profile.overall_video_percent {summary.push_str(&format!("\nOverall video duration target: {target}%"));}
+    let intro_us=u64::from(profile.video_intro_seconds)*1_000_000;
+    let body_us=(seconds*1e6).round() as u64-intro_us;
+    if intro_us>0{summary.push_str(&format!("\nVideo-only intro: {}s; remaining timeline: {:.2}s",profile.video_intro_seconds,body_us as f64/1e6));}
+    if let Some(target)=profile.overall_video_percent {summary.push_str(&format!("\nOverall video duration target: {target}%{}",if intro_us>0{" of remaining timeline"}else{""}));}
     for pair in profile.curve.windows(2) {
-        let lo=(pair[0].at*seconds*1e6).round() as u64;let hi=(pair[1].at*seconds*1e6).round() as u64;
+        let lo=intro_us+(pair[0].at*body_us as f64).round() as u64;let hi=intro_us+(pair[1].at*body_us as f64).round() as u64;
         let(mut video_us,mut image_us,mut videos,mut images)=(0_u64,0_u64,0_u64,0_u64);
         for shot in &result.shots {let overlap=(shot.start_us+shot.duration_us).min(hi).saturating_sub(shot.start_us.max(lo));
             if sources[shot.source].video {video_us+=overlap;if shot.start_us>=lo&&shot.start_us<hi{videos+=1;}}
@@ -756,9 +759,9 @@ mod planning_settings_tests {
     fn configuration_survives_restart_without_project_selections(){
         let root=std::env::temp_dir().join(format!("concat-planning-settings-{}",random_seed()));
         let mut p=concat_project::planning::Profile::default();
-        p.max_videos=4;p.image_seconds=[2.,6.];p.seed=42;p.media_selection=Some(Default::default());p.overall_video_percent=Some(30);
+        p.max_videos=4;p.image_seconds=[2.,6.];p.seed=42;p.video_intro_seconds=30;p.media_selection=Some(Default::default());p.overall_video_percent=Some(30);
         save_planning_settings(&root,&p).unwrap();let saved=load_planning_settings(&root);
-        assert_eq!(saved.max_videos,4);assert_eq!(saved.image_seconds,[2.,6.]);assert_eq!(saved.seed,42);
+        assert_eq!(saved.max_videos,4);assert_eq!(saved.image_seconds,[2.,6.]);assert_eq!(saved.seed,42);assert_eq!(saved.video_intro_seconds,30);
         assert_eq!(saved.curve.len(),2);assert!(saved.pins.is_empty());assert!(saved.media_selection.is_none());assert!(saved.overall_video_percent.is_none());
         p.image_seconds=[6.,2.];assert!(save_planning_settings(&root,&p).is_err());assert_eq!(load_planning_settings(&root),saved);
         fs::remove_dir_all(root).unwrap();
