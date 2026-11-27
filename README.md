@@ -24,3 +24,5 @@ Main Windows publishing checks for a matching GPU candidate before creating a co
 See the [repository guide](docs/REPOSITORY_GUIDE.md) for source ownership, validation and release/storage policy, and [CONTRIBUTING.md](CONTRIBUTING.md) for changes and review.
 
 Web-only changes trigger only the Web verification workflows. The existing matched EXE/GPU release-request workflows are unchanged; Web deployment packages only `concat-web/` and retains the existing service and runtime state. The former standalone Web repository is retained for rollback during migration.
+
+Web releases use a reviewed Web CI-verified main-line commit with identical `concat-web/` tree and Web workflow definitions to current main. Unrelated EXE/GPU commits or build status cannot block Web deployment; changes to Web inputs require fresh Web CI.

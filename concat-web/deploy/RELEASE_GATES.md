@@ -7,10 +7,15 @@ filename is historical; its remote branch verification must target `main`.
 
 ## Source and security acceptance (Steps 1–3)
 
-1. Start only from a reviewed, CI-verified exact commit on **`main`**.
-   All work must be merged by PR into `main` before release. Compare the remote
-   main branch SHA to the exact supplied SHA; never deploy an integration or
-   feature branch, unreviewed commit or moving branch label.
+1. Start only from a reviewed exact first-parent commit on **`main`** with
+   successful Web essential and admin security CI. All work must be merged by
+   PR into `main` before release. The terminal operator verifies both Web CI
+   results for the approved SHA; the guard verifies that SHA is on main's
+   first-parent history and that its entire `concat-web/` tree and root
+   `concat-web-*.yml` workflows match the fetched current main. GPU/EXE-only
+   changes and their build status do not invalidate Web approval. Changed Web
+   inputs require fresh Web CI. Never deploy a feature branch, unreviewed
+   commit or moving branch label.
 2. Verify a root-owned `0600` `/etc/concat-web/concat-web.env` contains
    `CONCAT_AUTH_MODE=local-admin`, single admin username, stdlib scrypt
    password hash, random independent Concat session and uploader secrets,
@@ -27,7 +32,7 @@ filename is historical; its remote branch verification must target `main`.
    duplicate prevention and dashboard. This does **not** imply a live Salad
    GPU render or YouTube OAuth publishing was performed.
 6. Run existing route/queue/dashboard tests, complete CI, wheel build and
-   `bash -n deploy/guarded-release.sh`; ensure `deploy.yml` has no SSH,
+   `bash -n deploy/guarded-release.sh`; ensure `.github/workflows/concat-web-deploy.yml` at monorepo root has no SSH,
    auto-deploy, or push-triggered production deployment.
 
 ## VPS terminal deployment, only after source acceptance (Step 4)
@@ -42,7 +47,7 @@ filename is historical; its remote branch verification must target `main`.
    overwritten. Back up prior independent Concat state.
 4. Run `/usr/local/sbin/concat-web-deploy preflight <main-SHA>` first.
    It must fail closed on missing or conflicting private identity/security.
-5. Build exact-SHA archive from the verified `main` branch and invoke the existing
+5. Build exact-SHA archive from the approved Web commit on `main` and invoke the existing
    Concat-only helper in `deploy` mode. Install on `127.0.0.1:18873`,
    verify `/healthz`, and confirm anonymous `/dashboard` and
    `/api/v1/session` are denied. On health failure helper restores the

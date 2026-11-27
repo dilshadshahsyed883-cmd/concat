@@ -78,15 +78,19 @@ the current Salad idle auto-shutdown feature.
 - Open pull requests **into `main`**, run essential and security regression
   checks, and merge reviewed changes. Do not make further release commits
   directly to the legacy integration branch.
-- Release **only an exact reviewed, CI-verified `main` SHA**. Never deploy a
-  feature-branch SHA, legacy integration SHA, or floating `main` label.
+- Release **only an exact reviewed, Web CI-verified first-parent `main` SHA**.
+  Later GPU/EXE-only commits do not invalidate that approval. The entire
+  `concat-web/` Git tree and root `concat-web-*.yml` workflows must match current
+  `main`; a change to either requires fresh successful Web essential/security CI.
+  Never deploy a feature-branch SHA, legacy integration SHA, or floating label.
 - **GitHub Actions is verification only**: no GitHub SSH/Tailscale deployment,
   service restarts, Nginx cutover or secret provisioning. All Concat Web VPS
   staging remains a separate, authorized, manual terminal operation.
 - The existing `deploy/manual-integration-release.sh` filename is retained
   for backwards compatibility, but its **branch verification and clone now
-  target `main`**. The checked-out source SHA must match the exact SHA passed
-  to the script.
+  target `main`**. The guard verifies Web component identity and checks out the
+  approved commit exactly, without requiring the current repository-wide tip
+  to equal the approved SHA.
 
 See [release gates](deploy/RELEASE_GATES.md) for private environment,
 preflight, backup/rollback, loopback staging, and separate HTTPS Nginx cutover.
@@ -98,8 +102,8 @@ See [Salad idle auto-shutdown](deploy/SALAD_IDLE_AUTOSTOP.md) for the opt-in
 
 ## Main-only guarded VPS staging
 
-After GitHub checks pass on `main`, use an exact, verified 40-hex `main`
-SHA in the VPS terminal. This stages only Concat Web's isolated loopback
+After both Web GitHub checks pass on a reviewed `main` commit, use its exact
+40-hex SHA (even if unrelated GPU/EXE commits have advanced `main`) in the VPS terminal. This stages only Concat Web's isolated loopback
 service with a private database/config backup and rollback-aware smoke tests.
 It does **not** modify the public Nginx site, other VPS services or Salad
 GPU image; public HTTPS cutover requires separate checks and authorization.
@@ -107,8 +111,9 @@ GPU image; public HTTPS cutover requires separate checks and authorization.
 ```bash
 SHA='<exact-reviewed-40-hex-main-SHA>'
 WORK=$(mktemp -d)
-git clone --depth 1 --branch main https://github.com/dilshadshahsyed883-cmd/concat.git "$WORK" &&
-[ "$(git -C "$WORK" rev-parse HEAD)" = "$SHA" ] &&
+sudo git clone --no-checkout --single-branch --branch main https://github.com/dilshadshahsyed883-cmd/concat.git "$WORK" &&
+sudo git -C "$WORK" checkout --detach "$SHA" &&
+[ "$(sudo git -C "$WORK" rev-parse HEAD)" = "$SHA" ] &&
 sudo bash "$WORK/concat-web/deploy/manual-integration-release.sh" "$SHA" preflight
 # Only after preflight is approved, use the same command with stage instead of preflight.
 ```

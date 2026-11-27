@@ -1,6 +1,7 @@
 """Release policy: Concat local-admin only; all production changes via VPS terminal."""
 from pathlib import Path
 import subprocess
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -74,8 +75,11 @@ class LocalAdminManualReleaseTests(unittest.TestCase):
             '$WORK/source/concat-web/deploy/guarded-release.sh',
             "BRANCH='main'", 
             "CONCAT_MAIN_PREFLIGHT=PASS",
-            'git ls-remote --exit-code "$REPO"',
-            '[[ "$REMOTE" == "$SHA" ]]',
+            'refs/remotes/origin/$BRANCH',
+            'verify_web_release "$WORK/source" "$SHA" "$REMOTE"',
+            'checkout --quiet --detach "$SHA"',
+            '[[ "$approved_tree" == "$main_tree" ]]',
+            ':(glob).github/workflows/concat-web-*.yml',
             'git -C "$WORK/source" rev-parse HEAD',
             "CONCAT_SQLITE_BACKUP=PASS",
             "deploy/init-local-admin.py",
@@ -95,6 +99,65 @@ class LocalAdminManualReleaseTests(unittest.TestCase):
             "apt upgrade", "CONCAT_SCENE_SSO_SECRET",
         ):
             self.assertNotIn(forbidden, script)
+
+
+    def test_web_release_scope_with_real_git_history(self):
+        script = ROOT / "deploy/manual-integration-release.sh"
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+
+            def git(*args):
+                return subprocess.check_output(
+                    ["git", "-C", directory, *args], text=True,
+                    stderr=subprocess.STDOUT).strip()
+
+            def commit(path, contents):
+                target = repo / path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(contents)
+                git("add", path)
+                git("commit", "-m", path)
+                return git("rev-parse", "HEAD")
+
+            def verify(approved, tip):
+                return subprocess.run(
+                    ["bash", "-c", 'source "$1"; verify_web_release "$2" "$3" "$4"',
+                     "verify", str(script), directory, approved, tip],
+                    capture_output=True, text=True)
+
+            git("init", "-b", "main")
+            git("config", "user.name", "Release tests")
+            git("config", "user.email", "release@example.invalid")
+            commit("concat-web/app.py", "original")
+            approved = commit(".github/workflows/concat-web-foundation-ci.yml", "original")
+            self.assertEqual(verify(approved, approved).returncode, 0)
+            gpu = commit("cloud_render/worker.py", "gpu only")
+            exe = commit("upstream/editor.rs", "desktop only")
+            for tip in (gpu, exe):
+                result = verify(approved, tip)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("CONCAT_WEB_SOURCE_VERIFIED=PASS", result.stdout)
+
+            git("checkout", "-b", "feature")
+            feature = commit("unrelated.txt", "feature")
+            git("checkout", "main")
+            git("merge", "--no-ff", "feature", "-m", "merge feature")
+            merged = git("rev-parse", "HEAD")
+            self.assertNotEqual(verify(feature, merged).returncode, 0)
+            self.assertEqual(verify(approved, merged).returncode, 0)
+            self.assertNotEqual(verify("0" * 40, merged).returncode, 0)
+
+            workflow = commit(".github/workflows/concat-web-foundation-ci.yml", "changed")
+            result = verify(approved, workflow)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Web workflow changed", result.stderr)
+            self.assertEqual(verify(workflow, workflow).returncode, 0)
+
+            changed = commit("concat-web/app.py", "changed")
+            result = verify(workflow, changed)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Web source changed", result.stderr)
+            self.assertEqual(verify(changed, changed).returncode, 0)
 
 
 if __name__ == "__main__":

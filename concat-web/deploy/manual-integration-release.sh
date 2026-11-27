@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Manual only: stage an exact, reviewed main SHA on Concat's loopback service.
+# Manual only: stage an exact Web CI-verified main-line SHA on Concat's loopback service.
 # The filename is a legacy compatibility alias, but only canonical main is allowed.
 # Never changes Scene, VPS1 deploy helpers, Nginx, Drive Bridge, OAuth or Salad.
 set -Eeuo pipefail
@@ -7,6 +7,32 @@ set +x
 umask 077
 
 fail() { printf 'BLOCKED: %s\n' "$*" >&2; exit 1; }
+# The approved SHA must be a real main-line commit; compare only Web inputs.
+# The operator must verify successful Web essential/security CI for that SHA.
+verify_web_release() {
+  local repo="$1" approved="$2" main_tip="$3" approved_tree main_tree
+  [[ "$(git -C "$repo" rev-parse --verify "$approved^{commit}")" == "$approved" ]] ||
+    fail 'Invalid approved commit'
+  git -C "$repo" rev-list --first-parent "$main_tip" | grep -Fx "$approved" >/dev/null ||
+    fail 'Approved SHA is not on canonical main first-parent history'
+  approved_tree="$(git -C "$repo" rev-parse --verify "$approved:concat-web")" ||
+    fail 'Approved Web tree missing'
+  main_tree="$(git -C "$repo" rev-parse --verify "$main_tip:concat-web")" ||
+    fail 'Current Web tree missing'
+  [[ "$(git -C "$repo" cat-file -t "$approved_tree")" == tree ]] ||
+    fail 'Approved Web path is not a tree'
+  [[ "$approved_tree" == "$main_tree" ]] ||
+    fail 'Web source changed; approve a fresh Web CI-verified main SHA'
+  git -C "$repo" diff --quiet --no-ext-diff "$approved" "$main_tip" -- \
+    ':(glob).github/workflows/concat-web-*.yml' ||
+    fail 'Web workflow changed; approve a fresh Web CI-verified main SHA'
+  printf 'CONCAT_WEB_SOURCE_VERIFIED=PASS\nWEB_TREE=%s\nAPPROVED_SHA=%s\nMAIN_SHA=%s\n' \
+    "$approved_tree" "$approved" "$main_tip"
+}
+
+# Sourcing exposes only the offline verification function for regression tests.
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then return; fi
+
 [[ "$#" -eq 2 ]] || fail 'Usage: sudo bash manual-integration-release.sh <40-hex-SHA> stage|preflight'
 SHA="$1"
 MODE="$2"
@@ -34,8 +60,6 @@ nginx -t >/dev/null 2>&1 || fail 'Existing Nginx configuration invalid'
 exec 8>/run/lock/concat-main-terminal-release.lock
 flock -n 8 || fail 'Another Concat main release running'
 export GIT_TERMINAL_PROMPT=0
-REMOTE="$(git ls-remote --exit-code "$REPO" "refs/heads/$BRANCH" | awk '{print $1}')"
-[[ "$REMOTE" == "$SHA" ]] || fail 'Main branch SHA does not match approved SHA'
 
 WORK="$(mktemp -d /root/concat-main-release.XXXXXXXX)"
 BACKUP_BASE='/var/backups/concat-web'
@@ -71,7 +95,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-git clone --quiet --depth 1 --branch "$BRANCH" "$REPO" "$WORK/source"
+git clone --quiet --no-checkout --single-branch --branch "$BRANCH" "$REPO" "$WORK/source"
+REMOTE="$(git -C "$WORK/source" rev-parse --verify "refs/remotes/origin/$BRANCH")"
+verify_web_release "$WORK/source" "$SHA" "$REMOTE"
+git -C "$WORK/source" checkout --quiet --detach "$SHA"
 [[ "$(git -C "$WORK/source" rev-parse HEAD)" == "$SHA" ]] ||
   fail 'Cloned Git source differs from approved main SHA'
 [[ -f "$WORK/source/concat-web/deploy/guarded-release.sh" ]] || fail 'Missing guarded helper'
