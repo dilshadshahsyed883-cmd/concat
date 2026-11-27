@@ -527,7 +527,7 @@ def app_page(request: Request, tab: str = "", message: str = "", error: str = ""
         allowed = {"dashboard", "channels", "sheets", "add_video", "queue", "logs"}
     elif os.getenv("LUM_ENGINE_INSTANCE", "engine1") == "concat":
         allowed = {"channels", "sheets", "add_video", "queue"}
-    default_tab = "sheets" if os.getenv("LUM_ENGINE_INSTANCE") == "concat" else "add_video"
+    default_tab = "add_video"
     selected = tab if tab in allowed else default_tab
     channels = all_channels(user)
     projects = get_projects(user)

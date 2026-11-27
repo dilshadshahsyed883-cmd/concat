@@ -150,7 +150,7 @@ class SceneShellUXTests(unittest.TestCase):
                     self.assertIn('class="cr-tabs studio-tabs"', page)
                     self.assertEqual(page.count('data-tab="'), 3)
                     self.assertIn('data-initial-tab="' + tab + '"', page)
-                    self.assertIn('href="/concat-uploader/sheets-sync">Uploader</a>', page)
+                    self.assertIn('href="/concat-uploader/upload-engine">Uploader</a>', page)
 
             for slug, child in (
                 ("sheets-sync", "sheets"), ("channels", "channels"),
@@ -160,7 +160,7 @@ class SceneShellUXTests(unittest.TestCase):
                     page = client.get("/concat-uploader/" + slug).text
                     self.assertIn('class="studio-tabs"', page)
                     for href in ("/concat/production", "/concat/media",
-                                 "/concat/gpu-config", "/concat-uploader/sheets-sync"):
+                                 "/concat/gpu-config", "/concat-uploader/upload-engine"):
                         self.assertIn('href="' + href + '"', page)
                     # Without CONCAT_UPLOADER_ENABLED, the fail-closed fallback
                     # renders the nested links itself instead of a live iframe.
@@ -174,6 +174,7 @@ class SceneShellUXTests(unittest.TestCase):
         live = (ROOT / "app/modules/uploader/templates/workspace.html").read_text()
         self.assertIn('src="/concat-uploader/app?tab={{ tab | urlencode }}"', live)
         self.assertNotIn('class="uploader-tabs"', live)
+        self.assertIn('href="/concat-uploader/upload-engine" aria-current="page">Uploader</a>', live)
 
         copied = (ROOT / "reused/uploader/part01/templates/app.html").read_text()
         self.assertIn("engine_instance == 'concat'", copied)

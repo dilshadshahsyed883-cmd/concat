@@ -253,7 +253,7 @@ async def resource_response(request: Request, principal: Principal, path: str) -
     if not _allowed(path, request.method):
         raise HTTPException(404, "Not available in Concat Uploader")
     if path == "app":
-        tab = request.query_params.get("tab", "sheets")
+        tab = request.query_params.get("tab", "add_video")
         if tab not in PAGE_TABS.values():
             raise HTTPException(404, "Unknown uploader tab")
     backend = await backend_for(request)

@@ -96,7 +96,14 @@ class GatewayTests(unittest.TestCase):
                 self.assertEqual(result["path"], "/concat-uploader/app")
                 self.assertEqual(result["principal"], "alice")
                 self.assertEqual(result["grant"], "concat-studio")
-        self.assertEqual(self.client.get("/concat-uploader/").status_code, 200)
+        for path in ("/concat-uploader", "/concat-uploader/"):
+            with self.subTest(default_path=path):
+                response = self.client.get(path, follow_redirects=False)
+                self.assertEqual(response.status_code, 303)
+                self.assertEqual(response.headers["location"], "/concat-uploader/upload-engine")
+                landing = self.client.get(path)
+                self.assertEqual(landing.status_code, 200)
+                self.assertIn("/concat-uploader/app?tab=add_video", landing.text)
 
     def test_untrusted_headers_never_set_identity_or_admin(self):
         response = self.client.get("/concat-uploader/app?tab=queue", headers={

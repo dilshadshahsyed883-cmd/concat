@@ -34,7 +34,7 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 @router.get("")
 @router.get("/")
 async def index(_: Principal = Depends(current_principal)):
-    return RedirectResponse("/concat-uploader/sheets-sync", status_code=303)
+    return RedirectResponse("/concat-uploader/upload-engine", status_code=303)
 
 
 async def _page(request: Request, principal: Principal, slug: str, idx: int):
