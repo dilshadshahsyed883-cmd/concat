@@ -5477,7 +5477,7 @@ impl Studio {
         self.flush_commit();
         // A press on a transition's seam or handles selects the transition,
         // not the clip it rides into; a drag there still sets its length.
-        if edge == 2
+        if !self.spacer_mode && edge == 2
             && let Some(transition) = clip.transition_in.as_ref()
         {
             self.selection.clear();
@@ -5521,6 +5521,7 @@ impl Studio {
             self.selection.retain(|held|!pressed_group.contains(held));
         }
         self.expand_timeline_groups();
+        if !self.spacer_mode && additive && already && !self.drag_copy {self.clip_cancelled();return;}
         if self.selection.iter().any(|held|self.clip(held).is_some_and(|c|self.locked(&c.track_id))){
             self.notify("A selected group member is on a locked track",true);self.clip_cancelled();return;
         }
@@ -8657,6 +8658,9 @@ impl Studio {
         if sources.is_empty() {
             return;
         }
+        let ids=concat_project::drag_edit::expand_groups(self.timeline(),&sources.iter().map(|c|c.id.clone()).collect::<Vec<_>>());
+        if ids.iter().any(|id|self.clip(id).is_some_and(|c|self.locked(&c.track_id))){self.notify("A selected group member is locked",true);return;}
+        sources=ids.iter().filter_map(|id|self.clip(id).cloned()).collect();
         let grouped=sources.iter().any(|c|concat_project::drag_edit::group_of(c).is_some());
         let first=sources.iter().map(|c|c.start).fold(f64::INFINITY,f64::min);
         let last=sources.iter().map(|c|c.start+c.duration).fold(0.0,f64::max);
@@ -8667,6 +8671,7 @@ impl Studio {
 
     /// A complete copy of `source`, as one undoable operation.
     pub fn duplicate(&mut self, source: &Clip) {
+        if concat_project::drag_edit::group_of(source).is_some(){self.selection=vec![source.id.clone()];self.duplicate_selected();return;}
         let mut copy = source.clone();
         copy.start += copy.duration;
         if let Some(id) = self.apply(Command::CopyClips { copies: vec![copy] }) {

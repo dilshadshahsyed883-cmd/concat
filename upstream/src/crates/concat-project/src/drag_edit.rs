@@ -295,7 +295,7 @@ fn calculate(
         if !wanted.start.is_finite() || wanted.start < 0.0 {
             return Err(CommandError::NotANumber);
         }
-        let clip = (*clip_index.get(wanted.clip_id.as_str()).ok_or(CommandError::MediaGone)?).clone();
+        let clip: Clip = clip_index.get(wanted.clip_id.as_str()).ok_or(CommandError::MediaGone)?.as_ref().clone();
         let from = timeline
             .tracks
             .iter()
