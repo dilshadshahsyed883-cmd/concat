@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Concat{% endblock %}
+{% block subtitle %}Concat Production queue, rendered media and SaladCloud GPU connection{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="/concat/assets/cloud_render.css?v=20261123-drive-source-v1">
+<section id="cloud-render" data-csrf="{{ csrf_token }}" data-initial-tab="{{ initial_tab }}" aria-labelledby="cloud-heading">
+  <h2 id="cloud-heading" class="visually-hidden">Concat Studio workspace</h2>
+  <div class="cr-navigation">
+  <nav class="cr-tabs studio-tabs" aria-label="Concat Studio modules">
+    <button class="active" type="button" data-tab="production" aria-selected="true">Production</button>
+    <button type="button" data-tab="media" aria-selected="false">Media</button>
+    <button type="button" data-tab="gpu" aria-selected="false">GPU Config</button>
+    <a href="/concat-uploader/sheets-sync">Uploader</a>
+  </nav>
+    <span id="cr-health" class="cr-pill">Worker not connected</span>
+  </div>
+  <p id="cr-message" role="status" aria-live="polite"></p>
+  <section class="cr-section" id="cr-production">
+    <form class="cr-card" id="cr-production-form">
+      <h3>Add Concat projects</h3>
+      <div class="cr-field">
+        <label for="cr-drive-link">Google Drive folder or ZIP link</label>
+        <input id="cr-drive-link" type="url" placeholder="https://drive.google.com/..." autocomplete="off" required>
+      </div>
+      <p class="cr-note">Add a folder of Concat ZIPs or one ZIP. Share private links with your configured Drive account.</p>
+      <div class="cr-actions cr-drive-actions">
+        <button class="cr-btn primary" id="cr-scan" type="submit">Scan &amp; Add to Queue</button>
+        <div class="cr-saved-drive-actions">
+          <button class="cr-btn secondary" id="cr-edit-drive-source" type="button">Save / Edit Drive Link</button>
+          <button class="cr-btn secondary" id="cr-sync-drive" type="button" disabled>Sync Drive</button>
+        </div>
+      </div>
+      <p class="cr-note" id="cr-drive-source-state" role="status" aria-live="polite">Loading saved Drive link…</p>
+    </form>
+    <div class="cr-card">
+      <div class="cr-row cr-row-wrap">
+        <h3>Production queue</h3>
+        <span class="cr-pill" id="cr-queue-state">Stopped</span>
+      </div>
+      <div class="cr-actions">
+        <button class="cr-btn primary" id="cr-start-queue" type="button" disabled>Start Queue</button>
+        <button class="cr-btn secondary" id="cr-pause-queue" type="button" disabled>Pause Queue</button>
+        <button class="cr-btn primary" id="cr-resume-queue" type="button" disabled>Resume Queue</button>
+      </div>
+      <p id="cr-auto-worker-status" role="status">Auto worker disabled</p>
+      <p class="cr-note">Pause holds new submissions; active renders can finish.</p>
+    </div>
+    <div class="cr-list" id="cr-production-list"><p>Loading projects…</p></div>
+  </section>
+  <section class="cr-section" id="cr-media" hidden>
+    <div class="cr-statline">
+      <div class="cr-card"><span>Received files</span><b id="cr-count">0</b></div>
+      <div class="cr-card"><span>Ready on VPS</span><b id="cr-ready">0</b></div>
+      <div class="cr-card"><span>Verified Drive deliveries</span><b id="cr-delivered">0</b></div>
+    </div>
+    <div class="cr-card cr-autoline">
+      <label class="cr-check"><input type="checkbox" id="cr-auto"><b>Auto Upload New Jobs to Google Drive</b></label>
+      <p>Upload new verified MP4s automatically. Successful transfers free VPS space; failed transfers retain the file.</p>
+      <button class="cr-btn secondary" id="cr-save-auto" type="button">Save preference</button>
+    </div>
+    <div class="cr-row cr-row-wrap">
+      <h3>Media library</h3>
+      <button class="cr-btn secondary" id="cr-refresh" type="button">Refresh</button>
+    </div>
+    <div class="cr-list" id="cr-media-list"><p>Loading media...</p></div>
+  </section>
+  <section class="cr-section" id="cr-gpu" hidden>
+    <details class="cr-card" id="cr-connection-setup">
+      <summary>Salad Connection Setup</summary>
+      <div class="cr-row"><h3>GPU Configuration</h3><span id="cr-connection" class="cr-pill">Not connected</span></div>
+      <div class="cr-field"><label for="cr-endpoint">SaladCloud Gateway HTTPS URL</label><input id="cr-endpoint" placeholder="https://your-renderer.salad.cloud" inputmode="url" autocomplete="off"></div>
+      <div class="cr-fields">
+        <div class="cr-field"><label for="cr-salad-key">Salad API Key</label><input id="cr-salad-key" type="password" autocomplete="new-password" placeholder="Leave blank to keep saved key"><small id="cr-salad-key-state">Not saved</small></div>
+        <div class="cr-field"><label for="cr-worker-key">RENDERER_API_TOKEN</label><input id="cr-worker-key" type="password" autocomplete="new-password" placeholder="Leave blank to keep saved token"><small id="cr-worker-key-state">Not saved</small></div>
+        <div class="cr-field"><label for="cr-salad-organization">Organization</label><input id="cr-salad-organization" autocomplete="off" placeholder="Organization slug (or VPS setting)"></div>
+        <div class="cr-field"><label for="cr-salad-project">Project</label><input id="cr-salad-project" autocomplete="off" placeholder="Project slug (or VPS setting)"></div>
+        <div class="cr-field"><label for="cr-salad-container-group">Container group</label><input id="cr-salad-container-group" autocomplete="off" placeholder="Group slug (or VPS setting)"></div>
+      </div>
+      <div class="cr-field"><label for="cr-concurrency">GPU render concurrency (1 Salad replica)</label>
+        <select id="cr-concurrency"><option value="1">1 — Sequential (default)</option><option value="2">2 — Parallel renders</option></select>
+        <small>Same GPU, maximum 2 simultaneous renders. Changes do not interrupt running jobs.</small>
+        <small id="cr-concurrency-status" role="status">Setting is applied when the worker is reachable.</small>
+      </div>
+      <div class="cr-row cr-row-wrap">
+        <button class="cr-btn primary" id="cr-save-gpu" type="button">Save GPU Config</button>
+        <button class="cr-btn secondary" id="cr-test" type="button">Test Connection</button>
+        <button class="cr-btn secondary" id="cr-connect" type="button">Connect Worker</button>
+        <button class="cr-btn danger" id="cr-disconnect" type="button">Disconnect</button>
+      </div>
+      <p class="cr-note">Use a dedicated group with one replica and Salad autostart off. Container resources and image are managed in SaladCloud.</p>
+    </details>
+    <div class="cr-card" id="cr-worker-automation">
+      <div class="cr-row cr-row-wrap"><h3>Salad Worker Automation</h3><span id="cr-automation-status" class="cr-pill" role="status">Loading worker status…</span></div>
+      <div class="cr-field"><label for="cr-auto-start">Operating mode</label>
+        <select id="cr-auto-start"><option value="automatic">Automatic</option><option value="manual">Manual</option></select>
+      </div>
+      <div class="cr-fields">
+        <div class="cr-field"><label for="cr-pull-threshold">Minimum image download (%)</label>
+          <div class="cr-stepper"><button class="cr-btn secondary" id="cr-threshold-minus" type="button" aria-label="Decrease download threshold">−</button><input id="cr-pull-threshold" type="number" min="1" max="100" step="1" value="8" inputmode="numeric"><button class="cr-btn secondary" id="cr-threshold-plus" type="button" aria-label="Increase download threshold">+</button></div>
+        </div>
+        <div class="cr-field"><label for="cr-pull-seconds">Health-check timer (seconds)</label>
+          <div class="cr-stepper"><button class="cr-btn secondary" id="cr-timer-minus" type="button" aria-label="Decrease health-check timer">−</button><input id="cr-pull-seconds" type="number" min="5" max="600" step="1" value="20" inputmode="numeric"><button class="cr-btn secondary" id="cr-timer-plus" type="button" aria-label="Increase health-check timer">+</button></div>
+        </div>
+      </div>
+      <p class="cr-note" id="cr-health-rule" role="status">Keep the instance if Docker image download reaches 8% within 20 seconds; otherwise reallocate, up to 3 attempts per cycle. If all fail, wait 5 minutes and retry automatically.</p>
+      <p id="cr-idle-status">Automatic shutdown: 1 minute after the queue and deliveries finish (Automatic mode only).</p>
+      <div class="cr-actions">
+        <button class="cr-btn primary" id="cr-save-automation" type="button">Save Automation Settings</button>
+        <button class="cr-btn secondary" id="cr-manual-start" type="button">Start Worker</button>
+        <button class="cr-btn danger" id="cr-manual-stop" type="button">Stop Worker</button>
+        <button class="cr-btn secondary" id="cr-auto-retry" type="button">Retry Worker Action</button>
+        <select id="cr-report-hours" aria-label="Report time range"><option value="1">Last hour</option><option value="24" selected>Last 24 hours</option><option value="168">Last 7 days</option></select>
+        <a class="cr-btn secondary" id="cr-download-report" href="/api/cloud-render/metrics/report?hours=24" download="concat-performance.txt">Download Report (.txt)</a>
+      </div>
+      <p class="cr-note">Performance history is collected in the background, even with this page closed. Retained for up to 7 days or 20,000 samples.</p>
+    </div>
+    <div class="cr-card">
+      <h3>GPU → VPS Output Receiver</h3>
+      <p>Authorize verified MP4 delivery from your renderer.</p>
+      <button class="cr-btn secondary" id="cr-rotate" type="button">Generate / Rotate Receiver Token</button>
+      <pre id="cr-token" class="cr-token" hidden></pre>
+      <p class="cr-note">Token is displayed only after rotation. Configure the same token as RENDER_OUTPUT_TOKEN in the Salad worker; keep it secret. Rotation invalidates old worker access.</p>
+    </div>
+  </section>
+  <dialog id="cr-drive-source-dialog" aria-labelledby="cr-drive-source-title">
+    <div class="cr-row cr-row-wrap"><h3 id="cr-drive-source-title">Save / Edit Drive Link</h3><button class="cr-btn secondary" id="cr-close-drive-source" type="button" aria-label="Close saved Drive link">Close</button></div>
+    <form id="cr-drive-source-form">
+      <div class="cr-field"><label for="cr-saved-drive-link">Google Drive folder or ZIP link</label><input id="cr-saved-drive-link" type="url" required maxlength="4096" placeholder="https://drive.google.com/…" autocomplete="off"></div>
+      <p class="cr-note">This link is saved for your account. Use Sync Drive to scan it and add new ZIPs to the queue.</p>
+      <p id="cr-drive-source-message" role="status" aria-live="polite"></p>
+      <button class="cr-btn primary" id="cr-save-drive-source" type="submit">Save Drive Link</button>
+    </form>
+  </dialog>
+</section>
+<script defer src="/concat/assets/cloud_render.js?v=20261123-drive-source-v1"></script>
+{% endblock %}

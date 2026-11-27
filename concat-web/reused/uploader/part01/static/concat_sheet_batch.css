@@ -1,0 +1,18 @@
+.concat-sheet-review[hidden] { display:none !important; }
+.concat-sheet-review { min-width:0; }
+.concat-sheet-table-wrap { overflow-x:auto; max-width:100%; border:1px solid #dce1ee; border-radius:10px; }
+.concat-sheet-review table { border-collapse:collapse; width:100%; min-width:1500px; font-size:14px; }
+.concat-sheet-review th { background:#eef0fa; text-align:left; padding:12px; white-space:nowrap; }
+.concat-sheet-review td { padding:12px; border-top:1px solid #e5e8f1; vertical-align:top; }
+.concat-sheet-review td:nth-child(3) { min-width:280px; }
+.concat-sheet-review td:nth-child(7) { min-width:210px; }
+.concat-sheet-review td:nth-child(9) { min-width:180px; }
+.concat-sheet-review input:not([type=checkbox]), .concat-sheet-review select, .concat-sheet-review textarea { box-sizing:border-box; display:block; width:100%; min-width:120px; padding:9px; margin-bottom:7px; border:1px solid #cbd2e4; border-radius:6px; background:#fff; color:#17233b; font:inherit; }
+.concat-sheet-review textarea { resize:vertical; }
+.concat-sheet-review input[type=checkbox] { width:18px; height:18px; accent-color:#6545dc; }
+.concat-sheet-review .lum-button { margin:3px; white-space:nowrap; }
+.concat-sheet-review .sheet-ready { color:#067445; }
+.concat-sheet-review .sheet-error { color:#b42318; }
+.sheet-thumbnail img { width:112px; height:63px; object-fit:contain; display:block; }
+.sheet-thumbnail small { display:block; max-width:150px; overflow-wrap:anywhere; }
+@media(max-width:700px) { .concat-sheet-review .lum-card-head { display:block; } }

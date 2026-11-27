@@ -1,0 +1,40 @@
+name: Concat Web manual terminal release reminder (NO DEPLOY)
+
+# Production releases are made from the exact reviewed main SHA in the VPS terminal.
+# No auto-SSH, Tailscale, remote service control, or GitHub Actions deployment.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-release-check:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e '.[test]'
+      - name: Test application, local admin and release security
+        run: |
+          set -Eeuo pipefail
+          python -m compileall -q app reused run.py
+          python -m unittest discover -s tests -p 'test_foundation.py' -v
+          python -m unittest discover -s tests -p 'test_admin_security.py' -v
+          python -m unittest discover -s tests -p 'test_reused_*.py' -v
+          python -m unittest app.modules.concat.test_routes -v
+          python -m unittest discover -s app/modules/uploader/tests -p 'test_*.py' -v
+          python -m unittest discover -s tests -p 'test_release_security_contract.py' -v
+          bash -n deploy/guarded-release.sh
+          bash -n deploy/nginx-cutover.sh
+          python -m unittest discover -s tests -p 'test_nginx_routing.py' -v
+          python -m unittest discover -s tests -p 'test_nginx_existing_adoption.py' -v
+          bash -n deploy/manual-integration-release.sh
+          python -m pip wheel --no-deps --wheel-dir /tmp/concat-web-wheel .
+      - name: Explicit terminal-only release gate
+        run: |
+          echo 'PASS: CI only. Manually deploy a reviewed exact main SHA via the VPS terminal.'

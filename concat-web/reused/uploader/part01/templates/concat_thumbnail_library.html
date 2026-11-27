@@ -1,0 +1,11 @@
+<dialog class="concat-thumbnail-dialog" data-thumbnail-library data-library-url="{{ base_path }}/api/concat/thumbnails" aria-labelledby="concat-thumbnail-library-title">
+  <div class="concat-thumbnail-heading"><h3 id="concat-thumbnail-library-title">Thumbnail Library</h3><button type="button" class="lum-button secondary" data-thumbnail-library-close>Close</button></div>
+  <p>Bulk add JPG/PNG files (maximum 50 MB each). Name <strong>u1.jpg</strong> or <strong>u1.png</strong> to match <strong>u1.mp4</strong> on Sync Sheet.</p>
+  <label class="lum-field"><span>Add Thumbnails</span><input type="file" multiple accept="image/jpeg,image/png" data-thumbnail-bulk-files></label>
+  <label class="lum-check"><input type="checkbox" data-thumbnail-replace> Replace matching filenames (unused thumbnails only)</label>
+  <div data-thumbnail-upload-progress role="status" aria-live="polite"></div>
+  <button class="lum-button secondary" type="button" data-thumbnail-cancel-upload hidden>Cancel remaining uploads</button>
+  <div class="concat-thumbnail-heading"><button class="lum-button secondary" type="button" data-thumbnail-library-refresh>Refresh</button><button class="lum-button danger" type="button" data-thumbnail-delete-selected>Delete Selected</button></div>
+  <p data-thumbnail-library-status role="status" aria-live="polite"></p>
+  <div class="concat-thumbnail-grid" data-thumbnail-library-grid></div>
+</dialog>

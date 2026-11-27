@@ -1,0 +1,32 @@
+name: Concat Web Admin security checks
+on:
+  pull_request:
+    paths:
+      - 'app/auth.py'
+      - 'app/modules/admin/**'
+      - 'tests/test_admin_security.py'
+      - '.github/workflows/admin-security-ci.yml'
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: concat-web-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e '.[test]'
+      - name: Compile application
+        run: python -m compileall -q app
+      - name: Negative security acceptance tests
+        run: python -m unittest discover -s tests -p 'test_admin_security.py' -v
+      - name: Baseline authentication regression tests
+        run: python -m unittest discover -s tests -p 'test_foundation.py' -v

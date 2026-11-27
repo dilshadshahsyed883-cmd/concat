@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=70", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "concat-web"
+version = "0.1.0"
+description = "Independent Concat Web application, reusing VPS_1 source"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi==0.115.12",
+    "uvicorn==0.34.2",
+    "jinja2==3.1.6",
+    "requests==2.32.3",
+    "python-multipart==0.0.20",
+    "itsdangerous==2.2.0",
+    "gdown==5.2.0",
+    "google-api-python-client==2.137.0",
+    "google-auth-oauthlib==1.2.1",
+    "google-auth-httplib2==0.2.0",
+    "httplib2==0.22.0",
+    # Required at import time by reused/uploader/part01/lum_engine/mode_gateway.py.
+    # Must be installed in the production venv, not only test extras.
+    "httpx==0.28.1",
+    "Pillow>=11.3,<14",
+]
+
+[project.optional-dependencies]
+test = ["httpx==0.28.1"]
+
+[tool.setuptools.packages.find]
+include = ["app*", "reused*"]
+
+[tool.setuptools.package-data]
+app = [
+    "templates/*.html", "static/*.css", "static/*.js",
+    "modules/admin/templates/*.html",
+    "modules/dashboard/templates/*.html",
+    "modules/dashboard/static/*.css", "modules/dashboard/static/*.js",
+    "modules/concat/templates/*.html",
+    "modules/concat/assets/*.css", "modules/concat/assets/*.js",
+    "modules/uploader/templates/*.html",
+]
+"reused.uploader.part01" = [
+    "templates/*.html", "static/*.css", "static/*.js",
+]
+"reused.uploader.part01.desktop_core" = [
+    "examples/*.json", "examples/*.txt", "metadata_presets/*.json",
+]

@@ -1,0 +1,24 @@
+# Separate Concat service, configured by the guarded host bootstrap.
+[Unit]
+Description=Concat Web independent ASGI process
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=concatweb
+Group=concatweb
+WorkingDirectory=/srv/concat-web/current
+EnvironmentFile=/etc/concat-web/concat-web.env
+ExecStart=/srv/concat-web/current/.venv/bin/python run.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/concat-web
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

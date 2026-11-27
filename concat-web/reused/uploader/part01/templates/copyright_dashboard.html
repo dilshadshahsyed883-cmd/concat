@@ -1,0 +1,12 @@
+<div class="lum-metrics">
+  {% for label,key in [('Total videos','TOTAL'),('Waiting','WAITING'),('Active','ACTIVE'),('Completed','COMPLETED'),('Failed','FAILED')] %}
+  <div><span>{{ label }}</span><strong>{{ stats.counts[key] or 0 }}</strong></div>
+  {% endfor %}
+</div>
+<section class="lum-card">
+  <div class="lum-card-head"><div><h2>Copyright Uploader</h2><p>Add a video, review its details, then follow its upload in Queue.</p></div><div class="lum-actions"><a class="lum-button primary" href="{{ base_path }}/app?tab=add_video">+ Add Video</a><a class="lum-button" href="{{ base_path }}/app?tab=queue">Open Queue</a></div></div>
+  <div class="copyright-field-pair">
+    <dl class="lum-kv"><div><dt>Connected channels</dt><dd>{{ stats.channels or 0 }}</dd></div><div><dt>Saved profiles</dt><dd>{{ copyright_profiles|length }}</dd></div><div><dt>Upload slots</dt><dd>1 at a time</dd></div></dl>
+    <dl class="lum-kv"><div><dt>VPS cleanup</dt><dd>After verified upload</dd></div><div><dt>Drive originals</dt><dd>Retained</dd></div><div><dt>Schedule timezone</dt><dd>PKT · UTC+5</dd></div></dl>
+  </div>
+</section>

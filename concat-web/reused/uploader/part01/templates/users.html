@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Users · Local Upload Manager{% endblock %}
+{% block subtitle %}Standalone access control{% endblock %}
+{% block content %}
+<div class="lum-shell">
+  <div class="page-tools">
+    <a class="lum-button" href="{{ base_path }}/app">← Back to uploader</a>
+    <span>Only Local Upload Manager accounts are managed here. Existing Scene Builder/ACS users remain untouched.</span>
+  </div>
+  {% if message %}<div class="lum-alert success">{{ message }}</div>{% endif %}
+  {% if error %}<div class="lum-alert error">{{ error }}</div>{% endif %}
+
+  <div class="lum-grid lum-two">
+    <section class="lum-card">
+      <div class="lum-card-head"><div><h2>Create user</h2><p>Choose user or administrator access to the full uploader workspace.</p></div></div>
+      <form method="post" action="{{ base_path }}/users/create">
+        <input type="hidden" name="csrf_token" value="{{ csrf }}">
+        <label class="lum-field"><span>Username</span><input name="username" required></label>
+        <label class="lum-field"><span>Password</span><input name="password" type="password" minlength="8" required></label>
+        <label class="lum-field"><span>Access level</span>
+          <select name="access_level">
+            <option value="heavy">User · Full uploader workspace</option>
+            <option value="administrator">Administrator · Full workspace + user management</option>
+          </select>
+        </label>
+        <div class="form-footer"><button class="lum-button primary" type="submit">Create user</button></div>
+      </form>
+    </section>
+
+    <section class="lum-card">
+      <div class="lum-card-head"><div><h2>Access contract</h2><p>Access controls the interface only. Every mode uses the same protected uploader engine.</p></div></div>
+      <dl class="lum-kv">
+        <div><dt>User</dt><dd>Full uploader workspace</dd></div>
+        <div><dt>Administrator</dt><dd>Full workspace + account management</dd></div>
+        <div><dt>Upload concurrency</dt><dd>1</dd></div>
+        <div><dt>Remote verification</dt><dd>Required</dd></div>
+        <div><dt>VPS cleanup</dt><dd>After verification</dd></div>
+      </dl>
+    </section>
+  </div>
+
+  <section class="lum-card users-card">
+    <div class="lum-card-head"><div><h2>Users</h2><p>Change access without rebuilding or removing uploader functionality.</p></div></div>
+    <div class="lum-table-wrap"><table class="lum-table users-table">
+      <thead><tr><th>User</th><th>Access</th><th>Active</th><th>Last login</th><th>Save</th><th>Reset password</th></tr></thead>
+      <tbody>
+      {% for u in users %}
+      <tr>
+        <td><strong>{{ u.username }}</strong>{% if u.is_admin %}<small>Administrator</small>{% endif %}</td>
+        <td colspan="4">
+          <form class="user-inline" method="post" action="{{ base_path }}/users/{{ u.id }}/update">
+            <input type="hidden" name="csrf_token" value="{{ csrf }}">
+            <select name="access_level" aria-label="Access level for {{ u.username }}">
+              <option value="heavy" {% if not u.is_admin %}selected{% endif %}>User · Full workspace</option>
+              <option value="administrator" {% if u.is_admin %}selected{% endif %}>Administrator</option>
+            </select>
+            <label><input type="checkbox" name="is_active" value="1" {% if u.is_active %}checked{% endif %}> Active</label>
+            <span class="access-summary {{ 'admin' if u.is_admin else '' }}">{{ 'Administrator' if u.is_admin else 'Full workspace' }}</span>
+            <small>{{ u.last_login_at or 'Never' }}</small>
+            <button class="lum-button tiny" type="submit">Save</button>
+          </form>
+        </td>
+        <td>
+          <form class="user-password" method="post" action="{{ base_path }}/users/{{ u.id }}/password">
+            <input type="hidden" name="csrf_token" value="{{ csrf }}">
+            <input name="password" type="password" minlength="8" placeholder="New password" required>
+            <button class="lum-button tiny" type="submit">Change</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+  </section>
+</div>
+{% endblock %}

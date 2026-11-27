@@ -1,0 +1,1 @@
+"""Independent Concat Web application."""
