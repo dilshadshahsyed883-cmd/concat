@@ -10,7 +10,7 @@ class LocalAdminManualReleaseTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.helper = (ROOT / "deploy/guarded-release.sh").read_text()
-        cls.workflow = (ROOT / ".github/workflows/deploy.yml").read_text()
+        cls.workflow = (ROOT.parent / ".github/workflows/concat-web-deploy.yml").read_text()
         cls.admin = (ROOT / "app/modules/admin/routes.py").read_text()
         cls.auth = (ROOT / "app/modules/admin/security.py").read_text()
         cls.bootstrap = (ROOT / "deploy/init-local-admin.py").read_text()
@@ -69,6 +69,9 @@ class LocalAdminManualReleaseTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         for marker in (
+            "REPO='https://github.com/dilshadshahsyed883-cmd/concat.git'",
+            '-C "$WORK/source/concat-web"',
+            '$WORK/source/concat-web/deploy/guarded-release.sh',
             "BRANCH='main'", 
             "CONCAT_MAIN_PREFLIGHT=PASS",
             'git ls-remote --exit-code "$REPO"',

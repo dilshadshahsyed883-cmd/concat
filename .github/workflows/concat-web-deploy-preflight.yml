@@ -1,6 +1,10 @@
 name: Concat Web guarded release preflight (NO DEPLOY)
 on:
   workflow_dispatch:
+defaults:
+  run:
+    working-directory: concat-web
+
 permissions:
   contents: read
 jobs:

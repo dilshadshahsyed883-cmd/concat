@@ -5,6 +5,10 @@ name: Concat Web manual terminal release reminder (NO DEPLOY)
 on:
   workflow_dispatch:
 
+defaults:
+  run:
+    working-directory: concat-web
+
 permissions:
   contents: read
 

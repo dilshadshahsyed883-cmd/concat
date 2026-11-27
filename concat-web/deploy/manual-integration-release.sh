@@ -13,7 +13,7 @@ MODE="$2"
 [[ "$SHA" =~ ^[a-f0-9]{40}$ ]] || fail 'Invalid exact main SHA'
 [[ "$MODE" == stage || "$MODE" == preflight ]] || fail 'Invalid mode'
 [[ "$EUID" == 0 ]] || fail 'Run only as root in VPS terminal'
-REPO='https://github.com/dilshadshahsyed883-cmd/concat-web.git'
+REPO='https://github.com/dilshadshahsyed883-cmd/concat.git'
 BRANCH='main'
 for tool in git python3 tar sha256sum systemctl curl nginx flock install runuser; do
   command -v "$tool" >/dev/null || fail "Missing prerequisite $tool"
@@ -74,9 +74,9 @@ trap cleanup EXIT
 git clone --quiet --depth 1 --branch "$BRANCH" "$REPO" "$WORK/source"
 [[ "$(git -C "$WORK/source" rev-parse HEAD)" == "$SHA" ]] ||
   fail 'Cloned Git source differs from approved main SHA'
-[[ -f "$WORK/source/deploy/guarded-release.sh" ]] || fail 'Missing guarded helper'
-[[ -f "$WORK/source/deploy/init-local-admin.py" ]] || fail 'Missing private admin setup'
-bash -n "$WORK/source/deploy/guarded-release.sh" || fail 'Helper shell syntax invalid'
+[[ -f "$WORK/source/concat-web/deploy/guarded-release.sh" ]] || fail 'Missing guarded helper'
+[[ -f "$WORK/source/concat-web/deploy/init-local-admin.py" ]] || fail 'Missing private admin setup'
+bash -n "$WORK/source/concat-web/deploy/guarded-release.sh" || fail 'Helper shell syntax invalid'
 
 # Keep rollback copies private. Never display env values or contents.
 cp -p /usr/local/sbin/concat-web-deploy "$BACKUP/previous-helper"
@@ -111,13 +111,13 @@ print('CONCAT_SQLITE_BACKUP=PASS')
 PY
 
 # Replace only Concat helper. Never modify the VPS1 production deploy helper.
-install -o root -g root -m 0750 "$WORK/source/deploy/guarded-release.sh" \
+install -o root -g root -m 0750 "$WORK/source/concat-web/deploy/guarded-release.sh" \
     /usr/local/sbin/concat-web-deploy
 HELPER_CHANGED=1
 if [[ ! -e /etc/concat-web/concat-web.env ]]; then
   [[ -r /dev/tty ]] || fail 'Terminal required for private admin password setup'
   # Host-only interactive getpass; no credentials in shell arguments or logs.
-  python3 "$WORK/source/deploy/init-local-admin.py" < /dev/tty
+  python3 "$WORK/source/concat-web/deploy/init-local-admin.py" < /dev/tty
 fi
 /usr/local/sbin/concat-web-deploy preflight "$SHA"
 printf 'CONCAT_MAIN_PREFLIGHT=PASS\n'
@@ -130,7 +130,7 @@ fi
 ARCHIVE="/tmp/concat-web-$SHA.tgz"
 [[ ! -e "$ARCHIVE" && ! -L "$ARCHIVE" ]] || fail 'Exact release archive path already exists'
 tar --sort=name --mtime='UTC 2020-01-01' --owner=0 --group=0 \
-    --numeric-owner -czf "$ARCHIVE" -C "$WORK/source" \
+    --numeric-owner -czf "$ARCHIVE" -C "$WORK/source/concat-web" \
     --exclude='__pycache__' --exclude='*.pyc' --exclude='.pytest_cache' \
     app reused deploy run.py pyproject.toml
 chmod 0600 "$ARCHIVE"

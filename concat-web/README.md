@@ -2,7 +2,7 @@
 
 Independent FastAPI application deployed separately on VPS_1. Its existing
 Concat Studio, GPU render receiver, verified MP4 library, Concat Uploader,
-Google Drive integrations, and dashboard remain in this repository. The
+Google Drive integrations, and dashboard live in `concat-web/` of the private Concat monorepo. The
 existing VPS_1 Scene website remains unchanged.
 
 **Authentication decision (2026-11-19): standalone single administrator.**
@@ -45,6 +45,8 @@ use a private/incognito window to see the login form without changing that sessi
 - Public `GET /healthz` provides minimal unauthenticated health response.
 
 ## Offline verification (no VPS writes)
+
+Run these commands from `concat-web/` within a checkout of the monorepo.
 
 ```bash
 python -m pip install -e '.[test]'
@@ -103,13 +105,15 @@ It does **not** modify the public Nginx site, other VPS services or Salad
 GPU image; public HTTPS cutover requires separate checks and authorization.
 
 ```bash
-SHA=<exact-reviewed-40-hex-main-SHA>
-TMP=$(mktemp)
-curl -fsSL "https://raw.githubusercontent.com/dilshadshahsyed883-cmd/concat-web/$SHA/deploy/manual-integration-release.sh" -o "$TMP"
-sudo bash "$TMP" "$SHA" preflight
-# Only after preflight is approved, run: sudo bash "$TMP" "$SHA" stage
-rm -f "$TMP"
+SHA='<exact-reviewed-40-hex-main-SHA>'
+WORK=$(mktemp -d)
+git clone --depth 1 --branch main https://github.com/dilshadshahsyed883-cmd/concat.git "$WORK" &&
+[ "$(git -C "$WORK" rev-parse HEAD)" = "$SHA" ] &&
+sudo bash "$WORK/concat-web/deploy/manual-integration-release.sh" "$SHA" preflight
+# Only after preflight is approved, use the same command with stage instead of preflight.
 ```
+
+The private repository requires existing authorized Git read access for the terminal user and root's guarded clone. Never put tokens in command-line URLs or logs.
 
 No passwords, hashes, API keys or secrets belong in GitHub or chat. Private
 credential bootstrap runs only in the VPS terminal.

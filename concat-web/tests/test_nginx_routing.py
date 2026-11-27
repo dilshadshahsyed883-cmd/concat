@@ -77,7 +77,7 @@ class ConcatNginxRoutingTests(unittest.TestCase):
             self.assertNotIn(forbidden, self.script)
 
     def test_cutover_is_never_part_of_ci_automatic_deploy(self):
-        workflow = (ROOT / ".github/workflows/deploy.yml").read_text()
+        workflow = (ROOT.parent / ".github/workflows/concat-web-deploy.yml").read_text()
         self.assertNotIn("nginx-cutover.sh activate", workflow)
         self.assertNotIn("ssh ", workflow)
         self.assertNotIn("scp ", workflow)

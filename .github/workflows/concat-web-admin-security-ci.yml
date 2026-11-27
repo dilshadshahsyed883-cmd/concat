@@ -2,13 +2,18 @@ name: Concat Web Admin security checks
 on:
   pull_request:
     paths:
-      - 'app/auth.py'
-      - 'app/modules/admin/**'
-      - 'tests/test_admin_security.py'
-      - '.github/workflows/admin-security-ci.yml'
+      - 'concat-web/**'
+      - '.github/workflows/concat-web-*.yml'
   push:
     branches: [main]
+    paths:
+      - 'concat-web/**'
+      - '.github/workflows/concat-web-*.yml'
   workflow_dispatch:
+defaults:
+  run:
+    working-directory: concat-web
+
 permissions:
   contents: read
 concurrency:
