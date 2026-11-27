@@ -99,7 +99,7 @@ class CBuilderLinkedUiContracts(unittest.TestCase):
         self.assertIn('Equalize Intro Videos', self.selection)
         self.assertIn('c_builder::plan_profile_with_intro', self.lib)
         self.assertIn('finish_libraries', self.lib)
-        self.assertIn('c_builder-intro-cache.json', self.lib)
+        self.assertIn('c-builder-intro-cache.json', self.lib)
         self.assertIn('profile.intro_selection.get_or_insert_with', self.studio)
 
     def test_video_only_intro_is_wired(self):
