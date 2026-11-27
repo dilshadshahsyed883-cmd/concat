@@ -33,7 +33,7 @@ GPU_ACTIVE = ("Waiting for Worker", "Uploading to GPU", "GPU Ready", "Rendering"
 # Bound pending output storage without coupling delivery to render concurrency.
 MAX_DELIVERY_BACKLOG = 2
 INTAKE_RETRIES = 5
-INTAKE_RETRY_DELAY = 40
+INTAKE_RETRY_DELAY = 30
 
 
 class JobError(RuntimeError):
@@ -366,6 +366,14 @@ class ProductionQueue:
             # Revalidate their local ZIP (if present), otherwise fetch it.
             con.execute("""UPDATE production_jobs SET state='Queued'
                            WHERE state='Waiting for Worker' AND submitted_at=0""")
+            # Older releases let later jobs start while an earlier retry was
+            # cooling down. Keep the oldest in-progress job as the sole head,
+            # retaining other jobs' retry budgets and original deadlines.
+            con.execute("""UPDATE production_jobs SET state='Queued'
+                WHERE state IN ('Downloading','Verifying ZIP','Retrying Drive')
+                  AND id <> (SELECT id FROM production_jobs
+                    WHERE state IN ('Downloading','Verifying ZIP','Retrying Drive')
+                    ORDER BY id LIMIT 1)""")
 
     def start(self):
         self.stop.clear()
@@ -502,6 +510,11 @@ class ProductionQueue:
         with self.media.connection() as con:
             items = [dict(row) for row in con.execute(
                 "SELECT id,name,state,error,cancel_requested,intake_retries,intake_retry_at FROM production_jobs ORDER BY id")]
+            # Deferred legacy retries are queued, not active countdowns.
+            for item in items:
+                if item["state"] == "Queued":
+                    item["intake_retry_at"] = 0
+                    item["error"] = ""
             concurrency = int(self.media.get(con, "render_concurrency") or "1")
             active = sum(item["state"] in GPU_ACTIVE for item in items)
             counts = {state: sum(item["state"] == state for item in items) for state in GPU_ACTIVE}
@@ -533,9 +546,8 @@ class ProductionQueue:
                 raise HTTPException(404, "Project not found.")
             if action == "cancel" and row["state"] not in TERMINAL:
                 if row["state"] in ("Queued", "Retrying Drive"):
-                    if row["state"] == "Retrying Drive":
-                        self.clean_input(job)
-                    con.execute("UPDATE production_jobs SET state='Cancelled',error='' WHERE id=?", (job,))
+                    self.clean_input(job)
+                    con.execute("UPDATE production_jobs SET state='Cancelled',error='',intake_retry_at=0 WHERE id=?", (job,))
                 else:
                     con.execute("UPDATE production_jobs SET cancel_requested=1,error='' WHERE id=?", (job,))
             elif action == "retry" and row["state"] == "Failed":
@@ -767,17 +779,21 @@ class ProductionQueue:
     def tick_intake(self):
         from .drive_socket import RetryableDriveError
         with self.media.lock, self.media.connection() as con:
+            # Do not skip a cooling-down head. Keep an already-started job
+            # ahead of newly queued work (including manual retries).
             row = con.execute("""SELECT * FROM production_jobs
                 WHERE state IN ('Queued','Downloading','Verifying ZIP','Retrying Drive')
-                  AND (intake_retry_at<=? OR cancel_requested=1)
-                ORDER BY id LIMIT 1""", (time.time(),)).fetchone()
-        if row is None:
-            with self.media.connection() as con:
-                due = con.execute("""SELECT MIN(intake_retry_at) FROM production_jobs
-                    WHERE state='Retrying Drive'""").fetchone()[0]
-            if due is not None:
-                return max(0, min(3, due - time.time()))
-            return 3
+                ORDER BY CASE WHEN state='Queued' THEN 1 ELSE 0 END, id LIMIT 1""").fetchone()
+            if row is None:
+                return 3
+            remaining = row["intake_retry_at"] - time.time()
+            if remaining > 0 and not row["cancel_requested"]:
+                # A deferred retry from an older release becomes visible only
+                # once it owns the intake lane. Its deadline is not reset.
+                if row["state"] == "Queued":
+                    con.execute("UPDATE production_jobs SET state='Retrying Drive' WHERE id=?", (row["id"],))
+                    self.media.metrics.state(con, row["id"], "Retrying Drive")
+                return min(3, remaining)
         try:
             self.prepare(row)
         except Checkpoint:
