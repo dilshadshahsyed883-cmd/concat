@@ -15,6 +15,7 @@ impl Studio {
     }
     pub fn builder_return_home(&mut self,_profile:&str) {
         if self.c_builder.scanning {return;}
+        self.builder_preview_close();
         self.cb_home=false;self.on_start=true;
         self.refresh_home_projects();
     }

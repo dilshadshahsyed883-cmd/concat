@@ -48,6 +48,7 @@ use concat_project::{Command, PlayheadSide};
 
 mod backdrop;
 pub(crate) mod c_builder_home;
+pub(crate) mod c_builder_preview;
 pub(crate) mod caption_preview;
 mod bulk_presets;
 mod particle_bulk;
@@ -844,6 +845,7 @@ pub struct Studio {
     pub cb_generation_cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     pub cb_pending_used:Option<c_builder_home::PendingUsed>,
     pub cb_home: bool,
+    pub cb_playback_preview:Option<c_builder_preview::PreviewSession>,
     pub cb_generated_project: String,
     pub cb_output_folder: String,
     pub c_builder: crate::c_builder::State,
@@ -2383,6 +2385,7 @@ impl Studio {
             media: crate::panes::media_bin::MediaBin::default(),
             cb_generation_cancel:None,cb_pending_used:None,
             cb_home:false, cb_generated_project:String::new(), cb_output_folder,
+            cb_playback_preview:None,
             c_builder: crate::c_builder::State {
                 folder: cb_saved_folder,
                 intro_folder:cb_saved_intro_folder,
@@ -9458,6 +9461,7 @@ impl Studio {
 
     pub fn publish(&self, app: &App, models: &Models) {
         app.set_c_builder_home(self.cb_home);
+        self.builder_publish_preview(app);
         app.set_cb_generating(self.cb_generation_cancel.is_some());
         app.set_cb_used_pending(self.cb_pending_used.is_some());
         app.set_cb_generated_project(self.cb_generated_project.as_str().into());
@@ -9509,7 +9513,7 @@ impl Studio {
         editor.set_cb_preview(self.c_builder.preview.clone().into());
         editor.set_cb_plan_opening((selection_profile.curve.first().map_or(0.65,|a|a.video)*100.).round() as f32);
         editor.set_cb_plan_closing((selection_profile.curve.last().map_or(0.05,|a|a.video)*100.).round() as f32);
-        editor.set_cb_plan_intro(selection_profile.video_intro_seconds as f32);
+        editor.set_cb_plan_intro(selection_profile.video_intro_seconds.min((self.c_builder.duration.unwrap_or(0.0)/3.0).floor() as u32) as f32);
         editor.set_cb_plan_image_min(format!("{}",selection_profile.image_seconds[0]).into());
         editor.set_cb_plan_image_max(format!("{}",selection_profile.image_seconds[1]).into());
         editor.set_cb_plan_video_min(format!("{}",selection_profile.video_seconds[0]).into());
