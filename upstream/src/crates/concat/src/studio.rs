@@ -947,6 +947,7 @@ pub struct Studio {
     pub gesture: Gesture,
     pub drag_ripple: bool,
     pub drag_duplicate: bool,
+    pub spacer_mode:bool,
     pub drag_copy_held: bool,
     drag_copy: bool,
     drag_click_deselect: Option<String>,
@@ -2439,7 +2440,7 @@ impl Studio {
             divider_press: None,
             caption_preview:Default::default(),
             gesture: Gesture::None,
-            drag_ripple:false, drag_duplicate:false, drag_copy_held:false, drag_copy:false,
+            drag_ripple:false, drag_duplicate:false, drag_copy_held:false, drag_copy:false, spacer_mode:false,
             drag_click_deselect:None, drag_request:None, drag_feedback:Default::default(),
             stage_guides: Vec::new(),
             inspector_jump: (0, "", ""),
@@ -2751,26 +2752,23 @@ impl Studio {
     /// when nothing is in reach. A drag used to snap only the dragged
     /// clip's start, so an end never met the next clip (reported on
     /// Reddit), and a group could snap to where its own clips had been.
-    pub fn snap_shift(&self, edges: &[f32], threshold: f32, moving: &[&str]) -> f32 {
+    pub fn snap_shift(&self, edges: &[f64], threshold: f64, moving: &[&str]) -> f64 {
         if !self.lanes.snap {
             return 0.0;
         }
-        let mut targets = vec![0.0, self.playhead];
+        let moving:std::collections::HashSet<_>=moving.iter().copied().collect();
+        let mut targets=vec![0.0,f64::from(self.playhead)];
         for clip in &self.timeline().clips {
-            if moving.contains(&clip.id.as_str()) {
-                continue;
-            }
-            targets.push(clip.start as f32);
-            targets.push((clip.start + clip.duration) as f32);
+            if !moving.contains(clip.id.as_str()){targets.extend([clip.start,clip.start+clip.duration]);}
         }
-        let mut best = 0.0;
-        let mut best_distance = threshold;
+        targets.sort_by(f64::total_cmp);
+        let mut best=0.0;let mut best_distance=threshold;
         for &edge in edges {
-            for &target in &targets {
-                let distance = (target - edge).abs();
-                if distance < best_distance {
-                    best = target - edge;
-                    best_distance = distance;
+            let i=targets.partition_point(|v|*v<edge);
+            for j in [i.checked_sub(1),Some(i)].into_iter().flatten(){
+                if let Some(&target)=targets.get(j){
+                    let distance=(target-edge).abs();
+                    if distance<best_distance{best=target-edge;best_distance=distance;}
                 }
             }
         }
@@ -5441,9 +5439,31 @@ impl Studio {
     }
     pub fn drag_modes_changed(&mut self,ripple:bool,duplicate:bool) {
         if !matches!(self.gesture,Gesture::None) {self.clip_cancelled();}
-        self.drag_ripple=ripple;self.drag_duplicate=duplicate;
+        self.drag_ripple=ripple;self.drag_duplicate=duplicate;self.spacer_mode=false;
     }
 
+    /// Select persistent group members together. Locks never silently remove
+    /// one member from a group movement or deletion.
+    pub fn expand_timeline_groups(&mut self) {
+        self.selection=concat_project::drag_edit::expand_groups(self.timeline(),&self.selection);
+    }
+    fn change_clip_group(&mut self,grouped:bool){
+        self.clip_cancelled();self.expand_timeline_groups();
+        let ids=self.selection.clone();
+        if ids.is_empty(){self.notify("Select timeline clips first",true);return;}
+        let locked_tracks=self.timeline().tracks.iter().filter(|t|self.locked(&t.id)).map(|t|t.id.clone()).collect();
+        self.apply(Command::SetClipGroup{clip_ids:ids,locked_tracks,grouped});
+    }
+    fn close_all_track_gaps(&mut self,include_start:bool){
+        self.clip_cancelled();
+        let mut tracks:Vec<_>=self.selection.iter().filter_map(|id|self.clip(id)).map(|c|c.track_id.clone()).collect();
+        tracks.sort();tracks.dedup();
+        if tracks.len()!=1 {self.notify("Select a clip or clips on one visual track",true);return;}
+        let track_id=tracks.remove(0);
+        let (_,locked_tracks)=self.edit_scope(&track_id);
+        if include_start{self.apply(Command::CloseAllTrackGaps{track_id,locked_tracks});}
+        else{self.apply(Command::CloseTrackGaps{track_id,locked_tracks,at:None});}
+    }
     pub fn clip_pressed(&mut self, id: &str, additive: bool, edge: i32) {
         let Some(clip) = self.clip(id).cloned() else {
             return;
@@ -5471,7 +5491,7 @@ impl Studio {
         }
         self.transition_selected = None;
         self.drag_request=None; self.drag_feedback=Default::default();
-        self.drag_copy=self.drag_duplicate || self.drag_copy_held;
+        self.drag_copy=!self.spacer_mode&&(self.drag_duplicate || self.drag_copy_held);
         let already = self.selection.iter().any(|held| held == id);
         self.drag_click_deselect=(already && additive && self.drag_copy).then(||id.to_owned());
         self.selection = if additive {
@@ -5492,8 +5512,20 @@ impl Studio {
             vec![id.to_owned()]
         };
 
+        let pressed_group=concat_project::drag_edit::expand_groups(self.timeline(),&[id.to_owned()]);
+        if self.spacer_mode {
+            if !clip.kind.is_visual(){self.notify("Spacer starts on a visual clip",true);self.clip_cancelled();return;}
+            self.selection=self.timeline().clips.iter().filter(|c|c.track_id==clip.track_id&&c.start>=clip.start-1e-6).map(|c|c.id.clone()).collect();
+            self.drag_click_deselect=None;
+        } else if additive&&already&&!self.drag_copy {
+            self.selection.retain(|held|!pressed_group.contains(held));
+        }
+        self.expand_timeline_groups();
+        if self.selection.iter().any(|held|self.clip(held).is_some_and(|c|self.locked(&c.track_id))){
+            self.notify("A selected group member is on a locked track",true);self.clip_cancelled();return;
+        }
         self.begin_echo();
-        if edge >= 0 && self.selection.len() <= 1 {
+        if !self.spacer_mode && edge >= 0 && self.selection.len() <= 1 {
             self.gesture = Gesture::Trim {
                 clip: id.to_owned(),
                 edge: if edge == 0 { Edge::Start } else { Edge::End },
@@ -5547,10 +5579,10 @@ impl Studio {
                 if !seconds.is_finite() || !pixels.is_finite() {self.gesture=gesture;self.clip_cancelled();return;}
                 let threshold=8.0*self.lanes.seconds_per_pixel;
                 let moving:Vec<&str>=origins.iter().map(|o|o.clip.as_str()).collect();
-                let edges:Vec<f32>=origins.iter().filter_map(|o|self.clip(&o.clip).map(|c|[c.start as f32+seconds,(c.start+c.duration) as f32+seconds])).flatten().collect();
+                let edges:Vec<f64>=origins.iter().filter_map(|o|self.clip(&o.clip).map(|c|[c.start+f64::from(seconds),c.start+c.duration+f64::from(seconds)])).flatten().collect();
                 let first=origins.iter().filter_map(|o|self.clip(&o.clip).map(|c|c.start)).fold(f64::INFINITY,f64::min);
-                let shift=(f64::from(seconds+self.snap_shift(&edges,threshold,&moving))).max(-first);
-                let rows=nearest_row(lanes,row_top(lanes,anchor.row)+pixels)-anchor.row;
+                let shift=(f64::from(seconds)+self.snap_shift(&edges,f64::from(threshold),&moving)).max(-first);
+                let rows=if self.spacer_mode{0}else{nearest_row(lanes,row_top(lanes,anchor.row)+pixels)-anchor.row};
                 let count=self.timeline().tracks.len() as i32;
                 let visual_group=origins.iter().any(|o|self.clip(&o.clip).is_some_and(|c|c.kind.is_visual()));
                 let mut moves=Vec::new();
@@ -5567,15 +5599,15 @@ impl Studio {
                 self.drag_feedback=crate::ui::DragFeedbackData {active:true,valid:false,start:(first+shift) as f32,duration:duration as f32,row,label:invalid.clone().unwrap_or_default().into()};
                 if invalid.is_none() {
                     let request=concat_project::drag_edit::DragRequest {moves,
-                        mode:if self.drag_ripple {concat_project::drag_edit::DragMode::Ripple}else{concat_project::drag_edit::DragMode::Free},
-                        duplicate:self.drag_copy,magnetic:self.magnetic(),
+                        mode:if self.drag_ripple&&!self.spacer_mode {concat_project::drag_edit::DragMode::Ripple}else{concat_project::drag_edit::DragMode::Free},
+                        duplicate:self.drag_copy&&!self.spacer_mode,magnetic:self.magnetic()&&!self.spacer_mode,
                         locked_tracks:self.timeline().tracks.iter().filter(|t|self.locked(&t.id)).map(|t|t.id.clone()).collect()};
                     match concat_project::drag_edit::plan(self.project(),&request) {
                         Ok(preview)=>{
                             let fps=self.frame_rate() as f64;
                             self.drag_feedback.valid=true;self.drag_feedback.start=preview.destination_start as f32;
                             self.drag_feedback.label=format!("{}{} · {} · {:.3}s · frame {} · {} downstream shifts",
-                                if self.drag_copy {"Copy / "}else{""},if self.drag_ripple {"Ripple"}else{"Free"},self.row_track(row).map(|t|t.id.as_str()).unwrap_or("track"),preview.destination_start,
+                                if self.drag_copy {"Copy / "}else{""},if self.spacer_mode {"Spacer"}else if self.drag_ripple {"Ripple"}else{"Free"},self.row_track(row).map(|t|t.id.as_str()).unwrap_or("track"),preview.destination_start,
                                 (preview.destination_start*fps).round() as u64,preview.ripple_count).into();
                             self.echo=Some(preview.project);self.drag_request=Some(request);
                         }
@@ -5687,11 +5719,11 @@ impl Studio {
                     let revision=self.revision;
                     let created=self.apply(Command::DragClips {request});
                     if self.revision!=revision {
-                        if copy {if let Some(id)=created {self.selection=vec![id];}}
+                        if copy {if let Some(id)=created {self.selection=vec![id];self.expand_timeline_groups();}}
                         else {self.selection=origins.iter().filter(|o|self.clip(&o.clip).is_some()).map(|o|o.clip.clone()).collect();}
                     }
                 } else if feedback.active {self.notify(feedback.label.as_str(),true);}
-                else if let Some(id)=self.drag_click_deselect.take() {self.selection.retain(|held|held!=&id);}
+                else if let Some(id)=self.drag_click_deselect.take() {let ids=concat_project::drag_edit::expand_groups(self.timeline(),&[id]);self.selection.retain(|held|!ids.contains(held));}
                 self.drag_copy=false;self.drag_copy_held=false;self.drag_click_deselect=None;
             }
             Gesture::Trim {
@@ -8494,6 +8526,8 @@ impl Studio {
     }
 
     fn remove_selected(&mut self, ripple: bool) {
+        self.expand_timeline_groups();
+        if self.selection.iter().any(|id|self.clip(id).is_some_and(|c|self.locked(&c.track_id))){self.notify("A selected group member is locked",true);return;}
         let doomed: Vec<String> = self
             .selection
             .iter()
@@ -8602,6 +8636,8 @@ impl Studio {
     /// neighbours do not stack). Falls back to the menu target when the
     /// selection is empty.
     pub fn duplicate_selected(&mut self) {
+        self.expand_timeline_groups();
+        if self.selection.iter().any(|id|self.clip(id).is_some_and(|c|self.locked(&c.track_id))){self.notify("A selected group member is locked",true);return;}
         let mut sources: Vec<Clip> = self
             .selection
             .iter()
@@ -8621,14 +8657,12 @@ impl Studio {
         if sources.is_empty() {
             return;
         }
+        let grouped=sources.iter().any(|c|concat_project::drag_edit::group_of(c).is_some());
+        let first=sources.iter().map(|c|c.start).fold(f64::INFINITY,f64::min);
+        let last=sources.iter().map(|c|c.start+c.duration).fold(0.0,f64::max);
         sources.sort_by(|left, right| right.start.total_cmp(&left.start));
-        let copies = sources.into_iter().map(|mut source| {
-            source.start += source.duration;
-            source
-        }).collect();
-        if let Some(id) = self.apply(Command::CopyClips { copies }) {
-            self.selection = vec![id];
-        }
+        let copies=sources.into_iter().map(|mut source|{source.start+=if grouped{last-first}else{source.duration};source}).collect();
+        if let Some(id)=self.apply(Command::CopyClips{copies}){self.selection=vec![id];self.expand_timeline_groups();}
     }
 
     /// A complete copy of `source`, as one undoable operation.
@@ -8652,6 +8686,7 @@ impl Studio {
         {
             ids = vec![anchor.to_owned()];
         }
+        let ids=concat_project::drag_edit::expand_groups(self.timeline(),&ids);
         let tracks = &self.timeline().tracks;
         let mut held: Vec<Held> = ids
             .iter()
@@ -9762,6 +9797,8 @@ impl Studio {
         app.global::<crate::ui::TimelineDrag>().set_feedback(self.drag_feedback.clone());
         app.global::<crate::ui::TimelineDrag>().set_ripple(self.drag_ripple);
         app.global::<crate::ui::TimelineDrag>().set_duplicate(self.drag_duplicate);
+        app.global::<crate::ui::TimelineDrag>().set_spacer(self.spacer_mode);
+        app.global::<crate::ui::TimelineDrag>().set_group_selected(self.selection.iter().any(|id|self.clip(id).is_some_and(|c|concat_project::drag_edit::group_of(c).is_some())));
         self.publish_animation_timing(app);
         editor.set_selected_clip(self.selected());
         let layout = self.selected();
@@ -12854,7 +12891,12 @@ impl Studio {
                 else {self.notify("Select a media-library item to insert",true);}
             }
             "replace-media"=>if let Some(id)=self.sole_selection(){self.replace_media_file(id);},
-            "close-gap" | "close-gaps"=>if let Some(id)=self.sole_selection(){self.clip_action(&id,action);},
+            "close-gap"=>if let Some(id)=self.sole_selection(){self.clip_action(&id,action);},
+            "close-gaps"=>self.close_all_track_gaps(false),
+            "close-all-gaps"=>self.close_all_track_gaps(true),
+            "spacer"=>{self.clip_cancelled();self.spacer_mode=!self.spacer_mode;if self.spacer_mode{self.drag_ripple=false;self.drag_duplicate=false;self.lanes.tool=TimelineTool::Select;}},
+            "group-clips"=>self.change_clip_group(true),
+            "ungroup-clips"=>self.change_clip_group(false),
             "magnetic"=>{self.handle(crate::panes::Msg::Timeline(crate::panes::timeline::TimelineMsg::MagneticToggled));}
 
             // The selected clips when there are any, as the tray's button
@@ -13070,7 +13112,8 @@ impl Studio {
             // it: Delete on one of five selected clips means the five.
             "delete" | "ripple-delete" => {
                 let ripple = action == "ripple-delete" || self.magnetic();
-                if self.selection.len() > 1 && self.selection.iter().any(|held| held == id) {
+                if concat_project::drag_edit::group_of(&clip).is_some() || (self.selection.len() > 1 && self.selection.iter().any(|held| held == id)) {
+                    if !self.selection.iter().any(|held|held==id){self.selection=vec![id.to_owned()];}
                     self.remove_selected(ripple);
                 } else {
                     self.apply(Command::RemoveClips {

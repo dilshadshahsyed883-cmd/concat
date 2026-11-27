@@ -15,6 +15,35 @@ use std::sync::Arc;
 
 const EPS: f64 = 1e-6;
 const LINKS: [&str; 2] = ["gpuCaptionSource", "canvasOwner"];
+pub const GROUP_KEY: &str = "concatClipGroup";
+pub fn group_of(clip: &Clip) -> Option<&str> {
+    clip.extra.get(GROUP_KEY).and_then(serde_json::Value::as_str).filter(|s| !s.is_empty())
+}
+pub fn expand_groups(timeline: &crate::model::Timeline, ids: &[String]) -> Vec<String> {
+    let selected: HashSet<&str> = ids.iter().map(String::as_str).collect();
+    let groups: HashSet<&str> = timeline.clips.iter().filter(|c| selected.contains(c.id.as_str())).filter_map(|c| group_of(c)).collect();
+    timeline.clips.iter().filter(|c| selected.contains(c.id.as_str()) || group_of(c).is_some_and(|g| groups.contains(g))).map(|c| c.id.clone()).collect()
+}
+/// All surviving members of a persistent group must receive the same displacement.
+pub fn validate_group_motion(before: &Project, after: &Project) -> Result<(), CommandError> {
+    let after_by_id: HashMap<_,_> = after.active().clips.iter().map(|c| (c.id.as_str(),c.as_ref())).collect();
+    let mut offsets = HashMap::<&str,f64>::new();
+    for old in &before.active().clips {
+        if let (Some(group),Some(new)) = (group_of(old),after_by_id.get(old.id.as_str())) {
+            let delta = new.start-old.start;
+            if let Some(first)=offsets.insert(group,delta) {
+                if (first-delta).abs()>EPS {return Err(refuse("This edit would separate a clip group; ungroup first"));}
+            }
+        }
+    }
+    Ok(())
+}
+/// Validate exact staged placement; never search nearby gaps.
+pub fn validate_exact_geometry(before: &Project, after: &Project, touched: &HashSet<String>) -> Result<(), CommandError> {
+    collisions(after,Some(touched))?;
+    transition_seams(before,after,touched)?;
+    validate_group_motion(before,after)
+}
 
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -258,6 +287,7 @@ fn calculate(
     let mut targets = Vec::new();
     let mut delta: Option<f64> = None;
     let mut lane_delta: Option<isize> = None;
+    let clip_index: HashMap<_,_> = timeline.clips.iter().map(|c| (c.id.as_str(),c)).collect();
     for wanted in &request.moves {
         if !selected.insert(wanted.clip_id.clone()) {
             return Err(refuse("The drag selection contains a duplicate clip"));
@@ -265,10 +295,7 @@ fn calculate(
         if !wanted.start.is_finite() || wanted.start < 0.0 {
             return Err(CommandError::NotANumber);
         }
-        let clip = timeline
-            .clip(&wanted.clip_id)
-            .ok_or(CommandError::MediaGone)?
-            .clone();
+        let clip = (*clip_index.get(wanted.clip_id.as_str()).ok_or(CommandError::MediaGone)?).clone();
         let from = timeline
             .tracks
             .iter()
@@ -287,7 +314,7 @@ fn calculate(
                 "Picture/text clips cannot be dropped on an explicitly audio-only track",
             ));
         }
-        let shift = quantize(wanted.start) - quantize(clip.start);
+        let shift = wanted.start - clip.start;
         if delta.is_some_and(|d| (shift - d).abs() > EPS) {
             return Err(refuse(
                 "A multi-selection drag must preserve relative timing",
@@ -310,10 +337,35 @@ fn calculate(
         targets.push(ClipMove {
             clip_id: clip.id.clone(),
             track_id: wanted.track_id.clone(),
-            start: quantize(wanted.start),
+            start: wanted.start,
         });
         moving.push(clip);
     }
+    let group_members = expand_groups(timeline, &request.moves.iter().map(|m|m.clip_id.clone()).collect::<Vec<_>>());
+    if group_members.iter().any(|id| !selected.contains(id)) {
+        return Err(refuse("Select the complete clip group"));
+    }
+    // Quantize the group anchor once, never each member. This preserves the
+    // exact subframe offsets of footage imported at different rates.
+    let earliest = moving.iter().map(|c|c.start).fold(f64::INFINITY,f64::min);
+    let raw_shift=delta.unwrap_or(0.0);
+    let raw_anchor=(earliest+raw_shift).max(0.0);
+    let mut anchor=if raw_shift.abs()<EPS {earliest} else {quantize(raw_anchor)};
+    // An exact requested edge contact (from snapping) wins over rounding.
+    // A sorted index avoids scanning the whole timeline for each moving edge.
+    let mut edges:HashMap<&str,Vec<f64>>=HashMap::new();
+    for c in &timeline.clips {
+        if request.duplicate || !selected.contains(&c.id) {
+            edges.entry(c.track_id.as_str()).or_default().extend([c.start,end(c)]);
+        }
+    }
+    for lane in edges.values_mut(){lane.sort_by(f64::total_cmp);}
+    if raw_anchor<=EPS {anchor=0.0;}
+    else if targets.iter().zip(&moving).any(|(m,c)|edges.get(m.track_id.as_str()).is_some_and(|lane|[m.start,m.start+c.duration].iter().any(|edge|{
+        let i=lane.partition_point(|v|*v<*edge-EPS);
+        lane.get(i).is_some_and(|v|(*v-*edge).abs()<=EPS)
+    }))){anchor=raw_anchor;}
+    for (target,clip) in targets.iter_mut().zip(&moving){target.start=anchor+(clip.start-earliest);}
     // Both directions matter: moving a source alone is as unsafe as moving its sound alone.
     for clip in &timeline.clips {
         for parent_id in parents(clip) {
@@ -510,6 +562,7 @@ fn calculate(
     }
     let mut remap = HashMap::new();
     let mut selected_ids = Vec::new();
+    let mut copied_groups=HashMap::<String,String>::new();
     if request.duplicate {
         for clip in &moving {
             let id = mint.next("c");
@@ -522,6 +575,10 @@ fn calculate(
         if request.duplicate {
             clip.id = remap[&clip.id].clone();
             remap_parent(&mut clip, &remap);
+            if let Some(group)=group_of(original) {
+                let fresh=copied_groups.entry(group.to_owned()).or_insert_with(||mint.next("g")).clone();
+                clip.extra.insert(GROUP_KEY.into(),serde_json::Value::String(fresh));
+            }
         }
         clip.track_id = target.track_id.clone();
         clip.start = destination_start + (target.start - requested_start);
@@ -532,8 +589,7 @@ fn calculate(
     if !request.duplicate {
         touched.extend(moving.iter().map(|c| c.track_id.clone()));
     }
-    collisions(&staged, Some(&touched))?;
-    transition_seams(project, &staged, &touched)?;
+    validate_exact_geometry(project,&staged,&touched)?;
     // Source-gap closure may affect stationary linked clips too. Refuse instead of silently pulling their source away.
     for old in &timeline.clips {
         for old_parent_id in parents(old) {
@@ -651,6 +707,27 @@ mod tests {
         mint
     }
 
+    #[test]
+    fn fractional_group_moves_to_zero_without_rounding_each_clip() {
+        let mut p=fixture();
+        for (i,c) in p.active_mut().clips.iter_mut().enumerate(){
+            let c=Arc::make_mut(c);c.start=14.213+i as f64*0.117;c.duration=0.117;
+        }
+        let r=DragRequest{moves:p.active().clips.iter().map(|c|ClipMove{clip_id:c.id.clone(),track_id:c.track_id.clone(),start:c.start-14.213}).collect(),mode:DragMode::Free,duplicate:false,magnetic:false,locked_tracks:vec![]};
+        let a=plan(&p,&r).unwrap();
+        for (i,c) in a.project.active().clips.iter().enumerate(){assert!((c.start-i as f64*0.117).abs()<EPS);assert_eq!(c.duration,0.117);}
+    }
+    #[test]
+    fn grouped_drag_is_atomic_and_copy_has_fresh_identity(){
+        let mut p=fixture();for c in p.active_mut().clips.iter_mut().take(2){Arc::make_mut(c).extra.insert(GROUP_KEY.into(),serde_json::json!("g100"));}
+        assert!(plan(&p,&request("a",10.0,"T1",DragMode::Free)).is_err());
+        let mut r=request("a",10.0,"T1",DragMode::Free);
+        r.moves.push(ClipMove{clip_id:"b".into(),track_id:"T1".into(),start:12.0});r.duplicate=true;
+        let a=plan(&p,&r).unwrap();let c=a.project.active().clip(&a.selected_ids[0]).unwrap();
+        let d=a.project.active().clip(&a.selected_ids[1]).unwrap();
+        assert_eq!(group_of(c),group_of(d));assert_ne!(group_of(c),Some("g100"));
+        assert_eq!(a.project.active().clip("a").unwrap().start,0.0);
+    }
     #[test]
     fn free_drop_is_exact_and_collisions_are_atomic() {
         let mut p = fixture();
