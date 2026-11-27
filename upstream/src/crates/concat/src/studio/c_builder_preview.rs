@@ -18,6 +18,7 @@ pub struct PreviewSession {
     timer:slint::Timer,
     image:slint::Image,
     ready:bool,
+    failed:bool,
     playing:bool,
     muted:bool,
     closing:bool,
@@ -44,7 +45,7 @@ impl Studio {
         let p=PreviewSession{
             clips,monitor:Monitor::isolated(64*1024*1024,2),
             start,end,time:start,intro,timer:slint::Timer::default(),image:Default::default(),
-            ready:false,playing:false,muted:false,closing:false,pending:false,last_frame:None,revision:0,
+            ready:false,failed:false,playing:false,muted:false,closing:false,pending:false,last_frame:None,revision:0,
             started:Instant::now(),status:"Preparing narration and first frame...".into(),
         };
         p.timer.start(slint::TimerMode::Repeated,Duration::from_millis(33),||{
@@ -101,11 +102,12 @@ impl Studio {
             }
             return;
         }
+        if p.failed{return;}
         if !p.ready{
             if self.host.playback.clips_ready()&&p.last_frame.is_some()&&!p.pending{
                 p.ready=true;p.status="Ready · press Play".into();
             }else if p.started.elapsed()>Duration::from_secs(120)||(!self.host.playback.clips_preparing()&&!self.host.playback.clips_ready()){
-                p.status="Narration preparation failed; close the preview and check the audio file".into();
+                p.failed=true;p.status="Narration preparation failed; close the preview and check the audio file".into();
                 return;
             }
         }
@@ -117,7 +119,7 @@ impl Studio {
     }
     fn builder_preview_request(&mut self){
         let Some(p)=self.cb_playback_preview.as_mut() else{return;};
-        if p.pending||p.closing{return;}
+        if p.pending||p.closing||p.failed{return;}
         let time=p.time.min((p.end-1.0/FPS).max(p.start)).max(p.start);
         let frame=(time*FPS+1e-6).floor() as i64;
         if p.last_frame==Some(frame){return;}
@@ -141,7 +143,7 @@ impl Studio {
                                     p.image=slint::Image::from_rgba8(buffer);p.last_frame=Some(frame);
                                 },
                                 Err(e)=>{
-                                    p.status=format!("Preview frame failed: {e}");p.ready=false;p.playing=false;p.last_frame=Some(frame);
+                                    p.status=format!("Preview frame failed: {e}");p.failed=true;p.ready=false;p.playing=false;p.last_frame=Some(frame);
                                     studio.host.playback.pause();
                                 }
                             }
