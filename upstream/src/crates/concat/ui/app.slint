@@ -50,7 +50,7 @@ import { CanvasPresets } from "workspace/canvas-presets.slint";
 import { CaptionPresetPreview, CaptionPreviewCard } from "workspace/caption-preset-preview.slint";
 import { ParamFormat } from "inspector/controls.slint";
 import { ToastData, ToastLayer } from "primitives/toast.slint";
-import { TooltipLayer } from "primitives/tooltip.slint";
+import { Tips, TooltipLayer } from "primitives/tooltip.slint";
 import { FontSearch } from "inspector/font-picker.slint";
 import { Meters } from "timeline/vu-meter.slint";
 import { Workspace } from "workspace/workspace.slint";
@@ -122,14 +122,17 @@ export component App inherits Window {
     // until a press lands on a pane's floor. Each of those teardowns hands
     // the focus back here on the way out.
     changed on-start => {
+        Tips.close();
         if (!root.on-start) {
             keys.focus();
         }
     }
+    changed c-builder-home => { Tips.close(); }
     property <bool> sheet-open: root.export.open || root.settings.open
         || root.project-sheet.open || root.captions.open || root.speech.open
         || root.start.composing || CloudGpu.zip-open;
     changed sheet-open => {
+        Tips.close();
         if (!root.sheet-open) {
             keys.focus();
         }
@@ -179,7 +182,6 @@ export component App inherits Window {
     /// Open a project that already exists, picked from disk.
     callback start-open();
     callback start-open-recent(path: string);
-    callback start-forget-recent(path: string);
     callback start-reveal-recent(path: string);
     callback start-rename-recent(path: string);
     callback start-delete-recent(path: string);
@@ -655,7 +657,6 @@ export component App inherits Window {
                 open-settings => { root.open-settings(); }
                 open-c-builder => {root.start-c-builder();}
                 open-recent(path) => { root.start-open-recent(path); }
-                forget-recent(path) => { root.start-forget-recent(path); }
                 reveal-recent(path) => { root.start-reveal-recent(path); }
                 rename-recent(path) => { root.start-rename-recent(path); }
                 delete-recent(path) => { root.start-delete-recent(path); }
