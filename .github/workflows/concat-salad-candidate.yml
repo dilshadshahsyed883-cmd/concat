@@ -51,6 +51,8 @@ jobs:
           python3 -c 'import json,os; smoke=json.load(open("image-smoke.json")); assert smoke["source_sha"]==os.environ["GITHUB_SHA"]; smoke.update(image=os.environ["IMAGE_TAG"],digest=os.environ["IMAGE_DIGEST"]); json.dump(smoke,open("image-reference.json","w"),indent=2)'
 
       - uses: actions/upload-artifact@v4
+        # Optional report upload must not invalidate a successfully published image.
+        continue-on-error: true
         with:
           name: Concat-Salad-image-reference
           path: |
