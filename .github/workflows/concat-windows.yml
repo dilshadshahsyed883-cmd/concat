@@ -234,7 +234,7 @@ jobs:
           name: Concat-Windows-x64-dev
           path: dist/Concat-0.2.8-GPU-Windows-x64/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 3
 
   publish-main-release:
     needs: native-editor-windows
