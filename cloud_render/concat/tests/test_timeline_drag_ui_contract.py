@@ -17,6 +17,15 @@ class TimelineDragUiContracts(unittest.TestCase):
         self.assertIn('Command::DragClips {request}',release)
         self.assertNotIn('Command::ScopedMoveClips',release)
 
+    def test_four_direct_timeline_controls(self):
+        tray=(ROOT/'ui/timeline/tray.slint').read_text()
+        for action in ['close-all-gaps','spacer','group-clips','ungroup-clips']:
+            self.assertIn('Editor.shortcut("'+action+'")',tray)
+        studio=(ROOT/'src/studio.rs').read_text()
+        self.assertIn('Command::CloseAllTrackGaps',studio)
+        self.assertIn('Command::SetClipGroup',studio)
+        self.assertIn('duplicate:self.drag_copy&&!self.spacer_mode',studio)
+
     def test_pointer_cancel_is_forwarded_and_never_committed(self):
         lanes=(ROOT/'ui/timeline/lanes.slint').read_text()
         self.assertIn('PointerEventKind.cancel {root.cancelled();}',lanes)

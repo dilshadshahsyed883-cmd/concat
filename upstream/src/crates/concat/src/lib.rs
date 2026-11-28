@@ -1729,6 +1729,7 @@ fn start(project: Option<std::path::PathBuf>, smoke: bool) -> Result<(), slint::
                 state.selection = caught;
                 state.transition_selected = None;
             }
+            state.expand_timeline_groups();
         }
     ));
 

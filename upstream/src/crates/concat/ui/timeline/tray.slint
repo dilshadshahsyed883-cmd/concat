@@ -396,6 +396,11 @@ export component TimelineTray inherits Rectangle {
         }
 
         Divider { }
+        TrayButton { glyph:Glyph.close-gaps;label:"Close All Gaps (including start)";enabled:root.selected-count>0;clicked=>{Editor.shortcut("close-all-gaps");} }
+        TrayButton { glyph:Glyph.spacer;label:"Spacer: drag a clip and following clips on its track";checked:TimelineDrag.spacer;clicked=>{Editor.shortcut("spacer");} }
+        TrayButton { glyph:Glyph.group-clips;label:"Group Selected Clips";enabled:root.selected-count>1;clicked=>{Editor.shortcut("group-clips");} }
+        TrayButton { glyph:Glyph.ungroup-clips;label:"Ungroup Selected Clips";enabled:TimelineDrag.group-selected;clicked=>{Editor.shortcut("ungroup-clips");} }
+        Divider { }
 
         TrayButton {
             glyph: Glyph.text-mark;

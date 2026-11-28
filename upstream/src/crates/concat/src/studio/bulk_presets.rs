@@ -1721,7 +1721,7 @@ mod tests {
     fn only_untouched_bulk_motion_can_be_rerolled() {
         let mut clip = Clip::blank("c1", "t1", ClipKind::Video, "picture", 0.0, 2.0);
         let (choices, old) = motion_choices(&clip, 1.0 / 30.0, &[], &MOTION_PRESETS).unwrap();
-        assert_eq!(choices.len(), 9);
+        assert_eq!(choices.len(), MOTION_PRESETS.len());
         assert_eq!(old, None);
         let generated = choices[0].clone();
         clip.keys = generated.keys.clone();

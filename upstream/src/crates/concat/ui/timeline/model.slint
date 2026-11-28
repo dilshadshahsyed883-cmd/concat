@@ -233,6 +233,8 @@ export global TimelineDrag {
     in property <DragFeedbackData> feedback;
     in property <bool> ripple;
     in property <bool> duplicate;
+    in property <bool> spacer;
+    in property <bool> group-selected;
     in-out property <bool> copy-modifier;
     callback modes-changed(ripple: bool, duplicate: bool);
 }

@@ -394,11 +394,19 @@ pub(super) fn apply(
                 applied: true,
             }
         }
-        Command::CloseTrackGaps {
-            track_id,
-            locked_tracks,
-            at,
-        } => {
+        command @ (Command::CloseTrackGaps { .. } | Command::CloseAllTrackGaps { .. }) => {
+            let (track_id, locked_tracks, at, include_start) = match command {
+                Command::CloseTrackGaps {
+                    track_id,
+                    locked_tracks,
+                    at,
+                } => (track_id, locked_tracks, at, false),
+                Command::CloseAllTrackGaps {
+                    track_id,
+                    locked_tracks,
+                } => (track_id, locked_tracks, None, true),
+                _ => unreachable!(),
+            };
             scope(&staged, std::slice::from_ref(&track_id), &locked_tracks)?;
             let mut ordered: Vec<_> = staged
                 .active()
@@ -413,6 +421,14 @@ pub(super) fn apply(
             }
             let mut commands = Vec::new();
             let mut shift = 0.0;
+            if include_start && let Some(first) = ordered.first().filter(|c| c.start > 1e-6) {
+                shift = first.start;
+                commands.push(ClipMove {
+                    clip_id: first.id.clone(),
+                    track_id: track_id.clone(),
+                    start: 0.0,
+                });
+            }
             for pair in ordered.windows(2) {
                 let gap = pair[1].start - pair[0].end();
                 // Preserve the intentional intro; selected gap is the one under the playhead.
@@ -486,21 +502,68 @@ pub(super) fn apply(
                     return Err(refused("Invalid linked gap-close destination"));
                 }
             }
-            // Generic drag placement may choose a nearby free position.
-            // Gap close must land at the exact planned positions or fail.
-            let resolved = timeline
-                .resolve_moves(&commands)
-                .ok_or_else(|| refused("Gap close would overlap a clip"))?;
-            if resolved.len() != commands.len()
-                || resolved.iter().zip(&commands).any(|(actual, wanted)| {
-                    actual.clip_id != wanted.clip_id
-                        || actual.track_id != wanted.track_id
-                        || (actual.start - wanted.start).abs() > 1e-6
-                })
-            {
-                return Err(refused("Gap close would overlap a linked track"));
+            // The staged exact move is indexed and checked once. Do not
+            // invoke generic nearest-gap placement or round source geometry.
+            let touched: std::collections::HashSet<String> =
+                commands.iter().map(|m| m.track_id.clone()).collect();
+            let before = staged.clone();
+            let targets: std::collections::HashMap<_, _> = commands
+                .iter()
+                .map(|m| (m.clip_id.as_str(), m.start))
+                .collect();
+            for clip in &mut staged.active_mut().clips {
+                if let Some(start) = targets.get(clip.id.as_str()) {
+                    std::sync::Arc::make_mut(clip).start = *start;
+                }
             }
-            super::apply(&mut staged, mint, Command::MoveClips { moves: commands })?
+            if !commands.is_empty() {
+                crate::drag_edit::validate_exact_geometry(&before, &staged, &touched)?;
+            }
+            Outcome {
+                created_id: None,
+                applied: !commands.is_empty(),
+            }
+        }
+        Command::SetClipGroup {
+            clip_ids,
+            locked_tracks,
+            grouped,
+        } => {
+            let ids = crate::drag_edit::expand_groups(staged.active(), &clip_ids);
+            if grouped && ids.len() < 2 {
+                return Err(refused("Select at least two clips to group"));
+            }
+            let ids: std::collections::HashSet<_> = ids.into_iter().collect();
+            let tracks: Vec<_> = staged
+                .active()
+                .clips
+                .iter()
+                .filter(|c| ids.contains(&c.id))
+                .map(|c| c.track_id.clone())
+                .collect();
+            if tracks.is_empty() {
+                return Ok(Outcome::default());
+            }
+            scope(&staged, &tracks, &locked_tracks)?;
+            let group = grouped.then(|| mint.next("g"));
+            let mut applied = false;
+            for clip in &mut staged.active_mut().clips {
+                if ids.contains(&clip.id) {
+                    let clip = std::sync::Arc::make_mut(clip);
+                    let old = clip.extra.remove(crate::drag_edit::GROUP_KEY);
+                    if let Some(group) = &group {
+                        clip.extra.insert(
+                            crate::drag_edit::GROUP_KEY.into(),
+                            serde_json::Value::String(group.clone()),
+                        );
+                    }
+                    applied |= old.as_ref() != clip.extra.get(crate::drag_edit::GROUP_KEY);
+                }
+            }
+            Outcome {
+                created_id: None,
+                applied,
+            }
         }
         Command::SetPlanningProfile { profile } => {
             crate::planning::Profile::from_json(&profile.to_string()).map_err(|e| refused(&e))?;
@@ -1439,6 +1502,54 @@ mod safety_tests {
         }
     }
 
+    #[test]
+    fn close_all_including_start_and_group_guard() {
+        let mut p = Project::new();
+        for (i, start) in [3.0, 7.0, 12.0].into_iter().enumerate() {
+            p.active_mut().clips.push(Arc::new(Clip::blank(
+                format!("c{i}"),
+                "T1",
+                ClipKind::Image,
+                "still",
+                start,
+                2.0,
+            )));
+        }
+        let mut mint = IdMint::default();
+        mint.adopt_project(&p);
+        apply(
+            &mut p,
+            &mut mint,
+            Command::SetClipGroup {
+                clip_ids: vec!["c0".into(), "c1".into()],
+                locked_tracks: vec![],
+                grouped: true,
+            },
+        )
+        .unwrap();
+        let before = p.clone();
+        let close = Command::CloseAllTrackGaps {
+            track_id: "T1".into(),
+            locked_tracks: vec![],
+        };
+        assert!(apply(&mut p, &mut mint, close.clone()).is_err());
+        assert_eq!(p, before);
+        apply(
+            &mut p,
+            &mut mint,
+            Command::SetClipGroup {
+                clip_ids: vec!["c0".into()],
+                locked_tracks: vec![],
+                grouped: false,
+            },
+        )
+        .unwrap();
+        apply(&mut p, &mut mint, close).unwrap();
+        for (i, c) in p.active().clips.iter().enumerate() {
+            assert_eq!(c.start, 2.0 * i as f64);
+            assert_eq!(c.duration, 2.0);
+        }
+    }
     #[test]
     fn selected_gap_and_many_clips_are_non_destructive() {
         let mut p = Project::new();

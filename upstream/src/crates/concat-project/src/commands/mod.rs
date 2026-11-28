@@ -585,6 +585,10 @@ pub enum Command {
     },
     /// Closes internal visual gaps only. `at` selects the gap under the playhead; None closes all.
     CloseTrackGaps { track_id: String, locked_tracks: Vec<String>, at: Option<f64> },
+    /// Compact the entire visual track to zero, including leading whitespace.
+    CloseAllTrackGaps { track_id: String, locked_tracks: Vec<String> },
+    /// Create or remove a persistent clip group in one undo step.
+    SetClipGroup { clip_ids: Vec<String>, locked_tracks: Vec<String>, grouped: bool },
     /// Applies a declarative canvas composition to selected source clips in one undo step.
     ApplyCanvasPreset { config: crate::canvas_preset::Config, targets: Vec<String>, locked_tracks: Vec<String> },
     /// Apply to exactly the targets whose authored conflicts the user confirmed.
@@ -1020,6 +1024,7 @@ impl IdMint {
             }
             for clip in &timeline.clips {
                 self.adopt(&clip.id);
+                if let Some(group)=crate::drag_edit::group_of(clip){self.adopt(group);}
             }
         }
     }
@@ -1393,7 +1398,7 @@ fn apply_inner(project: &mut Project, mint: &mut IdMint, command: Command) -> Re
         Command::DragClips {request} => crate::drag_edit::apply(project,mint,request),
         Command::ApplyCanvasPreset { config, targets, locked_tracks } => crate::canvas_preset::apply(project, mint, config, targets, locked_tracks),
         command @ (Command::InsertMedia { .. } | Command::ReplaceMediaInSlot { .. }
-            | Command::CloseTrackGaps { .. } | Command::SetTimelineMagnetic { .. } | Command::SetGpuCaptionRequest { .. } | Command::SetCaptionPresetSettings { .. } | Command::SetPlanningProfile { .. } | Command::ImportGpuCaptions { .. } | Command::ScopedMoveClips { .. } | Command::ReplaceMediaFromFile { .. }) => editing::apply(project, mint, command),
+            | Command::CloseTrackGaps { .. } | Command::CloseAllTrackGaps { .. } | Command::SetClipGroup { .. } | Command::SetTimelineMagnetic { .. } | Command::SetGpuCaptionRequest { .. } | Command::SetCaptionPresetSettings { .. } | Command::SetPlanningProfile { .. } | Command::ImportGpuCaptions { .. } | Command::ScopedMoveClips { .. } | Command::ReplaceMediaFromFile { .. }) => editing::apply(project, mint, command),
         command @ (Command::AddMedia { .. }
         | Command::SetMediaPlaceholder { .. }
         | Command::FillSlot { .. }

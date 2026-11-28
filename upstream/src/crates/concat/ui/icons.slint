@@ -124,6 +124,10 @@ export enum Glyph {
     trash,
     magnet,
     fold,
+    close-gaps,
+    spacer,
+    group-clips,
+    ungroup-clips,
     /// the preview axis: a hairline with the pointer beside it
     axis,
     /// trim follow: the playhead between two arrows pulling an edge
@@ -729,6 +733,19 @@ export component Icon inherits Rectangle {
         size: root.size; tint: root.tint; weight: root.weight;
         commands: "M2 12h6 M22 12h-6 M12 2v2 M12 8v2 M12 14v2 M12 20v2"
             + " M19 9l-3 3 3 3 M5 15l3-3-3-3";
+    }
+
+    if root.glyph == Glyph.close-gaps: Stroked {
+        size:root.size;tint:root.tint;weight:root.weight;commands:"M3 4v16 M8 12h13 M8 12l5-5 M8 12l5 5";
+    }
+    if root.glyph == Glyph.spacer: Stroked {
+        size:root.size;tint:root.tint;weight:root.weight;commands:"M3 12h18 M3 12l4-4 M3 12l4 4 M21 12l-4-4 M21 12l-4 4 M12 4v16";
+    }
+    if root.glyph == Glyph.group-clips: Stroked {
+        size:root.size;tint:root.tint;weight:root.weight;commands:"M3 3h18v18H3z M6 7h5v5H6z M13 12h5v5h-5z";
+    }
+    if root.glyph == Glyph.ungroup-clips: Stroked {
+        size:root.size;tint:root.tint;weight:root.weight;commands:"M3 3h5 M3 3v5 M21 3h-5 M21 3v5 M3 21h5 M3 21v-5 M21 21h-5 M21 21v-5 M6 7h5v5H6z M13 12h5v5h-5z";
     }
 
     // The preview axis: a hairline down the lanes and the pointer beside

@@ -42,9 +42,17 @@ pub(super) fn apply_with_locks(
                 ids.insert(source.id.clone(), mint.next("c"));
             }
             let mut last = None;
+            let mut groups=std::collections::HashMap::<String,String>::new();
+            let mut touched=HashSet::new();
             for mut copy in copies {
                 copy.id = ids[&copy.id].clone();
-                copy.start = staged.active().nearest_free_start(&copy.track_id, copy.start.max(0.0), copy.duration, &[]);
+                if let Some(group)=crate::drag_edit::group_of(&copy).map(str::to_owned) {
+                    let fresh=groups.entry(group).or_insert_with(||mint.next("g")).clone();
+                    copy.extra.insert(crate::drag_edit::GROUP_KEY.into(),serde_json::Value::String(fresh));
+                    touched.insert(copy.track_id.clone());
+                } else {
+                    copy.start = staged.active().nearest_free_start(&copy.track_id, copy.start.max(0.0), copy.duration, &[]);
+                }
                 copy.name = format!("{} copy", copy.name);
                 copy.detached_from = copy.detached_from.as_ref().and_then(|id| ids.get(id)).cloned();
                 for key in ["canvasOwner", "gpuCaptionSource"] {
@@ -59,6 +67,7 @@ pub(super) fn apply_with_locks(
                 last = Some(copy.id.clone());
                 staged.active_mut().clips.push(Arc::new(copy));
             }
+            if !touched.is_empty(){crate::drag_edit::validate_exact_geometry(project,&staged,&touched)?;}
             let applied = last.is_some();
             *project = staged;
             Ok(Outcome { created_id: last, applied })
