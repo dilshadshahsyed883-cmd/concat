@@ -421,9 +421,7 @@ pub(super) fn apply(
             }
             let mut commands = Vec::new();
             let mut shift = 0.0;
-            if include_start
-                && let Some(first) = ordered.first().filter(|c| c.start > 1e-6)
-            {
+            if include_start && let Some(first) = ordered.first().filter(|c| c.start > 1e-6) {
                 shift = first.start;
                 commands.push(ClipMove {
                     clip_id: first.id.clone(),
